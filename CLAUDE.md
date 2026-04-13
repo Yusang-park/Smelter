@@ -1,6 +1,6 @@
-# Archon Harness
+# Linear Harness
 
-You are an AI assistant operating under the **Archon Harness** — a TDD-first, file-based, multi-agent system.
+You are an AI assistant operating under the **Linear Harness** — a TDD-first, file-based, multi-agent system.
 
 ---
 
@@ -8,9 +8,9 @@ You are an AI assistant operating under the **Archon Harness** — a TDD-first, 
 
 **"Agents do not memorize. Agents read files."**
 
-- All plans, tasks, decisions → written to `.archon/` files
-- Agent reads `.archon/plan.md` + `.archon/tasks.md` at session start
-- Progress tracked by updating `.archon/tasks.md` checkboxes
+- All plans, tasks, decisions → written to `.linear-harness/` files
+- Agent reads `.linear-harness/plan.md` + `.linear-harness/tasks.md` at session start
+- Progress tracked by updating `.linear-harness/tasks.md` checkboxes
 - Memory lives in files, not in context
 
 ---
@@ -25,7 +25,7 @@ RULE 4: E2E tests required for all UI/feature changes
 RULE 5: NEVER mark a task complete without passing tests
 ```
 
-Enforcement is automatic via hooks (`session-start-archon.mjs`, `pre-tool-enforcer.mjs`).
+Enforcement is automatic via hooks (`session-start-linear-harness.mjs`, `pre-tool-enforcer.mjs`).
 
 ---
 
@@ -64,13 +64,13 @@ Use `Task(subagent_type="<agent>", model="<model>", prompt="...")`.
 
 ---
 
-## File-Based Memory (.archon/)
+## File-Based Memory (.linear-harness/)
 
-Every project session uses `.archon/` as the source of truth:
+Every project session uses `.linear-harness/` as the source of truth:
 
 ```
 {project}/
-└── .archon/
+└── .linear-harness/
     ├── plan.md          ← current goal (READ FIRST at session start)
     ├── prd.md           ← product requirements
     ├── tasks.md         ← checkbox task list (update in real-time)
@@ -80,7 +80,7 @@ Every project session uses `.archon/` as the source of truth:
 ```
 
 **Protocol:**
-1. Session start → Read `.archon/plan.md` + `.archon/tasks.md`
+1. Session start → Read `.linear-harness/plan.md` + `.linear-harness/tasks.md`
 2. Before coding → verify task exists in `tasks.md`
 3. Task complete → update checkbox in `tasks.md`
 4. New decision → write to `decisions/`
@@ -91,7 +91,7 @@ Every project session uses `.archon/` as the source of truth:
 ## Workflow
 
 ```
-/plan "feature"         → interview → create .archon/ files
+/plan "feature"         → interview → create .linear-harness/ files
 /team 3:executor "..."  → read tasks.md → parallel execution
 /ralph "..."            → execute until all tasks.md ✅ + E2E pass
 ```
@@ -129,7 +129,7 @@ Sessions are observed automatically. Patterns become instincts:
 
 | Path | Purpose |
 |------|---------|
-| `{project}/.archon/` | File-based memory (plans, tasks, wiki) |
+| `{project}/.linear-harness/` | File-based memory (plans, tasks, wiki) |
 | `{worktree}/.omc/state/` | Mode state (ralph, autopilot) |
 | `~/.claude/homunculus/` | ECC instinct data |
 

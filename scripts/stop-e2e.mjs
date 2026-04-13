@@ -35,7 +35,7 @@ if (!hasCodeChanges() || !hasPlaywright()) {
   process.exit(0); // Nothing to test
 }
 
-console.error('[archon] Running E2E tests...');
+console.error('[linear-harness] Running E2E tests...');
 
 const result = spawnSync('npx', ['playwright', 'test', '--reporter=json'], {
   cwd,
@@ -44,7 +44,7 @@ const result = spawnSync('npx', ['playwright', 'test', '--reporter=json'], {
 });
 
 if (result.status === 0) {
-  console.error('[archon] E2E passed');
+  console.error('[linear-harness] E2E passed');
   process.exit(0);
 } else {
   const output = (result.stdout || '') + (result.stderr || '');
@@ -63,6 +63,6 @@ if (result.status === 0) {
     // keep raw output as failures
   }
 
-  console.log(`[ARCHON E2E FAILED]\n\n${failures}\n\nFix the above E2E failures.`);
+  console.log(`[LINEAR-HARNESS E2E FAILED]\n\n${failures}\n\nFix the above E2E failures.`);
   process.exit(2);
 }

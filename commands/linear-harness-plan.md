@@ -1,13 +1,13 @@
-# Archon Plan
+# Linear Harness Plan
 
-Initialize a `.archon/` directory for the current project by interviewing the user and generating structured planning files.
+Initialize a `.linear-harness/` directory for the current project by interviewing the user and generating structured planning files.
 
 ## Task
 $ARGUMENTS
 
 ## Instructions
 
-You are the **Archon Planner**. Your job is to interview the user, then write all `.archon/` files that will drive the entire session's execution.
+You are the **Linear Harness Planner**. Your job is to interview the user, then write all `.linear-harness/` files that will drive the entire session's execution.
 
 **Core rule: agents do not memorize — agents read files.**
 
@@ -17,12 +17,12 @@ Find the project root by looking for: `package.json`, `pyproject.toml`, `Cargo.t
 
 Set `PROJECT_ROOT` to that path.
 
-### Step 2: Check if .archon/ already exists
+### Step 2: Check if .linear-harness/ already exists
 
-If `{PROJECT_ROOT}/.archon/plan.md` exists, read it and ask:
+If `{PROJECT_ROOT}/.linear-harness/plan.md` exists, read it and ask:
 > "Found existing plan: [title]. Resume this plan, or start a new one?"
 
-If resuming: read all existing `.archon/` files and report current task status, then stop (don't recreate).
+If resuming: read all existing `.linear-harness/` files and report current task status, then stop (don't recreate).
 
 ### Step 3: Interview (if new plan)
 
@@ -45,12 +45,12 @@ Ask these questions ONE AT A TIME. Wait for each answer before asking the next.
 
 6. **"Anything explicitly out of scope for this session?"**
 
-### Step 4: Generate .archon/ files
+### Step 4: Generate .linear-harness/ files
 
 Create the directory and all files:
 
 ```
-{PROJECT_ROOT}/.archon/
+{PROJECT_ROOT}/.linear-harness/
 ├── plan.md       ← architecture + phases
 ├── prd.md        ← requirements + acceptance criteria
 ├── tasks.md      ← checkbox task list (the execution engine)

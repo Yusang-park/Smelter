@@ -16,7 +16,7 @@ export function saveArtifacts(
   e2eResult: PlaywrightRunResult,
 ): SavedArtifacts {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = join(cwd, '.archon', 'e2e-results', taskId, timestamp);
+  const dir = join(cwd, '.linear-harness', 'e2e-results', taskId, timestamp);
   mkdirSync(dir, { recursive: true });
   mkdirSync(join(dir, 'screenshots'), { recursive: true });
 

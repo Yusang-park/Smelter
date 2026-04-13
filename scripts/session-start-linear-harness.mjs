@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// session-start-archon.mjs
-// Injects TDD + caveman context + .archon/ plan at session start
+// session-start-linear-harness.mjs
+// Injects TDD + caveman context + .linear-harness/ plan at session start
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 
-const TDD_CONTEXT = `[ARCHON HARNESS — TDD + E2E MODE]
+const TDD_CONTEXT = `[LINEAR HARNESS — TDD + E2E MODE]
 You MUST follow Test-Driven Development:
 1. Write tests FIRST (RED) — before any implementation code
 2. Run tests — they MUST fail initially
@@ -25,12 +25,12 @@ Keep articles, grammar, and complete sentences intact.
 Technical terms, code blocks, and error messages must be exact and unchanged.
 If safety warnings, security issues, or irreversible actions are involved, use full clear prose regardless.`;
 
-// Load .archon/ context if present in working directory or parents
-function findArchonDir(startDir) {
+// Load .linear-harness/ context if present in working directory or parents
+function findLinearHarnessDir(startDir) {
   let dir = resolve(startDir || process.env.CLAUDE_PROJECT_DIR || process.cwd());
   for (let i = 0; i < 6; i++) {
-    const archonPath = join(dir, '.archon');
-    if (existsSync(join(archonPath, 'plan.md'))) return archonPath;
+    const linearHarnessPath = join(dir, '.linear-harness');
+    if (existsSync(join(linearHarnessPath, 'plan.md'))) return linearHarnessPath;
     const parent = resolve(dir, '..');
     if (parent === dir) break;
     dir = parent;
@@ -38,10 +38,10 @@ function findArchonDir(startDir) {
   return null;
 }
 
-function readArchonContext(archonDir) {
+function readLinearHarnessContext(linearHarnessDir) {
   const sections = [];
-  const planPath = join(archonDir, 'plan.md');
-  const tasksPath = join(archonDir, 'tasks.md');
+  const planPath = join(linearHarnessDir, 'plan.md');
+  const tasksPath = join(linearHarnessDir, 'tasks.md');
 
   if (existsSync(planPath)) {
     sections.push('## Current Plan\n' + readFileSync(planPath, 'utf8').slice(0, 2000));
@@ -53,18 +53,18 @@ function readArchonContext(archonDir) {
       l.startsWith('# ') || l.startsWith('## ') || l.includes('- [ ]') || l.includes('- [~]') || l.includes('- [!]')
     );
     if (lines.length > 0) {
-      sections.push('## Pending Tasks (.archon/tasks.md)\n' + lines.join('\n'));
+      sections.push('## Pending Tasks (.linear-harness/tasks.md)\n' + lines.join('\n'));
     }
   }
 
   if (sections.length === 0) return '';
-  return `\n\n[ARCHON FILE-BASED MEMORY]\nAgents do not memorize — agents read files.\nThe following .archon/ context was loaded from disk:\n\n` + sections.join('\n\n');
+  return `\n\n[LINEAR-HARNESS FILE-BASED MEMORY]\nAgents do not memorize — agents read files.\nThe following .linear-harness/ context was loaded from disk:\n\n` + sections.join('\n\n');
 }
 
-const archonDir = findArchonDir();
-const archonContext = archonDir ? readArchonContext(archonDir) : '';
+const linearHarnessDir = findLinearHarnessDir();
+const linearHarnessContext = linearHarnessDir ? readLinearHarnessContext(linearHarnessDir) : '';
 
 process.stdout.write(JSON.stringify({
   type: 'system_prompt_prefix',
-  content: CAVEMAN_CONTEXT + '\n\n' + TDD_CONTEXT + archonContext,
+  content: CAVEMAN_CONTEXT + '\n\n' + TDD_CONTEXT + linearHarnessContext,
 }));

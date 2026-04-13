@@ -59,10 +59,10 @@ async function main() {
 
       const prompt = promptParts.join(' ');
       if (!prompt) {
-        console.error('Usage: archon-harness run [--skill <name>] [--agent <name>] [--model <m>] [--mode <m>] [--no-caveman] <prompt>');
+        console.error('Usage: linear-harness run [--skill <name>] [--agent <name>] [--model <m>] [--mode <m>] [--no-caveman] <prompt>');
         process.exit(1);
       }
-      console.log(`[archon-harness] Running: "${prompt}"`);
+      console.log(`[linear-harness] Running: "${prompt}"`);
       if (skill) console.log(`[skill] ${skill}`);
       if (agent) console.log(`[agent] ${agent}`);
       console.log(`CWD: ${cwd}\n`);
@@ -77,7 +77,7 @@ async function main() {
       if (task.videoPath) {
         console.log(`[Video] ${task.videoPath}`);
       }
-      console.log(`\nRun 'archon-harness review approve ${task.id}' to approve`);
+      console.log(`\nRun 'linear-harness review approve ${task.id}' to approve`);
       process.exit(result.status === 'completed' ? 0 : 1);
       break;
     }
@@ -87,7 +87,7 @@ async function main() {
         case 'create': {
           const title = args.join(' ');
           if (!title) {
-            console.error('Usage: archon-harness task create <title>');
+            console.error('Usage: linear-harness task create <title>');
             process.exit(1);
           }
           const task = createTask(cwd, title);
@@ -97,7 +97,7 @@ async function main() {
         case 'list': {
           const tasks = loadTasks(cwd);
           if (tasks.length === 0) {
-            console.log('[task] No tasks found. Run "archon-harness task create <title>"');
+            console.log('[task] No tasks found. Run "linear-harness task create <title>"');
             break;
           }
 
@@ -120,7 +120,7 @@ async function main() {
         case 'show': {
           const id = args[0];
           if (!id) {
-            console.error('Usage: archon-harness task show <id>');
+            console.error('Usage: linear-harness task show <id>');
             process.exit(1);
           }
           const task = findTask(cwd, id);
@@ -145,7 +145,7 @@ async function main() {
         case 'move': {
           const [id, col] = args;
           if (!id || !col) {
-            console.error('Usage: archon-harness task move <id> <column>');
+            console.error('Usage: linear-harness task move <id> <column>');
             process.exit(1);
           }
           const validCols: TaskColumn[] = ['backlog', 'in-progress', 'review', 'done'];
@@ -162,13 +162,13 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: archon-harness task <create|list|show|move>');
+          console.log('Usage: linear-harness task <create|list|show|move>');
       }
       break;
     }
 
     case 'e2e': {
-      console.log(`[archon-harness] Running E2E...`);
+      console.log(`[linear-harness] Running E2E...`);
 
       const result = await runPlaywright(cwd);
       console.log(`[E2E] ${result.status} — ${result.passedTests}/${result.totalTests} passed (${result.duration}ms)`);
@@ -213,7 +213,7 @@ async function main() {
         }
         case 'show': {
           const id = args[0];
-          if (!id) { console.error('Usage: archon-harness review show <id>'); process.exit(1); }
+          if (!id) { console.error('Usage: linear-harness review show <id>'); process.exit(1); }
           const task = findTask(cwd, id);
           if (!task) { console.error(`[review] Not found: ${id}`); process.exit(1); }
           console.log(`\n${task.title} (${task.id})\nStatus: ${task.reviewStatus}`);
@@ -221,12 +221,12 @@ async function main() {
           if (task.logPath) console.log(`Log:    ${task.logPath}`);
           if (task.reportPath) console.log(`Report: ${task.reportPath}`);
           if (task.screenshotPaths.length > 0) task.screenshotPaths.forEach((sp) => console.log(`  ${sp}`));
-          console.log(`\n  archon-harness review approve|reject ${task.id}`);
+          console.log(`\n  linear-harness review approve|reject ${task.id}`);
           break;
         }
         case 'approve': {
           const id = args[0];
-          if (!id) { console.error('Usage: archon-harness review approve <id>'); process.exit(1); }
+          if (!id) { console.error('Usage: linear-harness review approve <id>'); process.exit(1); }
           const task = updateTask(cwd, id, { column: 'done', reviewStatus: 'approved' });
           if (!task) { console.error(`[review] Not found: ${id}`); process.exit(1); }
           console.log(`[review] Approved: ${task.id} — "${task.title}" -> Done`);
@@ -235,14 +235,14 @@ async function main() {
         case 'reject': {
           const id = args[0];
           const feedback = args.slice(1).join(' ') || 'Needs fixes';
-          if (!id) { console.error('Usage: archon-harness review reject <id> [feedback]'); process.exit(1); }
+          if (!id) { console.error('Usage: linear-harness review reject <id> [feedback]'); process.exit(1); }
           const task = updateTask(cwd, id, { column: 'in-progress', reviewStatus: 'rejected', reviewFeedback: feedback });
           if (!task) { console.error(`[review] Not found: ${id}`); process.exit(1); }
           console.log(`[review] Rejected: ${task.id} -> In Progress (${feedback})`);
           break;
         }
         default:
-          console.log('Usage: archon-harness review <list|show|approve|reject>');
+          console.log('Usage: linear-harness review <list|show|approve|reject>');
       }
       break;
     }
@@ -251,7 +251,7 @@ async function main() {
       const tasks = loadTasks(cwd);
       const columns: TaskColumn[] = ['backlog', 'in-progress', 'review', 'done'];
 
-      console.log('\nArchon Board Status\n');
+      console.log('\nLinear Harness Board Status\n');
       for (const col of columns) {
         const count = tasks.filter((t) => t.column === col).length;
         console.log(`  ${columnIcon(col)} ${col.padEnd(14)} ${count}`);
@@ -267,19 +267,19 @@ async function main() {
     }
 
     case 'init': {
-      const archonDir = join(cwd, '.archon');
-      if (existsSync(archonDir)) {
-        console.log('[init] .archon/ already exists');
+      const linearHarnessDir = join(cwd, '.linear-harness');
+      if (existsSync(linearHarnessDir)) {
+        console.log('[init] .linear-harness/ already exists');
       } else {
-        mkdirSync(archonDir, { recursive: true });
-        mkdirSync(join(archonDir, 'e2e-results'), { recursive: true });
-        writeFileSync(join(archonDir, 'tasks.json'), JSON.stringify({ tasks: [] }, null, 2));
-        writeFileSync(join(archonDir, 'config.json'), JSON.stringify({
+        mkdirSync(linearHarnessDir, { recursive: true });
+        mkdirSync(join(linearHarnessDir, 'e2e-results'), { recursive: true });
+        writeFileSync(join(linearHarnessDir, 'tasks.json'), JSON.stringify({ tasks: [] }, null, 2));
+        writeFileSync(join(linearHarnessDir, 'config.json'), JSON.stringify({
           mode: 'tdd-e2e',
           maxRetries: 3,
           rules: {},
         }, null, 2));
-        console.log('[init] Created .archon/ with default config');
+        console.log('[init] Created .linear-harness/ with default config');
       }
 
       // Auto-detect tech stack and save to project memory
@@ -294,7 +294,7 @@ async function main() {
     }
 
     case 'list': {
-      console.log('[archon-harness] Available presets:');
+      console.log('[linear-harness] Available presets:');
       console.log('  e2e-force   - Auto-run E2E after every code change');
       console.log('  tdd         - Test-Driven Development enforcement');
       console.log('  tdd-e2e     - TDD + E2E (default)');
@@ -321,7 +321,7 @@ async function main() {
           const category = args[0];
           const content = args.slice(1).join(' ');
           if (!category || !content) {
-            console.error('Usage: archon-harness memory add-note <category> <content>');
+            console.error('Usage: linear-harness memory add-note <category> <content>');
             process.exit(1);
           }
           addNote(cwd, category, content);
@@ -331,7 +331,7 @@ async function main() {
         case 'add-directive': {
           const directive = args.join(' ');
           if (!directive) {
-            console.error('Usage: archon-harness memory add-directive <directive>');
+            console.error('Usage: linear-harness memory add-directive <directive>');
             process.exit(1);
           }
           addDirective(cwd, directive);
@@ -339,7 +339,7 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: archon-harness memory <show|detect|add-note|add-directive>');
+          console.log('Usage: linear-harness memory <show|detect|add-note|add-directive>');
       }
       break;
     }
@@ -361,7 +361,7 @@ async function main() {
         case 'show': {
           const name = args[0];
           if (!name) {
-            console.error('Usage: archon-harness skill show <name>');
+            console.error('Usage: linear-harness skill show <name>');
             process.exit(1);
           }
           const content = loadSkill(name);
@@ -373,7 +373,7 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: archon-harness skill <list|show>');
+          console.log('Usage: linear-harness skill <list|show>');
       }
       break;
     }
@@ -396,7 +396,7 @@ async function main() {
         case 'show': {
           const name = args[0];
           if (!name) {
-            console.error('Usage: archon-harness agent show <name>');
+            console.error('Usage: linear-harness agent show <name>');
             process.exit(1);
           }
           const agent = loadAgent(name);
@@ -408,7 +408,7 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: archon-harness agent <list|show>');
+          console.log('Usage: linear-harness agent <list|show>');
       }
       break;
     }
@@ -427,7 +427,7 @@ async function main() {
       }
       const prompt2 = promptParts.join(' ');
       if (!prompt2) {
-        console.error('Usage: archon-harness autopilot [--model <m>] <prompt>');
+        console.error('Usage: linear-harness autopilot [--model <m>] <prompt>');
         process.exit(1);
       }
       console.log(`[autopilot] Running workflow: "${prompt2}"`);
@@ -442,15 +442,15 @@ async function main() {
     }
 
     case 'swarm': {
-      console.log('[swarm] Deprecated. Use: archon-harness workflow run <name> <prompt>');
-      console.log('  Available workflows: archon-harness workflow list');
+      console.log('[swarm] Deprecated. Use: linear-harness workflow run <name> <prompt>');
+      console.log('  Available workflows: linear-harness workflow list');
       process.exit(0);
       break;
     }
 
     case 'pipeline': {
-      console.log('[pipeline] Deprecated. Use: archon-harness workflow run <name> <prompt>');
-      console.log('  Available workflows: archon-harness workflow list');
+      console.log('[pipeline] Deprecated. Use: linear-harness workflow run <name> <prompt>');
+      console.log('  Available workflows: linear-harness workflow list');
       process.exit(0);
       break;
     }
@@ -478,7 +478,7 @@ async function main() {
         case 'run': {
           const workflowName = args[0];
           if (!workflowName) {
-            console.error('Usage: archon-harness workflow run <name> [prompt]');
+            console.error('Usage: linear-harness workflow run <name> [prompt]');
             process.exit(1);
           }
           const workflowPrompt = args.slice(1).join(' ') || '';
@@ -513,7 +513,7 @@ async function main() {
         case 'show': {
           const name = args[0];
           if (!name) {
-            console.error('Usage: archon-harness workflow show <name>');
+            console.error('Usage: linear-harness workflow show <name>');
             process.exit(1);
           }
           try {
@@ -535,13 +535,13 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: archon-harness workflow <list|run|show>');
+          console.log('Usage: linear-harness workflow <list|run|show>');
       }
       break;
     }
 
     default:
-      console.log(`archon-harness — AI development harness with TDD + E2E
+      console.log(`linear-harness — AI development harness with TDD + E2E
 
 Commands:
   run [flags] <prompt>      Run dev task (flags: --skill, --agent, --model, --mode, --no-caveman)
@@ -551,7 +551,7 @@ Commands:
   e2e                       Run E2E tests
   review <list|show|approve|reject>  Manage reviews
   status                    Board status summary
-  init                      Initialize .archon/ in project
+  init                      Initialize .linear-harness/ in project
   list                      List presets
   memory <show|detect|add-note|add-directive>  Project memory
   skill <list|show>         Manage skills
@@ -561,6 +561,6 @@ Commands:
 }
 
 main().catch((err) => {
-  console.error('[archon-harness] Fatal error:', err);
+  console.error('[linear-harness] Fatal error:', err);
   process.exit(1);
 });

@@ -1,11 +1,11 @@
 {
-  "name": "@archon/harness",
+  "name": "@linear-harness/harness",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
-    "archon-harness": "dist/bin/cli.js"
+    "linear-harness": "dist/bin/cli.js"
   },
   "scripts": {
     "build": "tsc",

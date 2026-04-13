@@ -26,15 +26,15 @@ export interface TaskStore {
   tasks: Task[];
 }
 
-const ARCHON_DIR = '.archon';
+const LINEAR_HARNESS_DIR = '.linear-harness';
 const TASKS_FILE = 'tasks.json';
 
 function getTasksPath(cwd: string): string {
-  return join(cwd, ARCHON_DIR, TASKS_FILE);
+  return join(cwd, LINEAR_HARNESS_DIR, TASKS_FILE);
 }
 
-function ensureArchonDir(cwd: string): void {
-  const dir = join(cwd, ARCHON_DIR);
+function ensureLinearHarnessDir(cwd: string): void {
+  const dir = join(cwd, LINEAR_HARNESS_DIR);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
@@ -49,7 +49,7 @@ export function loadTasks(cwd: string): Task[] {
 }
 
 export function saveTasks(cwd: string, tasks: Task[]): void {
-  ensureArchonDir(cwd);
+  ensureLinearHarnessDir(cwd);
   const path = getTasksPath(cwd);
   writeFileSync(path, JSON.stringify({ tasks }, null, 2));
 }

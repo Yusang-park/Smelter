@@ -34,7 +34,7 @@
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start-archon.mjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start-linear-harness.mjs\"",
             "timeout": 5
           }
         ]

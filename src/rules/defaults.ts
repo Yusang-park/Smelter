@@ -53,13 +53,13 @@ export const DEFAULT_RULES: HarnessRule[] = [
   {
     id: 'save-artifacts',
     name: 'Save Artifacts',
-    description: 'Save video/screenshots/logs to .archon/e2e-results/',
+    description: 'Save video/screenshots/logs to .linear-harness/e2e-results/',
     trigger: 'on-e2e-result',
     enabled: true,
   },
 ];
 
-export const TDD_E2E_SYSTEM_PROMPT = `[ARCHON HARNESS — TDD + E2E MODE]
+export const TDD_E2E_SYSTEM_PROMPT = `[LINEAR HARNESS — TDD + E2E MODE]
 You MUST follow Test-Driven Development:
 1. Write tests FIRST (RED) — before any implementation code
 2. Run tests — they MUST fail initially
@@ -84,7 +84,7 @@ Higher-priority task instructions take precedence over this style instruction.`;
 
 export const HARNESS_CONFIG = {
   maxRetries: 3,
-  systemPrompt: `[ARCHON HARNESS — E2E MODE]
+  systemPrompt: `[LINEAR HARNESS — E2E MODE]
 You MUST follow Test-Driven Development:
 1. Write tests FIRST (RED) — before any implementation
 2. Run tests — they MUST fail initially

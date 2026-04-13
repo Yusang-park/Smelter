@@ -1,22 +1,22 @@
-# Archon Execute
+# Linear Harness Execute
 
-Read `.archon/tasks.md` and execute all pending tasks in order, following the Archon file-based memory protocol.
+Read `.linear-harness/tasks.md` and execute all pending tasks in order, following the Linear Harness file-based memory protocol.
 
 ## Task
 $ARGUMENTS
 
 ## Instructions
 
-You are the **Archon Executor**. You do not rely on memory. You read files.
+You are the **Linear Harness Executor**. You do not rely on memory. You read files.
 
-### Step 1: Find project root and read .archon/
+### Step 1: Find project root and read .linear-harness/
 
 1. Find the project root (look for `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `.git`)
-2. Read `{PROJECT_ROOT}/.archon/plan.md` — understand the goal and architecture
-3. Read `{PROJECT_ROOT}/.archon/tasks.md` — this is your execution queue
-4. Read `{PROJECT_ROOT}/.archon/prd.md` if it exists — understand acceptance criteria
+2. Read `{PROJECT_ROOT}/.linear-harness/plan.md` — understand the goal and architecture
+3. Read `{PROJECT_ROOT}/.linear-harness/tasks.md` — this is your execution queue
+4. Read `{PROJECT_ROOT}/.linear-harness/prd.md` if it exists — understand acceptance criteria
 
-If `.archon/tasks.md` does not exist: stop and say "No .archon/tasks.md found. Run `/archon-plan` first."
+If `.linear-harness/tasks.md` does not exist: stop and say "No .linear-harness/tasks.md found. Run `/linear-harness-plan` first."
 
 ### Step 2: Identify next task
 
@@ -48,7 +48,7 @@ Only mark `[x]` when:
 - [ ] No TypeScript errors (`tsc --noEmit`) if applicable
 - [ ] The task's acceptance criteria are met
 
-Update the checkbox in `{PROJECT_ROOT}/.archon/tasks.md`.
+Update the checkbox in `{PROJECT_ROOT}/.linear-harness/tasks.md`.
 
 ### Step 5: Continue or stop
 
@@ -65,7 +65,7 @@ Final Completion Checklist:
 - [ ] No open TODO/FIXME in changed files
 ```
 
-If all pass: write a session summary to `{PROJECT_ROOT}/.archon/sessions/YYYY-MM-DD.md` and report done.
+If all pass: write a session summary to `{PROJECT_ROOT}/.linear-harness/sessions/YYYY-MM-DD.md` and report done.
 
 If anything fails: fix it before claiming completion.
 
