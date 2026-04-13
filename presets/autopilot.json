@@ -1,0 +1,12 @@
+{
+  "name": "autopilot",
+  "description": "Full autonomous: code, test, fix, card",
+  "mode": "autopilot",
+  "rules": {
+    "e2e-on-complete": true,
+    "e2e-retry-on-fail": true,
+    "card-on-e2e": true,
+    "system-prompt-inject": true
+  },
+  "maxRetries": 3
+}

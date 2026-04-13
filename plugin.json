@@ -1,0 +1,6 @@
+{
+  "name": "archon-harness",
+  "version": "1.0.0",
+  "description": "TDD + E2E enforcement for Claude Code sessions",
+  "hooks": "hooks/hooks.json"
+}

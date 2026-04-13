@@ -1,0 +1,25 @@
+name: tdd-e2e
+description: |
+  TDD enforcement: Write tests first, then implement, then run E2E.
+
+nodes:
+  - id: write-tests
+    command: write-tests-first
+    context: fresh
+
+  - id: run-tests
+    bash: "npm test 2>&1 || true"
+    depends_on: [write-tests]
+
+  - id: implement
+    command: implement-solution
+    depends_on: [run-tests]
+    context: fresh
+
+  - id: typecheck
+    bash: "npx tsc --noEmit 2>&1 || true"
+    depends_on: [implement]
+
+  - id: e2e
+    bash: "npx playwright test --reporter=json 2>/dev/null || true"
+    depends_on: [typecheck]

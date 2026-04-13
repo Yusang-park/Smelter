@@ -1,0 +1,12 @@
+{
+  "name": "tdd",
+  "description": "Test-Driven Development enforcement",
+  "mode": "e2e-force",
+  "rules": {
+    "e2e-on-complete": true,
+    "e2e-retry-on-fail": true,
+    "card-on-e2e": false,
+    "system-prompt-inject": true
+  },
+  "maxRetries": 5
+}
