@@ -11,7 +11,7 @@
   },
   "enabledPlugins": {
     "swift-lsp@claude-plugins-official": true,
-    "oh-my-claudecode@omc": true,
+    "oh-my-claudecode@omc": false,
     "frontend-design@claude-plugins-official": true,
     "caveman@caveman": true
   },
@@ -30,5 +30,155 @@
     }
   },
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/session-start.mjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/session-start-archon.mjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/project-memory-session.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/keyword-detector.mjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/skill-injector.mjs",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/pre-tool-enforcer.mjs",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "/Users/yusang/.claude/skills/continuous-learning-v2/hooks/observe.sh pre",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/post-tool-verifier.mjs",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/project-memory-posttool.mjs",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "/Users/yusang/.claude/skills/continuous-learning-v2/hooks/observe.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/persistent-mode.cjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/stop-e2e.mjs",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/pre-compact.mjs",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/project-memory-precompact.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/subagent-tracker.mjs start",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/subagent-tracker.mjs stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yusang/linear-harness/scripts/session-end.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
