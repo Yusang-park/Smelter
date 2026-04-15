@@ -5,7 +5,8 @@
  * Injects human-readable tool descriptions and handles cancel signals.
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
+import { join } from 'path';
 import { readCancel } from './lib/cancel-signal.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
 
@@ -86,6 +87,31 @@ function main() {
     let data = {};
     try { data = JSON.parse(input); } catch {}
     const sessionId = data.session_id || data.sessionId || '';
+
+    // --- Block native EnterPlanMode when Smelter workflow is active ---
+    // Smelter's /tasker + step-3-interview gate OWNS planning. Native plan mode is redundant
+    // and breaks file-based memory.
+    if (toolName === 'ExitPlanMode' || toolName === 'EnterPlanMode') {
+      // Check if an active workflow exists
+      const smtState = join(directory, '.smt', 'state', 'active-feature.json');
+      const featuresDir = join(directory, '.smt', 'features');
+      let hasActiveWorkflow = false;
+      try {
+        if (existsSync(smtState)) hasActiveWorkflow = true;
+        else if (existsSync(featuresDir)) {
+          const slugs = readdirSync(featuresDir, { withFileTypes: true }).filter(d => d.isDirectory());
+          hasActiveWorkflow = slugs.some(s => existsSync(join(featuresDir, s.name, 'state', 'workflow.json')));
+        }
+      } catch {}
+      if (hasActiveWorkflow) {
+        printTag(`Block: ${toolName} (Smelter workflow active)`);
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: `[SMELTER] Native plan mode (${toolName}) is blocked while Smelter workflow is active. Smelter's own 10-step workflow engine (/tasker → step-3-interview gate) handles planning. Use \`/tasker <idea>\` to enter Smelter's planning workflow, or continue the current workflow by following the injected step prompt.`,
+        }));
+        return;
+      }
+    }
 
     // --- Cancel signal check ---
     const cancelSignal = readCancel(directory, sessionId);
