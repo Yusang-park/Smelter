@@ -63,11 +63,11 @@ Three commands. That's it.
 You don't need to memorize slash commands. Just talk naturally -- Smelter uses a **Haiku sub-agent classifier** to understand your intent and route it to the right command:
 
 ```
-"새 기능 추가해줘"          --> /feat
+"add a new feature"       --> /feat
 "fix the login bug"       --> /qa
 "plan the onboarding"     --> /tasker
 "extend the auth flow"    --> /feat (skips Step 2)
-"스타일 수정"               --> /qa (TDD exempt)
+"fix the button style"    --> /qa (TDD exempt)
 ```
 
 This isn't regex pattern matching. A Claude Haiku instance reads your prompt, classifies its intent (`command` vs `question`), and maps it to the correct workflow -- including branch hints like `extend` (skip learning phase) or `style` (TDD exemption). Any language Haiku understands works.
