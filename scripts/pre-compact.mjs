@@ -31,7 +31,6 @@ function shouldBlockCompact(data) {
 
 async function main() {
   printTag('Pre Compact');
-  printTag('Pre-Compact');
   // Read stdin synchronously
   let input = '{}';
   try { input = readFileSync('/dev/stdin', 'utf-8'); } catch {}
@@ -43,6 +42,7 @@ async function main() {
       return;
     }
     if (!existsSync(preCompactPath)) {
+      process.stderr.write('[pre-compact] WARN: dist/hooks/pre-compact/index.js missing — run `npm run build` to enable state preservation.\n');
       console.log(JSON.stringify({ continue: true }));
       return;
     }

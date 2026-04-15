@@ -34,9 +34,9 @@ try {
 // NOTE: USER_SKILLS_DIR and GLOBAL_SKILLS_DIR are intentionally user-scoped (~/ paths).
 // Learned skills are personal and shared across all projects — not project-specific state.
 // See T7 homedir audit exception in the plan.
-const USER_SKILLS_DIR = join(homedir(), '.claude', 'skills', 'omc-learned');
-const GLOBAL_SKILLS_DIR = join(homedir(), '.omc', 'skills');
-const PROJECT_SKILLS_SUBDIR = join('.omc', 'skills');
+const USER_SKILLS_DIR = join(homedir(), '.claude', 'skills');
+const GLOBAL_SKILLS_DIR = join(homedir(), '.smt', 'skills');
+const PROJECT_SKILLS_SUBDIR = join('.smt', 'skills');
 const SKILL_EXTENSION = '.md';
 const MAX_SKILLS_PER_SESSION = 5;
 

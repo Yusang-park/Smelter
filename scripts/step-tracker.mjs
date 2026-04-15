@@ -164,14 +164,14 @@ function main() {
 
     const step = workflow.steps[state.step];
 
-    // Keep the active-feature pointer current
-    updateActivePointer(projectDir, slug);
-
-    // Gate steps are advanced manually by the user
+    // Gate steps are passive — don't touch state, don't update pointer
     if (step.type === 'gate') {
       console.log(JSON.stringify({ continue: true }));
       return;
     }
+
+    // Keep the active-feature pointer current (only for active non-gate steps)
+    updateActivePointer(projectDir, slug);
 
     // Evaluate gate condition (fail-closed)
     const gateName = step.gate;

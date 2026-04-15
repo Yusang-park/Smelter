@@ -99,10 +99,11 @@ export function consumeQueueFile(projectDir, sessionId = '') {
       if (!sid || fileSid !== sid) { sawSidScopedMismatch = true; continue; }
       const payload = peekPayload(p);
       if (!payload) continue;
-      unlinkSafe(p);
+      // Check session_id BEFORE unlink so a mismatched payload isn't destroyed.
       if (payload.session_id && sessionId && payload.session_id !== sessionId) {
         continue;
       }
+      unlinkSafe(p);
       return payload;
     }
     // Legacy single-file: if we already saw a mismatched sid-scoped file, skip

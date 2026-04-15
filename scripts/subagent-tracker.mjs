@@ -19,6 +19,7 @@ async function main() {
   try {
     const data = JSON.parse(input);
     if (!existsSync(trackerPath)) {
+      process.stderr.write('[subagent-tracker] WARN: dist/hooks/subagent-tracker/index.js missing — run `npm run build` to enable tracking.\n');
       console.log(JSON.stringify({ continue: true }));
       return;
     }

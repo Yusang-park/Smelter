@@ -46,26 +46,28 @@ function checkAutoUpdate() {
   const gitDir = join(harnessRoot, '.git');
   if (!existsSync(gitDir)) return null;
   try {
-    execFileSync('git', ['fetch', '--quiet'], { cwd: harnessRoot, timeout: 5000, stdio: 'pipe' });
-    const status = execFileSync('git', ['rev-list', '--count', 'HEAD..@{u}'], { cwd: harnessRoot, timeout: 3000, encoding: 'utf-8', stdio: 'pipe' }).trim();
+    // Check only — do NOT fetch here (blocks session start).
+    // Compare local HEAD against cached remote ref from last fetch.
+    const status = execFileSync('git', ['rev-list', '--count', 'HEAD..@{u}'], { cwd: harnessRoot, timeout: 2000, encoding: 'utf-8', stdio: 'pipe' }).trim();
     const behind = parseInt(status, 10);
     if (behind > 0) {
       printTag(`Update: ${behind} commit(s) behind`);
-      // Auto-pull + rebuild
-      try {
-        execFileSync('git', ['pull', '--ff-only', '--quiet'], { cwd: harnessRoot, timeout: 15000, stdio: 'pipe' });
-        // Rebuild if package.json exists
-        if (existsSync(join(harnessRoot, 'package.json'))) {
-          execFileSync('npm', ['run', 'build'], { cwd: harnessRoot, timeout: 30000, stdio: 'pipe' });
-        }
-        printTag(`Updated: pulled ${behind} commit(s)`);
-        return `[SMELTER AUTO-UPDATE] Pulled ${behind} new commit(s) and rebuilt. Restart may be needed for hook changes.`;
-      } catch (pullErr) {
-        return `[SMELTER UPDATE AVAILABLE] ${behind} commit(s) behind origin. Auto-pull failed: ${pullErr.message}. Run \`git pull && npm run build\` manually in the smelter directory.`;
-      }
+      return `[SMELTER UPDATE AVAILABLE] ${behind} commit(s) behind origin. Run \`git pull && npm run build\` in the smelter directory, or let the plugin marketplace update it with \`claude plugin update smelter@smelter-marketplace\`.`;
     }
   } catch { /* offline or not a git repo — skip silently */ }
   return null;
+}
+
+// Background fetch — spawn and forget. Doesn't block session start.
+// Next session will see the updated remote ref.
+import { spawn } from 'child_process';
+function backgroundFetch() {
+  const harnessRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  if (!existsSync(join(harnessRoot, '.git'))) return;
+  try {
+    const p = spawn('git', ['fetch', '--quiet'], { cwd: harnessRoot, detached: true, stdio: 'ignore' });
+    p.unref();
+  } catch { /* ignore */ }
 }
 
 // Project root = first ancestor with .git OR package.json (bounds both searches).
@@ -235,8 +237,9 @@ try {
   const version = getVersion();
   printTag(`Smelter v${version}`);
 
-  // Auto-update check (silent, non-blocking)
+  // Auto-update check (silent, non-blocking) + spawn background fetch for next session
   const updateNotice = checkAutoUpdate() || '';
+  backgroundFetch();
 
   const smtDir = findSmtDir();
   if (!smtDir) {

@@ -12,8 +12,6 @@ import { homedir } from 'os';
 import { createHash } from 'crypto';
 import { printTag } from './lib/yellow-tag.mjs';
 
-printTag('Post Verify');
-
 // Read stdin synchronously — hook scripts receive JSON via pipe, /dev/stdin returns immediately
 function readStdinSync() {
   try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
@@ -38,19 +36,17 @@ function appendToBashHistory(command) {
   }
 }
 
-// Detect failures in Bash output
+// Detect failures in Bash output — only match clear tool-level failure signals,
+// not arbitrary occurrences of "error" / "failed" / "cannot" in stdout content.
 function detectBashFailure(output) {
   const errorPatterns = [
-    /error:/i,
-    /failed/i,
-    /cannot/i,
-    /permission denied/i,
-    /command not found/i,
-    /no such file/i,
-    /exit code: [1-9]/i,
-    /exit status [1-9]/i,
-    /fatal:/i,
-    /abort/i,
+    /^\s*(?:bash|zsh|sh):\s.+:\s+(?:permission denied|command not found|no such file)/im,
+    /^(?:error|fatal):\s/im,
+    /\bexit code:?\s*[1-9]\d*\b/i,
+    /\bexit status\s+[1-9]\d*\b/i,
+    /\baborted?\b.*\(core dumped\)/i,
+    /^\s*npm ERR!\s/m,
+    /^\s*ELIFECYCLE\s/m,
   ];
 
   return errorPatterns.some(pattern => pattern.test(output));
