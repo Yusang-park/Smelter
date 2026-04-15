@@ -183,9 +183,20 @@ After setup, running `claude` lets you choose between Claude and Codex models. O
 
 ## Quick Start
 
+### Install as Claude Code Plugin (Recommended)
+
 ```bash
-git clone https://github.com/your-org/smelter.git
-cd smelter
+claude plugin marketplace add Yusang-park/Smelter
+claude plugin install smelter@smelter-marketplace
+```
+
+Updates are automatic -- Smelter checks on every session start and pulls new commits.
+
+### Install from Source
+
+```bash
+git clone https://github.com/Yusang-park/Smelter.git
+cd Smelter
 npm install && npm run build
 npx tsx bin/cli.ts init
 ```
