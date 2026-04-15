@@ -1,5 +1,5 @@
 {
-  "description": "OMC orchestration hooks with async capabilities",
+  "description": "Smelter orchestration hooks",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -12,8 +12,18 @@
           },
           {
             "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/auto-confirm-consumer.mjs\"",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/skill-injector.mjs\"",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/step-injector.mjs\"",
+            "timeout": 5
           }
         ]
       }
@@ -24,17 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/project-memory-session.mjs\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start-linear-harness.mjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start-smt.mjs\"",
             "timeout": 5
           }
         ]
@@ -68,6 +68,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-enforcer.mjs\"",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/rule-injector.mjs\"",
+            "timeout": 3
           }
         ]
       }
@@ -95,7 +100,12 @@
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/project-memory-posttool.mjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/tool-retry.mjs\"",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/step-tracker.mjs\"",
             "timeout": 3
           }
         ]
@@ -133,11 +143,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.mjs\"",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/project-memory-precompact.mjs\"",
-            "timeout": 5
           }
         ]
       }
@@ -148,8 +153,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/persistent-mode.cjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/auto-confirm.mjs\"",
+            "timeout": 15
           },
           {
             "type": "command",

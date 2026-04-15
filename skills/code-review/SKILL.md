@@ -45,7 +45,7 @@ Delegates to the `code-reviewer` agent (Opus model) for deep analysis:
 
 ```
 Task(
-  subagent_type="oh-my-claudecode:code-reviewer",
+  subagent_type="smelter:code-reviewer",
   model="opus",
   prompt="CODE REVIEW TASK
 
@@ -179,23 +179,7 @@ The code-reviewer agent checks:
 
 ## Use with Other Skills
 
-**With Pipeline:**
-```
-/pipeline review "implement user authentication"
-```
-Includes code review as part of implementation workflow.
-
-**With Ralph:**
-```
-/ralph code-review then fix all issues
-```
-Review code, get feedback, fix until approved.
-
-**With Ultrawork:**
-```
-/ultrawork review all files in src/
-```
-Parallel code review across multiple files.
+Use `/tasker` to plan review and follow-up fix tasks, then `/feat` to execute them.
 
 ## Best Practices
 

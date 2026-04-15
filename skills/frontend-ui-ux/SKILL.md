@@ -51,6 +51,22 @@ Create atmosphere—gradient meshes, noise textures, geometric patterns, layered
 - Predictable layouts
 - Cookie-cutter design
 
+## State Management Guidance
+
+When frontend work touches state:
+
+- Keep server state and client UI state separate
+- Prefer explicit data flow over convenience abstractions
+- Use lightweight local state for view-only concerns
+- Use shared client stores only for real cross-screen UI coordination
+- Avoid fallback-heavy state logic that hides missing or invalid data
+
+If the project uses Zustand or React Query:
+
+- React Query: server data fetching, cache, background refresh
+- Zustand: cross-component client UI state only
+- Do not mirror the same data in both without a clear reason
+
 ## External Model Consultation (Preferred)
 
 For design consistency across many files, you SHOULD consult Gemini.

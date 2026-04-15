@@ -62,7 +62,7 @@ Delegates to the `security-reviewer` agent (Opus model) for deep security analys
 
 ```
 Task(
-  subagent_type="oh-my-claudecode:security-reviewer",
+  subagent_type="smelter:security-reviewer",
   model="opus",
   prompt="SECURITY REVIEW TASK
 
@@ -254,23 +254,7 @@ The security-reviewer agent verifies:
 
 ## Use with Other Skills
 
-**With Pipeline:**
-```
-/pipeline security "review authentication module"
-```
-Uses: explore → security-reviewer → executor → security-reviewer-low (re-verify)
-
-**With Swarm:**
-```
-/swarm 4:security-reviewer "audit all API endpoints"
-```
-Parallel security review across multiple endpoints.
-
-**With Ralph:**
-```
-/ralph security-review then fix all issues
-```
-Review, fix, re-review until all issues resolved.
+Use `/tasker` to plan security review and remediation tasks, then `/feat` to execute them.
 
 ## Best Practices
 

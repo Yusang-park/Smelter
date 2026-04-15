@@ -1,7 +1,7 @@
 /**
  * Shared stdin utilities for OMC hook scripts
  * Provides timeout-protected stdin reading to prevent hangs on Linux
- * See: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/240
+ * See: https://github.com/Yeachan-Heo/smelter/issues/240
  *
  * Mirrors templates/hooks/lib/stdin.mjs for use by plugin hook scripts.
  */

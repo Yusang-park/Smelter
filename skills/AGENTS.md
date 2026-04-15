@@ -1,41 +1,32 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-01-28 | Updated: 2026-01-31 -->
+<!-- Updated: 2026-04-14 -->
 
 # skills
 
-37 skill definitions for workflow automation and specialized behaviors.
+Skill definitions for workflow automation and specialized behaviors.
 
 ## Purpose
 
-Skills are reusable workflow templates that can be invoked via `/oh-my-claudecode:skill-name`. Each skill provides:
-- Structured prompts for specific workflows
-- Activation triggers (manual or automatic)
-- Integration with execution modes
+Skills are reusable workflow templates invoked via the Skill tool or keyword detection. Each skill provides structured prompts for specific workflows and integrates with hooks and commands.
 
 ## Key Files
 
-### Execution Mode Skills
+### Execution Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `autopilot/SKILL.md` | autopilot | Full autonomous execution from idea to working code |
-| `ultrawork/SKILL.md` | ultrawork | Maximum parallel agent execution |
-| `ralph/SKILL.md` | ralph | Persistence until verified complete |
-| `ultrapilot/SKILL.md` | ultrapilot | Parallel autopilot with file ownership |
-| `swarm/SKILL.md` | swarm | N coordinated agents with task claiming |
-| `pipeline/SKILL.md` | pipeline | Sequential agent chaining |
-| `ecomode/SKILL.md` | ecomode | Token-efficient parallel execution |
-| `ultraqa/SKILL.md` | ultraqa | QA cycling until goal met |
+| `ralph/SKILL.md` | ralph | Read pending tasks → assign per-task agent team → execute linearly until all complete |
+| `deep-executor/SKILL.md` | deep-executor | Complex goal-oriented autonomous execution |
 
 ### Planning Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
 | `plan/SKILL.md` | plan | Strategic planning with interview workflow |
-| `ralplan/SKILL.md` | ralplan | Iterative planning (Planner+Architect+Critic) |
+| `ralplan/SKILL.md` | ralplan | Iterative planning (Planner+Architect+Critic consensus) |
 | `review/SKILL.md` | review | Review plan with Critic |
 | `analyze/SKILL.md` | analyze | Deep analysis and investigation |
-| `ralph-init/SKILL.md` | ralph-init | Initialize PRD for structured ralph |
+| `ralph-init/SKILL.md` | ralph-init | Initialize PRD for structured ralph execution |
 
 ### Code Quality Skills
 
@@ -44,6 +35,7 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | `code-review/SKILL.md` | code-review | Comprehensive code review |
 | `security-review/SKILL.md` | security-review | Security vulnerability detection |
 | `tdd/SKILL.md` | tdd | Test-driven development workflow |
+| `tdd-linear/SKILL.md` | tdd-linear | Smelter TDD — RED-GREEN-REFACTOR, 10+ tests |
 | `build-fix/SKILL.md` | build-fix | Fix build and TypeScript errors |
 
 ### Exploration Skills
@@ -51,41 +43,41 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | File | Skill | Purpose |
 |-----------|-------|---------|
 | `deepsearch/SKILL.md` | deepsearch | Thorough codebase search |
-| `deepinit/SKILL.md` | deepinit | Generate hierarchical AGENTS.md |
+| `deepinit/SKILL.md` | deepinit | Generate hierarchical AGENTS.md documentation |
 | `research/SKILL.md` | research | Parallel scientist orchestration |
 
 ### Utility Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `orchestrate/SKILL.md` | orchestrate | Core multi-agent orchestration (always active) |
-| `learner/SKILL.md` | learner | Extract reusable skill from session |
+| `orchestrate/SKILL.md` | orchestrate | Multi-agent orchestration (always active) |
+| `learner/SKILL.md` | learner | Extract reusable skill from current session |
 | `note/SKILL.md` | note | Save notes for compaction resilience |
-| `cancel/SKILL.md` | cancel | Cancel any active OMC mode |
+| `cancel/SKILL.md` | cancel | Cancel active Ralph continuation run |
+| `caveman/SKILL.md` | caveman | Token-efficient response mode (~40-50% savings) |
 | `hud/SKILL.md` | hud | Configure HUD display |
+| `usage-all/SKILL.md` | usage-all | Token usage report (Claude + Codex 5h stats) |
 | `doctor/SKILL.md` | doctor | Diagnose installation issues |
-| `omc-setup/SKILL.md` | omc-setup | One-time setup wizard |
 | `mcp-setup/SKILL.md` | mcp-setup | Configure MCP servers |
 | `help/SKILL.md` | help | Usage guide |
-| `learn-about-omc/SKILL.md` | learn-about-omc | Usage pattern analysis |
 | `skill/SKILL.md` | skill | Manage local skills |
+| `trace/SKILL.md` | trace | Show agent flow trace timeline |
+| `continuous-learning-v2/SKILL.md` | continuous-learning-v2 | Instinct-based learning system |
 
 ### Domain Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `frontend-ui-ux/SKILL.md` | frontend-ui-ux | Designer-developer aesthetic |
-| `git-master/SKILL.md` | git-master | Git expertise, atomic commits |
-| `project-session-manager/SKILL.md` | psm | Isolated dev environments |
+| `frontend-ui-ux/SKILL.md` | frontend-ui-ux | Designer-developer for UI/UX work |
+| `git-master/SKILL.md` | git-master | Git expertise, atomic commits, history management |
+| `project-session-manager/SKILL.md` | psm | Isolated dev environments (worktree + tmux) |
 | `writer-memory/SKILL.md` | writer-memory | Agentic memory for writers |
 | `release/SKILL.md` | release | Automated release workflow |
 | `local-skills-setup/SKILL.md` | local-skills-setup | Manage local skills |
 
 ## For AI Agents
 
-### Working In This Directory
-
-#### Skill Template Format
+### Skill Template Format
 
 ```markdown
 ---
@@ -107,96 +99,34 @@ What this skill accomplishes.
 1. Step one
 2. Step two
 3. Step three
-
-## Usage
-How to invoke this skill.
-
-## Configuration
-Any configurable options.
 ```
 
-#### Skill Invocation
+### Creating a New Skill
 
-```bash
-# Manual invocation
-/oh-my-claudecode:skill-name
-
-# With arguments
-/oh-my-claudecode:skill-name arg1 arg2
-
-# Auto-detected from keywords
-"autopilot build me a REST API"  # Triggers autopilot skill
-```
-
-#### Creating a New Skill
-
-1. Create `new-skill/SKILL.md` directory and file with YAML frontmatter
+1. Create `new-skill/SKILL.md` with YAML frontmatter
 2. Define purpose, workflow, and usage
-3. Add to skill registry (auto-detected from frontmatter)
-4. Optionally add activation triggers
-5. Create corresponding `commands/new-skill.md` file (mirror)
-6. Update `docs/REFERENCE.md` (Skills section, count)
-7. If execution mode skill, also create `src/hooks/new-skill/` hook
+3. Add to this index (skills/AGENTS.md)
+4. Optionally create `commands/new-skill.md` mirror
+5. Register any keyword triggers in `scripts/keyword-detector.mjs`
 
-### Common Patterns
-
-**Skill chaining:**
-```markdown
-## Workflow
-1. Invoke `explore` agent for context
-2. Invoke `architect` for analysis
-3. Invoke `executor` for implementation
-4. Invoke `qa-tester` for verification
-```
-
-**Conditional behavior:**
-```markdown
-## Workflow
-1. Check if tests exist
-   - If yes: Run tests first
-   - If no: Create test plan
-2. Proceed with implementation
-```
-
-### Testing Requirements
-
-- Skills are verified via integration tests
-- Test skill invocation with `/oh-my-claudecode:skill-name`
-- Verify trigger keywords activate correct skill
-- For git-related skills, follow `templates/rules/git-workflow.md`
-
-## Dependencies
-
-### Internal
-- Loaded by skill bridge (`scripts/build-skill-bridge.mjs`)
-- References agents from `agents/`
-- Uses hooks from `src/hooks/`
-
-### External
-None - pure markdown files.
-
-## Skill Categories
+## Skill Categories & Triggers
 
 | Category | Skills | Trigger Keywords |
 |----------|--------|------------------|
-| Execution | autopilot, ultrawork, ralph, ultrapilot, swarm, pipeline, ecomode | "autopilot", "ulw", "ralph", "swarm", "eco" |
-| Planning | plan, ralplan, review, analyze, ralph-init | "plan this", "analyze" |
-| Quality | code-review, security-review, tdd, build-fix | "review", "security", "tdd" |
-| Exploration | deepsearch, deepinit, research | "search", "research" |
-| Utility | learner, note, cancel, hud, doctor, omc-setup, mcp-setup, help | "stop", "cancel" |
-| Domain | frontend-ui-ux, git-master, psm, writer-memory, release | UI context, git context |
+| Execution | ralph, deep-executor | "ralph", "don't stop until" |
+| Planning | plan, ralplan, review, analyze, ralph-init | "plan this", "ralplan" |
+| Quality | code-review, security-review, tdd, tdd-linear, build-fix | "review", "tdd" |
+| Exploration | deepsearch, deepinit, research | "deepsearch", "research" |
+| Utility | cancel, note, caveman, hud, doctor, mcp-setup, help, skill, trace | "cancelomc", "stopomc" |
+| Domain | frontend-ui-ux, git-master, psm, writer-memory, release | UI/git context |
 
 ## Auto-Activation
 
-Some skills activate automatically based on context:
-
 | Skill | Auto-Trigger Condition |
 |-------|----------------------|
-| autopilot | "autopilot", "build me", "I want a" |
-| ultrawork | "ulw", "ultrawork" |
-| ralph | "ralph", "don't stop until" |
-| frontend-ui-ux | UI/component work detected |
-| git-master | Git operations detected |
-| cancel | "stop", "cancel", "abort" |
+| ralph | "ralph", "don't stop", "must complete", "until done" |
+| cancel | "cancelomc", "stopomc" |
+| tdd | "tdd", "test first", "red green" |
+| research | "research", "analyze data", "statistics" |
 
-<!-- MANUAL: -->
+<!-- MANUAL: Update this file when adding or removing skills -->

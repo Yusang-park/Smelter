@@ -45,8 +45,8 @@ Supported formats:
 {
   "aliases": {
     "omc": {
-      "repo": "Yeachan-Heo/oh-my-claudecode",
-      "local": "~/Workspace/oh-my-claudecode",
+      "repo": "Yeachan-Heo/smelter",
+      "local": "~/Workspace/smelter",
       "default_base": "main"
     }
   },
@@ -539,8 +539,8 @@ if [[ ! -f ~/.psm/projects.json ]]; then
 {
   "aliases": {
     "omc": {
-      "repo": "Yeachan-Heo/oh-my-claudecode",
-      "local": "~/Workspace/oh-my-claudecode",
+      "repo": "Yeachan-Heo/smelter",
+      "local": "~/Workspace/smelter",
       "default_base": "main"
     }
   },

@@ -31,6 +31,34 @@ Detect:
 - **Language**: Korean vs English (use majority)
 - **Style**: SEMANTIC (feat:, fix:) vs PLAIN vs SHORT
 
+## Commit Convention
+
+Use conventional commits by default unless the repository clearly uses another style.
+
+Preferred format:
+
+```text
+<type>(<scope>): <summary>
+```
+
+Examples:
+
+- `feat(auth): add session refresh flow`
+- `fix(login): correct password error message`
+- `refactor(api): split user repository queries`
+- `test(profile): add edge cases for avatar upload`
+
+Allowed types:
+
+- `feat`
+- `fix`
+- `refactor`
+- `test`
+- `docs`
+- `chore`
+
+Scope should be narrow and meaningful. Do not create giant mixed-purpose commits.
+
 ## Commit Splitting Rules
 
 | Criterion | Action |

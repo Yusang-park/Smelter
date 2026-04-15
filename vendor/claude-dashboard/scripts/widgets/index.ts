@@ -1,0 +1,217 @@
+/**
+ * Widget registry and orchestrator
+ * @handbook 3.2-widget-lifecycle
+ * @handbook 3.4-widget-registration
+ * @handbook 6.1-hierarchical-defense
+ */
+
+import type { Widget, WidgetRenderResult } from './base.js';
+import type {
+  WidgetId,
+  WidgetContext,
+  Config,
+} from '../types.js';
+import { DISPLAY_PRESETS } from '../types.js';
+import { getSeparator } from '../utils/colors.js';
+import { debugLog } from '../utils/debug.js';
+
+// Widget imports
+import { modelWidget } from './model.js';
+import { contextWidget } from './context.js';
+import { costWidget } from './cost.js';
+import { rateLimit5hWidget, rateLimit7dWidget, rateLimit7dSonnetWidget } from './rate-limit.js';
+import { projectInfoWidget } from './project-info.js';
+import { configCountsWidget } from './config-counts.js';
+import { sessionDurationWidget } from './session-duration.js';
+import { toolActivityWidget } from './tool-activity.js';
+import { agentStatusWidget } from './agent-status.js';
+import { todoProgressWidget } from './todo-progress.js';
+import { burnRateWidget } from './burn-rate.js';
+import { depletionTimeWidget } from './depletion-time.js';
+import { cacheHitWidget } from './cache-hit.js';
+import { codexUsageWidget } from './codex-usage.js';
+import { geminiUsageWidget, geminiUsageAllWidget } from './gemini-usage.js';
+import { zaiUsageWidget } from './zai-usage.js';
+import { sessionIdWidget, sessionIdFullWidget } from './session-id.js';
+import { tokenBreakdownWidget } from './token-breakdown.js';
+import { performanceWidget } from './performance.js';
+import { forecastWidget } from './forecast.js';
+import { budgetWidget } from './budget.js';
+import { versionWidget } from './version.js';
+import { linesChangedWidget } from './lines-changed.js';
+import { outputStyleWidget } from './output-style.js';
+import { tokenSpeedWidget } from './token-speed.js';
+import { sessionNameWidget } from './session-name.js';
+import { todayCostWidget } from './today-cost.js';
+import { lastPromptWidget } from './last-prompt.js';
+import { vimModeWidget } from './vim-mode.js';
+import { apiDurationWidget } from './api-duration.js';
+import { peakHoursWidget } from './peak-hours.js';
+import { taskSummaryWidget } from './task-summary.js';
+
+function isCodexModel(ctx: WidgetContext): boolean {
+  return /^(gpt-|o\d)/i.test(ctx.stdin.model?.id ?? '');
+}
+
+function mapCodexWidgets(line: WidgetId[]): WidgetId[] {
+  const mapped: WidgetId[] = [];
+  let insertedCodexUsage = false;
+
+  for (const id of line) {
+    if (id === 'rateLimit5h' || id === 'rateLimit7d' || id === 'rateLimit7dSonnet') {
+      if (!insertedCodexUsage) {
+        mapped.push('codexUsage');
+        insertedCodexUsage = true;
+      }
+      continue;
+    }
+    mapped.push(id);
+  }
+
+  return mapped;
+}
+
+/**
+ * Widget registry - maps widget IDs to widget implementations
+ */
+const widgetRegistry = new Map<WidgetId, Widget>([
+  ['model', modelWidget],
+  ['context', contextWidget],
+  ['cost', costWidget],
+  ['rateLimit5h', rateLimit5hWidget],
+  ['rateLimit7d', rateLimit7dWidget],
+  ['rateLimit7dSonnet', rateLimit7dSonnetWidget],
+  ['projectInfo', projectInfoWidget],
+  ['configCounts', configCountsWidget],
+  ['sessionDuration', sessionDurationWidget],
+  ['toolActivity', toolActivityWidget],
+  ['agentStatus', agentStatusWidget],
+  ['todoProgress', todoProgressWidget],
+  ['burnRate', burnRateWidget],
+  ['depletionTime', depletionTimeWidget],
+  ['cacheHit', cacheHitWidget],
+  ['codexUsage', codexUsageWidget],
+  ['geminiUsage', geminiUsageWidget],
+  ['geminiUsageAll', geminiUsageAllWidget],
+  ['zaiUsage', zaiUsageWidget],
+  ['sessionId', sessionIdWidget],
+  ['sessionIdFull', sessionIdFullWidget],
+  ['tokenBreakdown', tokenBreakdownWidget],
+  ['performance', performanceWidget],
+  ['forecast', forecastWidget],
+  ['budget', budgetWidget],
+  ['version', versionWidget],
+  ['linesChanged', linesChangedWidget],
+  ['outputStyle', outputStyleWidget],
+  ['tokenSpeed', tokenSpeedWidget],
+  ['sessionName', sessionNameWidget],
+  ['todayCost', todayCostWidget],
+  ['lastPrompt', lastPromptWidget],
+  ['vimMode', vimModeWidget],
+  ['apiDuration', apiDurationWidget],
+  ['peakHours', peakHoursWidget],
+  ['taskSummary', taskSummaryWidget],
+] as [WidgetId, Widget][]);
+
+/**
+ * Get widget by ID
+ */
+export function getWidget(id: WidgetId): Widget | undefined {
+  return widgetRegistry.get(id);
+}
+
+/**
+ * Get all registered widgets
+ */
+export function getAllWidgets(): Widget[] {
+  return Array.from(widgetRegistry.values());
+}
+
+/**
+ * Get lines configuration based on display mode, with disabled widgets filtered out
+ */
+export function getLines(config: Config): WidgetId[][] {
+  const lines = config.displayMode === 'custom' && config.lines
+    ? config.lines
+    : DISPLAY_PRESETS[config.displayMode as keyof typeof DISPLAY_PRESETS] || DISPLAY_PRESETS.compact;
+
+  // Filter out disabled widgets
+  const disabled = config.disabledWidgets;
+  if (!disabled || disabled.length === 0) {
+    return lines;
+  }
+
+  const disabledSet = new Set(disabled);
+  return lines
+    .map((line) => line.filter((id) => !disabledSet.has(id)))
+    .filter((line) => line.length > 0);
+}
+
+function getLinesForContext(config: Config, ctx: WidgetContext): WidgetId[][] {
+  const baseLines = getLines(config);
+  if (!isCodexModel(ctx)) return baseLines;
+  return baseLines.map(mapCodexWidgets);
+}
+
+/**
+ * Render a single widget
+ */
+async function renderWidget(
+  widgetId: WidgetId,
+  ctx: WidgetContext
+): Promise<WidgetRenderResult | null> {
+  const widget = getWidget(widgetId);
+  if (!widget) {
+    return null;
+  }
+
+  try {
+    const data = await widget.getData(ctx);
+    if (!data) {
+      return null;
+    }
+
+    const output = widget.render(data, ctx);
+    return { id: widgetId, output };
+  } catch (error) {
+    // Graceful degradation - skip failed widgets, but log for debugging
+    debugLog('widget', `Widget '${widgetId}' failed`, error);
+    return null;
+  }
+}
+
+/**
+ * Render a line of widgets
+ */
+async function renderLine(
+  widgetIds: WidgetId[],
+  ctx: WidgetContext
+): Promise<string> {
+  const results = await Promise.all(
+    widgetIds.map((id) => renderWidget(id, ctx))
+  );
+
+  const separator = getSeparator();
+  const outputs = results
+    .filter((r): r is WidgetRenderResult => r !== null && r.output.length > 0)
+    .map((r) => r.output);
+
+  return outputs.join(separator);
+}
+
+/**
+ * Render all lines based on configuration
+ */
+export async function renderAllLines(ctx: WidgetContext): Promise<string[]> {
+  const lines = getLinesForContext(ctx.config, ctx);
+  const rendered = await Promise.all(lines.map((lineWidgets) => renderLine(lineWidgets, ctx)));
+  return rendered.filter((line) => line.length > 0);
+}
+
+/**
+ * Format final output with multiple lines
+ */
+export async function formatOutput(ctx: WidgetContext): Promise<string> {
+  const lines = await renderAllLines(ctx);
+  return lines.join('\n');
+}

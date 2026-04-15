@@ -178,8 +178,8 @@ export function loadWorkflow(name: string, cwd?: string): Workflow {
     join(harnessRoot, 'workflows', `${name}.yaml`),
     join(harnessRoot, 'workflows', `${name}.yml`),
     ...(cwd ? [
-      join(cwd, '.linear-harness', 'workflows', `${name}.yaml`),
-      join(cwd, '.linear-harness', 'workflows', `${name}.yml`),
+      join(cwd, '.smt', 'workflows', `${name}.yaml`),
+      join(cwd, '.smt', 'workflows', `${name}.yml`),
     ] : []),
   ];
 
@@ -215,7 +215,7 @@ export function listWorkflows(cwd?: string): string[] {
   const names = new Set<string>();
   const dirs = [
     join(getHarnessRoot(), 'workflows'),
-    ...(cwd ? [join(cwd, '.linear-harness', 'workflows')] : []),
+    ...(cwd ? [join(cwd, '.smt', 'workflows')] : []),
   ];
 
   for (const dir of dirs) {
@@ -237,7 +237,7 @@ export function listWorkflows(cwd?: string): string[] {
 export function loadCommand(name: string, cwd: string): string | null {
   // Project override first, then bundled default
   const candidates = [
-    join(cwd, '.linear-harness', 'commands', `${name}.md`),
+    join(cwd, '.smt', 'commands', `${name}.md`),
     join(getHarnessRoot(), 'commands', `${name}.md`),
   ];
 

@@ -13,16 +13,16 @@ Configure the OMC HUD (Heads-Up Display) for the statusline.
 
 | Command | Description |
 |---------|-------------|
-| `/oh-my-claudecode:hud` | Show current HUD status (auto-setup if needed) |
-| `/oh-my-claudecode:hud setup` | Install/repair HUD statusline |
-| `/oh-my-claudecode:hud minimal` | Switch to minimal display |
-| `/oh-my-claudecode:hud focused` | Switch to focused display (default) |
-| `/oh-my-claudecode:hud full` | Switch to full display |
-| `/oh-my-claudecode:hud status` | Show detailed HUD status |
+| `/smelter:hud` | Show current HUD status (auto-setup if needed) |
+| `/smelter:hud setup` | Install/repair HUD statusline |
+| `/smelter:hud minimal` | Switch to minimal display |
+| `/smelter:hud focused` | Switch to focused display (default) |
+| `/smelter:hud full` | Switch to full display |
+| `/smelter:hud status` | Show detailed HUD status |
 
 ## Auto-Setup
 
-When you run `/oh-my-claudecode:hud` or `/oh-my-claudecode:hud setup`, the system will automatically:
+When you run `/smelter:hud` or `/smelter:hud setup`, the system will automatically:
 1. Check if `~/.claude/hud/omc-hud.mjs` exists
 2. Check if `statusLine` is configured in `~/.claude/settings.json`
 3. If missing, create the HUD wrapper script and configure settings
@@ -39,11 +39,11 @@ ls ~/.claude/hud/omc-hud.mjs 2>/dev/null && echo "EXISTS" || echo "MISSING"
 
 **Step 2:** Verify the plugin is installed:
 ```bash
-PLUGIN_VERSION=$(ls ~/.claude/plugins/cache/omc/oh-my-claudecode/ 2>/dev/null | sort -V | tail -1)
+PLUGIN_VERSION=$(ls ~/.claude/plugins/cache/omc/smelter/ 2>/dev/null | sort -V | tail -1)
 if [ -n "$PLUGIN_VERSION" ]; then
-  ls ~/.claude/plugins/cache/omc/oh-my-claudecode/$PLUGIN_VERSION/dist/hud/index.js 2>/dev/null && echo "READY" || echo "NOT_FOUND - try reinstalling: /plugin install oh-my-claudecode"
+  ls ~/.claude/plugins/cache/omc/smelter/$PLUGIN_VERSION/dist/hud/index.js 2>/dev/null && echo "READY" || echo "NOT_FOUND - try reinstalling: /plugin install smelter"
 else
-  echo "Plugin not installed - run: /plugin install oh-my-claudecode"
+  echo "Plugin not installed - run: /plugin install smelter"
 fi
 ```
 
@@ -90,8 +90,8 @@ async function main() {
   const home = homedir();
   let pluginCacheDir = null;
 
-  // 1. Try plugin cache first (marketplace: omc, plugin: oh-my-claudecode)
-  const pluginCacheBase = join(home, ".claude/plugins/cache/omc/oh-my-claudecode");
+  // 1. Try plugin cache first (marketplace: omc, plugin: smelter)
+  const pluginCacheBase = join(home, ".claude/plugins/cache/omc/smelter");
   if (existsSync(pluginCacheBase)) {
     try {
       const versions = readdirSync(pluginCacheBase);
@@ -111,8 +111,8 @@ async function main() {
   const devPaths = [
     join(home, "Workspace/oh-my-claude-sisyphus/dist/hud/index.js"),
     join(home, "workspace/oh-my-claude-sisyphus/dist/hud/index.js"),
-    join(home, "Workspace/oh-my-claudecode/dist/hud/index.js"),
-    join(home, "workspace/oh-my-claudecode/dist/hud/index.js"),
+    join(home, "Workspace/smelter/dist/hud/index.js"),
+    join(home, "workspace/smelter/dist/hud/index.js"),
   ];
 
   for (const devPath of devPaths) {
@@ -128,7 +128,7 @@ async function main() {
   if (pluginCacheDir) {
     console.log(`[OMC] HUD not built. Run: cd "${pluginCacheDir}" && npm install`);
   } else {
-    console.log("[OMC] Plugin not found. Run: /oh-my-claudecode:omc-setup");
+    console.log("[OMC] Plugin not found. Run: /smelter:omc-setup");
   }
 }
 
@@ -185,19 +185,19 @@ rm -f ~/.claude/hud/sisyphus-hud.mjs 2>/dev/null
 ### Minimal
 Shows only the essentials:
 ```
-[OMC] ralph | ultrawork | todos:2/5
+[OMC] feat | todos:2/5
 ```
 
 ### Focused (Default)
 Shows all relevant elements:
 ```
-[OMC] ralph:3/10 | US-002 | ultrawork skill:planner | ctx:67% | agents:2 | bg:3/5 | todos:2/5
+[OMC] feat:3/10 | US-002 | skill:planner | ctx:67% | agents:2 | bg:3/5 | todos:2/5
 ```
 
 ### Full
 Shows everything including multi-line agent details:
 ```
-[OMC] ralph:3/10 | US-002 (2/5) | ultrawork | ctx:[████░░]67% | agents:3 | bg:3/5 | todos:2/5
+[OMC] feat:3/10 | US-002 (2/5) | ctx:[████░░]67% | agents:3 | bg:3/5 | todos:2/5
 ├─ O architect    2m   analyzing architecture patterns...
 ├─ e explore     45s   searching for test files
 └─ s executor     1m   implementing validation logic
@@ -215,10 +215,9 @@ When agents are running, the HUD shows detailed information on separate lines:
 
 | Element | Description |
 |---------|-------------|
-| `[OMC]` | Mode identifier |
-| `ralph:3/10` | Ralph loop iteration/max |
+| `[OMC]` | HUD identifier |
+| `feat:3/10` | Feat loop iteration/max |
 | `US-002` | Current PRD story ID |
-| `ultrawork` | Active mode badge |
 | `skill:name` | Last activated skill (cyan) |
 | `ctx:67%` | Context window usage |
 | `agents:2` | Running subagent count |
@@ -228,8 +227,8 @@ When agents are running, the HUD shows detailed information on separate lines:
 ## Color Coding
 
 - **Green**: Normal/healthy
-- **Yellow**: Warning (context >70%, ralph >7)
-- **Red**: Critical (context >85%, ralph at max)
+- **Yellow**: Warning (context >70%, feat >7)
+- **Red**: Critical (context >85%, feat at max)
 
 ## Configuration Location
 
@@ -244,7 +243,7 @@ You can manually edit the config file. Each option can be set individually - any
   "preset": "focused",
   "elements": {
     "omcLabel": true,
-    "ralph": true,
+    "feat": true,
     "prdStory": true,
     "activeSkills": true,
     "lastSkill": true,
@@ -259,7 +258,7 @@ You can manually edit the config file. Each option can be set individually - any
   "thresholds": {
     "contextWarning": 70,
     "contextCritical": 85,
-    "ralphWarning": 7
+    "featWarning": 7
   }
 }
 ```
@@ -267,9 +266,9 @@ You can manually edit the config file. Each option can be set individually - any
 ## Troubleshooting
 
 If the HUD is not showing:
-1. Run `/oh-my-claudecode:hud setup` to auto-install and configure
+1. Run `/smelter:hud setup` to auto-install and configure
 2. Restart Claude Code after setup completes
-3. If still not working, run `/oh-my-claudecode:doctor` for full diagnostics
+3. If still not working, run `/smelter:doctor` for full diagnostics
 
 Manual verification:
 - HUD script: `~/.claude/hud/omc-hud.mjs`

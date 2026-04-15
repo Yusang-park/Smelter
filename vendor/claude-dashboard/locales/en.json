@@ -1,0 +1,57 @@
+{
+  "model": {
+    "opus": "Opus",
+    "sonnet": "Sonnet",
+    "haiku": "Haiku"
+  },
+  "labels": {
+    "5h": "5h",
+    "7d": "7d",
+    "7d_all": "7d",
+    "7d_sonnet": "7d-S",
+    "codex": "Codex",
+    "1m": "1m"
+  },
+  "time": {
+    "days": "d",
+    "hours": "h",
+    "minutes": "m",
+    "seconds": "s"
+  },
+  "errors": {
+    "no_context": "No context yet"
+  },
+  "widgets": {
+    "tools": "Tools",
+    "done": "done",
+    "running": "running",
+    "agent": "Agent",
+    "todos": "Tasks",
+    "claudeMd": "CLAUDE.md",
+    "agentsMd": "AGENTS.md",
+    "addedDirs": "+Dirs",
+    "rules": "Rules",
+    "mcps": "MCP",
+    "hooks": "Hooks",
+    "burnRate": "Rate",
+    "cache": "Cache",
+    "toLimit": "to",
+    "forecast": "Forecast",
+    "budget": "Budget",
+    "performance": "Perf",
+    "tokenBreakdown": "Tokens",
+    "todayCost": "Today",
+    "apiDuration": "API",
+    "peakHours": "Peak",
+    "offPeak": "Off-Peak"
+  },
+  "checkUsage": {
+    "title": "CLI Usage Dashboard",
+    "recommendation": "Recommendation",
+    "lowestUsage": "Lowest usage",
+    "used": "used",
+    "notInstalled": "not installed",
+    "errorFetching": "Error fetching data",
+    "noData": "No usage data available"
+  }
+}

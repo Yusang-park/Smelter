@@ -57,8 +57,8 @@ function semverCompare(a, b) {
 async function main() {
   const home = homedir();
 
-  // 1. Try plugin cache first (marketplace: omc, plugin: oh-my-claudecode)
-  const pluginCacheBase = join(home, ".claude/plugins/cache/omc/oh-my-claudecode");
+  // 1. Try plugin cache first (marketplace: omc, plugin: smelter)
+  const pluginCacheBase = join(home, ".claude/plugins/cache/omc/smelter");
   if (existsSync(pluginCacheBase)) {
     try {
       const versions = readdirSync(pluginCacheBase);
@@ -82,8 +82,8 @@ async function main() {
   const devPaths = [
     join(home, "Workspace/oh-my-claude-sisyphus/dist/hud/index.js"),
     join(home, "workspace/oh-my-claude-sisyphus/dist/hud/index.js"),
-    join(home, "Workspace/oh-my-claudecode/dist/hud/index.js"),
-    join(home, "workspace/oh-my-claudecode/dist/hud/index.js"),
+    join(home, "Workspace/smelter/dist/hud/index.js"),
+    join(home, "workspace/smelter/dist/hud/index.js"),
   ];
 
   for (const devPath of devPaths) {

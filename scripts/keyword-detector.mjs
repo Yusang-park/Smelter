@@ -1,58 +1,36 @@
 #!/usr/bin/env node
 
 /**
- * OMC Keyword Detector Hook (Node.js)
- * Detects magic keywords and invokes skill tools
- * Cross-platform: Windows, macOS, Linux
+ * Smelter command detector hook (Node.js)
+ * Detects documented explicit slash commands AND natural-language magic keywords,
+ * then activates harness state + injects a skill invocation payload.
+ * Cross-platform: Windows, macOS, Linux.
  *
- * Supported keywords (in priority order):
- * 1. cancelomc/stopomc: Stop active modes
- * 2. ralph: Persistence mode until task completion
- * 3. autopilot: Full autonomous execution
- * 4. ultrapilot: Parallel autopilot
- * 5. ultrawork/ulw: Maximum parallel execution
- * 6. ecomode/eco: Token-efficient execution
- * 7. swarm: N coordinated agents
- * 8. pipeline: Sequential agent chaining
- * 9. ralplan: Iterative planning with consensus
- * 10. plan: Planning interview mode
- * 11. tdd: Test-driven development
- * 12. research: Research orchestration
- * 13. ultrathink/think: Extended reasoning
- * 14. deepsearch: Codebase search (restricted patterns)
- * 15. analyze: Analysis mode (restricted patterns)
- * 16. codex/gpt: Delegate to Codex MCP (ask_codex)
- * 17. gemini: Delegate to Gemini MCP (ask_gemini)
+ * Priority: (1) explicit slash command → (2) magic keyword (natural language).
+ *
+ * Supported slash commands:
+ *   /tasker /feat /qa /cancel /queue
+ *
+ * Supported magic keywords → command mapping:
+ *   tasker / plan / 설계해줘 / 계획부터              → /tasker
+ *   new feature / 새 기능 / design first            → /feat (Step 2 included)
+ *   extend / add to / 덧붙여                         → /feat (Step 2 skipped)
+ *   fix / bug / 버그                                 → /qa (E2E forced on)
+ *   style / typo / 텍스트 / 색상 / i18n             → /qa (TDD exemption hint)
+ *   cancel / stop                                    → /cancel
+ *   queue                                            → /queue (explicit only)
  */
 
-import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { clearCancel } from './lib/cancel-signal.mjs';
+import { propagateHardCancel, propagateQueueCancel } from './cancel-propagator.mjs';
+import { classifyPrompt } from './lib/subagent-classifier.mjs';
+import { printTag } from './lib/yellow-tag.mjs';
 
-const ULTRATHINK_MESSAGE = `<think-mode>
-
-**ULTRATHINK MODE ENABLED** - Extended reasoning activated.
-
-You are now in deep thinking mode. Take your time to:
-1. Thoroughly analyze the problem from multiple angles
-2. Consider edge cases and potential issues
-3. Think through the implications of each approach
-4. Reason step-by-step before acting
-
-Use your extended thinking capabilities to provide the most thorough and well-reasoned response.
-
-</think-mode>
-
----
-`;
-
-// Read all stdin
-async function readStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
+// Read stdin synchronously
+function readStdinSync() {
+  try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
 }
 
 // Extract prompt from various JSON structures
@@ -69,78 +47,57 @@ function extractPrompt(input) {
     }
     return '';
   } catch {
-    // Fallback: try to extract with regex
     const match = input.match(/"(?:prompt|content|text)"\s*:\s*"([^"]+)"/);
     return match ? match[1] : '';
   }
 }
 
-// Sanitize text to prevent false positives from code blocks, XML tags, URLs, and file paths
-function sanitizeForKeywordDetection(text) {
-  return text
-    // 1. Strip XML-style tag blocks: <tag-name ...>...</tag-name> (multi-line, greedy on tag name)
-    .replace(/<(\w[\w-]*)[\s>][\s\S]*?<\/\1>/g, '')
-    // 2. Strip self-closing XML tags: <tag-name />, <tag-name attr="val" />
-    .replace(/<\w[\w-]*(?:\s[^>]*)?\s*\/>/g, '')
-    // 3. Strip URLs: http://... or https://... up to whitespace
-    .replace(/https?:\/\/[^\s)>\]]+/g, '')
-    // 4. Strip file paths: /foo/bar/baz or foo/bar/baz — uses lookbehind (Node.js supports it)
-    // The TypeScript version (index.ts) uses capture group + $1 replacement for broader compat
-    .replace(/(?<=^|[\s"'`(])(?:\/)?(?:[\w.-]+\/)+[\w.-]+/gm, '')
-    // 5. Strip markdown code blocks (existing)
-    .replace(/```[\s\S]*?```/g, '')
-    // 6. Strip inline code (existing)
-    .replace(/`[^`]+`/g, '');
+/**
+ * Strip XML/URL/path/code so magic-keyword detection does not false-positive on
+ * pasted code, system reminders, or agent tool outputs.
+ * Previously used by regex magic-keyword detection; now replaced by Haiku sub-agent classifier.
+ */
+
+function extractExplicitHarnessCommand(prompt) {
+  if (!prompt) return null;
+  const trimmed = prompt.trim();
+  const match = trimmed.match(/^\/(tasker|feat|qa|cancel|queue)\b(?:[:\s-]*(.*))?$/i);
+  if (!match) return null;
+  return {
+    name: match[1].toLowerCase(),
+    args: (match[2] || '').trim(),
+    source: 'slash',
+  };
 }
 
-// Create state file for a mode
-function activateState(directory, prompt, stateName, sessionId) {
-  const state = {
-    active: true,
-    started_at: new Date().toISOString(),
-    original_prompt: prompt,
-    session_id: sessionId || undefined,
-    reinforcement_count: 0,
-    last_checked_at: new Date().toISOString()
-  };
+// Command → preset/mode mapping (magic keywords handled by Haiku sub-agent classifier)
+const COMMAND_CONFIG = {
+  tasker: { preset: 'tasker', mode: 'normal' },
+  feat:   { preset: 'feat',   mode: 'normal' },
+  qa:     { preset: 'qa',     mode: 'normal' },
+};
 
-  // Write to local .omc/state directory
-  const localDir = join(directory, '.omc', 'state');
+function writeStateFile(directory, filename, data) {
+  const localDir = join(directory, '.smt', 'state');
   if (!existsSync(localDir)) {
     try { mkdirSync(localDir, { recursive: true }); } catch {}
   }
-  try { writeFileSync(join(localDir, `${stateName}-state.json`), JSON.stringify(state, null, 2), { mode: 0o600 }); } catch {}
-
-  // Write to global .omc/state directory
-  const globalDir = join(homedir(), '.omc', 'state');
-  if (!existsSync(globalDir)) {
-    try { mkdirSync(globalDir, { recursive: true }); } catch {}
-  }
-  try { writeFileSync(join(globalDir, `${stateName}-state.json`), JSON.stringify(state, null, 2), { mode: 0o600 }); } catch {}
+  try { writeFileSync(join(localDir, filename), JSON.stringify(data, null, 2), { mode: 0o600 }); } catch {}
 }
 
-/**
- * Clear state files for cancel operation
- */
-function clearStateFiles(directory, modeNames) {
-  for (const name of modeNames) {
-    const localPath = join(directory, '.omc', 'state', `${name}-state.json`);
-    const globalPath = join(homedir(), '.omc', 'state', `${name}-state.json`);
-    try { if (existsSync(localPath)) unlinkSync(localPath); } catch {}
-    try { if (existsSync(globalPath)) unlinkSync(globalPath); } catch {}
-  }
+function activateHarnessState(directory, commandName, prompt, sessionId) {
+  const config = COMMAND_CONFIG[commandName];
+  if (!config) return;
 }
 
-/**
- * Create a skill invocation message that tells Claude to use the Skill tool
- */
-function createSkillInvocation(skillName, originalPrompt, args = '') {
+function createSkillInvocation(skillName, originalPrompt, args = '', hint = null) {
   const argsSection = args ? `\nArguments: ${args}` : '';
+  const hintSection = hint ? `\nBranch hint: ${hint}` : '';
   return `[MAGIC KEYWORD: ${skillName.toUpperCase()}]
 
 You MUST invoke the skill using the Skill tool:
 
-Skill: oh-my-claudecode:${skillName}${argsSection}
+Skill: ${skillName}${argsSection}${hintSection}
 
 User request:
 ${originalPrompt}
@@ -148,140 +105,19 @@ ${originalPrompt}
 IMPORTANT: Invoke the skill IMMEDIATELY. Do not proceed without loading the skill instructions.`;
 }
 
-/**
- * Create multi-skill invocation message for combined keywords
- */
-function createMultiSkillInvocation(skills, originalPrompt) {
-  if (skills.length === 0) return '';
-  if (skills.length === 1) {
-    return createSkillInvocation(skills[0].name, originalPrompt, skills[0].args);
-  }
-
-  const skillBlocks = skills.map((s, i) => {
-    const argsSection = s.args ? `\nArguments: ${s.args}` : '';
-    return `### Skill ${i + 1}: ${s.name.toUpperCase()}
-Skill: oh-my-claudecode:${s.name}${argsSection}`;
-  }).join('\n\n');
-
-  return `[MAGIC KEYWORDS DETECTED: ${skills.map(s => s.name.toUpperCase()).join(', ')}]
-
-You MUST invoke ALL of the following skills using the Skill tool, in order:
-
-${skillBlocks}
-
-User request:
-${originalPrompt}
-
-IMPORTANT: Invoke ALL skills listed above. Start with the first skill IMMEDIATELY. After it completes, invoke the next skill in order. Do not skip any skill.`;
-}
-
-/**
- * Create MCP delegation message (NOT a skill invocation)
- */
-function createMcpDelegation(provider, originalPrompt) {
-  const configs = {
-    codex: {
-      tool: 'ask_codex',
-      roles: 'architect, planner, critic, analyst, code-reviewer, security-reviewer, tdd-guide',
-      defaultRole: 'architect',
-    },
-    gemini: {
-      tool: 'ask_gemini',
-      roles: 'designer, writer, vision',
-      defaultRole: 'designer',
-    },
-  };
-  const config = configs[provider];
-  if (!config) return '';
-
-  return `[MAGIC KEYWORD: ${provider.toUpperCase()}]
-
-You MUST delegate this task to the ${provider === 'codex' ? 'Codex' : 'Gemini'} MCP tool.
-
-Steps:
-1. Write a prompt file to \`.omc/prompts/${provider}-{purpose}-{timestamp}.md\` containing clear task instructions derived from the user's request
-2. Determine the appropriate agent_role from: ${config.roles}
-3. Call the \`${config.tool}\` MCP tool with:
-   - agent_role: <detected or default "${config.defaultRole}">
-   - prompt_file: <path you wrote>
-   - output_file: <corresponding -summary.md path>
-   - context_files: <relevant files from user's request>
-
-User request:
-${originalPrompt}
-
-IMPORTANT: Do NOT invoke a skill. Delegate to the MCP tool IMMEDIATELY.`;
-}
-
-/**
- * Create combined output for skills + MCP delegations
- */
-function createCombinedOutput(skillMatches, delegationMatches, originalPrompt) {
-  const parts = [];
-
-  if (skillMatches.length > 0) {
-    parts.push('## Section 1: Skill Invocations\n\n' + createMultiSkillInvocation(skillMatches, originalPrompt));
-  }
-
-  if (delegationMatches.length > 0) {
-    const delegationParts = delegationMatches.map(d => createMcpDelegation(d.name, originalPrompt));
-    parts.push('## Section ' + (skillMatches.length > 0 ? '2' : '1') + ': MCP Delegations\n\n' + delegationParts.join('\n\n---\n\n'));
-  }
-
-  const allNames = [...skillMatches, ...delegationMatches].map(m => m.name.toUpperCase());
-  return `[MAGIC KEYWORDS DETECTED: ${allNames.join(', ')}]\n\n${parts.join('\n\n---\n\n')}\n\nIMPORTANT: Complete ALL sections above in order.`;
-}
-
-/**
- * Resolve conflicts between detected keywords
- */
-function resolveConflicts(matches) {
-  const names = matches.map(m => m.name);
-
-  // Cancel is exclusive
-  if (names.includes('cancel')) {
-    return [matches.find(m => m.name === 'cancel')];
-  }
-
-  let resolved = [...matches];
-
-  // Ecomode beats ultrawork
-  if (names.includes('ecomode') && names.includes('ultrawork')) {
-    resolved = resolved.filter(m => m.name !== 'ultrawork');
-  }
-
-  // Ultrapilot beats autopilot
-  if (names.includes('ultrapilot') && names.includes('autopilot')) {
-    resolved = resolved.filter(m => m.name !== 'autopilot');
-  }
-
-  // Sort by priority order
-  const priorityOrder = ['cancel','ralph','autopilot','ultrapilot','ultrawork','ecomode',
-    'swarm','pipeline','ralplan','plan','tdd','research','ultrathink','deepsearch','analyze',
-    'codex','gemini'];
-  resolved.sort((a, b) => priorityOrder.indexOf(a.name) - priorityOrder.indexOf(b.name));
-
-  return resolved;
-}
-
-/**
- * Create proper hook output with additionalContext (Claude Code hooks API)
- * The 'message' field is NOT a valid hook output - use hookSpecificOutput.additionalContext
- */
 function createHookOutput(additionalContext) {
   return {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext
-    }
+      additionalContext,
+    },
   };
 }
 
-// Main
 async function main() {
   try {
-    const input = await readStdin();
+    const input = readStdinSync();
     if (!input.trim()) {
       console.log(JSON.stringify({ continue: true }));
       return;
@@ -298,200 +134,129 @@ async function main() {
       return;
     }
 
-    const cleanPrompt = sanitizeForKeywordDetection(prompt).toLowerCase();
+    // (1) Explicit slash command takes priority
+    let detected = extractExplicitHarnessCommand(prompt);
 
-    // Collect all matching keywords
-    const matches = [];
-
-    // Cancel keywords
-    if (/\b(cancelomc|stopomc)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'cancel', args: '' });
+    // (2) Haiku sub-agent classifier for non-slash prompts
+    if (!detected) {
+      const classification = classifyPrompt(prompt, { cwd: directory, sessionId });
+      if (classification.intent === 'command' && classification.command) {
+        const validCommands = ['tasker', 'feat', 'qa', 'cancel', 'queue'];
+        const cmd = classification.command.toLowerCase().replace(/^\//, '');
+        if (validCommands.includes(cmd)) {
+          printTag(`Magic Keyword: Haiku classified command`);
+          detected = {
+            name: cmd,
+            args: '',
+            hint: classification.branch || null,
+            matched: `Haiku:${cmd}`,
+            source: 'magic',
+          };
+        }
+      }
+      if (!detected && classification.intent === 'question') {
+        printTag(`Magic Keyword: Haiku classified question`);
+      }
     }
 
-    // Ralph keywords
-    if (/\b(ralph|don't stop|must complete|until done)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'ralph', args: '' });
+    // Clear stale cancel signals on any non-cancel/queue prompt
+    if (!detected || (detected.name !== 'cancel' && detected.name !== 'queue')) {
+      clearCancel(directory);
     }
 
-    // Autopilot keywords
-    if (/\b(autopilot|auto pilot|auto-pilot|autonomous|full auto|fullsend)\b/i.test(cleanPrompt) ||
-        /\bbuild\s+me\s+/i.test(cleanPrompt) ||
-        /\bcreate\s+me\s+/i.test(cleanPrompt) ||
-        /\bmake\s+me\s+/i.test(cleanPrompt) ||
-        /\bi\s+want\s+a\s+/i.test(cleanPrompt) ||
-        /\bi\s+want\s+an\s+/i.test(cleanPrompt) ||
-        /\bhandle\s+it\s+all\b/i.test(cleanPrompt) ||
-        /\bend\s+to\s+end\b/i.test(cleanPrompt) ||
-        /\be2e\s+this\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'autopilot', args: '' });
+    // Auto-detect interrupt
+    const interruptMarkerPath = join(directory, '.smt', 'state', 'last-interrupt.json');
+    let wasInterrupted = false;
+    if (existsSync(interruptMarkerPath)) {
+      try {
+        const marker = JSON.parse(readFileSync(interruptMarkerPath, 'utf-8'));
+        if (Date.now() - marker.timestamp < 60_000) wasInterrupted = true;
+      } catch {}
+      try { unlinkSync(interruptMarkerPath); } catch {}
     }
 
-    // Ultrapilot keywords
-    if (/\b(ultrapilot|ultra-pilot)\b/i.test(cleanPrompt) ||
-        /\bparallel\s+build\b/i.test(cleanPrompt) ||
-        /\bswarm\s+build\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'ultrapilot', args: '' });
-    }
-
-    // Ultrawork keywords
-    if (/\b(ultrawork|ulw|uw)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'ultrawork', args: '' });
-    }
-
-    // Ecomode keywords
-    if (/\b(eco|ecomode|eco-mode|efficient|save-tokens|budget)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'ecomode', args: '' });
-    }
-
-    // Swarm - parse N from "swarm N agents"
-    const swarmMatch = cleanPrompt.match(/\bswarm\s+(\d+)\s+agents?\b/i);
-    if (swarmMatch || /\bcoordinated\s+agents\b/i.test(cleanPrompt)) {
-      const agentCount = swarmMatch ? swarmMatch[1] : '3';
-      matches.push({ name: 'swarm', args: agentCount });
-    }
-
-    // Pipeline keywords
-    if (/\b(pipeline)\b/i.test(cleanPrompt) || /\bchain\s+agents\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'pipeline', args: '' });
-    }
-
-    // Ralplan keyword
-    if (/\b(ralplan)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'ralplan', args: '' });
-    }
-
-    // Plan keywords
-    if (/\b(plan this|plan the)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'plan', args: '' });
-    }
-
-    // TDD keywords
-    if (/\b(tdd)\b/i.test(cleanPrompt) ||
-        /\btest\s+first\b/i.test(cleanPrompt) ||
-        /\bred\s+green\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'tdd', args: '' });
-    }
-
-    // Research keywords
-    if (/\b(research)\b/i.test(cleanPrompt) ||
-        /\banalyze\s+data\b/i.test(cleanPrompt) ||
-        /\bstatistics\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'research', args: '' });
-    }
-
-    // Ultrathink keywords
-    if (/\b(ultrathink|think hard|think deeply)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'ultrathink', args: '' });
-    }
-
-    // Deepsearch keywords
-    if (/\b(deepsearch)\b/i.test(cleanPrompt) ||
-        /\bsearch\s+(the\s+)?(codebase|code|files?|project)\b/i.test(cleanPrompt) ||
-        /\bfind\s+(in\s+)?(codebase|code|all\s+files?)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'deepsearch', args: '' });
-    }
-
-    // Analyze keywords
-    if (/\b(deep\s*analyze)\b/i.test(cleanPrompt) ||
-        /\binvestigate\s+(the|this|why)\b/i.test(cleanPrompt) ||
-        /\bdebug\s+(the|this|why)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'analyze', args: '' });
-    }
-
-    // Codex keywords (intent-phrase only)
-    if (/\b(ask|use|delegate\s+to)\s+(codex|gpt)\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'codex', args: '' });
-    }
-
-    // Gemini keywords (intent-phrase only)
-    if (/\b(ask|use|delegate\s+to)\s+gemini\b/i.test(cleanPrompt)) {
-      matches.push({ name: 'gemini', args: '' });
-    }
-
-    // No matches - pass through
-    if (matches.length === 0) {
-      console.log(JSON.stringify({ continue: true }));
+    if (!detected) {
+      if (wasInterrupted) {
+        printTag('Detect: Interrupt');
+        console.log(JSON.stringify(createHookOutput(
+          `[INTERRUPTED] The previous response was interrupted by the user. IMPORTANT: Follow the NEW instruction below. Do NOT continue or resume previous work unless explicitly asked.`
+        )));
+      } else {
+        console.log(JSON.stringify({ continue: true }));
+      }
       return;
     }
 
-    // Resolve conflicts
-    const resolved = resolveConflicts(matches);
-
-    // Import flow tracer once (best-effort)
+    // Trace
     let tracer = null;
-    try { tracer = await import('../dist/hooks/subagent-tracker/flow-tracer.js'); } catch { /* silent */ }
-
-    // Record detected keywords to flow trace
+    try { tracer = await import('../dist/hooks/subagent-tracker/flow-tracer.js'); } catch {}
     if (tracer) {
-      for (const match of resolved) {
-        try { tracer.recordKeywordDetected(directory, sessionId, match.name); } catch { /* silent */ }
-      }
+      try { tracer.recordKeywordDetected(directory, sessionId, detected.name); } catch {}
     }
 
-    // Handle cancel specially - clear states and emit
-    if (resolved.length > 0 && resolved[0].name === 'cancel') {
-      clearStateFiles(directory, ['ralph', 'autopilot', 'ultrapilot', 'ultrawork', 'ecomode', 'swarm', 'pipeline']);
-      console.log(JSON.stringify(createHookOutput(createSkillInvocation('cancel', prompt))));
+    // /cancel
+    if (detected.name === 'cancel') {
+      printTag('Command: /cancel');
+      const result = propagateHardCancel(directory, 'user /cancel command');
+      const killedMsg = result.killed.length > 0 ? `\nKilled: ${result.killed.join(', ')}` : '';
+      const clearedMsg = result.cleared.length > 0 ? `\nCleared: ${result.cleared.join(', ')}` : '';
+      console.log(JSON.stringify(createHookOutput(
+        `[CANCEL] Hard cancel executed. All work stopped.${killedMsg}${clearedMsg}\n\nInform the user that cancellation is complete. Do NOT continue any previous work. Await new instructions.`
+      )));
       return;
     }
 
-    // Activate states for modes that need them
-    const stateModes = resolved.filter(m => ['ralph', 'autopilot', 'ultrapilot', 'ultrawork', 'ecomode'].includes(m.name));
-    for (const mode of stateModes) {
-      activateState(directory, prompt, mode.name, sessionId);
-    }
-
-    // Record mode changes to flow trace
-    if (tracer) {
-      for (const mode of stateModes) {
-        try { tracer.recordModeChange(directory, sessionId, 'none', mode.name); } catch { /* silent */ }
-      }
-    }
-
-    // Special: Ralph with ultrawork (only if ecomode NOT present)
-    const hasRalph = resolved.some(m => m.name === 'ralph');
-    const hasEcomode = resolved.some(m => m.name === 'ecomode');
-    const hasUltrawork = resolved.some(m => m.name === 'ultrawork');
-    if (hasRalph && !hasEcomode && !hasUltrawork) {
-      activateState(directory, prompt, 'ultrawork', sessionId);
-    }
-
-    // Handle ultrathink specially - prepend message instead of skill invocation
-    const ultrathinkIndex = resolved.findIndex(m => m.name === 'ultrathink');
-    if (ultrathinkIndex !== -1) {
-      // Remove ultrathink from skill list
-      resolved.splice(ultrathinkIndex, 1);
-
-      // If ultrathink was the only match, emit message
-      if (resolved.length === 0) {
-        console.log(JSON.stringify(createHookOutput(ULTRATHINK_MESSAGE)));
+    // /queue (slash-only; magic keyword not supported for queue)
+    if (detected.name === 'queue') {
+      printTag('Command: /queue');
+      const intent = detected.args;
+      if (!intent) {
+        console.log(JSON.stringify(createHookOutput(
+          `[QUEUE ERROR] No intent provided. Usage: /queue <what to do next>\nExample: /queue fix the login bug`
+        )));
         return;
       }
-
-      // Otherwise, prepend ultrathink message to skill invocation
-      const skillMessage = createMultiSkillInvocation(resolved, prompt);
-      console.log(JSON.stringify(createHookOutput(ULTRATHINK_MESSAGE + skillMessage)));
+      propagateQueueCancel(directory, intent, 'user /queue command', sessionId);
+      console.log(JSON.stringify(createHookOutput(
+        `[QUEUED] Intent queued for after current work completes: "${intent}"\n\nContinue current work. When the current task finishes, switch to the queued intent instead of continuing the old plan.`
+      )));
       return;
     }
 
-    // Split resolved into skills vs MCP delegations
-    const MCP_KEYWORDS = ['codex', 'gemini'];
-    const skillMatches = resolved.filter(m => !MCP_KEYWORDS.includes(m.name));
-    const delegationMatches = resolved.filter(m => MCP_KEYWORDS.includes(m.name));
-
-    if (skillMatches.length > 0 && delegationMatches.length > 0) {
-      // Combined: skills + MCP delegations
-      console.log(JSON.stringify(createHookOutput(createCombinedOutput(skillMatches, delegationMatches, prompt))));
-    } else if (delegationMatches.length > 0) {
-      // MCP delegation only
-      const delegationParts = delegationMatches.map(d => createMcpDelegation(d.name, prompt));
-      console.log(JSON.stringify(createHookOutput(delegationParts.join('\n\n---\n\n'))));
-    } else {
-      // Skills only (existing behavior)
-      console.log(JSON.stringify(createHookOutput(createMultiSkillInvocation(skillMatches, prompt))));
+    // Harness commands — activate state
+    activateHarnessState(directory, detected.name, prompt, sessionId);
+    if (tracer) {
+      try { tracer.recordModeChange(directory, sessionId, 'none', detected.name); } catch {}
     }
+
+    // MODE banner (once per session per command)
+    const MODE_LABELS = { tasker: 'TASKER MODE', feat: 'FEAT MODE', qa: 'QA MODE' };
+    const modeLabel = MODE_LABELS[detected.name];
+    if (modeLabel) {
+      const bannerFile = join(directory, '.smt', 'state', `mode-emitted-${sessionId || 'default'}.json`);
+      let alreadyEmitted = false;
+      try { alreadyEmitted = JSON.parse(readFileSync(bannerFile, 'utf-8')).mode === detected.name; } catch {}
+      if (!alreadyEmitted) {
+        printTag(modeLabel);
+        try {
+          const stateDir = join(directory, '.smt', 'state');
+          if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
+          writeFileSync(bannerFile, JSON.stringify({ mode: detected.name, ts: Date.now() }));
+        } catch {}
+      }
+    }
+
+    if (detected.source === 'magic') {
+      const hintTag = detected.hint ? ` (${detected.hint})` : '';
+      printTag(`Magic Keyword: ${detected.matched} → /${detected.name}${hintTag}`);
+    } else {
+      printTag(`Command: /${detected.name}`);
+    }
+
+    console.log(JSON.stringify(createHookOutput(
+      createSkillInvocation(detected.name, prompt, detected.args, detected.hint)
+    )));
   } catch (error) {
-    // On any error, allow continuation
     console.log(JSON.stringify({ continue: true }));
   }
 }

@@ -14,7 +14,7 @@ export interface ProjectMemory {
   directives: string[];
 }
 
-const MEMORY_FILE = '.linear-harness/project-memory.json';
+const MEMORY_FILE = '.smt/project-memory.json';
 
 function getMemoryPath(cwd: string): string {
   return join(cwd, MEMORY_FILE);
@@ -29,7 +29,7 @@ export function loadProjectMemory(cwd: string): ProjectMemory {
 }
 
 export function saveProjectMemory(cwd: string, memory: ProjectMemory): void {
-  const dir = join(cwd, '.linear-harness');
+  const dir = join(cwd, '.smt');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }

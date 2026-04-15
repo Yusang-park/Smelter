@@ -16,7 +16,11 @@ export function saveArtifacts(
   e2eResult: PlaywrightRunResult,
 ): SavedArtifacts {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = join(cwd, '.linear-harness', 'e2e-results', taskId, timestamp);
+  // Feature-scoped artifacts: extract slug from taskId (format: "slug/localId")
+  const parts = taskId.split('/');
+  const slug = parts.length > 1 ? parts[0] : 'default';
+  const localId = parts.length > 1 ? parts.slice(1).join('/') : taskId;
+  const dir = join(cwd, '.smt', 'features', slug, 'artifacts', localId, timestamp);
   mkdirSync(dir, { recursive: true });
   mkdirSync(join(dir, 'screenshots'), { recursive: true });
 

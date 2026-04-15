@@ -1,0 +1,57 @@
+{
+  "model": {
+    "opus": "Opus",
+    "sonnet": "Sonnet",
+    "haiku": "Haiku"
+  },
+  "labels": {
+    "5h": "5시간",
+    "7d": "7일",
+    "7d_all": "7일",
+    "7d_sonnet": "7일-S",
+    "codex": "Codex",
+    "1m": "1개월"
+  },
+  "time": {
+    "days": "일",
+    "hours": "시간",
+    "minutes": "분",
+    "seconds": "초"
+  },
+  "errors": {
+    "no_context": "컨텍스트 없음"
+  },
+  "widgets": {
+    "tools": "도구",
+    "done": "완료",
+    "running": "실행중",
+    "agent": "에이전트",
+    "todos": "할일",
+    "claudeMd": "CLAUDE.md",
+    "agentsMd": "AGENTS.md",
+    "addedDirs": "+디렉토리",
+    "rules": "규칙",
+    "mcps": "MCP",
+    "hooks": "훅",
+    "burnRate": "소모율",
+    "cache": "캐시",
+    "toLimit": "후",
+    "forecast": "예측",
+    "budget": "예산",
+    "performance": "성능",
+    "tokenBreakdown": "토큰",
+    "todayCost": "오늘",
+    "apiDuration": "API",
+    "peakHours": "피크",
+    "offPeak": "비피크"
+  },
+  "checkUsage": {
+    "title": "CLI 사용량 대시보드",
+    "recommendation": "추천",
+    "lowestUsage": "가장 여유",
+    "used": "사용",
+    "notInstalled": "설치되지 않음",
+    "errorFetching": "데이터 가져오기 오류",
+    "noData": "사용량 데이터 없음"
+  }
+}

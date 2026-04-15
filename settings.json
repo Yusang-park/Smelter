@@ -1,29 +1,19 @@
 {
+  "env": {
+    "DISABLE_COMPACT": "1"
+  },
   "permissions": {
     "allow": [
-      "mcp__pencil"
+      "mcp__pencil",
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
     ],
     "defaultMode": "auto"
   },
-  "statusLine": {
-    "type": "command",
-    "command": "node /Users/yusang/.claude/hud/omc-hud.mjs"
-  },
-  "enabledPlugins": {
-    "swift-lsp@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "caveman@caveman": true
-  },
-  "extraKnownMarketplaces": {
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      }
-    }
-  },
-  "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
   "hooks": {
     "SessionStart": [
       {
@@ -31,17 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/session-start.mjs",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/session-start-linear-harness.mjs",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/project-memory-session.mjs",
+            "command": "node /Users/yusang/smelter/scripts/session-start-smelter.mjs",
             "timeout": 5
           }
         ]
@@ -53,13 +33,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/keyword-detector.mjs",
+            "command": "node /Users/yusang/smelter/scripts/keyword-detector.mjs",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/skill-injector.mjs",
+            "command": "node /Users/yusang/smelter/scripts/auto-confirm-consumer.mjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/smelter/scripts/skill-injector.mjs",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node /Users/yusang/smelter/scripts/task-summarizer.mjs",
+            "timeout": 5
           }
         ]
       }
@@ -70,13 +60,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/pre-tool-enforcer.mjs",
+            "command": "node /Users/yusang/smelter/scripts/pre-tool-enforcer.mjs",
             "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "/Users/yusang/.claude/skills/continuous-learning-v2/hooks/observe.sh pre",
-            "timeout": 5
           }
         ]
       }
@@ -87,17 +72,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/post-tool-verifier.mjs",
+            "command": "node /Users/yusang/smelter/scripts/post-tool-verifier.mjs",
             "timeout": 3
           },
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/project-memory-posttool.mjs",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "/Users/yusang/.claude/skills/continuous-learning-v2/hooks/observe.sh",
+            "command": "node /Users/yusang/smelter/scripts/tool-retry.mjs",
             "timeout": 5
           }
         ]
@@ -109,12 +89,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/persistent-mode.cjs",
-            "timeout": 5
+            "command": "node /Users/yusang/smelter/scripts/auto-confirm.mjs",
+            "timeout": 15
           },
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/stop-e2e.mjs",
+            "command": "node /Users/yusang/smelter/scripts/stop-e2e.mjs",
             "timeout": 120
           }
         ]
@@ -126,13 +106,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/pre-compact.mjs",
+            "command": "node /Users/yusang/smelter/scripts/pre-compact.mjs",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/project-memory-precompact.mjs",
-            "timeout": 5
           }
         ]
       }
@@ -143,7 +118,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/subagent-tracker.mjs start",
+            "command": "node /Users/yusang/smelter/scripts/subagent-tracker.mjs start",
             "timeout": 3
           }
         ]
@@ -155,7 +130,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/subagent-tracker.mjs stop",
+            "command": "node /Users/yusang/smelter/scripts/subagent-tracker.mjs stop",
             "timeout": 5
           }
         ]
@@ -167,11 +142,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/linear-harness/scripts/session-end.mjs",
+            "command": "node /Users/yusang/smelter/scripts/session-end.mjs",
             "timeout": 10
           }
         ]
       }
     ]
-  }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node /Users/yusang/smelter/vendor/claude-dashboard/dist/index.js"
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "_comment": "USER-SPECIFIC FILE. Absolute paths below are hardcoded to /Users/yusang/smelter because Claude Code does not expand ${CLAUDE_PLUGIN_ROOT} in user settings.json (only in plugin-shipped hooks/hooks.json). If you relocate the project, update every hook command path. Canonical plugin-wired hooks live in hooks/hooks.json using ${CLAUDE_PLUGIN_ROOT}."
 }

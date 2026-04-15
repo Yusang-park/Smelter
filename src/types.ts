@@ -2,9 +2,24 @@
 // Harness Types — Pure types with no framework dependencies
 // =============================================================================
 
+// --- Feature Types ---
+
+export type FeatureStatus = 'open' | 'in-progress' | 'done';
+
+export interface Feature {
+  slug: string;
+  status: FeatureStatus;
+  created: string;
+  updated: string;
+}
+
 // --- Harness Mode & Rule Types ---
 
-export type HarnessMode = 'normal' | 'e2e-force' | 'tdd-e2e' | 'autopilot';
+/** 실행 모드: 단일 Task 처리 */
+export type HarnessMode = 'normal';
+
+/** 프리셋: 커맨드와 1:1 매핑 (tasker/feat/qa) */
+export type HarnessPreset = 'tasker' | 'feat' | 'qa';
 
 export type RuleTrigger = 'on-complete' | 'on-keyword' | 'on-e2e-result' | 'manual';
 
@@ -70,6 +85,7 @@ export interface UsageInfo {
 
 export interface HarnessRunOptions {
   mode: HarnessMode;
+  preset: HarnessPreset;
   model?: string;
   maxRetries?: number;
   rules?: HarnessRule[];
@@ -84,7 +100,6 @@ export type HarnessRunStatus = 'completed' | 'failed' | 'error';
 
 export interface HarnessRunResult {
   status: HarnessRunStatus;
-  e2eResult?: PlaywrightRunResult;
   retryCount: number;
   output: string;
 }

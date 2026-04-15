@@ -46,7 +46,7 @@ Delegates to the `build-fixer` agent (Sonnet model) to:
 
 ```
 Task(
-  subagent_type="oh-my-claudecode:build-fixer",
+  subagent_type="smelter:build-fixer",
   model="sonnet",
   prompt="BUILD FIX TASK
 
@@ -102,22 +102,4 @@ Verification: [type check command] (exit code 0)
 
 ## Use with Other Skills
 
-Combine with other skills for comprehensive fixing:
-
-**With Ultrawork:**
-```
-/ultrawork fix all build errors
-```
-Spawns multiple build-fixer agents in parallel for different files.
-
-**With Ralph:**
-```
-/ralph fix the build
-```
-Keeps trying until build passes, even if it takes multiple iterations.
-
-**With Pipeline:**
-```
-/pipeline debug "build is failing"
-```
-Uses: explore → architect → build-fixer workflow.
+Combine with other skills for comprehensive fixing. Use `/tasker` to plan build-fix tasks, then `/feat` to execute them.

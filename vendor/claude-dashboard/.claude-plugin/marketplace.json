@@ -1,0 +1,28 @@
+{
+  "name": "claude-dashboard",
+  "owner": {
+    "name": "uppinote",
+    "email": ""
+  },
+  "metadata": {
+    "description": "Comprehensive status line with context usage, API rate limits, and cost tracking",
+    "version": "1.25.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-dashboard",
+      "source": "./",
+      "description": "Real-time status line showing model, context usage with color-coded progress bar, token count, cost, and API rate limits (5h/7d). Supports Max and Pro plans with i18n (English/Korean).",
+      "category": "monitoring",
+      "tags": [
+        "statusline",
+        "monitoring",
+        "context",
+        "rate-limits",
+        "cost",
+        "i18n"
+      ]
+    }
+  ],
+  "version": "1.25.0"
+}

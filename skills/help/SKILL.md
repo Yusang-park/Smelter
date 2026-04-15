@@ -1,65 +1,42 @@
 ---
 name: help
-description: Guide on using oh-my-claudecode plugin
+description: Guide on using smelter plugin
 ---
 
-# How OMC Works
+# How Smelter Works
 
-**You don't need to learn any commands!** OMC enhances Claude Code with intelligent behaviors that activate automatically.
+Smelter is organized around planning state, start commands, and executor commands.
 
-## What Happens Automatically
+## Core Concepts
 
-| When You... | I Automatically... |
-|-------------|-------------------|
-| Give me a complex task | Parallelize and delegate to specialist agents |
-| Ask me to plan something | Start a planning interview |
-| Need something done completely | Persist until verified complete |
-| Work on UI/frontend | Activate design sensibility |
-| Say "stop" or "cancel" | Intelligently stop current operation |
+| Concept | Values | Purpose |
+|--------|--------|---------|
+| Planning state | `features/<slug>/task/_overview.md`, `features/<slug>/task/*.md` | Source of truth |
+| Start commands | `/feat`, `/qa`, `/tasker` | Start or shape work |
 
-## Magic Keywords (Optional Shortcuts)
+## Start Commands
 
-You can include these words naturally in your request for explicit control:
+| Command | Use |
+|--------|-----|
+| `/feat` | Standard implementation work |
+| `/qa` | Small fixes and narrow changes |
+| `/tasker` | Planning-state creation and repair |
 
-| Keyword | Effect | Example |
-|---------|--------|---------|
-| **ralph** | Persistence mode | "ralph: fix all the bugs" |
-| **ralplan** | Iterative planning | "ralplan this feature" |
-| **ulw** | Max parallelism | "ulw refactor the API" |
-| **plan** | Planning interview | "plan the new endpoints" |
+Start command examples:
+- `/feat "new onboarding flow"`
+- `/qa "fix login error copy"`
+- `/tasker "login page shows no password error"`
 
-**ralph includes ultrawork:** When you activate ralph mode, it automatically includes ultrawork's parallel execution. No need to combine keywords.
+## Verification
+
+Verification depends on the selected tasks, not on the preset name alone.
+
+- Planning work does not require E2E by default
+- UI or user-flow changes may require E2E
+- Small fixes may only need targeted tests or typecheck
 
 ## Stopping Things
 
-Just say:
-- "stop"
-- "cancel"
-- "abort"
+Use `/cancel` to stop active work.
 
-I'll figure out what to stop based on context.
-
-## First Time Setup
-
-If you haven't configured OMC yet:
-
-```
-/oh-my-claudecode:omc-setup
-```
-
-This is the **only command** you need to know. It downloads the configuration and you're done.
-
-## For 2.x Users
-
-Your old commands still work! `/ralph`, `/ultrawork`, `/plan`, etc. all function exactly as before.
-
-But now you don't NEED them - everything is automatic.
-
-## Need More Help?
-
-- **README**: https://github.com/Yeachan-Heo/oh-my-claudecode
-- **Issues**: https://github.com/Yeachan-Heo/oh-my-claudecode/issues
-
----
-
-*Version: 3.5.5*
+For the canonical model, read `doc/index.md` and `doc/workflow-spec.md`.

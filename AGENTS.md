@@ -1,160 +1,247 @@
-# Everything Claude Code (ECC) — Agent Instructions
+# Smelter — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 28 specialized agents, 125 skills, 60 commands, and automated hook workflows for software development.
+This is the **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 1.9.0
+**Version:** 1.0.0
 
-## Core Principles
+## Core Philosophy
 
-1. **Agent-First** — Delegate to specialized agents for domain tasks
-2. **Test-Driven** — Write tests before implementation, 80%+ coverage required
-3. **Security-First** — Never compromise on security; validate all inputs
-4. **Immutability** — Always create new objects, never mutate existing ones
-5. **Plan Before Execute** — Plan complex features before writing code
+**"Agents do not memorize. Agents read files."**
+
+- All plans, tasks, decisions → written to `.smt/` files
+- Session start → read `features/*/task/_overview.md` + relevant `features/*/task/*.md`
+- Progress tracked by updating `features/<slug>/task/{task-name}.md`
+- Memory lives in files, not in context
+
+## TDD is Mandatory
+
+```
+RULE 1: NEVER write implementation before tests
+RULE 2: Test file MUST exist before source file
+RULE 3: Tests MUST fail first (RED), then pass (GREEN)
+RULE 4: E2E tests required for all interface-changing work (UI, CLI, API, hooks, scripts)
+RULE 5: NEVER mark a task complete without passing tests
+```
+
+Exemption for `/qa` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD (see `document/workflow.md` Step 4).
+
+## Execution Model
+
+### Commands (3)
+
+| Command | Use | Step Range | E2E |
+|---------|-----|------------|-----|
+| `/tasker` | Create or refine planning state (absorbs former intake role). Integrates with native `EnterPlanMode`/`ExitPlanMode`. | 1–3 | — |
+| `/feat` | Full development workflow on a prompt. "extend" magic keyword skips Step 2. | 1–10 | surface-based (required for interface changes) |
+| `/qa` | Bug fixes and simple UI/text/dialogue edits. TDD exemption per surface. | 4–10 | surface-based |
+
+The planning state is the source of truth. It discovers `features/` directories, then reads each `features/<slug>/task/*.md` to select pending tasks, and keeps working until the selected task set is complete or blocked.
+
+### Magic Keywords (natural-language entry)
+
+`scripts/keyword-detector.mjs` maps natural-language phrases to the same commands when no explicit slash is present. Priority: explicit slash > magic keyword.
+
+| Keyword (en/ko) | Command | Branch hint |
+|-----------------|---------|-------------|
+| `tasker`, `plan`, `설계해줘`, `계획부터` | `/tasker` | — |
+| `new feature`, `새 기능`, `design first` | `/feat` | `new-feature` |
+| `extend`, `add to`, `덧붙여`, `확장해줘` | `/feat` | `extend` (skip Step 2) |
+| `fix`, `bug`, `버그`, `고쳐` | `/qa` | `bug` (E2E forced on) |
+| `style`, `typo`, `텍스트`, `색상`, `i18n`, `문구` | `/qa` | `style` (TDD exemption candidate) |
+| `cancel`, `stop` | `/cancel` | — |
+
+### Workflow examples
+
+```
+/tasker "new onboarding flow"          → plan mode + .smt/ state
+/feat "add dark mode toggle"           → full 10-step workflow
+/feat "extend the existing auth flow"  → Step 2 skipped via magic keyword
+/qa "fix login form error text"        → Step 4-10 with TDD exemption
+```
+
+### Auto-Confirm (global Stop hook)
+
+`scripts/auto-confirm.mjs` runs on every Stop event. If pending tasks remain in `.smt/`, it forwards the main agent's last response to a sub-agent which returns the next action — the main session then continues without waiting for the human.
+
+- Gate: `~/.smt/config.json` → `{ "autoConfirm": true }` (default on)
+- Respects context-limit and user-abort stops (never blocks those)
+
+### Transient-Error Auto-Retry
+
+`scripts/tool-retry.mjs` (PostToolUse) automatically retries common transient tool errors: ripgrep timeout, file-modified-since-read, rg flag-parse misread. Grep exit-code-1-no-match is reclassified as success. Retry cap: 3 per tool+args hash.
 
 ## Available Agents
 
 | Agent | Purpose | When to Use |
 |-------|---------|-------------|
-| planner | Implementation planning | Complex features, refactoring |
-| architect | System design and scalability | Architectural decisions |
-| tdd-guide | Test-driven development | New features, bug fixes |
-| code-reviewer | Code quality and maintainability | After writing/modifying code |
-| security-reviewer | Vulnerability detection | Before commits, sensitive code |
-| build-error-resolver | Fix build/type errors | When build fails |
-| e2e-runner | End-to-end Playwright testing | Critical user flows |
-| refactor-cleaner | Dead code cleanup | Code maintenance |
-| doc-updater | Documentation and codemaps | Updating docs |
-| docs-lookup | Documentation and API reference research | Library/API documentation questions |
-| cpp-reviewer | C++ code review | C++ projects |
-| cpp-build-resolver | C++ build errors | C++ build failures |
-| go-reviewer | Go code review | Go projects |
-| go-build-resolver | Go build errors | Go build failures |
-| kotlin-reviewer | Kotlin code review | Kotlin/Android/KMP projects |
-| kotlin-build-resolver | Kotlin/Gradle build errors | Kotlin build failures |
-| database-reviewer | PostgreSQL/Supabase specialist | Schema design, query optimization |
-| python-reviewer | Python code review | Python projects |
-| java-reviewer | Java and Spring Boot code review | Java/Spring Boot projects |
-| java-build-resolver | Java/Maven/Gradle build errors | Java build failures |
-| chief-of-staff | Communication triage and drafts | Multi-channel email, Slack, LINE, Messenger |
-| loop-operator | Autonomous loop execution | Run loops safely, monitor stalls, intervene |
-| harness-optimizer | Harness config tuning | Reliability, cost, throughput |
-| rust-reviewer | Rust code review | Rust projects |
-| rust-build-resolver | Rust build errors | Rust build failures |
-| pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
-| typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
+| `executor` | Code implementation | Standard features, refactoring |
+| `executor-low` | Simple fix / lookup | Small edits, single-file changes |
+| `executor-high` | Complex refactoring | Large multi-file tasks |
+| `architect` | Architecture & debug advice | Architectural decisions |
+| `architect-low` | Quick analysis | Fast code questions |
+| `explore` | File/code search | Finding files, patterns |
+| `explore-high` | Deep codebase search | Complex architectural search |
+| `tdd-guide` | TDD enforcement | New features, bug fixes |
+| `qa-tester` | E2E testing | Critical user flows |
+| `designer` | UI/frontend | Component and page work |
+| `code-reviewer` | Code quality | After writing/modifying code |
+| `security-reviewer` | Vulnerability detection | Before commits, sensitive code |
+| `build-fixer` | Fix build/type errors | When build fails |
+| `git-master` | Git operations | Commits, rebasing, history |
+| `planner` | Strategic planning | Complex features |
+| `critic` | Plan review | Before executing plans |
+| `analyst` | Requirements analysis | Early-stage feature scoping |
+| `researcher` | External documentation | Library/API research |
+| `scientist` | Data analysis | Data and ML tasks |
+| `deep-executor` | Complex goal-oriented tasks | Autonomous long-running work |
+| `writer` | Technical documentation | README, API docs |
+| `vision` | Image/PDF analysis | Visual file interpretation |
 
-## Agent Orchestration
+Use agents proactively: complex feature → **planner** then **executor**; just wrote code → **code-reviewer**; bug fix or new feature → **tdd-guide**; architectural decision → **architect**; security-sensitive code → **security-reviewer**; build failed → **build-fixer**. Parallelize independent operations.
 
-Use agents proactively without user prompt:
-- Complex feature requests → **planner**
-- Code just written/modified → **code-reviewer**
-- Bug fix or new feature → **tdd-guide**
-- Architectural decision → **architect**
-- Security-sensitive code → **security-reviewer**
-- Multi-channel communication triage → **chief-of-staff**
-- Autonomous loops / loop monitoring → **loop-operator**
-- Harness config reliability and cost → **harness-optimizer**
+## File-Based Memory Protocol
 
-Use parallel execution for independent operations — launch multiple agents simultaneously.
+```
+{project}/
+└── .smt/
+    ├── features/
+    │   └── <feature-slug>/
+    │       ├── task/
+    │       │   ├── _overview.md  ← feature goal, scope, acceptance criteria
+    │       │   └── <task-name>.md ← individual task (atomic, agent-readable)
+    │       └── decisions.md      ← architecture decisions for this feature
+    ├── wiki/                     ← project knowledge base
+    └── session/                  ← session logs
+```
+
+**Protocol:**
+1. Session start → Read `features/*/task/_overview.md` + relevant `features/*/task/*.md`
+2. Before coding → verify task file exists at `features/<slug>/task/<task-name>.md`
+3. Task complete → update `features/<slug>/task/<task-name>.md`
+4. New decision → append to `features/<slug>/decisions.md`
+5. Session end → append to `session/YYYY-MM-DD.md`
+
+## Completion Rules
+
+Before marking ANY task complete:
+- [ ] Unit tests written AND passing
+- [ ] Integration tests passing (if applicable)
+- [ ] E2E tests passing (if the selected tasks changed any interface: UI, CLI, API, hook, or script)
+- [ ] `features/<slug>/task/<task-name>.md` updated
+- [ ] No TypeScript errors (`tsc --noEmit`)
+
+**If ANY unchecked → CONTINUE WORKING.**
 
 ## Security Guidelines
 
-**Before ANY commit:**
+Before ANY commit:
 - No hardcoded secrets (API keys, passwords, tokens)
 - All user inputs validated
 - SQL injection prevention (parameterized queries)
 - XSS prevention (sanitized HTML)
-- CSRF protection enabled
 - Authentication/authorization verified
-- Rate limiting on all endpoints
-- Error messages don't leak sensitive data
+- Error messages do not leak sensitive data
 
-**Secret management:** NEVER hardcode secrets. Use environment variables or a secret manager. Validate required secrets at startup. Rotate any exposed secrets immediately.
-
-**If security issue found:** STOP → use security-reviewer agent → fix CRITICAL issues → rotate exposed secrets → review codebase for similar issues.
+If a security issue is found: STOP → `security-reviewer` → fix CRITICAL issues → rotate exposed secrets.
 
 ## Coding Style
 
-**Immutability (CRITICAL):** Always create new objects, never mutate. Return new copies with changes applied.
+**Immutability (CRITICAL):** Always create new objects, never mutate existing ones.
 
-**File organization:** Many small files over few large ones. 200-400 lines typical, 800 max. Organize by feature/domain, not by type. High cohesion, low coupling.
+**File organization:** Many small files over few large ones. 200–400 lines typical, 800 max.
 
-**Error handling:** Handle errors at every level. Provide user-friendly messages in UI code. Log detailed context server-side. Never silently swallow errors.
+**Error handling:** Handle errors explicitly at every level. Never silently swallow errors.
 
-**Input validation:** Validate all user input at system boundaries. Use schema-based validation. Fail fast with clear messages. Never trust external data.
-
-**Code quality checklist:**
-- Functions small (<50 lines), files focused (<800 lines)
-- No deep nesting (>4 levels)
-- Proper error handling, no hardcoded values
-- Readable, well-named identifiers
+**Input validation:** Validate all user input at system boundaries. Fail fast with clear messages.
 
 ## Testing Requirements
 
-**Minimum coverage: 80%**
+Minimum coverage: 80%
 
-Test types (all required):
 1. **Unit tests** — Individual functions, utilities, components
 2. **Integration tests** — API endpoints, database operations
-3. **E2E tests** — Critical user flows
+3. **E2E tests** — Test through the real interface (UI→Playwright, CLI→subprocess, API→real server, hook→stdin/stdout pipe)
 
-**TDD workflow (mandatory):**
-1. Write test first (RED) — test should FAIL
-2. Write minimal implementation (GREEN) — test should PASS
-3. Refactor (IMPROVE) — verify coverage 80%+
-
-Troubleshoot failures: check test isolation → verify mocks → fix implementation (not tests, unless tests are wrong).
-
-## Development Workflow
-
-1. **Plan** — Use planner agent, identify dependencies and risks, break into phases
-2. **TDD** — Use tdd-guide agent, write tests first, implement, refactor
-3. **Review** — Use code-reviewer agent immediately, address CRITICAL/HIGH issues
-4. **Capture knowledge in the right place**
-   - Personal debugging notes, preferences, and temporary context → auto memory
-   - Team/project knowledge (architecture decisions, API changes, runbooks) → the project's existing docs structure
-   - If the current task already produces the relevant docs or code comments, do not duplicate the same information elsewhere
-   - If there is no obvious project doc location, ask before creating a new top-level file
-5. **Commit** — Conventional commits format, comprehensive PR summaries
+TDD workflow: write test first (RED) → minimal implementation (GREEN) → refactor → verify 80%+ coverage.
 
 ## Git Workflow
 
-**Commit format:** `<type>: <description>` — Types: feat, fix, refactor, docs, test, chore, perf, ci
-
-**PR workflow:** Analyze full commit history → draft comprehensive summary → include test plan → push with `-u` flag.
-
-## Architecture Patterns
-
-**API response format:** Consistent envelope with success indicator, data payload, error message, and pagination metadata.
-
-**Repository pattern:** Encapsulate data access behind standard interface (findAll, findById, create, update, delete). Business logic depends on abstract interface, not storage mechanism.
-
-**Skeleton projects:** Search for battle-tested templates, evaluate with parallel agents (security, extensibility, relevance), clone best match, iterate within proven structure.
-
-## Performance
-
-**Context management:** Avoid last 20% of context window for large refactoring and multi-file features. Lower-sensitivity tasks (single edits, docs, simple fixes) tolerate higher utilization.
-
-**Build troubleshooting:** Use build-error-resolver agent → analyze errors → fix incrementally → verify after each fix.
+Commit format: `<type>: <description>`. Types: feat, fix, refactor, docs, test, chore, perf, ci.
 
 ## Project Structure
 
 ```
-agents/          — 28 specialized subagents
-skills/          — 117 workflow skills and domain knowledge
-commands/        — 60 slash commands
-hooks/           — Trigger-based automations
-rules/           — Always-follow guidelines (common + per-language)
-scripts/         — Cross-platform Node.js utilities
-mcp-configs/     — 14 MCP server configurations
-tests/           — Test suite
+src/             — Core TypeScript engine (types, engine, adapters, runners, rules)
+bin/             — CLI entry point (smelter command)
+agents/          — Specialized subagent definitions
+skills/          — Reusable workflow skill prompts
+commands/        — Slash command definitions (tasker.md, feat.md, qa.md)
+hooks/           — hooks.json trigger definitions
+scripts/         — Node.js hook scripts (keyword-detector, auto-confirm, tool-retry, session-end, ...)
+presets/         — Execution preset configs (tasker, feat, qa)
+workflows/       — YAML DAG workflow definitions
+rules/           — Language-specific coding rules
+document/        — Workflow spec and documentation
 ```
 
-## Success Metrics
+## Visibility — Yellow Tags
 
-- All tests pass with 80%+ coverage
-- No security vulnerabilities
-- Code is readable and maintainable
-- Performance is acceptable
-- User requirements are met
+Every hook prints a short ANSI-yellow bracketed tag to stderr so you can see what the harness is doing. Common tags:
+
+| Tag | Source |
+|-----|--------|
+| `[Command: /<name>]` / `[Magic Keyword: <kw> → /<cmd>]` | keyword-detector |
+| `[Inject: <skill>]` | skill-injector |
+| `[TDD Gate]` / `[Security Gate]` | pre-tool-enforcer |
+| `[Post Verify]` | post-tool-verifier |
+| `[Auto-Retry: <reason>]` | tool-retry |
+| `[Auto-Confirm]` | auto-confirm |
+| `[Run E2E]` | stop-e2e |
+| `[Plan Mode: Enter]` / `[Plan Mode: Exit]` | /tasker |
+| `[Doc Sync Check]` | session-end |
+| `[Session Start]` | session-start-smt |
+| `[Permission]` | permission-handler |
+| `[Pre-Compact]` | pre-compact |
+| `[Agent Check]` | sub-agent review injection |
+| `[FEAT MODE]` / `[QA MODE]` / `[TASKER MODE]` | keyword-detector |
+| `[Inject: rules-lib/<lang>]` | rule-injector |
+
+### Rules Injection
+
+`rules-lib/` contains language-specific coding rules injected on a per-surface basis by `scripts/rule-injector.mjs`. Rules are **not** auto-loaded by the CLI at startup; they are injected via a `PreToolUse` hook when a tool targets a file whose extension maps to a known language. Tag: `[Inject: rules-lib/<lang>]`.
+
+## ECC Instinct Learning
+
+Sessions are observed automatically. Patterns become instincts:
+- `/instinct-status` — view learned patterns
+- `/evolve` — cluster instincts into skills
+- Instincts auto-inject on future sessions
+
+## State Paths
+
+| Path | Purpose |
+|------|---------|
+| `{project}/.smt/` | File-based memory (features/, wiki/, session/) |
+| `{project}/.smt/features/<slug>/task/` | Individual task files per feature |
+| `{project}/.smt/features/<slug>/decisions.md` | Architecture decisions per feature |
+| `~/.smt/config.json` | Global `autoConfirm` toggle |
+| `~/.claude/plans/<name>.md` | Native Claude Code plan files (dual-written by /tasker) |
+| `~/.claude/homunculus/` | ECC instinct data |
+
+## Cancel
+
+- `/cancel [hard]` — hard stop
+- `/queue <intent>` — finish current work then redirect
+- Disable auto-confirm: set `autoConfirm: false` in `~/.smt/config.json`
+
+---
+
+## Appendix — Internal preset names
+
+Users interact via commands only. Preset names exist for implementation reference:
+
+| Preset | Steps | E2E | Tests | Notes |
+|--------|-------|-----|-------|-------|
+| `tasker` | 1–3 | — | 0 | Planning state only |
+| `feat` | 1–10 | required | 10+ | Full workflow |
+| `qa` | 4–10 | surface-based | 5+ | Narrow exec, TDD exemption applies |

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build (dist is committed for plugin users)
+# dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
+
+# Cache
+/tmp/claude-dashboard-cache.json
+claude-dashboard.mov
+
+# Private docs
+.private/
+
+# Website
+website/node_modules/
+website/dist/
+website/.astro/

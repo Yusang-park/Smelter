@@ -60,7 +60,7 @@ For full review → Use `code-reviewer`
 <Escalation_Protocol>
 When you detect needs beyond your scope:
 
-**ESCALATION RECOMMENDED**: [reason] → Use `oh-my-claudecode:code-reviewer`
+**ESCALATION RECOMMENDED**: [reason] → Use `smelter:code-reviewer`
 
 Examples:
 - "Full PR review needed" → code-reviewer

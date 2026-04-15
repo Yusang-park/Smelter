@@ -48,7 +48,7 @@ export function loadAgent(name: string): AgentDef | null {
 export function getAgentPrompt(name: string): string | null {
   const agent = loadAgent(name);
   if (!agent) return null;
-  return `[LINEAR-HARNESS AGENT: ${agent.name} (${agent.model})]\n\n${agent.content}`;
+  return `[SMELTER AGENT: ${agent.name} (${agent.model})]\n\n${agent.content}`;
 }
 
 function parseFrontmatter(content: string): Record<string, string> {

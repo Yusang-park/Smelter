@@ -2,14 +2,14 @@
 import { runWithTask } from '../src/engine.js';
 import { loadTasks, findTask, updateTask, createTask, getTasksByColumn } from '../src/store.js';
 import { runPlaywright } from '../src/runners/playwright.js';
-import { saveArtifacts } from '../src/artifacts.js';
+// artifacts are saved by stop-e2e.mjs hook, not by the CLI directly
 import { loadProjectMemory, autoDetectAndSave, addNote, addDirective } from '../src/project-memory.js';
 import { listSkills, loadSkill } from '../src/skill-loader.js';
 import { listAgents, loadAgent } from '../src/agent-loader.js';
 import { listWorkflows, loadWorkflow, runWorkflow } from '../src/workflow-engine.js';
 import type { TaskColumn } from '../src/store.js';
-import type { HarnessMode } from '../src/types.js';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import type { HarnessPreset } from '../src/types.js';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -32,24 +32,24 @@ function columnIcon(col: TaskColumn): string {
 async function main() {
   switch (command) {
     case 'run': {
-      // Parse flags: --skill <name>, --agent <name>, --model <name>, --mode <mode>
+      // Parse flags: --preset <name>, --skill <name>, --agent <name>, --model <name>, --no-caveman
+      let preset: HarnessPreset = 'feat';
       let skill: string | undefined;
       let agent: string | undefined;
       let model: string | undefined;
-      let mode: HarnessMode = 'e2e-force';
       let noCaveman = false;
       const promptParts: string[] = [];
 
       const allArgs = [subcommand, ...args].filter(Boolean);
       for (let i = 0; i < allArgs.length; i++) {
-        if (allArgs[i] === '--skill' && allArgs[i + 1]) {
+        if (allArgs[i] === '--preset' && allArgs[i + 1]) {
+          preset = allArgs[++i] as HarnessPreset;
+        } else if (allArgs[i] === '--skill' && allArgs[i + 1]) {
           skill = allArgs[++i];
         } else if (allArgs[i] === '--agent' && allArgs[i + 1]) {
           agent = allArgs[++i];
         } else if (allArgs[i] === '--model' && allArgs[i + 1]) {
           model = allArgs[++i];
-        } else if (allArgs[i] === '--mode' && allArgs[i + 1]) {
-          mode = allArgs[++i] as HarnessMode;
         } else if (allArgs[i] === '--no-caveman') {
           noCaveman = true;
         } else {
@@ -59,25 +59,21 @@ async function main() {
 
       const prompt = promptParts.join(' ');
       if (!prompt) {
-        console.error('Usage: linear-harness run [--skill <name>] [--agent <name>] [--model <m>] [--mode <m>] [--no-caveman] <prompt>');
+        console.error('Usage: smelter run [--preset tasker|feat|qa] [--skill <name>] [--agent <name>] [--model <m>] [--no-caveman] <prompt>');
         process.exit(1);
       }
-      console.log(`[linear-harness] Running: "${prompt}"`);
+      console.log(`[smelter] Running: "${prompt}" [preset: ${preset}]`);
       if (skill) console.log(`[skill] ${skill}`);
       if (agent) console.log(`[agent] ${agent}`);
       console.log(`CWD: ${cwd}\n`);
 
-      const { task, result } = await runWithTask(prompt, cwd, { mode, model, skill, agent, noCaveman: noCaveman || undefined });
+      const { task, result } = await runWithTask(prompt, cwd, { mode: 'normal', preset, model, skill, agent, noCaveman: noCaveman || undefined });
 
       console.log(`\n[Task] ${task.id} — ${task.column}`);
       console.log(`[Result] ${result.status}`);
-      if (result.e2eResult) {
-        console.log(`[E2E] ${result.e2eResult.passedTests}/${result.e2eResult.totalTests} passed`);
-      }
-      if (task.videoPath) {
-        console.log(`[Video] ${task.videoPath}`);
-      }
-      console.log(`\nRun 'linear-harness review approve ${task.id}' to approve`);
+      // E2E interface results are reported by the Stop hook chain (stop-e2e.mjs),
+      // not by the engine. See doc/workflow.md Step 8.
+      console.log(`\nRun 'smelter review approve ${task.id}' to approve`);
       process.exit(result.status === 'completed' ? 0 : 1);
       break;
     }
@@ -87,7 +83,7 @@ async function main() {
         case 'create': {
           const title = args.join(' ');
           if (!title) {
-            console.error('Usage: linear-harness task create <title>');
+            console.error('Usage: smelter task create <title>');
             process.exit(1);
           }
           const task = createTask(cwd, title);
@@ -97,7 +93,7 @@ async function main() {
         case 'list': {
           const tasks = loadTasks(cwd);
           if (tasks.length === 0) {
-            console.log('[task] No tasks found. Run "linear-harness task create <title>"');
+            console.log('[task] No tasks found. Run "smelter task create <title>"');
             break;
           }
 
@@ -107,12 +103,9 @@ async function main() {
             if (colTasks.length === 0) continue;
             console.log(`\n${columnIcon(col)} ${col.toUpperCase()} (${colTasks.length})`);
             for (const t of colTasks) {
-              const badges: string[] = [];
-              if (t.videoPath) badges.push('(video)');
-              if (t.reviewStatus === 'pending') badges.push('(pending)');
-              if (t.reviewStatus === 'approved') badges.push('(approved)');
-              if (t.reviewStatus === 'rejected') badges.push('(rejected)');
-              console.log(`  ${t.id}  ${t.title} ${badges.join(' ')}`);
+              const status = t.done ? '✓' : '○';
+              const tagStr = t.tags.length > 0 ? ` ${t.tags.join(' ')}` : '';
+              console.log(`  ${status} ${t.id}  ${t.title}${tagStr}`);
             }
           }
           break;
@@ -120,7 +113,7 @@ async function main() {
         case 'show': {
           const id = args[0];
           if (!id) {
-            console.error('Usage: linear-harness task show <id>');
+            console.error('Usage: smelter task show <id>');
             process.exit(1);
           }
           const task = findTask(cwd, id);
@@ -132,20 +125,14 @@ async function main() {
           console.log(`ID:       ${task.id}`);
           console.log(`Title:    ${task.title}`);
           console.log(`Column:   ${task.column}`);
-          console.log(`Review:   ${task.reviewStatus ?? 'N/A'}`);
-          console.log(`Created:  ${new Date(task.createdAt).toLocaleString()}`);
-          if (task.videoPath) console.log(`Video:    ${task.videoPath}`);
-          if (task.logPath) console.log(`Log:      ${task.logPath}`);
-          if (task.reportPath) console.log(`Report:   ${task.reportPath}`);
-          if (task.reviewFeedback) console.log(`Feedback: ${task.reviewFeedback}`);
-          if (task.prUrl) console.log(`PR:       ${task.prUrl}`);
-          if (task.labels.length > 0) console.log(`Labels:   ${task.labels.join(', ')}`);
+          console.log(`Done:     ${task.done ? 'yes' : 'no'}`);
+          if (task.tags.length > 0) console.log(`Tags:     ${task.tags.join(', ')}`);
           break;
         }
         case 'move': {
           const [id, col] = args;
           if (!id || !col) {
-            console.error('Usage: linear-harness task move <id> <column>');
+            console.error('Usage: smelter task move <id> <column>');
             process.exit(1);
           }
           const validCols: TaskColumn[] = ['backlog', 'in-progress', 'review', 'done'];
@@ -162,13 +149,13 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: linear-harness task <create|list|show|move>');
+          console.log('Usage: smelter task <create|list|show|move>');
       }
       break;
     }
 
     case 'e2e': {
-      console.log(`[linear-harness] Running E2E...`);
+      console.log(`[smelter] Running E2E...`);
 
       const result = await runPlaywright(cwd);
       console.log(`[E2E] ${result.status} — ${result.passedTests}/${result.totalTests} passed (${result.duration}ms)`);
@@ -179,20 +166,12 @@ async function main() {
         if (test.error) console.log(`     ${test.error}`);
       }
 
-      // Save artifacts if there's an active task
+      // Save artifacts if there's an active task (artifacts stored in feature-folder)
       const tasks = loadTasks(cwd);
       const activeTask = tasks.find((t) => t.column === 'in-progress');
       if (activeTask) {
-        const artifacts = saveArtifacts(cwd, activeTask.id, result);
-        updateTask(cwd, activeTask.id, {
-          videoPath: artifacts.videoPath,
-          logPath: artifacts.logPath,
-          reportPath: artifacts.reportPath,
-          screenshotPaths: artifacts.screenshotPaths,
-          column: 'review',
-          reviewStatus: 'pending',
-        });
-        console.log(`\n[task] ${activeTask.id} -> Review (artifacts saved)`);
+        updateTask(cwd, activeTask.id, { column: 'review' });
+        console.log(`\n[task] ${activeTask.id} -> Review`);
       }
 
       process.exit(result.status === 'passed' ? 0 : 1);
@@ -207,27 +186,23 @@ async function main() {
           console.log(`\nREVIEW (${reviewTasks.length})\n`);
           for (const t of reviewTasks) {
             console.log(`  ${t.id}  ${t.title}`);
-            if (t.videoPath) console.log(`         Video: ${t.videoPath}`);
           }
           break;
         }
         case 'show': {
           const id = args[0];
-          if (!id) { console.error('Usage: linear-harness review show <id>'); process.exit(1); }
+          if (!id) { console.error('Usage: smelter review show <id>'); process.exit(1); }
           const task = findTask(cwd, id);
           if (!task) { console.error(`[review] Not found: ${id}`); process.exit(1); }
-          console.log(`\n${task.title} (${task.id})\nStatus: ${task.reviewStatus}`);
-          if (task.videoPath) console.log(`Video:  ${task.videoPath}`);
-          if (task.logPath) console.log(`Log:    ${task.logPath}`);
-          if (task.reportPath) console.log(`Report: ${task.reportPath}`);
-          if (task.screenshotPaths.length > 0) task.screenshotPaths.forEach((sp) => console.log(`  ${sp}`));
-          console.log(`\n  linear-harness review approve|reject ${task.id}`);
+          console.log(`\n${task.title} (${task.id})\nColumn: ${task.column}\nDone: ${task.done}`);
+          if (task.tags.length > 0) console.log(`Tags: ${task.tags.join(', ')}`);
+          console.log(`\n  smelter review approve|reject ${task.id}`);
           break;
         }
         case 'approve': {
           const id = args[0];
-          if (!id) { console.error('Usage: linear-harness review approve <id>'); process.exit(1); }
-          const task = updateTask(cwd, id, { column: 'done', reviewStatus: 'approved' });
+          if (!id) { console.error('Usage: smelter review approve <id>'); process.exit(1); }
+          const task = updateTask(cwd, id, { column: 'done', done: true });
           if (!task) { console.error(`[review] Not found: ${id}`); process.exit(1); }
           console.log(`[review] Approved: ${task.id} — "${task.title}" -> Done`);
           break;
@@ -235,14 +210,14 @@ async function main() {
         case 'reject': {
           const id = args[0];
           const feedback = args.slice(1).join(' ') || 'Needs fixes';
-          if (!id) { console.error('Usage: linear-harness review reject <id> [feedback]'); process.exit(1); }
-          const task = updateTask(cwd, id, { column: 'in-progress', reviewStatus: 'rejected', reviewFeedback: feedback });
+          if (!id) { console.error('Usage: smelter review reject <id> [feedback]'); process.exit(1); }
+          const task = updateTask(cwd, id, { column: 'in-progress', done: false });
           if (!task) { console.error(`[review] Not found: ${id}`); process.exit(1); }
           console.log(`[review] Rejected: ${task.id} -> In Progress (${feedback})`);
           break;
         }
         default:
-          console.log('Usage: linear-harness review <list|show|approve|reject>');
+          console.log('Usage: smelter review <list|show|approve|reject>');
       }
       break;
     }
@@ -251,7 +226,7 @@ async function main() {
       const tasks = loadTasks(cwd);
       const columns: TaskColumn[] = ['backlog', 'in-progress', 'review', 'done'];
 
-      console.log('\nLinear Harness Board Status\n');
+      console.log('\nSmelter Board Status\n');
       for (const col of columns) {
         const count = tasks.filter((t) => t.column === col).length;
         console.log(`  ${columnIcon(col)} ${col.padEnd(14)} ${count}`);
@@ -259,7 +234,7 @@ async function main() {
       console.log(`  ${'─'.repeat(24)}`);
       console.log(`  Total${' '.repeat(12)} ${tasks.length}`);
 
-      const reviewPending = tasks.filter((t) => t.column === 'review' && t.reviewStatus === 'pending');
+      const reviewPending = tasks.filter((t) => t.column === 'review');
       if (reviewPending.length > 0) {
         console.log(`\n  ${reviewPending.length} task(s) awaiting review`);
       }
@@ -267,19 +242,15 @@ async function main() {
     }
 
     case 'init': {
-      const linearHarnessDir = join(cwd, '.linear-harness');
-      if (existsSync(linearHarnessDir)) {
-        console.log('[init] .linear-harness/ already exists');
+      const smelterDir = join(cwd, '.smt');
+      if (existsSync(smelterDir)) {
+        console.log('[init] .smt/ already exists');
       } else {
-        mkdirSync(linearHarnessDir, { recursive: true });
-        mkdirSync(join(linearHarnessDir, 'e2e-results'), { recursive: true });
-        writeFileSync(join(linearHarnessDir, 'tasks.json'), JSON.stringify({ tasks: [] }, null, 2));
-        writeFileSync(join(linearHarnessDir, 'config.json'), JSON.stringify({
-          mode: 'tdd-e2e',
-          maxRetries: 3,
-          rules: {},
-        }, null, 2));
-        console.log('[init] Created .linear-harness/ with default config');
+        mkdirSync(smelterDir, { recursive: true });
+        mkdirSync(join(smelterDir, 'features'), { recursive: true });
+        mkdirSync(join(smelterDir, 'wiki'), { recursive: true });
+        mkdirSync(join(smelterDir, 'session'), { recursive: true });
+        console.log('[init] Created .smt/ (features/, wiki/, session/)');
       }
 
       // Auto-detect tech stack and save to project memory
@@ -294,11 +265,11 @@ async function main() {
     }
 
     case 'list': {
-      console.log('[linear-harness] Available presets:');
-      console.log('  e2e-force   - Auto-run E2E after every code change');
-      console.log('  tdd         - Test-Driven Development enforcement');
-      console.log('  tdd-e2e     - TDD + E2E (default)');
-      console.log('  autopilot   - Full autonomous: TDD -> code -> E2E -> review -> PR');
+      console.log('[smelter] Available presets (core/presets/):\n');
+      console.log('  full      - 전체 워크플로우 (Step 1-11, E2E + 비디오 포함)');
+      console.log('  narrow    - 단순 이슈 해결 (Step 3-7, 10-11, E2E 없음)');
+      console.log('  planning  - 계획 수립만 (Step 2-3 + plan-review)\n');
+      console.log('Usage: smelter run --preset <name> "<prompt>"');
       break;
     }
 
@@ -321,7 +292,7 @@ async function main() {
           const category = args[0];
           const content = args.slice(1).join(' ');
           if (!category || !content) {
-            console.error('Usage: linear-harness memory add-note <category> <content>');
+            console.error('Usage: smelter memory add-note <category> <content>');
             process.exit(1);
           }
           addNote(cwd, category, content);
@@ -331,7 +302,7 @@ async function main() {
         case 'add-directive': {
           const directive = args.join(' ');
           if (!directive) {
-            console.error('Usage: linear-harness memory add-directive <directive>');
+            console.error('Usage: smelter memory add-directive <directive>');
             process.exit(1);
           }
           addDirective(cwd, directive);
@@ -339,7 +310,7 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: linear-harness memory <show|detect|add-note|add-directive>');
+          console.log('Usage: smelter memory <show|detect|add-note|add-directive>');
       }
       break;
     }
@@ -361,7 +332,7 @@ async function main() {
         case 'show': {
           const name = args[0];
           if (!name) {
-            console.error('Usage: linear-harness skill show <name>');
+            console.error('Usage: smelter skill show <name>');
             process.exit(1);
           }
           const content = loadSkill(name);
@@ -373,7 +344,7 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: linear-harness skill <list|show>');
+          console.log('Usage: smelter skill <list|show>');
       }
       break;
     }
@@ -396,7 +367,7 @@ async function main() {
         case 'show': {
           const name = args[0];
           if (!name) {
-            console.error('Usage: linear-harness agent show <name>');
+            console.error('Usage: smelter agent show <name>');
             process.exit(1);
           }
           const agent = loadAgent(name);
@@ -408,50 +379,8 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: linear-harness agent <list|show>');
+          console.log('Usage: smelter agent <list|show>');
       }
-      break;
-    }
-
-    case 'autopilot': {
-      // Parse optional --model flag
-      let autopilotModel: string | undefined;
-      const promptParts: string[] = [];
-      const allArgs2 = [subcommand, ...args].filter(Boolean);
-      for (let i = 0; i < allArgs2.length; i++) {
-        if (allArgs2[i] === '--model' && allArgs2[i + 1]) {
-          autopilotModel = allArgs2[++i];
-        } else {
-          promptParts.push(allArgs2[i]);
-        }
-      }
-      const prompt2 = promptParts.join(' ');
-      if (!prompt2) {
-        console.error('Usage: linear-harness autopilot [--model <m>] <prompt>');
-        process.exit(1);
-      }
-      console.log(`[autopilot] Running workflow: "${prompt2}"`);
-      const apResult = await runWorkflow('autopilot', cwd, prompt2, autopilotModel);
-      console.log(`\n[autopilot] ${apResult.status} (${(apResult.duration / 1000).toFixed(1)}s)`);
-      for (const node of apResult.nodes) {
-        const icon = node.status === 'completed' ? '[ok]' : node.status === 'failed' ? '[FAIL]' : '[skip]';
-        console.log(`  ${icon} ${node.id} (${(node.duration / 1000).toFixed(1)}s)`);
-      }
-      process.exit(apResult.status === 'completed' ? 0 : 1);
-      break;
-    }
-
-    case 'swarm': {
-      console.log('[swarm] Deprecated. Use: linear-harness workflow run <name> <prompt>');
-      console.log('  Available workflows: linear-harness workflow list');
-      process.exit(0);
-      break;
-    }
-
-    case 'pipeline': {
-      console.log('[pipeline] Deprecated. Use: linear-harness workflow run <name> <prompt>');
-      console.log('  Available workflows: linear-harness workflow list');
-      process.exit(0);
       break;
     }
 
@@ -478,7 +407,7 @@ async function main() {
         case 'run': {
           const workflowName = args[0];
           if (!workflowName) {
-            console.error('Usage: linear-harness workflow run <name> [prompt]');
+            console.error('Usage: smelter workflow run <name> [prompt]');
             process.exit(1);
           }
           const workflowPrompt = args.slice(1).join(' ') || '';
@@ -513,7 +442,7 @@ async function main() {
         case 'show': {
           const name = args[0];
           if (!name) {
-            console.error('Usage: linear-harness workflow show <name>');
+            console.error('Usage: smelter workflow show <name>');
             process.exit(1);
           }
           try {
@@ -535,32 +464,37 @@ async function main() {
           break;
         }
         default:
-          console.log('Usage: linear-harness workflow <list|run|show>');
+          console.log('Usage: smelter workflow <list|run|show>');
       }
       break;
     }
 
     default:
-      console.log(`linear-harness — AI development harness with TDD + E2E
+      console.log(`smelter — 실제 인간 개발자 워크플로우를 자동화하는 AI 개발 하네스
+
+Usage:
+  smelter run [flags] <prompt>
+  smelter <command> [args]
 
 Commands:
-  run [flags] <prompt>      Run dev task (flags: --skill, --agent, --model, --mode, --no-caveman)
-  autopilot <prompt>        5-phase autonomous pipeline
-  workflow <list|run|show>  YAML workflow engine (DAG execution)
-  task <create|list|show|move>  Manage task cards
-  e2e                       Run E2E tests
-  review <list|show|approve|reject>  Manage reviews
-  status                    Board status summary
-  init                      Initialize .linear-harness/ in project
-  list                      List presets
-  memory <show|detect|add-note|add-directive>  Project memory
-  skill <list|show>         Manage skills
-  agent <list|show>         Manage agents`);
+  run [--preset <p>] [--skill <s>] [--agent <a>] [--model <m>] [--no-caveman] <prompt>
+                            Task 실행 (normal 모드) [preset: tasker|feat|qa]
+  workflow <list|run|show>  YAML 워크플로우 엔진 (DAG 실행)
+  task <create|list|show|move>  Task 카드 관리
+  e2e                       E2E 테스트 실행
+  review <list|show|approve|reject>  리뷰 관리
+  status                    보드 현황 요약
+  init                      프로젝트에 .smt/ 초기화
+  list                      프리셋 목록 조회
+  memory <show|detect|add-note|add-directive>  프로젝트 메모리
+  skill <list|show>         스킬 목록/조회
+  agent <list|show>         에이전트 목록/조회
+`);
       process.exit(command ? 1 : 0);
   }
 }
 
 main().catch((err) => {
-  console.error('[linear-harness] Fatal error:', err);
+  console.error('[smelter] Fatal error:', err);
   process.exit(1);
 });

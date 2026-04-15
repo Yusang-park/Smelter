@@ -11,9 +11,15 @@
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
-import { join, basename } from 'path';
+import { join, basename, dirname } from 'path';
 import { homedir } from 'os';
 import { createRequire } from 'module';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { printTag } from './lib/yellow-tag.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const flowTracerPath = join(__dirname, '..', 'dist', 'hooks', 'subagent-tracker', 'flow-tracer.js');
 
 // Try to load the compiled bridge bundle
 const require = createRequire(import.meta.url);
@@ -25,6 +31,9 @@ try {
 }
 
 // Constants (used by fallback)
+// NOTE: USER_SKILLS_DIR and GLOBAL_SKILLS_DIR are intentionally user-scoped (~/ paths).
+// Learned skills are personal and shared across all projects — not project-specific state.
+// See T7 homedir audit exception in the plan.
 const USER_SKILLS_DIR = join(homedir(), '.claude', 'skills', 'omc-learned');
 const GLOBAL_SKILLS_DIR = join(homedir(), '.omc', 'skills');
 const PROJECT_SKILLS_SUBDIR = join('.omc', 'skills');
@@ -182,13 +191,9 @@ function findMatchingSkillsFallback(prompt, directory, sessionId) {
 // Main Logic (uses bridge if available, fallback otherwise)
 // =============================================================================
 
-// Read all stdin
-async function readStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
+// Read stdin synchronously
+function readStdinSync() {
+  try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
 }
 
 // Find matching skills - delegates to bridge or fallback
@@ -248,7 +253,8 @@ function formatSkillsMessage(skills) {
 // Main
 async function main() {
   try {
-    const input = await readStdin();
+    printTag('Inject: scanning skills');
+    const input = readStdinSync();
     if (!input.trim()) {
       console.log(JSON.stringify({ continue: true }));
       return;
@@ -270,9 +276,9 @@ async function main() {
     const matchingSkills = findMatchingSkills(prompt, directory, sessionId);
 
     // Record skill activations to flow trace (best-effort)
-    if (matchingSkills.length > 0) {
+    if (matchingSkills.length > 0 && existsSync(flowTracerPath)) {
       try {
-        const { recordSkillActivated } = await import('../dist/hooks/subagent-tracker/flow-tracer.js');
+        const { recordSkillActivated } = await import(pathToFileURL(flowTracerPath).href);
         for (const skill of matchingSkills) {
           recordSkillActivated(directory, sessionId, skill.name, skill.scope || 'learned');
         }
@@ -280,6 +286,7 @@ async function main() {
     }
 
     if (matchingSkills.length > 0) {
+      console.error(`\x1b[33m[smelter] UserPromptSubmit · Detect: ${matchingSkills.length} skill(s) matched\x1b[0m`);
       console.log(JSON.stringify({
         continue: true,
         hookSpecificOutput: {

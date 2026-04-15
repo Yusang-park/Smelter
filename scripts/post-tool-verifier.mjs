@@ -6,98 +6,17 @@
  * Cross-platform: Windows, macOS, Linux
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { existsSync, readFileSync, appendFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { homedir } from 'os';
-import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
+import { printTag } from './lib/yellow-tag.mjs';
 
-// Get the directory of this script to resolve the dist module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const distDir = join(__dirname, '..', 'dist', 'hooks', 'notepad');
+printTag('Post Verify');
 
-// Try to import notepad functions (may fail if not built)
-let setPriorityContext = null;
-let addWorkingMemoryEntry = null;
-try {
-  const notepadModule = await import(join(distDir, 'index.js'));
-  setPriorityContext = notepadModule.setPriorityContext;
-  addWorkingMemoryEntry = notepadModule.addWorkingMemoryEntry;
-} catch {
-  // Notepad module not available - remember tags will be silently ignored
-}
-
-// State file for session tracking
-const STATE_FILE = join(homedir(), '.claude', '.session-stats.json');
-
-// Ensure state directory exists
-try {
-  const stateDir = join(homedir(), '.claude');
-  if (!existsSync(stateDir)) {
-    mkdirSync(stateDir, { recursive: true });
-  }
-} catch {}
-
-// Read all stdin
-async function readStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
-}
-
-// Load session statistics
-function loadStats() {
-  try {
-    if (existsSync(STATE_FILE)) {
-      return JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
-    }
-  } catch {}
-  return { sessions: {} };
-}
-
-// Save session statistics
-function saveStats(stats) {
-  try {
-    writeFileSync(STATE_FILE, JSON.stringify(stats, null, 2));
-  } catch {}
-}
-
-// Update stats for this session
-function updateStats(toolName, sessionId) {
-  const stats = loadStats();
-
-  if (!stats.sessions[sessionId]) {
-    stats.sessions[sessionId] = {
-      tool_counts: {},
-      last_tool: '',
-      total_calls: 0,
-      started_at: Math.floor(Date.now() / 1000)
-    };
-  }
-
-  const session = stats.sessions[sessionId];
-  session.tool_counts[toolName] = (session.tool_counts[toolName] || 0) + 1;
-  session.last_tool = toolName;
-  session.total_calls = (session.total_calls || 0) + 1;
-  session.updated_at = Math.floor(Date.now() / 1000);
-
-  saveStats(stats);
-  return session.tool_counts[toolName];
-}
-
-// Read bash history config (default: enabled)
-function getBashHistoryConfig() {
-  try {
-    const configPath = join(homedir(), '.claude', '.omc-config.json');
-    if (existsSync(configPath)) {
-      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-      if (config.bashHistory === false) return false;
-      if (typeof config.bashHistory === 'object' && config.bashHistory.enabled === false) return false;
-    }
-  } catch {}
-  return true; // Default: enabled
+// Read stdin synchronously — hook scripts receive JSON via pipe, /dev/stdin returns immediately
+function readStdinSync() {
+  try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
 }
 
 // Append command to ~/.bash_history
@@ -137,66 +56,32 @@ function detectBashFailure(output) {
   return errorPatterns.some(pattern => pattern.test(output));
 }
 
-// Detect background operation
+// Detect background operation — only match explicit background task indicators
 function detectBackgroundOperation(output) {
   const bgPatterns = [
-    /started/i,
-    /running/i,
-    /background/i,
-    /async/i,
     /task_id/i,
-    /spawned/i,
+    /run_in_background/i,
+    /\bspawned\b/i,
   ];
 
   return bgPatterns.some(pattern => pattern.test(output));
 }
 
-/**
- * Process <remember> tags from agent output
- * <remember>content</remember> -> Working Memory
- * <remember priority>content</remember> -> Priority Context
- */
-function processRememberTags(output, directory) {
-  if (!setPriorityContext || !addWorkingMemoryEntry) {
-    return; // Notepad module not available
-  }
 
-  if (!output || !directory) {
-    return;
-  }
-
-  // Process priority remember tags first
-  const priorityRegex = /<remember\s+priority>([\s\S]*?)<\/remember>/gi;
-  let match;
-  while ((match = priorityRegex.exec(output)) !== null) {
-    const content = match[1].trim();
-    if (content) {
-      try {
-        setPriorityContext(directory, content);
-      } catch {}
-    }
-  }
-
-  // Process regular remember tags
-  const regularRegex = /<remember>([\s\S]*?)<\/remember>/gi;
-  while ((match = regularRegex.exec(output)) !== null) {
-    const content = match[1].trim();
-    if (content) {
-      try {
-        addWorkingMemoryEntry(directory, content);
-      } catch {}
-    }
-  }
-}
-
-// Detect write failure
+// Detect write failure — check success indicators first to avoid false positives
+// from file *contents* that contain words like "error" or "failed"
 function detectWriteFailure(output) {
+  // Known success messages from Claude Code Edit/Write tools
+  if (/updated successfully|has been written|file written/i.test(output)) return false;
+
+  // Specific error patterns that appear in tool failure messages (not file content)
   const errorPatterns = [
-    /error/i,
-    /failed/i,
+    /^Error:/m,
+    /old_string.*not found/i,
+    /did not match/i,
     /permission denied/i,
-    /read-only/i,
-    /not found/i,
+    /read-only file system/i,
+    /no such file or directory/i,
   ];
 
   return errorPatterns.some(pattern => pattern.test(output));
@@ -204,7 +89,7 @@ function detectWriteFailure(output) {
 
 // Get agent completion summary from tracking state
 function getAgentCompletionSummary(directory) {
-  const trackingFile = join(directory, '.omc', 'state', 'subagent-tracking.json');
+  const trackingFile = join(directory, '.smt', 'state', 'subagent-tracking.json');
   try {
     if (existsSync(trackingFile)) {
       const data = JSON.parse(readFileSync(trackingFile, 'utf-8'));
@@ -217,7 +102,7 @@ function getAgentCompletionSummary(directory) {
 
       const parts = [];
       if (running.length > 0) {
-        parts.push(`Running: ${running.length} [${running.map(a => a.agent_type.replace('oh-my-claudecode:', '')).join(', ')}]`);
+        parts.push(`Running: ${running.length} [${running.map(a => a.agent_type.replace('smelter:', '')).join(', ')}]`);
       }
       if (completed > 0) parts.push(`Completed: ${completed}`);
       if (failed > 0) parts.push(`Failed: ${failed}`);
@@ -226,6 +111,25 @@ function getAgentCompletionSummary(directory) {
     }
   } catch {}
   return '';
+}
+
+// Track files modified by Claude (Write/Edit) for session-scoped E2E checks
+function trackModifiedFile(filePath, directory) {
+  if (!filePath) return;
+  try {
+    const projectHash = createHash('md5').update(directory).digest('hex').slice(0, 8);
+    const trackingFile = `/tmp/smelter-session-files-${projectHash}.json`;
+    let files = [];
+    if (existsSync(trackingFile)) {
+      try { files = JSON.parse(readFileSync(trackingFile, 'utf-8')); } catch { files = []; }
+    }
+    // Store relative path if inside project dir
+    const rel = filePath.startsWith(directory) ? filePath.slice(directory.length + 1) : filePath;
+    if (!files.includes(rel)) {
+      files.push(rel);
+      writeFileSync(trackingFile, JSON.stringify(files));
+    }
+  } catch { /* best-effort */ }
 }
 
 // Generate contextual message
@@ -249,8 +153,6 @@ function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) 
         message = 'Task delegation failed. Verify agent name and parameters.';
       } else if (detectBackgroundOperation(toolOutput)) {
         message = 'Background task launched. Use TaskOutput to check results when needed.';
-      } else if (toolCount > 5) {
-        message = `Multiple tasks delegated (${toolCount} total). Track their completion status.`;
       }
       if (agentSummary) {
         message = message ? `${message} | ${agentSummary}` : agentSummary;
@@ -285,9 +187,6 @@ function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) 
       break;
 
     case 'Read':
-      if (toolCount > 10) {
-        message = `Extensive reading (${toolCount} files). Consider using Grep for pattern searches.`;
-      }
       break;
 
     case 'Grep':
@@ -306,43 +205,37 @@ function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) 
   return message;
 }
 
-async function main() {
+function main() {
   try {
-    const input = await readStdin();
+    const input = readStdinSync();
     const data = JSON.parse(input);
 
     const toolName = data.tool_name || data.toolName || '';
     const rawResponse = data.tool_response || data.toolOutput || '';
     const toolOutput = typeof rawResponse === 'string' ? rawResponse : JSON.stringify(rawResponse);
-    const sessionId = data.session_id || data.sessionId || 'unknown';
     const directory = data.cwd || data.directory || process.cwd();
 
-    // Update session statistics
-    const toolCount = updateStats(toolName, sessionId);
-
     // Append Bash commands to ~/.bash_history for terminal recall
-    if ((toolName === 'Bash' || toolName === 'bash') && getBashHistoryConfig()) {
+    if (toolName === 'Bash' || toolName === 'bash') {
       const toolInput = data.tool_input || data.toolInput || {};
       const command = typeof toolInput === 'string' ? toolInput : (toolInput.command || '');
       appendToBashHistory(command);
     }
 
-    // Process <remember> tags from Task agent output
-    if (
-      toolName === 'Task' ||
-      toolName === 'task' ||
-      toolName === 'TaskCreate' ||
-      toolName === 'TaskUpdate'
-    ) {
-      processRememberTags(toolOutput, directory);
+    // Track files modified by Claude for session-scoped E2E checks
+    if (toolName === 'Write' || toolName === 'Edit') {
+      const toolInput = data.tool_input || data.toolInput || {};
+      const filePath = typeof toolInput === 'string' ? toolInput : (toolInput.file_path || toolInput.filePath || '');
+      trackModifiedFile(filePath, directory);
     }
 
     // Generate contextual message
-    const message = generateMessage(toolName, toolOutput, sessionId, toolCount, directory);
+    const message = generateMessage(toolName, toolOutput, '', 0, directory);
 
     // Build response - use hookSpecificOutput.additionalContext for PostToolUse
     const response = { continue: true };
     if (message) {
+      console.error(`\x1b[33m[smelter] PostToolUse · ${toolName}\x1b[0m`);
       response.hookSpecificOutput = {
         hookEventName: 'PostToolUse',
         additionalContext: message

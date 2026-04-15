@@ -152,6 +152,10 @@ interface ParsedJsonl {
   [key: string]: unknown;
 }
 
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'gpt-5.4': 1_000_000,
+};
+
 function tryParseJsonl(line: string): ParsedJsonl | null {
   try { return JSON.parse(line) as ParsedJsonl; }
   catch { return null; }
@@ -254,6 +258,18 @@ function extractToolResultContent(parsed: ParsedJsonl): string {
   return '';
 }
 
+function resolveContextWindow(raw: Record<string, unknown>): number {
+  const explicit = Number(raw.context_window ?? raw.contextWindow ?? 0);
+  if (explicit > 0) return explicit;
+
+  const model = String(raw.model ?? '');
+  if (model && MODEL_CONTEXT_WINDOWS[model]) {
+    return MODEL_CONTEXT_WINDOWS[model];
+  }
+
+  return 200000;
+}
+
 function extractUsage(parsed: ParsedJsonl): UsageInfo | null {
   const raw =
     (parsed.usage as Record<string, unknown> | undefined) ??
@@ -265,7 +281,7 @@ function extractUsage(parsed: ParsedJsonl): UsageInfo | null {
   const inputTokens = Number(raw.input_tokens ?? raw.inputTokens ?? 0);
   const cacheCreation = Number(raw.cache_creation_input_tokens ?? raw.cacheCreationInputTokens ?? 0);
   const cacheRead = Number(raw.cache_read_input_tokens ?? raw.cacheReadInputTokens ?? 0);
-  const contextWindow = Number(raw.context_window ?? raw.contextWindow ?? 200000);
+  const contextWindow = resolveContextWindow(raw);
   const contextTokens = inputTokens + cacheCreation + cacheRead;
   const percentage = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
 
@@ -278,4 +294,8 @@ function extractUsage(parsed: ParsedJsonl): UsageInfo | null {
     contextTokens,
     percentage,
   };
+}
+
+export function parseUsageForTest(parsed: ParsedJsonl): UsageInfo | null {
+  return extractUsage(parsed);
 }

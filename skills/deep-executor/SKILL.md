@@ -20,7 +20,7 @@ Deep Executor is the autonomous deep worker agent. When activated, it:
 ## Usage
 
 ```
-/oh-my-claudecode:deep-executor <your complex task>
+/smelter:deep-executor <your complex task>
 ```
 
 Or use magic keywords:
@@ -37,14 +37,14 @@ Or use magic keywords:
 | Need guaranteed completion | YES |
 | Simple single-file fix | NO (use executor) |
 | Quick code search | NO (use explore) |
-| Cost-sensitive work | NO (use ecomode) |
+| Cost-sensitive work | NO |
 
 ## Activation
 
 This skill spawns the `deep-executor` agent via:
 
 ```
-Task(subagent_type="oh-my-claudecode:deep-executor", model="opus", prompt="{{PROMPT}}")
+Task(subagent_type="smelter:deep-executor", model="opus", prompt="{{PROMPT}}")
 ```
 
 The agent handles all exploration and execution internally. No sub-agents are spawned.

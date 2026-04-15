@@ -1,0 +1,50 @@
+/**
+ * Agent status widget - displays running subagents
+ * @handbook 3.3-widget-data-sources
+ * @tested scripts/__tests__/widgets.test.ts
+ */
+
+import type { Widget } from './base.js';
+import type { WidgetContext, AgentStatusData } from '../types.js';
+import { colorize, getTheme } from '../utils/colors.js';
+import { getTranscript, extractAgentStatus } from '../utils/transcript-parser.js';
+import { truncate } from '../utils/formatters.js';
+
+export const agentStatusWidget: Widget<AgentStatusData> = {
+  id: 'agentStatus',
+  name: 'Agent Status',
+
+  async getData(ctx: WidgetContext): Promise<AgentStatusData | null> {
+    const transcript = await getTranscript(ctx);
+    if (!transcript) return null;
+
+    const status = extractAgentStatus(transcript);
+
+    // Only show if there are active agents or completed agents
+    if (status.active.length === 0 && status.completed === 0) {
+      return null;
+    }
+
+    return status;
+  },
+
+  render(data: AgentStatusData, ctx: WidgetContext): string {
+    const { translations: t } = ctx;
+    const theme = getTheme();
+
+    if (data.active.length === 0) {
+      return colorize(
+        `${t.widgets.agent}: ${data.completed} ${t.widgets.done}`,
+        theme.secondary
+      );
+    }
+
+    const activeAgent = data.active[0];
+    const agentText = activeAgent.description
+      ? `${activeAgent.name}: ${truncate(activeAgent.description, 20)}`
+      : activeAgent.name;
+    const more = data.active.length > 1 ? ` +${data.active.length - 1}` : '';
+
+    return `${colorize('🤖', theme.info)} ${t.widgets.agent}: ${agentText}${more}`;
+  },
+};

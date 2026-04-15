@@ -24,5 +24,5 @@ export function loadSkill(name: string): string | null {
 export function getSkillPrompt(name: string): string | null {
   const content = loadSkill(name);
   if (!content) return null;
-  return `[LINEAR-HARNESS SKILL: ${name}]\n\n${content}`;
+  return `[SMELTER SKILL: ${name}]\n\n${content}`;
 }
