@@ -13,13 +13,24 @@ Commands available: tasker (planning), feat (full dev workflow), qa (bug fix / s
 
 Rules:
 - If the user is ASKING about a command (e.g. "how does tasker work?", "explain plan") → question
-- If the user WANTS TO EXECUTE something (e.g. "fix login bug", "이 버그 고쳐줘", "keep going") → command
-- If ambiguous, default to "question" (safer — avoids accidental command activation)
+- If the user WANTS TO EXECUTE something → command
+- If the user describes a problem to SOLVE, FIX, BUILD, or IMPLEMENT → command (not question)
+- If ambiguous but the prompt describes broken behavior, errors, or work to do → default to command
+
+Strong qa signals (any of these → command:qa):
+  fix, bug, error, crash, broken, failing, deploy fail, build fail, ELIFECYCLE, exit code,
+  버그, 고쳐, 터지, 에러, 수정, 해결해, 안됨, 안돼, 깨짐, 실패
+
+Strong feat signals (any of these → command:feat):
+  add, create, build, implement, new feature, 추가, 만들어, 새 기능, 구현
+
+Strong tasker signals (any of these → command:tasker):
+  plan, design, scope, 설계, 계획, 기획
 
 Branch hints for commands:
-- feat + "extend/add to/덧붙여" → branch: "extend"
+- feat + "extend/add to/덧붙여/확장" → branch: "extend"
 - feat + "new feature/새 기능" → branch: "new-feature"
-- qa + "fix/bug/버그/고쳐" → branch: "bug"
+- qa + "fix/bug/버그/고쳐/터지/에러" → branch: "bug"
 - qa + "style/typo/i18n/텍스트/색상" → branch: "style"
 
 Return ONLY valid JSON (no markdown, no explanation):
