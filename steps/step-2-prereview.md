@@ -6,7 +6,7 @@ Enumerate 2–4 candidate approaches, evaluate them, reach 95% consensus on the 
 ## Actions
 1. For each non-trivial task, list 2–4 candidate approaches
 2. For each approach: pros, cons, complexity, risk, applicability
-3. Record under `## Approaches` in `features/<slug>/task/_overview.md`
+3. Record under `## Approaches` in `features/<slug>/task/plan.md`
 4. If the winning approach is unclear: run the 95% consensus loop (advocate/critic/arbitrator agents)
 5. Record rationale — WHY this approach wins
 

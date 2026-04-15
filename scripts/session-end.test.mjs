@@ -255,7 +255,24 @@ function makeFixture(opts) {
   console.log('  case stripNonExecutable (mjs) OK');
 }
 
-// Case 16: YAML front matter ending at EOF (no trailing newline) → exempted
+// Case 16: tasker-native-plan references in tracked docs → fail
+{
+  const dir = makeFixture({});
+  writeFileSync(
+    join(dir, 'commands', 'tasker.md'),
+    '# /tasker\nCall `EnterPlanMode` and record Native Plan File: foo\n',
+  );
+  const r = checkDocSync(dir);
+  assert.equal(r.ok, false, 'tracked tasker native-plan references must flag');
+  assert.ok(
+    r.issues.some(i => /EnterPlanMode/.test(i.message) || /Native Plan File/.test(i.message)),
+    'issue must mention forbidden native-plan reference',
+  );
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case tasker-native-plan positive OK');
+}
+
+// Case 17: YAML front matter ending at EOF (no trailing newline) → exempted
 {
   const dir = makeFixture({});
   mkdirSync(join(dir, 'rules', 'common'), { recursive: true });

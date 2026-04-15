@@ -5,8 +5,7 @@ Pause execution. Present the plan to the user. Wait for explicit approval before
 
 ## Actions
 1. Summarize: feature title, task count, phase breakdown, complexity (S/M/L)
-2. Show native plan file path (`~/.claude/plans/<name>.md`)
-3. Present three options to the user:
+2. Present three options to the user:
    - **Approve** → proceed to Step 4 (TDD)
    - **Revise** → return to Step 1, 2, or 3 based on user feedback
    - **Hold** → save state, end session

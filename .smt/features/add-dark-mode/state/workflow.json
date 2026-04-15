@@ -1,0 +1,11 @@
+{
+  "command": "feat",
+  "step": "step-3",
+  "retry": 0,
+  "signals": {},
+  "version": 2,
+  "created_at": 1776272185687,
+  "updated_at": 1776272799717,
+  "prompt": "/feat add dark mode",
+  "session_id": "t"
+}

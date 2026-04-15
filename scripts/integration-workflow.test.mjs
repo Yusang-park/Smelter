@@ -27,7 +27,7 @@ function seedWorkflow(dir, slug, command, step) {
   const stateDir = join(featureDir, 'state');
   mkdirSync(taskDir, { recursive: true });
   mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(taskDir, '_overview.md'), `# ${slug}\n\n## Plan\n`);
+  writeFileSync(join(taskDir, 'plan.md'), `# ${slug}\n\n## Plan\n`);
   writeFileSync(join(taskDir, 'task-1.md'), `- [ ] do the thing\n`);
   writeFileSync(join(stateDir, 'workflow.json'), JSON.stringify({
     command, step, retry: 0, signals: {}, updated_at: Date.now(),

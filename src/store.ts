@@ -35,8 +35,8 @@ function taskDir(cwd: string, slug: string): string {
   return join(featureDir(cwd, slug), 'task');
 }
 
-function overviewPath(cwd: string, slug: string): string {
-  return join(taskDir(cwd, slug), '_overview.md');
+function planPath(cwd: string, slug: string): string {
+  return join(taskDir(cwd, slug), 'plan.md');
 }
 
 function taskFilePath(cwd: string, slug: string, taskId: string): string {
@@ -94,7 +94,7 @@ export function readFeatureTasks(cwd: string, slug: string): Task[] {
   const dir = taskDir(cwd, slug);
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir)
-    .filter(f => f.endsWith('.md') && f !== '_overview.md')
+    .filter(f => f.endsWith('.md') && f !== 'plan.md')
     .sort();
   const tasks: Task[] = [];
   for (const file of files) {
@@ -134,10 +134,10 @@ export function createFeature(cwd: string, slug: string, meta: { title?: string;
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
   const now = new Date().toISOString();
-  const overview = overviewPath(cwd, slug);
-  if (!existsSync(overview)) {
-    const overviewContent = `---\nstatus: open\ncreated: ${now}\nupdated: ${now}\n---\n\n# ${meta.title || slug}\n\n${meta.description || ''}\n\n## Plan\n\n## Wiki Links\n\n## Risks\n`;
-    writeFileSync(overview, overviewContent);
+  const plan = planPath(cwd, slug);
+  if (!existsSync(plan)) {
+    const planContent = `---\nstatus: open\ncreated: ${now}\nupdated: ${now}\n---\n\n# ${meta.title || slug}\n\n${meta.description || ''}\n\n## Plan\n\n## Wiki Links\n\n## Risks\n`;
+    writeFileSync(plan, planContent);
   }
 
   return { slug, status: 'open', created: now, updated: now, tasks: [] };

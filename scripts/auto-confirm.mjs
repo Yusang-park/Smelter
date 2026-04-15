@@ -87,7 +87,7 @@ export function extractLastAssistantMessage(data) {
   return '';
 }
 
-// Read pending task titles from .smt/features/<slug>/task/<name>.md (excluding _overview.md).
+// Read pending task titles from .smt/features/<slug>/task/<name>.md (excluding plan.md).
 export function readPendingTasks(projectDir) {
   const tasks = [];
   const featuresDir = join(projectDir, '.smt', 'features');
@@ -98,7 +98,7 @@ export function readPendingTasks(projectDir) {
     const taskDirPath = join(featuresDir, slug, 'task');
     if (!existsSync(taskDirPath)) continue;
     let files = [];
-    try { files = readdirSync(taskDirPath).filter(f => f.endsWith('.md') && f !== '_overview.md').sort(); } catch {}
+    try { files = readdirSync(taskDirPath).filter(f => f.endsWith('.md') && f !== 'plan.md').sort(); } catch {}
     for (const f of files) {
       try {
         const content = readFileSync(join(taskDirPath, f), 'utf-8');
@@ -143,6 +143,7 @@ export function queueForwardPayload(projectDir, lastMessage, pendingTasks, sessi
 }
 
 async function main() {
+  printTag('Auto-Confirm');
   try {
     const input = readStdinSync();
     let data = {};

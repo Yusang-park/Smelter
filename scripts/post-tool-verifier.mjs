@@ -206,6 +206,7 @@ function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) 
 }
 
 function main() {
+  printTag('Post Tool Verifier');
   try {
     const input = readStdinSync();
     const data = JSON.parse(input);

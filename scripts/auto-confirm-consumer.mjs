@@ -82,15 +82,21 @@ export function consumeQueueFile(projectDir, sessionId = '') {
 
   const sid = String(sessionId || '').replace(/[^a-zA-Z0-9_.-]/g, '_');
 
-  // Strict session scoping: only consume files that belong to this session
-  // (filename match) OR legacy single-file layout. Peer-session queues are
-  // left untouched so that session owner can consume later.
-  for (const p of candidates) {
+  // Strict session scoping: consume files that belong to this session (filename
+  // match) in strict priority. Only fall through to legacy single-file when no
+  // session-scoped candidate exists — this prevents a stale legacy payload from
+  // hijacking a mismatched sid file.
+  const ordered = [...candidates].sort((a, b) => {
+    const sa = extractSessionFromFilename(a) !== null ? 0 : 1;
+    const sb = extractSessionFromFilename(b) !== null ? 0 : 1;
+    return sa - sb; // sid-scoped first, legacy last
+  });
+  let sawSidScopedMismatch = false;
+  for (const p of ordered) {
     const fileSid = extractSessionFromFilename(p);
     if (fileSid !== null) {
       // Session-scoped file — consume only if it matches current session.
-      if (!sid || fileSid !== sid) continue;
-      // Filename-matched session file: safe to read + unlink atomically.
+      if (!sid || fileSid !== sid) { sawSidScopedMismatch = true; continue; }
       const payload = peekPayload(p);
       if (!payload) continue;
       unlinkSafe(p);
@@ -99,6 +105,10 @@ export function consumeQueueFile(projectDir, sessionId = '') {
       }
       return payload;
     }
+    // Legacy single-file: if we already saw a mismatched sid-scoped file, skip
+    // legacy fallthrough — the user has an active sid session and legacy data
+    // would be stale.
+    if (sawSidScopedMismatch) continue;
     // Legacy single-file (auto-confirm-queue.json): peek FIRST, then only
     // unlink if the payload's session_id matches (or has none). This prevents
     // racing sessions from destroying each other's legacy payloads.
@@ -134,6 +144,7 @@ export function formatContext(payload) {
 }
 
 async function main() {
+  printTag('Auto-Confirm Consumer');
   try {
     const input = readStdinSync();
     let data = {};

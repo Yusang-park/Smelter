@@ -2,12 +2,14 @@
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { printTag } from './lib/yellow-tag.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const trackerPath = join(__dirname, '..', 'dist', 'hooks', 'subagent-tracker', 'index.js');
 
 async function main() {
+  printTag('Subagent Tracker');
   const action = process.argv[2]; // 'start' or 'stop'
 
   // Read stdin synchronously

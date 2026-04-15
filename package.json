@@ -14,6 +14,9 @@
     "test": "node --test scripts/*.test.mjs scripts/test-*.mjs scripts/lib/*.test.mjs",
     "test:engine": "node --test --import tsx src/**/*.test.ts"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "esbuild": "^0.28.0",

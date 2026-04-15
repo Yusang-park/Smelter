@@ -8,19 +8,40 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const preCompactPath = join(__dirname, '..', 'dist', 'hooks', 'pre-compact', 'index.js');
 
+function readJsonFile(path) {
+  try {
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function isCodexMode(data) {
+  if (process.env.SMELTER_MODEL_MODE === 'codex') return true;
+  const cwd = data?.cwd || process.cwd();
+  const state = readJsonFile(join(cwd, '.smt', 'state', 'model-mode.json'));
+  return state?.mode === 'codex';
+}
+
+function shouldBlockCompact(data) {
+  const disabled = process.env.DISABLE_COMPACT === '1' || process.env.DISABLE_COMPACT === 'true';
+  return disabled && !isCodexMode(data);
+}
+
 async function main() {
+  printTag('Pre Compact');
   printTag('Pre-Compact');
   // Read stdin synchronously
   let input = '{}';
   try { input = readFileSync('/dev/stdin', 'utf-8'); } catch {}
 
-  if (process.env.DISABLE_COMPACT === '1' || process.env.DISABLE_COMPACT === 'true') {
-    console.log(JSON.stringify({ decision: 'block' }));
-    return;
-  }
-
   try {
     const data = JSON.parse(input);
+    if (shouldBlockCompact(data)) {
+      console.log(JSON.stringify({ decision: 'block' }));
+      return;
+    }
     if (!existsSync(preCompactPath)) {
       console.log(JSON.stringify({ continue: true }));
       return;

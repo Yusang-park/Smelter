@@ -75,6 +75,7 @@ function generateToolDescription(toolName, toolInput) {
 }
 
 function main() {
+  printTag('Pre Tool Enforcer');
   try {
     const input = readStdinSync();
 

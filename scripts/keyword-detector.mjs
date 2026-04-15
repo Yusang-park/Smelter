@@ -21,7 +21,8 @@
  *   queue                                            → /queue (explicit only)
  */
 
-import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync, renameSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { clearCancel } from './lib/cancel-signal.mjs';
 import { propagateHardCancel, propagateQueueCancel } from './cancel-propagator.mjs';
@@ -85,9 +86,122 @@ function writeStateFile(directory, filename, data) {
   try { writeFileSync(join(localDir, filename), JSON.stringify(data, null, 2), { mode: 0o600 }); } catch {}
 }
 
-function activateHarnessState(directory, commandName, prompt, sessionId) {
+// Map command → initial workflow step
+const INITIAL_STEP = {
+  tasker: 'step-1',
+  feat: 'step-1',
+  qa: 'step-4',
+};
+
+// Slug from prompt: first meaningful words, sanitized.
+// Empty/punctuation-only prompts get a collision-resistant timestamp+random fallback.
+function deriveSlug(prompt) {
+  const base = (prompt || '').toString().trim().slice(0, 80).toLowerCase();
+  const slug = base
+    .replace(/[^a-z0-9가-힣\s-]+/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50);
+  if (slug) return slug;
+  const suffix = randomBytes(3).toString('hex');
+  return `feature-${Date.now().toString(36)}-${suffix}`;
+}
+
+// Atomic single-file write (tmp + rename) to avoid torn state on crash.
+function writeAtomic(path, content) {
+  const tmp = `${path}.tmp.${process.pid}.${randomBytes(4).toString('hex')}`;
+  writeFileSync(tmp, content, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+function seedWorkflowState(directory, commandName, prompt, sessionId, args = '') {
+  const initialStep = INITIAL_STEP[commandName];
+  if (!initialStep) return; // cancel/queue — no workflow state
+
+  // Prefer slash-args for slug derivation (ignore the leading "/feat " literal).
+  // For natural-language magic-keyword invocations, args is empty so we fall back
+  // to the prompt with any leading slash-command token stripped.
+  const cleanedPrompt = String(prompt || '').replace(/^\/\w+\b[:\s-]*/, '');
+  const slugSource = args && args.trim() ? args : cleanedPrompt;
+  const slug = deriveSlug(slugSource);
+  const featuresDir = join(directory, '.smt', 'features');
+  const featureDir = join(featuresDir, slug);
+  const taskDir = join(featureDir, 'task');
+  const stateDir = join(featureDir, 'state');
+  const smtStateDir = join(directory, '.smt', 'state');
+  const pointerPath = join(smtStateDir, 'active-feature.json');
+
+  // Cross-slug switch detection: warn if an active feature exists with a different slug
+  // and its workflow is in-flight. User explicitly invoked a new command, so honor it,
+  // but preserve the prior pointer content as last-active for troubleshooting.
+  try {
+    if (existsSync(pointerPath)) {
+      const prev = JSON.parse(readFileSync(pointerPath, 'utf-8'));
+      if (prev?.slug && prev.slug !== slug) {
+        try {
+          if (!existsSync(smtStateDir)) mkdirSync(smtStateDir, { recursive: true });
+          writeAtomic(join(smtStateDir, 'previous-feature.json'), JSON.stringify({
+            slug: prev.slug, switched_at: Date.now(), new_slug: slug,
+          }, null, 2));
+        } catch {}
+      }
+    }
+  } catch {}
+
+  try {
+    if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
+    if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
+    if (!existsSync(smtStateDir)) mkdirSync(smtStateDir, { recursive: true });
+
+    // plan.md (only create if missing — don't clobber prior plans)
+    const planPath = join(taskDir, 'plan.md');
+    if (!existsSync(planPath)) {
+      const now = new Date().toISOString();
+      // Sanitize prompt body: strip control chars and system-reminder-like leakage
+      const cleanPrompt = String(prompt || '')
+        .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+        .slice(0, 2000);
+      const planContent = `---\nstatus: open\ncreated: ${now}\n---\n\n# ${slug}\n\n${cleanPrompt}\n\n## Plan\n\n## Wiki Links\n\n## Risks\n`;
+      writeAtomic(planPath, planContent);
+    }
+
+    // workflow.json — seed only if absent so re-running /feat doesn't reset progress
+    const workflowPath = join(stateDir, 'workflow.json');
+    if (!existsSync(workflowPath)) {
+      const state = {
+        command: commandName,
+        step: initialStep,
+        retry: 0,
+        signals: {},
+        version: 0,
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        prompt: String(prompt || '').slice(0, 500),
+        session_id: sessionId || '',
+      };
+      writeAtomic(workflowPath, JSON.stringify(state, null, 2));
+    }
+
+    // active-feature pointer (atomic)
+    writeAtomic(pointerPath, JSON.stringify({ slug, updated_at: Date.now() }, null, 2));
+  } catch {}
+}
+
+// Clear active-feature pointer — called on /cancel and /queue so the next
+// UserPromptSubmit does not silently resume a cancelled/redirected feature.
+function clearActiveFeature(directory) {
+  try {
+    const p = join(directory, '.smt', 'state', 'active-feature.json');
+    if (existsSync(p)) unlinkSync(p);
+  } catch {}
+}
+
+function activateHarnessState(directory, commandName, prompt, sessionId, args = '') {
   const config = COMMAND_CONFIG[commandName];
   if (!config) return;
+  seedWorkflowState(directory, commandName, prompt, sessionId, args);
 }
 
 function createSkillInvocation(skillName, originalPrompt, args = '', hint = null) {
@@ -116,6 +230,7 @@ function createHookOutput(additionalContext) {
 }
 
 async function main() {
+  printTag('Keyword Detector');
   try {
     const input = readStdinSync();
     if (!input.trim()) {
@@ -198,6 +313,7 @@ async function main() {
     if (detected.name === 'cancel') {
       printTag('Command: /cancel');
       const result = propagateHardCancel(directory, 'user /cancel command');
+      clearActiveFeature(directory);
       const killedMsg = result.killed.length > 0 ? `\nKilled: ${result.killed.join(', ')}` : '';
       const clearedMsg = result.cleared.length > 0 ? `\nCleared: ${result.cleared.join(', ')}` : '';
       console.log(JSON.stringify(createHookOutput(
@@ -224,7 +340,7 @@ async function main() {
     }
 
     // Harness commands — activate state
-    activateHarnessState(directory, detected.name, prompt, sessionId);
+    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '');
     if (tracer) {
       try { tracer.recordModeChange(directory, sessionId, 'none', detected.name); } catch {}
     }

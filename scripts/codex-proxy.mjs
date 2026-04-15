@@ -31,6 +31,33 @@ function getContextWindowForModel(model) {
   return CODEX_MODEL_CONTEXT_WINDOWS[model] ?? null;
 }
 
+function buildUsagePayload(model, usage = {}) {
+  const contextWindow = getContextWindowForModel(model);
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  const cacheCreationInputTokens = usage.cache_creation_input_tokens ?? 0;
+  const cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
+  const totalInputTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+  const payload = {
+    model,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_input_tokens: totalInputTokens,
+    total_output_tokens: outputTokens,
+    current_usage: {
+      input_tokens: inputTokens,
+      cache_creation_input_tokens: cacheCreationInputTokens,
+      cache_read_input_tokens: cacheReadInputTokens,
+    },
+  };
+  if (contextWindow) {
+    payload.context_window = contextWindow;
+    payload.context_window_size = contextWindow;
+    payload.used_percentage = (totalInputTokens / contextWindow) * 100;
+  }
+  return payload;
+}
+
 function appendCodexUsage(outputTokens) {
   if (!outputTokens) return;
   try {
@@ -199,11 +226,10 @@ export function translateResponsesAPIResponse(resp, originalModel) {
     model: originalModel,
     stop_reason: hasToolUse ? 'tool_use' : 'end_turn',
     stop_sequence: null,
-    usage: {
+    usage: buildUsagePayload(originalModel, {
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      ...(contextWindow ? { context_window: contextWindow, context_window_size: contextWindow } : {}),
-    },
+    }),
   };
 }
 
@@ -357,14 +383,7 @@ export function createServer() {
           model: originalModel,
           stop_reason: null,
           stop_sequence: null,
-          usage: {
-            input_tokens: 0,
-            output_tokens: 0,
-            ...(getContextWindowForModel(originalModel) ? {
-              context_window: getContextWindowForModel(originalModel),
-              context_window_size: getContextWindowForModel(originalModel),
-            } : {}),
-          },
+          usage: buildUsagePayload(originalModel),
         },
       }));
       res.write(formatSSE('ping', { type: 'ping' }));
@@ -473,13 +492,9 @@ export function createServer() {
       res.write(formatSSE('message_delta', {
         type: 'message_delta',
         delta: { stop_reason: state.hasToolUse ? 'tool_use' : 'end_turn', stop_sequence: null },
-        usage: {
+        usage: buildUsagePayload(originalModel, {
           output_tokens: streamOutputTokens,
-          ...(getContextWindowForModel(originalModel) ? {
-            context_window: getContextWindowForModel(originalModel),
-            context_window_size: getContextWindowForModel(originalModel),
-          } : {}),
-        },
+        }),
       }));
       res.write(formatSSE('message_stop', { type: 'message_stop' }));
     } else {
@@ -494,14 +509,7 @@ export function createServer() {
           model: originalModel,
           stop_reason: null,
           stop_sequence: null,
-          usage: {
-            input_tokens: 0,
-            output_tokens: 0,
-            ...(getContextWindowForModel(originalModel) ? {
-              context_window: getContextWindowForModel(originalModel),
-              context_window_size: getContextWindowForModel(originalModel),
-            } : {}),
-          },
+          usage: buildUsagePayload(originalModel),
         },
       }));
       res.write(formatSSE('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }));
@@ -575,14 +583,10 @@ export function createServer() {
         model: originalModel,
         stop_reason: hasToolUse ? 'tool_use' : 'end_turn',
         stop_sequence: null,
-        usage: {
+        usage: buildUsagePayload(originalModel, {
           input_tokens: usageInput,
           output_tokens: usageOutput,
-          ...(getContextWindowForModel(originalModel) ? {
-            context_window: getContextWindowForModel(originalModel),
-            context_window_size: getContextWindowForModel(originalModel),
-          } : {}),
-        },
+        }),
       };
       appendCodexUsage(usageOutput);
       res.writeHead(200, { 'Content-Type': 'application/json' });

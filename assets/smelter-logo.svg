@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" fill="none">
+  <defs>
+    <linearGradient id="flame" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF6B35"/>
+      <stop offset="50%" style="stop-color:#F7C948"/>
+      <stop offset="100%" style="stop-color:#FFE066"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8E8E8"/>
+      <stop offset="50%" style="stop-color:#B0B0B0"/>
+      <stop offset="100%" style="stop-color:#808080"/>
+    </linearGradient>
+  </defs>
+  <!-- Crucible / Smelter icon -->
+  <g transform="translate(30, 20)">
+    <!-- Flames -->
+    <path d="M50 60 Q55 20 65 45 Q70 10 80 40 Q90 5 95 35 Q105 15 110 50 Q115 25 120 55 L120 70 L50 70 Z" fill="url(#flame)" opacity="0.9"/>
+    <!-- Crucible body -->
+    <path d="M35 70 L40 160 Q45 175 85 175 Q125 175 130 160 L135 70 Z" fill="url(#metal)" stroke="#555" stroke-width="2"/>
+    <!-- Molten glow inside -->
+    <ellipse cx="85" cy="90" rx="40" ry="12" fill="#FF6B35" opacity="0.6"/>
+    <!-- Crucible rim -->
+    <ellipse cx="85" cy="70" rx="52" ry="10" fill="#999" stroke="#555" stroke-width="2"/>
+    <!-- Handles -->
+    <path d="M35 95 Q15 95 15 110 Q15 125 35 125" fill="none" stroke="#777" stroke-width="4" stroke-linecap="round"/>
+    <path d="M135 95 Q155 95 155 110 Q155 125 135 125" fill="none" stroke="#777" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <!-- Text -->
+  <text x="200" y="120" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="72" font-weight="800" fill="#1a1a1a" letter-spacing="-2">
+    Smelter
+  </text>
+  <text x="203" y="155" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="18" font-weight="400" fill="#666" letter-spacing="4">
+    FORGE BETTER CODE WITH AI
+  </text>
+</svg>

@@ -66,6 +66,7 @@ export const TRACKED_LEGACY_SCAN = [
 export const EXPECTED_COMMANDS = ['tasker', 'feat', 'qa'];
 export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'simple'];
 export const FORBIDDEN_LEGACY_PATTERN = /persistent-mode(?:\.cjs|\.mjs|\.sh)?/i;
+export const FORBIDDEN_TASKER_NATIVE_PLAN_PATTERN = /EnterPlanMode|ExitPlanMode|Native Plan File|\[Plan Mode: Enter\]|\[Plan Mode: Exit\]/i;
 // Extra-preset guard: only these 4 preset JSONs are allowed.
 export const ALLOWED_PRESETS = ['tasker', 'feat', 'qa'];
 export const FORBIDDEN_EXTRA_PRESETS = ['full', 'narrow', 'planning', 'autopilot', 'e2e-force', 'tdd'];
@@ -345,7 +346,27 @@ export function checkDocSync(projectRoot) {
     }
   }
 
-  // --- 2c. Forbidden extra presets — enforce exactly {tasker,feat,qa} ---
+  // --- 2c. Forbidden tasker native-plan references in tracked docs/commands ---
+  for (const rel of mdFiles) {
+    const abs = join(projectRoot, rel);
+    const content = readFileSafe(abs);
+    if (content === null) continue;
+    const scrubbed = stripNonExecutable(content, rel);
+    const lines = scrubbed.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(FORBIDDEN_TASKER_NATIVE_PLAN_PATTERN);
+      if (!match) continue;
+      if (isCommentOnlyLine(line)) continue;
+      issues.push({
+        severity: 'error',
+        file: rel,
+        message: `Forbidden tasker native-plan reference on line ${i + 1}: ${match[0]}`,
+      });
+    }
+  }
+
+  // --- 2d. Forbidden extra presets — enforce exactly {tasker,feat,qa} ---
   // Case-insensitive: normalize filename to lowercase and strip any .json/.JSON
   // suffix before comparing. This catches case-variant filenames like
   // `Full.JSON` on case-insensitive filesystems (macOS default, Windows).
@@ -425,7 +446,8 @@ export function checkDocSync(projectRoot) {
   const kd = readFileSafe(join(projectRoot, 'scripts', 'keyword-detector.mjs'));
   if (kd !== null) {
     for (const cmd of EXPECTED_COMMANDS) {
-      const pattern = new RegExp(`command:\\s*['"]${cmd}['"]`);
+      // Match either `command: 'tasker'` or `tasker:` (object key in COMMAND_CONFIG)
+      const pattern = new RegExp(`(?:command:\\s*['"]${cmd}['"])|(?:^\\s*${cmd}:\\s*\\{)`, 'm');
       if (!pattern.test(kd)) {
         issues.push({
           severity: 'error',
@@ -499,6 +521,7 @@ async function runLegacyDistHook(data) {
 }
 
 async function main() {
+  printTag('Session End');
   let input = '{}';
   try { input = readFileSync('/dev/stdin', 'utf-8'); } catch {}
   let data = {};

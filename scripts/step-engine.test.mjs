@@ -27,7 +27,7 @@ function makeFeatureDir(baseDir, slug, workflowState = null) {
   const stateDir = join(featureDir, 'state');
   mkdirSync(taskDir, { recursive: true });
   mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(taskDir, '_overview.md'), `# ${slug}\n`);
+  writeFileSync(join(taskDir, 'plan.md'), `# ${slug}\n`);
   if (workflowState) {
     writeFileSync(join(stateDir, 'workflow.json'), JSON.stringify(workflowState, null, 2));
   }
@@ -270,6 +270,178 @@ steps:
   assert.equal(tmpFiles.length, 0, 'no tmp files after atomic write');
   rmSync(dir, { recursive: true, force: true });
   console.log('  tracker case 16 (atomic write, no tmp left) OK');
+}
+
+// Case 17: stale step-id → recovery hint injected
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-inj-'));
+  makeFeatureDir(dir, 'demo', { command: 'feat', step: 'step-does-not-exist', retry: 0, updated_at: Date.now() });
+  const res = runScript(INJECTOR, { cwd: dir }, { cwd: dir });
+  const out = JSON.parse(res.stdout);
+  assert.ok(out.hookSpecificOutput, 'stale step-id must inject recovery hint');
+  const ctx = out.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /WARNING.*does not exist/);
+  assert.match(ctx, /Valid steps:/);
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  injector case 17 (stale step-id recovery) OK');
+}
+
+// Case 18: corrupt workflow.json → injector injects recovery hint, not silent no-op
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-inj-'));
+  const featureDir = join(dir, '.smt', 'features', 'demo');
+  const stateDir = join(featureDir, 'state');
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, 'workflow.json'), '{ this is not valid json');
+  // Explicit pointer so injector picks this feature
+  const ptrDir = join(dir, '.smt', 'state');
+  mkdirSync(ptrDir, { recursive: true });
+  writeFileSync(join(ptrDir, 'active-feature.json'), JSON.stringify({ slug: 'demo' }));
+  const res = runScript(INJECTOR, { cwd: dir }, { cwd: dir });
+  const out = JSON.parse(res.stdout);
+  assert.ok(out.hookSpecificOutput);
+  assert.match(out.hookSpecificOutput.additionalContext, /Corrupt JSON/);
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  injector case 18 (corrupt state recovery) OK');
+}
+
+// Case 19: tracker re-prompts when failure_category missing on on_fail map
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-trk-'));
+  makeFeatureDir(dir, 'demo', { command: 'feat', step: 'step-6', retry: 0, signals: { review_clean: false }, updated_at: Date.now() });
+  const res = runScript(TRACKER, { cwd: dir }, { cwd: dir });
+  const out = JSON.parse(res.stdout);
+  assert.ok(out.hookSpecificOutput, 'must re-prompt instead of silent wait');
+  const ctx = out.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /CATEGORY REQUIRED/);
+  assert.match(ctx, /code_quality.*bug.*security/);
+  // State unchanged
+  assert.equal(readState(dir, 'demo').step, 'step-6');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  tracker case 19 (category re-prompt) OK');
+}
+
+// Case 20: CAS — version bumps on each write
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-trk-'));
+  makeFeatureDir(dir, 'demo', { command: 'feat', step: 'step-4', retry: 0, signals: { tests_exist_and_red: true }, version: 0, updated_at: Date.now() });
+  runScript(TRACKER, { cwd: dir }, { cwd: dir });
+  const s = readState(dir, 'demo');
+  assert.equal(s.step, 'step-5');
+  assert.equal(s.version, 1, 'version bumped after advance');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  tracker case 20 (CAS version bump) OK');
+}
+
+// Case 21: YAML parser handles escape sequences in double-quoted strings
+{
+  const y = parseYaml(`description: "line 1\\nline 2\\ttab"
+raw: 'can''t'
+`);
+  assert.equal(y.description, 'line 1\nline 2\ttab', 'double-quoted unescapes \\n and \\t');
+  assert.equal(y.raw, "can't", 'single-quoted YAML-style unescape');
+  console.log('  yaml parser (escape sequences) OK');
+}
+
+// Case 22: version-absent workflow.json → first tracker write produces version=1
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-trk-'));
+  // Seed WITHOUT version field — simulates agent/tasker-created state
+  const featureDir = join(dir, '.smt', 'features', 'fresh');
+  const taskDir = join(featureDir, 'task');
+  const stateDir = join(featureDir, 'state');
+  mkdirSync(taskDir, { recursive: true });
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(taskDir, 'plan.md'), '# fresh\n');
+  writeFileSync(join(stateDir, 'workflow.json'), JSON.stringify({
+    command: 'feat', step: 'step-4', retry: 0, signals: { tests_exist_and_red: true }, updated_at: Date.now(),
+  }));
+  runScript(TRACKER, { cwd: dir }, { cwd: dir });
+  const s = readState(dir, 'fresh');
+  assert.equal(s.step, 'step-5');
+  assert.equal(s.version, 1, 'missing-version path writes version=1');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  tracker case 22 (version-absent first write) OK');
+}
+
+// Case 22b: real CAS conflict — pre-advance on-disk version between agent state read and tracker write
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-trk-'));
+  makeFeatureDir(dir, 'demo', { command: 'feat', step: 'step-4', retry: 0, signals: { tests_exist_and_red: true }, version: 5, updated_at: Date.now() });
+  // Simulate: state was read at version=5 but another writer has since advanced to 99 on disk.
+  // To force CAS conflict from tracker's main flow, we need tracker to think it's at v=5 but
+  // writeStateCAS finds v=99 on disk. This happens when state.version in memory is v=5 but disk is v=99.
+  // Achieve this by making state file contain v=99 but our tracker reads it fresh — so actually it'll
+  // read v=99 and CAS passes. True conflict requires race. Instead: test writeStateCAS directly.
+  const statePath = join(dir, '.smt/features/demo/state/workflow.json');
+  const diskState = JSON.parse(readFileSync(statePath, 'utf-8'));
+  writeFileSync(statePath, JSON.stringify({ ...diskState, version: 99 }));
+  // Call tracker with expectedVersion=5 via a snapshot from earlier — tracker's main reads fresh so CAS passes.
+  // This test verifies CAS path doesn't crash; a pure-unit test of writeStateCAS would need direct import.
+  const res = runScript(TRACKER, { cwd: dir }, { cwd: dir });
+  const out = JSON.parse(res.stdout);
+  // After run: state advanced from v=99 to v=100 (CAS re-reads on-disk, so no conflict)
+  assert.ok(out.continue === true);
+  const s2 = JSON.parse(readFileSync(statePath, 'utf-8'));
+  assert.equal(s2.version, 100, 'CAS reads live on-disk version and bumps from there');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  tracker case 22b (CAS reads live version) OK');
+}
+
+// Case 23: corrupt sibling feature — injector surfaces warning alongside active context
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-inj-'));
+  makeFeatureDir(dir, 'good', { command: 'feat', step: 'step-1', retry: 0, updated_at: Date.now() });
+  // Corrupt sibling
+  const badDir = join(dir, '.smt/features/bad/state');
+  mkdirSync(badDir, { recursive: true });
+  writeFileSync(join(badDir, 'workflow.json'), '{ broken');
+  const res = runScript(INJECTOR, { cwd: dir }, { cwd: dir });
+  const ctx = JSON.parse(res.stdout).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /good/, 'active feature still surfaced');
+  assert.match(ctx, /Corrupt sibling state/, 'sibling corruption warned');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  injector case 23 (corrupt sibling surfaced) OK');
+}
+
+// Case 24: 7 corrupt siblings → truncated to 5 + "and 2 more"
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-inj-'));
+  makeFeatureDir(dir, 'good', { command: 'feat', step: 'step-1', retry: 0, updated_at: Date.now() });
+  for (let i = 0; i < 7; i++) {
+    const badDir = join(dir, `.smt/features/bad${i}/state`);
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, 'workflow.json'), '{ broken');
+  }
+  const res = runScript(INJECTOR, { cwd: dir }, { cwd: dir });
+  const ctx = JSON.parse(res.stdout).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /and 2 more/, 'truncation suffix rendered');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  injector case 24 (corrupt siblings truncated at 5) OK');
+}
+
+// Case 25: writeStateCAS conflict — stale expectedVersion returns false
+{
+  const { writeStateCAS } = await import('./step-tracker.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'smt-cas-'));
+  const statePath = join(dir, 'workflow.json');
+  writeFileSync(statePath, JSON.stringify({ command: 'feat', step: 'step-5', version: 10 }));
+  // Stale expectedVersion=5, on-disk=10 → must refuse
+  const ok = writeStateCAS(statePath, 5, { command: 'feat', step: 'step-6' });
+  assert.equal(ok, false, 'stale expectedVersion must fail CAS');
+  const s = JSON.parse(readFileSync(statePath, 'utf-8'));
+  assert.equal(s.step, 'step-5', 'disk state unchanged on CAS fail');
+  assert.equal(s.version, 10);
+  // Matching expectedVersion=10 → succeeds, bumps to 11
+  const before = Date.now();
+  const ok2 = writeStateCAS(statePath, 10, { command: 'feat', step: 'step-6' });
+  assert.equal(ok2, true);
+  const s2 = JSON.parse(readFileSync(statePath, 'utf-8'));
+  assert.equal(s2.step, 'step-6');
+  assert.equal(s2.version, 11);
+  assert.ok(s2.updated_at >= before, 'updated_at bumped on successful write');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  tracker case 25 (real CAS conflict rejected) OK');
 }
 
 console.log('step-engine: OK');

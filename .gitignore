@@ -5,8 +5,4 @@ dist/
 .env
 .env.*
 
-# Smelter runtime state — never tracked
-.smt/state/
-
-# Per-feature binary artifacts (videos, screenshots, logs)
-.smt/features/**/artifacts/
+.smt/

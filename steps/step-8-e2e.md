@@ -5,26 +5,25 @@ Exercise the real interface end-to-end. Capture artifacts for human review.
 
 ## Actions
 Surface-based routing:
-- **UI** → Playwright against real dev server. Video + screenshots → `.smt/features/<slug>/artifacts/`
-- **CLI** → subprocess. Assert exit code + stdout/stderr
-- **API** → real server. curl/supertest assertions
+- **UI** → Playwright + real dev server. Video + screenshots → `.smt/features/<slug>/artifacts/`
+- **CLI** → subprocess + assert exit/stdout
+- **API** → real server + curl/supertest
 - **Hook script** → stdin JSON pipe → assert stdout JSON
-- **Library** → real dependencies (no mocking the system under test)
+- **Library** → real deps (no mocking the system under test)
 
 ## Skip condition
-If change surface is CSS/i18n/typo/dialogue AND no user-visible behavior change, skip E2E.
+CSS/i18n/typo/dialogue with no user-visible behavior change → skip E2E.
 
 ## Agents
-- `qa-tester` (sonnet) — for critical user flows
+- `qa-tester` (sonnet) for critical user flows
 
-## Gate
-- All E2E artifacts saved
-- Exit/status assertions pass
-- No visible regressions in video (UI) or logs (CLI/API)
+## Gate signal (REQUIRED — you must write this)
+Set `signals.e2e_pass = true` (atomic Read→Write — see `steps/step-4-tdd.md`).
 
-## On fail
-→ step-5 (implementation bug)
+`true` only when artifacts saved + assertions pass + no visible regressions. `false` → route to step-5.
+
+**If skipped (exempt surface):** set `e2e_pass: true` with a note in `decisions.md`.
 
 ## Next
-→ step-9 (Team Code Review) in feat mode
-→ step-10 (Human Review) in qa mode
+- `/feat` → step-9 (Team Code Review)
+- `/qa` → step-10 (Human Review)

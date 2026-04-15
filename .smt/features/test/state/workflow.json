@@ -1,0 +1,11 @@
+{
+  "command": "feat",
+  "step": "step-2",
+  "retry": 0,
+  "signals": {},
+  "version": 1,
+  "created_at": 1776273331619,
+  "updated_at": 1776273332184,
+  "prompt": "/feat test",
+  "session_id": "s"
+}

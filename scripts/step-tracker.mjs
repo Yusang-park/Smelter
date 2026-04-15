@@ -29,10 +29,13 @@ function readStdinSync() {
 }
 
 function readJsonSafe(path) {
+  if (!existsSync(path)) return null;
   try {
-    if (!existsSync(path)) return null;
     return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch { return null; }
+  } catch (err) {
+    process.stderr.write(`[step-tracker] corrupt JSON at ${path}: ${err.message}\n`);
+    return { __corrupt: true };
+  }
 }
 
 function parseWorkflow(command) {
@@ -79,12 +82,39 @@ function writeJsonAtomic(path, obj) {
   renameSync(tmp, path);
 }
 
-function writeState(statePath, state) {
-  writeJsonAtomic(statePath, { ...state, updated_at: Date.now() });
+// Compare-and-swap write: fails if on-disk state advanced beyond the snapshot
+// we read at the start of this invocation. Caller MUST pass the version it read.
+// Exported for unit tests.
+export function writeStateCAS(statePath, expectedVersion, nextState) {
+  const current = readJsonSafe(statePath);
+  if (current?.__corrupt) return false;
+  const onDiskVersion = current?.version ?? 0;
+  if (onDiskVersion !== expectedVersion) return false;
+  const payload = { ...nextState, version: onDiskVersion + 1, updated_at: Date.now() };
+  // Strip sentinel fields if present
+  delete payload.__corrupt;
+  writeJsonAtomic(statePath, payload);
+  return true;
 }
 
+function writeState(statePath, state) {
+  // state should include the version as READ — passed in by main().
+  const expected = state.version ?? 0;
+  const ok = writeStateCAS(statePath, expected, state);
+  if (!ok) {
+    process.stderr.write(`[step-tracker] CAS conflict at ${statePath} — another writer advanced; skipping\n`);
+  }
+  return ok;
+}
+
+// Pointer updates are idempotent (same {slug} repeated is harmless). Last-writer-wins
+// is acceptable because the pointer reflects the most-recently-touched feature, which is
+// exactly what parallel tracker invocations would converge on anyway.
 function updateActivePointer(projectDir, slug) {
   const pointerPath = join(projectDir, '.smt', 'state', 'active-feature.json');
+  const current = readJsonSafe(pointerPath);
+  // Skip write when pointer already names this slug to reduce contention
+  if (current && !current.__corrupt && current.slug === slug) return;
   writeJsonAtomic(pointerPath, { slug, updated_at: Date.now() });
 }
 
@@ -111,6 +141,7 @@ function createOutput(additionalContext) {
 }
 
 function main() {
+  printTag('Step Tracker');
   try {
     const input = readStdinSync();
     let data = {};
@@ -154,15 +185,17 @@ function main() {
       if (result === 'fail') {
         const retry = (state.retry || 0) + 1;
         const maxRetry = step.max_retry;
+        const emitConflict = () => console.log(JSON.stringify(createOutput(`[CAS conflict at ${state.step} — another writer advanced; re-read workflow.json]`)));
         if (maxRetry && retry >= maxRetry && step.on_max_retry) {
-          writeState(statePath, { ...state, step: step.on_max_retry, retry: 0, signals: {} });
+          const ok = writeState(statePath, { ...state, step: step.on_max_retry, retry: 0, signals: {} });
+          if (!ok) { emitConflict(); return; }
           printTag(`Step: ${state.step} → ${step.on_max_retry} (max_retry)`);
           console.log(JSON.stringify(createOutput(`[Step ${state.step} exceeded retry budget → ${step.on_max_retry}]`)));
           return;
         }
-        // on_fail may be a string (simple route) or an object (category map — requires explicit category signal)
         if (typeof step.on_fail === 'string') {
-          writeState(statePath, { ...state, step: step.on_fail, retry: 0, signals: {} });
+          const ok = writeState(statePath, { ...state, step: step.on_fail, retry: 0, signals: {} });
+          if (!ok) { emitConflict(); return; }
           printTag(`Step: ${state.step} → ${step.on_fail} (failed)`);
           console.log(JSON.stringify(createOutput(`[Step ${state.step} failed → ${step.on_fail}]`)));
           return;
@@ -172,22 +205,30 @@ function main() {
           if (category && step.on_fail[category]) {
             const target = step.on_fail[category];
             if (target === 'continue') {
-              writeState(statePath, { ...state, step: step.next, retry: 0, signals: {} });
-              printTag(`Step: ${state.step} → ${step.next} (low: continue)`);
-              console.log(JSON.stringify(createOutput(`[Step ${state.step} failed (${category}: low) → continue]`)));
+              const ok = writeState(statePath, { ...state, step: step.next, retry: 0, signals: {} });
+              if (!ok) { emitConflict(); return; }
+              printTag(`Step: ${state.step} → ${step.next} (${category}: continue)`);
+              console.log(JSON.stringify(createOutput(`[Step ${state.step} failed (${category}) → continue → ${step.next}]`)));
               return;
             }
-            writeState(statePath, { ...state, step: target, retry: 0, signals: {} });
+            const ok = writeState(statePath, { ...state, step: target, retry: 0, signals: {} });
+            if (!ok) { emitConflict(); return; }
             printTag(`Step: ${state.step} → ${target} (${category})`);
             console.log(JSON.stringify(createOutput(`[Step ${state.step} failed (${category}) → ${target}]`)));
             return;
           }
-          // category not set — wait
-          process.stderr.write(`[step-tracker] on_fail map requires state.signals.failure_category\n`);
-          console.log(JSON.stringify({ continue: true }));
+          const categories = Object.keys(step.on_fail).join(', ');
+          const prompt = `[Step ${state.step} gate failed — CATEGORY REQUIRED]\n`
+            + `You set signals.${gateName} = false but did not set signals.failure_category.\n`
+            + `Valid categories: ${categories}\n`
+            + `Update .smt/features/${slug}/state/workflow.json with:\n`
+            + `  { "signals": { "${gateName}": false, "failure_category": "<category>" } }\n`
+            + `Write BOTH keys atomically in the same update.`;
+          console.log(JSON.stringify(createOutput(prompt)));
           return;
         }
-        writeState(statePath, { ...state, retry });
+        const ok = writeState(statePath, { ...state, retry });
+        if (!ok) { emitConflict(); return; }
         console.log(JSON.stringify(createOutput(`[Step ${state.step} retry ${retry}/${maxRetry || 3}]`)));
         return;
       }
@@ -196,7 +237,11 @@ function main() {
 
     // Advance to next step
     if (step.next) {
-      writeState(statePath, { ...state, step: step.next, retry: 0, signals: {} });
+      const ok = writeState(statePath, { ...state, step: step.next, retry: 0, signals: {} });
+      if (!ok) {
+        console.log(JSON.stringify(createOutput(`[CAS conflict at ${state.step} — another writer advanced; re-read workflow.json]`)));
+        return;
+      }
       printTag(`Step: ${state.step} → ${step.next}`);
       console.log(JSON.stringify(createOutput(`[Step ${state.step} complete → ${step.next}]`)));
       return;
@@ -209,4 +254,9 @@ function main() {
   }
 }
 
-main();
+// Only auto-run as a script entry point, not when imported for tests.
+// Using URL equality is symlink/bundler-safe.
+import { pathToFileURL } from 'node:url';
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

@@ -3,13 +3,15 @@
 // Injects TDD + caveman context + .smt/ feature task state at session start.
 //
 // Behavior:
-//   - Reads features/*/task/_overview.md for feature plans
-//   - Reads features/*/task/*.md (excluding _overview.md) for pending tasks
+//   - Reads features/*/task/plan.md for feature plans
+//   - Reads features/*/task/*.md (excluding plan.md) for pending tasks
 //   - If pending tasks exist → instruct Claude to notify the user
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve, join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { printTag } from './lib/yellow-tag.mjs';
+import { parseYaml } from './lib/yaml-parser.mjs';
 
 printTag('Session Start');
 
@@ -36,12 +38,26 @@ Keep articles, grammar, and complete sentences intact.
 Technical terms, code blocks, and error messages must be exact and unchanged.
 If safety warnings, security issues, or irreversible actions are involved, use full clear prose regardless.`;
 
-// Find .smt/ directory from current dir upward (max 6 levels)
-function findSmtDir(startDir) {
+// Project root = first ancestor with .git OR package.json (bounds both searches).
+function findProjectRoot(startDir) {
   let dir = resolve(startDir || process.env.CLAUDE_PROJECT_DIR || process.cwd());
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(dir, '.git')) || existsSync(join(dir, 'package.json'))) return dir;
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+// Find .smt/ within or above current dir, but stop at the project root.
+function findSmtDir(startDir) {
+  const root = findProjectRoot(startDir);
+  let dir = resolve(startDir || process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  for (let i = 0; i < 8; i++) {
     const smtPath = join(dir, '.smt');
     if (existsSync(smtPath)) return smtPath;
+    if (root && dir === root) break;
     const parent = resolve(dir, '..');
     if (parent === dir) break;
     dir = parent;
@@ -63,16 +79,16 @@ function readSmtContext(smtDir) {
       const taskDirPath = join(featuresDir, slug, 'task');
       if (!existsSync(taskDirPath)) continue;
 
-      const overviewPath = join(taskDirPath, '_overview.md');
+      const overviewPath = join(taskDirPath, 'plan.md');
       if (existsSync(overviewPath)) {
         try {
           const content = readFileSync(overviewPath, 'utf8').slice(0, 2000);
-          sections.push(`## Feature: ${slug} (.smt/features/${slug}/task/_overview.md)\n${content}`);
+          sections.push(`## Feature: ${slug} (.smt/features/${slug}/task/plan.md)\n${content}`);
         } catch {}
       }
 
       let taskFiles = [];
-      try { taskFiles = readdirSync(taskDirPath).filter(f => f.endsWith('.md') && f !== '_overview.md').sort(); } catch {}
+      try { taskFiles = readdirSync(taskDirPath).filter(f => f.endsWith('.md') && f !== 'plan.md').sort(); } catch {}
 
       const taskLines = [];
       for (const f of taskFiles) {
@@ -97,7 +113,7 @@ function readSmtContext(smtDir) {
   }
 
   const contextStr = sections.length === 0 ? '' :
-    `\n\n[SMELTER FILE-BASED MEMORY]\nAgents do not memorize — agents read files.\nStructure: .smt/features/<slug>/task/_overview.md + .smt/features/<slug>/task/<task-name>.md\n\n` +
+    `\n\n[SMELTER FILE-BASED MEMORY]\nAgents do not memorize — agents read files.\nStructure: .smt/features/<slug>/task/plan.md + .smt/features/<slug>/task/<task-name>.md\n\n` +
     sections.join('\n\n');
 
   return { contextStr, pendingTasks };
@@ -119,14 +135,62 @@ INSTRUCTIONS FOR THIS SESSION START:
 3. Do NOT start working on any task automatically — wait for explicit user instruction.`;
 }
 
-function emit(additionalContext) {
+const MAX_CONTEXT_CHARS = 32 * 1024; // Cap total context length to prevent runaway bloat
+
+function emit(additionalContext, priorityTail = '') {
+  // priorityTail (e.g., legacy migration notice) is preserved even when the body
+  // overflows — it's injected AFTER any truncation marker so critical instructions
+  // survive. Reserve 2KB for it.
+  const tailBudget = Math.min(priorityTail.length, 2048);
+  const bodyCap = MAX_CONTEXT_CHARS - tailBudget;
+  let body = additionalContext || '';
+  if (body.length > bodyCap) {
+    body = body.slice(0, bodyCap) + `\n\n[...truncated ${body.length - bodyCap} chars — context size limit hit]`;
+  }
+  const tail = priorityTail.length > tailBudget ? priorityTail.slice(0, tailBudget) : priorityTail;
+  const ctx = body + tail;
   process.stdout.write(JSON.stringify({
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
-      additionalContext,
+      additionalContext: ctx,
     },
   }));
+}
+
+function detectWorkflowIssues(smtDir) {
+  const issues = [];
+  const pointerPath = join(smtDir, 'state', 'active-feature.json');
+  if (existsSync(pointerPath)) {
+    try { JSON.parse(readFileSync(pointerPath, 'utf8')); }
+    catch (e) { issues.push(`Corrupt JSON: ${pointerPath} (${e.message})`); }
+  }
+  const featuresDir = join(smtDir, 'features');
+  if (!existsSync(featuresDir)) return issues;
+
+  const harnessRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  let slugs = [];
+  try { slugs = readdirSync(featuresDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch {}
+  for (const slug of slugs) {
+    const statePath = join(featuresDir, slug, 'state', 'workflow.json');
+    if (!existsSync(statePath)) continue;
+    let state;
+    try { state = JSON.parse(readFileSync(statePath, 'utf8')); }
+    catch (e) { issues.push(`Corrupt JSON: ${statePath} (${e.message})`); continue; }
+    if (!state?.command || !state?.step) continue;
+    const wfPath = join(harnessRoot, 'workflows', `${state.command}.yaml`);
+    if (!existsSync(wfPath)) continue;
+    try {
+      const wf = parseYaml(readFileSync(wfPath, 'utf8'));
+      if (wf?.steps && !wf.steps[state.step]) {
+        issues.push(`Stale step in ${slug}: step="${state.step}" not in workflows/${state.command}.yaml (valid: ${Object.keys(wf.steps).join(', ')})`);
+      }
+    } catch (err) {
+      process.stderr.write(`[session-start-smt] YAML parse failed for ${wfPath}: ${err.message}\n`);
+      issues.push(`Workflow YAML parse error at workflows/${state.command}.yaml: ${err.message}`);
+    }
+  }
+  return issues;
 }
 
 try {
@@ -137,6 +201,11 @@ try {
     const { contextStr, pendingTasks } = readSmtContext(smtDir);
     let extra = contextStr;
     if (pendingTasks.length > 0) extra += buildPendingNotification(pendingTasks);
+    const issues = detectWorkflowIssues(smtDir);
+    if (issues.length > 0) {
+      extra += `\n\n[WORKFLOW RECOVERY REQUIRED]\n` + issues.map(s => `  - ${s}`).join('\n')
+        + `\n\nTell the user and await instructions before continuing.`;
+    }
     emit(CAVEMAN_CONTEXT + '\n\n' + TDD_CONTEXT + extra);
   }
 } catch (err) {

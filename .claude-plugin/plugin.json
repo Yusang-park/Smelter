@@ -1,0 +1,18 @@
+{
+  "name": "smelter",
+  "version": "1.0.0",
+  "description": "TDD-first, file-based, multi-agent development harness for Claude Code",
+  "author": {
+    "name": "Yusang Park"
+  },
+  "repository": "https://github.com/Yusang-park/Smelter",
+  "license": "Private",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "tdd",
+    "agents",
+    "hooks",
+    "workflow"
+  ]
+}

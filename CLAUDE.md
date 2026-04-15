@@ -9,7 +9,7 @@ This is the **Smelter** — a TDD-first, file-based, multi-agent AI development 
 **"Agents do not memorize. Agents read files."**
 
 - All plans, tasks, decisions → written to `.smt/` files
-- Session start → read `features/*/task/_overview.md` + relevant `features/*/task/*.md`
+- Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md`
 - Progress tracked by updating `features/<slug>/task/{task-name}.md`
 - Memory lives in files, not in context
 
@@ -31,7 +31,7 @@ Exemption for `/qa` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue c
 
 | Command | Use | Step Range | E2E |
 |---------|-----|------------|-----|
-| `/tasker` | Create or refine planning state (absorbs former intake role). Integrates with native `EnterPlanMode`/`ExitPlanMode`. | 1–3 | — |
+| `/tasker` | Create or refine planning state. Fully `.smt`-based planning for Steps 1–3; execution happens later via `/feat` or `/qa`. | 1–3 | — |
 | `/feat` | Full development workflow on a prompt. "extend" magic keyword skips Step 2. | 1–10 | surface-based (required for interface changes) |
 | `/qa` | Bug fixes and simple UI/text/dialogue edits. TDD exemption per surface. | 4–10 | surface-based |
 
@@ -53,7 +53,7 @@ The planning state is the source of truth. It discovers `features/` directories,
 ### Workflow examples
 
 ```
-/tasker "new onboarding flow"          → plan mode + .smt/ state
+/tasker "new onboarding flow"          → planning state + .smt/ state
 /feat "add dark mode toggle"           → full 10-step workflow
 /feat "extend the existing auth flow"  → Step 2 skipped via magic keyword
 /qa "fix login form error text"        → Step 4-10 with TDD exemption
@@ -107,7 +107,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     ├── features/
     │   └── <feature-slug>/
     │       ├── task/
-    │       │   ├── _overview.md  ← feature goal, scope, acceptance criteria
+    │       │   ├── plan.md  ← feature goal, scope, acceptance criteria
     │       │   └── <task-name>.md ← individual task (atomic, agent-readable)
     │       └── decisions.md      ← architecture decisions for this feature
     ├── wiki/                     ← project knowledge base
@@ -115,7 +115,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
 ```
 
 **Protocol:**
-1. Session start → Read `features/*/task/_overview.md` + relevant `features/*/task/*.md`
+1. Session start → Read `features/*/task/plan.md` + relevant `features/*/task/*.md`
 2. Before coding → verify task file exists at `features/<slug>/task/<task-name>.md`
 3. Task complete → update `features/<slug>/task/<task-name>.md`
 4. New decision → append to `features/<slug>/decisions.md`
@@ -197,7 +197,6 @@ Every hook prints a short ANSI-yellow bracketed tag to stderr so you can see wha
 | `[Auto-Retry: <reason>]` | tool-retry |
 | `[Auto-Confirm]` | auto-confirm |
 | `[Run E2E]` | stop-e2e |
-| `[Plan Mode: Enter]` / `[Plan Mode: Exit]` | /tasker |
 | `[Doc Sync Check]` | session-end |
 | `[Session Start]` | session-start-smelter |
 | `[Permission]` | permission-handler |
@@ -226,7 +225,6 @@ Sessions are observed automatically. Patterns become instincts:
 | `{project}/.smt/wiki/` | Project knowledge base |
 | `{project}/.smt/session/` | Session logs |
 | `~/.smt/config.json` | Global `autoConfirm` toggle |
-| `~/.claude/plans/<name>.md` | Native Claude Code plan files (dual-written by /tasker) |
 | `~/.claude/homunculus/` | ECC instinct data |
 
 ## Cancel

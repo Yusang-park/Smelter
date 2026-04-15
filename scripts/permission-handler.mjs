@@ -10,6 +10,7 @@ const handlerPath = join(__dirname, '..', 'dist', 'hooks', 'permission-handler',
 
 async function main() {
   printTag('Permission');
+  printTag('Permission');
   // Read stdin synchronously
   let input = '{}';
   try { input = readFileSync('/dev/stdin', 'utf-8'); } catch {}

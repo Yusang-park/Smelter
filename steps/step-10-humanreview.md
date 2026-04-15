@@ -23,7 +23,7 @@ Explicit user decision. Never auto-complete.
 
 ## On complete
 1. Update all `features/<slug>/task/<task-name>.md` files — checkbox to `[x]`
-2. Record artifact paths in `_overview.md` or task files
+2. Record artifact paths in `plan.md` or task files
 3. Append session summary to `.smt/session/YYYY-MM-DD.md`
 4. Offer git commit (do NOT commit without user approval)
 

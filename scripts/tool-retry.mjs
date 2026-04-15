@@ -219,6 +219,7 @@ function buildRetryInstruction(pattern, toolName, toolInput) {
 }
 
 async function main() {
+  printTag('Tool Retry');
   try {
     const input = readStdinSync();
     let data = {};

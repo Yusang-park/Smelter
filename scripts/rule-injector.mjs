@@ -86,6 +86,7 @@ export function injectRulesForFile(projectRoot, filePath, sessionId) {
 }
 
 async function main() {
+  printTag('Rule Injector');
   try {
     const input = readStdinSync();
     let data = {};

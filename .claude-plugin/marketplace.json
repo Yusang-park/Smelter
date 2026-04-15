@@ -1,0 +1,27 @@
+{
+  "name": "smelter",
+  "owner": {
+    "name": "Yusang Park",
+    "email": ""
+  },
+  "metadata": {
+    "description": "TDD-first, file-based, multi-agent development harness for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "smelter",
+      "source": "./",
+      "description": "A Claude Code plugin that adds TDD-oriented workflows, hook-based enforcement, multi-agent orchestration, and an optional Codex wrapper/HUD development stack.",
+      "category": "developer-tools",
+      "tags": [
+        "claude-code",
+        "tdd",
+        "hooks",
+        "agents",
+        "workflow",
+        "developer-tools"
+      ]
+    }
+  ]
+}

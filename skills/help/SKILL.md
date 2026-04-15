@@ -11,7 +11,7 @@ Smelter is organized around planning state, start commands, and executor command
 
 | Concept | Values | Purpose |
 |--------|--------|---------|
-| Planning state | `features/<slug>/task/_overview.md`, `features/<slug>/task/*.md` | Source of truth |
+| Planning state | `features/<slug>/task/plan.md`, `features/<slug>/task/*.md` | Source of truth |
 | Start commands | `/feat`, `/qa`, `/tasker` | Start or shape work |
 
 ## Start Commands

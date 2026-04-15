@@ -107,11 +107,18 @@ const response = translateResponsesAPIResponse({
 assert.equal(response.role, 'assistant');
 assert.equal(response.model, 'gpt-5.4');
 assert.equal(response.stop_reason, 'tool_use');
-assert.deepEqual(response.usage, {
+assert.equal(response.usage.model, 'gpt-5.4');
+assert.equal(response.usage.input_tokens, 12);
+assert.equal(response.usage.output_tokens, 34);
+assert.equal(response.usage.total_input_tokens, 12);
+assert.equal(response.usage.total_output_tokens, 34);
+assert.equal(response.usage.context_window, 1000000);
+assert.equal(response.usage.context_window_size, 1000000);
+assert.equal(response.usage.used_percentage, 12 / 1000000 * 100);
+assert.deepEqual(response.usage.current_usage, {
   input_tokens: 12,
-  output_tokens: 34,
-  context_window: 1000000,
-  context_window_size: 1000000,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 0,
 });
 assert.deepEqual(response.content, [
   { type: 'text', text: 'hello from chatgpt backend' },

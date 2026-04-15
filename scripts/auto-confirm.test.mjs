@@ -29,11 +29,11 @@ function makeProject({ hasPending }) {
   const taskDir = join(dir, '.smt', 'features', 'test-feature', 'task');
   mkdirSync(taskDir, { recursive: true });
   if (hasPending) {
-    writeFileSync(join(taskDir, '_overview.md'), '# Test Feature\n');
+    writeFileSync(join(taskDir, 'plan.md'), '# Test Feature\n');
     writeFileSync(join(taskDir, 'task-1.md'), '- [ ] Task 1: do the thing\n');
     writeFileSync(join(taskDir, 'task-2.md'), '- [x] Task 2: done already\n');
   } else {
-    writeFileSync(join(taskDir, '_overview.md'), '# Test Feature\n');
+    writeFileSync(join(taskDir, 'plan.md'), '# Test Feature\n');
     writeFileSync(join(taskDir, 'task-1.md'), '- [x] Task 1: done\n');
   }
   return dir;

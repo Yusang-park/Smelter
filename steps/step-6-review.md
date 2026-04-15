@@ -1,32 +1,29 @@
 # Step 6: Local Agent Review
 
 ## Goal
-Get immediate quality feedback from specialized review agents. Fix findings before broader tests.
+Specialized review agents catch bugs before broader tests.
 
 ## Actions
-1. Invoke `code-reviewer` on all changed files
-2. Invoke `security-reviewer` if changes touch: auth, input validation, secrets, network I/O, file I/O
-3. Record findings in `features/<slug>/decisions.md` under `## Risks`
-4. Fix CRITICAL + HIGH issues immediately
+1. Invoke `code-reviewer` on changed files.
+2. Invoke `security-reviewer` if changes touch auth, input validation, secrets, network I/O, file I/O.
+3. Record findings in `features/<slug>/decisions.md` under `## Risks`.
+4. Fix CRITICAL + HIGH issues immediately.
 
 ## Agents
 - `code-reviewer` (sonnet) — always
-- `security-reviewer` (sonnet) — conditional on surface
+- `security-reviewer` (sonnet) — conditional
 
-## Repeat
-Up to 3 rounds of fix → re-review.
+## Gate signals (REQUIRED — you must write these together)
+Atomic Read→Write of `.smt/features/<slug>/state/workflow.json` (see `steps/step-4-tdd.md` for the pattern):
 
-## On fail (by category)
-- `code_quality` → step-5 (fix and retry)
-- `bug` → step-5
-- `security` → step-5 (CRITICAL only)
-- `plan_mismatch` → step-3 (plan was wrong)
-- `edge_case` → step-3 (add tasks for missed cases)
+- Passing: `signals.review_clean = true`
+- Failing: `signals.review_clean = false` AND `signals.failure_category = <category>` — BOTH keys in the SAME Write.
 
-## Gate
-- 0 CRITICAL findings
-- 0 HIGH findings (or justified in `decisions.md`)
-- MEDIUM findings documented, deferred to follow-up if acceptable
+Valid `failure_category`: `code_quality`, `bug`, `security`, `plan_mismatch`, `edge_case`.
+- `code_quality` / `bug` / `security` → route to step-5
+- `plan_mismatch` / `edge_case` → route to step-3
+
+**If you write `review_clean: false` WITHOUT `failure_category`, the engine will re-prompt you to add it.** Best to write both atomically the first time.
 
 ## Next
 → step-7 (Utility Test)

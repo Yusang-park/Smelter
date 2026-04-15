@@ -252,6 +252,7 @@ function formatSkillsMessage(skills) {
 
 // Main
 async function main() {
+  printTag('Skill Injector');
   try {
     printTag('Inject: scanning skills');
     const input = readStdinSync();

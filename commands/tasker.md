@@ -11,11 +11,11 @@ $ARGUMENTS
 
 ## Protocol
 
-### Plan-mode entry (MANDATORY — pre-Step 1)
+### Planning protocol
 
-1. Call native **`EnterPlanMode`** immediately at start. Emit `[Plan Mode: Enter]` yellow tag.
-2. While in plan mode, propose and refine text before committing files.
-3. `ExitPlanMode` auto-saves to `~/.claude/plans/<name>.md`. Record that path in `.smt/features/<slug>/task/_overview.md` under `Native Plan File:`.
+1. Propose and refine planning text directly in `.smt/features/<slug>/task/` files.
+2. Keep `.smt/` as the source of truth for planning state.
+3. Tasker planning is recorded in `.smt/features/<slug>/task/`.
 
 ### Engine protocol
 
@@ -39,14 +39,10 @@ Never ask multiple questions in one message.
 ```
 {PROJECT_ROOT}/.smt/features/<slug>/
 ├── task/
-│   ├── _overview.md  ← goal, scope, acceptance criteria, Native Plan File: pointer
+│   ├── plan.md  ← goal, scope, acceptance criteria
 │   └── <task-name>.md ← individual task (atomic, agent-readable)
 └── decisions.md
 ```
-
-## Dual-write rule
-
-Native plan (`~/.claude/plans/<name>.md`) is human-review draft. `.smt/features/<slug>/task/_overview.md` is the execution source of truth. When finalizing, copy verbatim. On divergence, `.smt/` wins.
 
 ## Scope — what /tasker does NOT do
 

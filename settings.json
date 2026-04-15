@@ -1,7 +1,4 @@
 {
-  "env": {
-    "DISABLE_COMPACT": "1"
-  },
   "permissions": {
     "allow": [
       "mcp__pencil",
@@ -21,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/yusang/smelter/scripts/session-start-smelter.mjs",
+            "command": "node /Users/yusang/smelter/scripts/session-start-smt.mjs",
             "timeout": 5
           }
         ]
@@ -155,5 +152,7 @@
   },
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
-  "_comment": "USER-SPECIFIC FILE. Absolute paths below are hardcoded to /Users/yusang/smelter because Claude Code does not expand ${CLAUDE_PLUGIN_ROOT} in user settings.json (only in plugin-shipped hooks/hooks.json). If you relocate the project, update every hook command path. Canonical plugin-wired hooks live in hooks/hooks.json using ${CLAUDE_PLUGIN_ROOT}."
+  "_comment": "USER-SPECIFIC FILE. Absolute paths below are hardcoded to /Users/yusang/smelter because Claude Code does not expand ${CLAUDE_PLUGIN_ROOT} in user settings.json (only in plugin-shipped hooks/hooks.json). If you relocate the project, update every hook command path. Canonical plugin-wired hooks live in hooks/hooks.json using ${CLAUDE_PLUGIN_ROOT}.",
+  "model": "gpt-5.4",
+  "env": {}
 }

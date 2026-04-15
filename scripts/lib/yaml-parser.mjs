@@ -98,8 +98,14 @@ function parseScalar(s) {
   if (t === 'null' || t === '~') return null;
   if (/^-?\d+$/.test(t)) return Number(t);
   if (/^-?\d+\.\d+$/.test(t)) return Number(t);
-  if (t.startsWith('"') && t.endsWith('"')) return t.slice(1, -1);
-  if (t.startsWith("'") && t.endsWith("'")) return t.slice(1, -1);
+  // Double-quoted: process escape sequences via JSON
+  if (t.startsWith('"') && t.endsWith('"')) {
+    try { return JSON.parse(t); } catch { return t.slice(1, -1); }
+  }
+  // Single-quoted: YAML-style — only `''` escapes to single quote
+  if (t.startsWith("'") && t.endsWith("'")) {
+    return t.slice(1, -1).replace(/''/g, "'");
+  }
   return t;
 }
 
