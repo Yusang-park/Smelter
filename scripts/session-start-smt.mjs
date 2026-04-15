@@ -8,6 +8,7 @@
 //   - If pending tasks exist → instruct Claude to notify the user
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { resolve, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { printTag } from './lib/yellow-tag.mjs';
@@ -37,6 +38,35 @@ Remove filler words, pleasantries, and hedging from all responses.
 Keep articles, grammar, and complete sentences intact.
 Technical terms, code blocks, and error messages must be exact and unchanged.
 If safety warnings, security issues, or irreversible actions are involved, use full clear prose regardless.`;
+
+// Auto-update check: git fetch + compare local vs remote.
+// Runs silently on session start; updates in background if behind.
+function checkAutoUpdate() {
+  const harnessRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const gitDir = join(harnessRoot, '.git');
+  if (!existsSync(gitDir)) return null;
+  try {
+    execFileSync('git', ['fetch', '--quiet'], { cwd: harnessRoot, timeout: 5000, stdio: 'pipe' });
+    const status = execFileSync('git', ['rev-list', '--count', 'HEAD..@{u}'], { cwd: harnessRoot, timeout: 3000, encoding: 'utf-8', stdio: 'pipe' }).trim();
+    const behind = parseInt(status, 10);
+    if (behind > 0) {
+      printTag(`Update: ${behind} commit(s) behind`);
+      // Auto-pull + rebuild
+      try {
+        execFileSync('git', ['pull', '--ff-only', '--quiet'], { cwd: harnessRoot, timeout: 15000, stdio: 'pipe' });
+        // Rebuild if package.json exists
+        if (existsSync(join(harnessRoot, 'package.json'))) {
+          execFileSync('npm', ['run', 'build'], { cwd: harnessRoot, timeout: 30000, stdio: 'pipe' });
+        }
+        printTag(`Updated: pulled ${behind} commit(s)`);
+        return `[SMELTER AUTO-UPDATE] Pulled ${behind} new commit(s) and rebuilt. Restart may be needed for hook changes.`;
+      } catch (pullErr) {
+        return `[SMELTER UPDATE AVAILABLE] ${behind} commit(s) behind origin. Auto-pull failed: ${pullErr.message}. Run \`git pull && npm run build\` manually in the smelter directory.`;
+      }
+    }
+  } catch { /* offline or not a git repo — skip silently */ }
+  return null;
+}
 
 // Project root = first ancestor with .git OR package.json (bounds both searches).
 function findProjectRoot(startDir) {
@@ -193,10 +223,24 @@ function detectWorkflowIssues(smtDir) {
   return issues;
 }
 
+// Read version from package.json
+function getVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'package.json'), 'utf8'));
+    return pkg.version || '0.0.0';
+  } catch { return '0.0.0'; }
+}
+
 try {
+  const version = getVersion();
+  printTag(`Smelter v${version}`);
+
+  // Auto-update check (silent, non-blocking)
+  const updateNotice = checkAutoUpdate() || '';
+
   const smtDir = findSmtDir();
   if (!smtDir) {
-    emit(CAVEMAN_CONTEXT + '\n\n' + TDD_CONTEXT);
+    emit(CAVEMAN_CONTEXT + '\n\n' + TDD_CONTEXT + (updateNotice ? `\n\n${updateNotice}` : ''));
   } else {
     const { contextStr, pendingTasks } = readSmtContext(smtDir);
     let extra = contextStr;
@@ -206,6 +250,7 @@ try {
       extra += `\n\n[WORKFLOW RECOVERY REQUIRED]\n` + issues.map(s => `  - ${s}`).join('\n')
         + `\n\nTell the user and await instructions before continuing.`;
     }
+    if (updateNotice) extra += `\n\n${updateNotice}`;
     emit(CAVEMAN_CONTEXT + '\n\n' + TDD_CONTEXT + extra);
   }
 } catch (err) {

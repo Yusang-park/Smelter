@@ -198,6 +198,19 @@ This creates `.smt/` with `features/`, `wiki/`, and `session/` directories. Star
 /tasker "plan the new onboarding flow"
 ```
 
+## Auto-Update
+
+Smelter checks for updates on every session start. If your local copy is behind origin, it automatically pulls and rebuilds:
+
+```
+[Session Start]
+[Smelter v1.1.0]
+[Update: 3 commit(s) behind]
+[Updated: pulled 3 commit(s)]
+```
+
+If auto-pull fails (merge conflicts, etc.), you'll see a notice to update manually. No data is ever lost -- only fast-forward pulls are attempted.
+
 ## Requirements
 
 - Node.js >= 20.0.0
