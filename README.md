@@ -70,7 +70,7 @@ You don't need to memorize slash commands. Just talk naturally -- Smelter uses a
 "스타일 수정"               --> /qa (TDD exempt)
 ```
 
-This isn't regex pattern matching. A Claude Haiku instance reads your prompt, classifies its intent (`command` vs `question`), and maps it to the correct workflow -- including branch hints like `extend` (skip learning phase) or `style` (TDD exemption). Works in English and Korean out of the box.
+This isn't regex pattern matching. A Claude Haiku instance reads your prompt, classifies its intent (`command` vs `question`), and maps it to the correct workflow -- including branch hints like `extend` (skip learning phase) or `style` (TDD exemption). Any language Haiku understands works.
 
 ### Mode Indicators
 
