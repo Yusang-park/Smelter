@@ -304,22 +304,6 @@ Smelter ships 22 specialized agents:
 
 Use them proactively: complex feature -> **planner** then **executor**; just wrote code -> **code-reviewer**; bug fix -> **tdd-guide**; build failed -> **build-fixer**.
 
-## Project Structure
-
-```
-src/             -- TypeScript engine (types, store, workflow-engine, adapters)
-bin/             -- CLI entry point
-commands/        -- Slash command definitions (feat.md, qa.md, tasker.md)
-workflows/       -- YAML step DAG definitions
-steps/           -- Per-step prompt files (20-40 lines each)
-scripts/         -- Hook scripts (keyword-detector, auto-confirm, step-injector, ...)
-agents/          -- Specialized subagent definitions
-skills/          -- Reusable workflow skills
-presets/         -- Execution preset configs
-hooks/           -- Plugin hook wiring (hooks.json)
-rules-lib/       -- Language-specific coding rules
-```
-
 ## Requirements
 
 - Node.js >= 20.0.0
