@@ -19,9 +19,57 @@
 
 ## Why Smelter?
 
-Claude Code is powerful. But without guardrails, agents skip tests, forget plans, lose context across sessions, and ship untested code.
+Real developers don't just write code. They receive tasks, study the problem, design a plan, write tests, implement, get reviews, verify, and present to a human. **Smelter automates this entire human workflow** -- not just the coding part.
 
-**Smelter fixes this.** It wraps Claude Code in a 10-step workflow engine that enforces TDD, manages state in files (not memory), and routes work through specialized review agents before anything ships.
+### 1. The Human Workflow, Automated
+
+```
+PM assigns task → Study → Design → TDD → Implement → Verify → Human Review → Iterate
+```
+
+Smelter encodes this as a 10-step engine. Every feature goes through the same disciplined process a senior engineering team would follow -- planning, test-first development, multi-agent review, and human sign-off.
+
+### 2. Agents Don't Memorize. Agents Read Files.
+
+LLMs lose everything when the session ends. Smelter solves this with **file-based state** -- plans, tasks, decisions, and progress all live on disk:
+
+```
+.smt/features/<slug>/
+├── task/plan.md          -- goal, scope, acceptance criteria
+├── task/<task>.md         -- individual atomic tasks
+├── decisions.md           -- architecture decisions
+└── state/workflow.json    -- engine state (survives sessions)
+```
+
+The result: goals are pinned to files, task state is tracked explicitly, changes are accumulated as a living wiki, and **contradictions discovered mid-work are reflected back into the documents**.
+
+### 3. Fixed-Role Agents, Not One Agent Doing Everything
+
+Each agent has a clear role and stays in its lane:
+
+| Agent | Owns | Does NOT do |
+|-------|------|-------------|
+| `planner` | Planning state, scope, task breakdown | Implementation, final verification |
+| `executor` | Code changes for assigned tasks | Replanning, architecture decisions |
+| `architect` | Architecture review, debug analysis | Implementation, plan creation |
+| `tdd-guide` | Test-first discipline, test strategy | Feature ownership, final approval |
+| `code-reviewer` | Quality/security/maintainability review | Implementation, scope expansion |
+
+Agents hand off to each other only when needed. No single agent tries to do everything.
+
+### 4. Triple Verification -- Smelter Refines, Not Just Executes
+
+The name "Smelter" is intentional. Raw ore goes in, refined metal comes out -- through repeated heating and purification:
+
+```
+Step 6:  Local Agent Review    -- quality, gaps, edge cases caught immediately
+Step 9:  Team Code Review      -- multi-perspective final review (95% consensus)
+Step 10: Human Review          -- you decide with video, logs, and evidence
+```
+
+No feature ships without at least 3 layers of verification.
+
+### 5. Problems Smelter Solves
 
 | Problem | Smelter's Answer |
 |---------|------------------|
