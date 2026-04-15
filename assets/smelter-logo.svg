@@ -1,35 +1,79 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 220" fill="none">
   <defs>
     <linearGradient id="flame" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" style="stop-color:#FF6B35"/>
-      <stop offset="50%" style="stop-color:#F7C948"/>
+      <stop offset="0%" style="stop-color:#FF4500"/>
+      <stop offset="40%" style="stop-color:#FF6B35"/>
+      <stop offset="70%" style="stop-color:#F7C948"/>
       <stop offset="100%" style="stop-color:#FFE066"/>
     </linearGradient>
-    <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#E8E8E8"/>
-      <stop offset="50%" style="stop-color:#B0B0B0"/>
-      <stop offset="100%" style="stop-color:#808080"/>
+    <linearGradient id="lava" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF4500"/>
+      <stop offset="50%" style="stop-color:#FF6B35"/>
+      <stop offset="100%" style="stop-color:#FF4500"/>
+    </linearGradient>
+    <linearGradient id="furnace" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4A4A4A"/>
+      <stop offset="50%" style="stop-color:#2A2A2A"/>
+      <stop offset="100%" style="stop-color:#1A1A1A"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF6B35"/>
+      <stop offset="30%" style="stop-color:#FFB347"/>
+      <stop offset="60%" style="stop-color:#E8E8E8"/>
+      <stop offset="100%" style="stop-color:#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="steam" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF6B35;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#FFE066;stop-opacity:0"/>
     </linearGradient>
   </defs>
-  <!-- Crucible / Smelter icon -->
-  <g transform="translate(30, 20)">
-    <!-- Flames -->
-    <path d="M50 60 Q55 20 65 45 Q70 10 80 40 Q90 5 95 35 Q105 15 110 50 Q115 25 120 55 L120 70 L50 70 Z" fill="url(#flame)" opacity="0.9"/>
-    <!-- Crucible body -->
-    <path d="M35 70 L40 160 Q45 175 85 175 Q125 175 130 160 L135 70 Z" fill="url(#metal)" stroke="#555" stroke-width="2"/>
-    <!-- Molten glow inside -->
-    <ellipse cx="85" cy="90" rx="40" ry="12" fill="#FF6B35" opacity="0.6"/>
-    <!-- Crucible rim -->
-    <ellipse cx="85" cy="70" rx="52" ry="10" fill="#999" stroke="#555" stroke-width="2"/>
-    <!-- Handles -->
-    <path d="M35 95 Q15 95 15 110 Q15 125 35 125" fill="none" stroke="#777" stroke-width="4" stroke-linecap="round"/>
-    <path d="M135 95 Q155 95 155 110 Q155 125 135 125" fill="none" stroke="#777" stroke-width="4" stroke-linecap="round"/>
+
+  <g transform="translate(20, 10)">
+    <!-- Furnace body (wide, bubbling) -->
+    <path d="M15 90 L15 170 Q15 195 50 195 L120 195 Q155 195 155 170 L155 90 Z" fill="url(#furnace)" stroke="#555" stroke-width="2"/>
+    <!-- Furnace rim (thick) -->
+    <rect x="8" y="82" width="154" height="12" rx="4" fill="#666" stroke="#444" stroke-width="1.5"/>
+    <!-- Molten lava surface (bubbling) -->
+    <ellipse cx="85" cy="100" rx="60" ry="10" fill="url(#lava)" opacity="0.9"/>
+    <!-- Bubbles -->
+    <circle cx="55" cy="96" r="5" fill="#FF4500" opacity="0.7"/>
+    <circle cx="75" cy="93" r="4" fill="#FFB347" opacity="0.8"/>
+    <circle cx="100" cy="97" r="6" fill="#FF6B35" opacity="0.6"/>
+    <circle cx="115" cy="94" r="3" fill="#F7C948" opacity="0.7"/>
+    <circle cx="65" cy="99" r="3" fill="#FF4500" opacity="0.5"/>
+    <!-- Big flame columns -->
+    <path d="M40 82 Q35 40 50 55 Q45 15 60 45 Q55 5 70 35 Q75 10 78 50 L78 82 Z" fill="url(#flame)" opacity="0.85"/>
+    <path d="M80 82 Q85 25 95 50 Q100 0 110 40 Q115 20 120 55 Q125 30 128 82 Z" fill="url(#flame)" opacity="0.9"/>
+    <!-- Small side flames -->
+    <path d="M25 82 Q20 55 35 65 Q30 40 40 60 L40 82 Z" fill="url(#flame)" opacity="0.6"/>
+    <path d="M128 82 Q135 50 140 65 Q145 35 148 60 L148 82 Z" fill="url(#flame)" opacity="0.6"/>
+    <!-- Steam/heat waves rising -->
+    <path d="M50 35 Q55 20 50 5" fill="none" stroke="url(#steam)" stroke-width="3" opacity="0.4"/>
+    <path d="M90 30 Q95 10 90 -5" fill="none" stroke="url(#steam)" stroke-width="3" opacity="0.3"/>
+    <path d="M120 38 Q125 22 120 8" fill="none" stroke="url(#steam)" stroke-width="2" opacity="0.35"/>
+    <!-- Sword blade emerging from furnace (being forged) -->
+    <path d="M82 95 L80 30 L85 -5 L90 30 L88 95" fill="url(#blade)" stroke="#CCC" stroke-width="0.5" opacity="0.95"/>
+    <!-- Sword guard (crosspiece) -->
+    <rect x="72" y="92" width="26" height="5" rx="2" fill="#8B7355" stroke="#6B5335" stroke-width="1"/>
+    <!-- Glow around sword tip -->
+    <ellipse cx="85" cy="5" rx="8" ry="12" fill="#FFE066" opacity="0.3"/>
+    <!-- Furnace legs -->
+    <rect x="25" y="195" width="12" height="15" rx="2" fill="#333"/>
+    <rect x="133" y="195" width="12" height="15" rx="2" fill="#333"/>
+    <!-- Bricks texture on furnace -->
+    <line x1="15" y1="120" x2="155" y2="120" stroke="#3A3A3A" stroke-width="0.5"/>
+    <line x1="15" y1="150" x2="155" y2="150" stroke="#3A3A3A" stroke-width="0.5"/>
+    <line x1="85" y1="90" x2="85" y2="120" stroke="#3A3A3A" stroke-width="0.5"/>
+    <line x1="50" y1="120" x2="50" y2="150" stroke="#3A3A3A" stroke-width="0.5"/>
+    <line x1="120" y1="120" x2="120" y2="150" stroke="#3A3A3A" stroke-width="0.5"/>
+    <line x1="85" y1="150" x2="85" y2="195" stroke="#3A3A3A" stroke-width="0.5"/>
   </g>
+
   <!-- Text -->
-  <text x="200" y="120" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="72" font-weight="800" fill="#1a1a1a" letter-spacing="-2">
+  <text x="200" y="120" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="76" font-weight="900" fill="#1a1a1a" letter-spacing="-3">
     Smelter
   </text>
-  <text x="203" y="155" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="18" font-weight="400" fill="#666" letter-spacing="4">
+  <text x="203" y="158" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="17" font-weight="500" fill="#666" letter-spacing="5">
     FORGE BETTER CODE WITH AI
   </text>
 </svg>
