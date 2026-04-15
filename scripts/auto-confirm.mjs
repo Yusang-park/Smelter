@@ -66,6 +66,27 @@ export function isUserAbort(data) {
 }
 
 /**
+ * Heuristic: does this message look like a confirmation / approval question
+ * that would benefit from auto-continuation? We look at the last ~300 chars
+ * since that's where agents typically place "shall I proceed?" type questions.
+ */
+export function looksLikeConfirmationQuestion(message) {
+  if (!message || typeof message !== 'string') return false;
+  const tail = message.slice(-400).toLowerCase();
+  const patterns = [
+    /shall i (?:proceed|continue|go ahead|do|start|create|update)/,
+    /should i (?:proceed|continue|go ahead|do|start|create|update)/,
+    /do you want me to /,
+    /would you like me to /,
+    /let me know (?:if|when|whether)/,
+    /ready to (?:proceed|continue|push|commit|deploy)\?/,
+    /진행할까요?\?|계속할까요?\?|할까요?\?|맞나요?\?/,
+    /proceed\?\s*$|continue\?\s*$|ok\?\s*$/,
+  ];
+  return patterns.some(p => p.test(tail));
+}
+
+/**
  * Extract last assistant message text from the Stop hook payload.
  * Transcripts may appear under `transcript` or `messages`.
  */
@@ -197,18 +218,29 @@ async function main() {
       }
     }
 
-    // Auto-confirm always forwards the last assistant message for Haiku/Sonnet
-    // to read on the next UserPromptSubmit and decide whether to continue.
-    // Pending task list (if any) is included as additional context, but is NOT
-    // the trigger — the trigger is "session ended, let the model decide".
+    // Auto-confirm blocks the stop ONLY when there's actionable work left:
+    //   (a) pending tasks exist in .smt/, OR
+    //   (b) the last assistant message looks like a confirmation/approval question
+    // Otherwise we pass through — no infinite loop on generic "done" replies.
     const pending = readPendingTasks(directory);
     const lastMessage = extractLastAssistantMessage(data);
+    const isAskingConfirmation = looksLikeConfirmationQuestion(lastMessage);
+    const hasWork = pending.length > 0 || isAskingConfirmation;
+
+    if (!hasWork) {
+      console.log(JSON.stringify({ continue: true }));
+      return;
+    }
+
     queueForwardPayload(directory, lastMessage, pending, sessionId);
 
     const taskHint = pending.length > 0
       ? `${pending.length} pending task(s) in .smt/. `
       : '';
-    const reason = `[AUTO-CONFIRM] Session ended with an assistant turn. ${taskHint}Read your prior last message in the forwarded context and continue the work — do not end the turn with a confirmation question.`;
+    const reasonSuffix = isAskingConfirmation
+      ? 'You ended the turn with a confirmation question. Answer it yourself and continue — do not ask the user.'
+      : 'Read your prior last message in the forwarded context and continue the work.';
+    const reason = `[AUTO-CONFIRM] ${taskHint}${reasonSuffix}`;
 
     printTag('Auto-Confirm: queued');
     console.log(JSON.stringify({ decision: 'block', reason }));

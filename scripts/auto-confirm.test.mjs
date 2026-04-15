@@ -74,18 +74,28 @@ function makeProject({ hasPending }) {
   console.log('  case 2b (user_aborted) OK');
 }
 
-// Case 3: no pending tasks → still block + queue (auto-confirm always fires on session end)
-// Haiku/Sonnet reads the forwarded last message on the next prompt to decide if work remains.
+// Case 3a: no pending + non-question message → continue (no infinite loop)
 {
   const dir = makeProject({ hasPending: false });
-  const transcript = [{ role: 'assistant', content: 'Here is what I did.' }];
+  const transcript = [{ role: 'assistant', content: 'Done. All changes pushed.' }];
   const res = runScript(HOOK, { cwd: dir, stop_reason: 'end_turn', transcript, session_id: 'sess-none' }, { cwd: dir });
   const out = JSON.parse(res.stdout);
-  assert.equal(out.decision, 'block', 'no pending still blocks — model decides on next prompt');
-  const queuePath = join(dir, '.smt', 'state', 'queue-sess-none.json');
-  assert.ok(existsSync(queuePath), 'queue file dropped even without pending tasks');
+  assert.equal(out.continue, true, 'no pending + no question → pass through');
   rmSync(dir, { recursive: true, force: true });
-  console.log('  case 3 (no-pending still forwards) OK');
+  console.log('  case 3a (no-pending, no-question) OK');
+}
+
+// Case 3b: no pending + confirmation question → block + queue
+{
+  const dir = makeProject({ hasPending: false });
+  const transcript = [{ role: 'assistant', content: 'Tests written. Shall I proceed with implementation?' }];
+  const res = runScript(HOOK, { cwd: dir, stop_reason: 'end_turn', transcript, session_id: 'sess-q' }, { cwd: dir });
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block', 'confirmation question triggers forward');
+  const queuePath = join(dir, '.smt', 'state', 'queue-sess-q.json');
+  assert.ok(existsSync(queuePath), 'queue file dropped for question');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case 3b (no-pending, confirmation-question) OK');
 }
 
 // Case 4: pending + end_turn → block + queue file dropped (NO claude spawn)
