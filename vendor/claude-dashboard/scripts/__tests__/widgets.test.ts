@@ -242,22 +242,22 @@ describe('widgets', () => {
       expect(contextWidget.name).toBe('Context');
     });
 
-    it('should return default values when usage is missing', async () => {
+    it('should fall back to total token counters when usage is missing', async () => {
       const ctx = createContext({
         context_window: {
-          total_input_tokens: 0,
-          total_output_tokens: 0,
+          total_input_tokens: 4321,
+          total_output_tokens: 1234,
           context_window_size: 200000,
           current_usage: null,
         },
       });
       const data = await contextWidget.getData(ctx);
       expect(data).toEqual({
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
+        inputTokens: 4321,
+        outputTokens: 1234,
+        totalTokens: 5555,
         contextSize: 200000,
-        percentage: 0,
+        percentage: 2,
       });
     });
 
@@ -327,8 +327,8 @@ describe('widgets', () => {
     it('should use used_percentage even when current_usage is null', async () => {
       const ctx = createContext({
         context_window: {
-          total_input_tokens: 0,
-          total_output_tokens: 0,
+          total_input_tokens: 4321,
+          total_output_tokens: 1234,
           context_window_size: 200000,
           used_percentage: 15,
           current_usage: null,
@@ -336,6 +336,9 @@ describe('widgets', () => {
       });
       const data = await contextWidget.getData(ctx);
 
+      expect(data?.inputTokens).toBe(4321);
+      expect(data?.outputTokens).toBe(1234);
+      expect(data?.totalTokens).toBe(5555);
       expect(data?.percentage).toBe(15);
     });
 

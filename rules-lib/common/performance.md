@@ -30,7 +30,7 @@ Lower context sensitivity tasks:
 - Documentation updates
 - Simple bug fixes
 
-## Extended Thinking + Plan Mode
+## Extended Thinking + Tasker Mode
 
 Extended thinking is enabled by default, reserving up to 31,999 tokens for internal reasoning.
 
@@ -40,9 +40,9 @@ Control extended thinking via:
 - **Budget cap**: `export MAX_THINKING_TOKENS=10000`
 - **Verbose mode**: Ctrl+O to see thinking output
 
-For complex tasks requiring deep reasoning:
+For complex tasks requiring deep reasoning in Smelter:
 1. Ensure extended thinking is enabled (on by default)
-2. Enable **Plan Mode** for structured approach
+2. Use **Tasker Mode** (`/tasker` + `.smt` planning state) for structured planning
 3. Use multiple critique rounds for thorough analysis
 4. Use split role sub-agents for diverse perspectives
 

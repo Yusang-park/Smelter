@@ -333,7 +333,7 @@ updated: 2026-04-15
 | `[Auto-Retry: <reason>]` | tool-retry | Step 5, 7 |
 | `[Auto-Confirm: queued]` | auto-confirm | Step 10 |
 | `[Run E2E]` | stop-e2e | Step 8 |
-| `[Plan Mode: Enter/Exit]` | /tasker command | Step 1-3 |
+| `[TASKER MODE]` | /tasker command | Step 1-3 |
 
 ---
 
