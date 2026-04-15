@@ -10,9 +10,19 @@
   <a href="#features-at-a-glance">Features</a> &middot;
   <a href="#workflow-engine">Workflow</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
-  <a href="#why-smelter">Philosophy</a> &middot;
-  <a href="#quick-start">Quick Start</a>
+  <a href="#why-smelter">Philosophy</a>
 </p>
+
+---
+
+## Install
+
+```bash
+claude plugin marketplace add Yusang-park/Smelter
+claude plugin install smelter@smelter-marketplace
+```
+
+That's it. Auto-updates on every session start.
 
 ---
 
