@@ -11,7 +11,8 @@
   <a href="#commands">Commands</a> &middot;
   <a href="#workflow-engine">Workflow Engine</a> &middot;
   <a href="#hooks">Hooks</a> &middot;
-  <a href="#file-based-memory">File-Based Memory</a>
+  <a href="#file-based-memory">File-Based Memory</a> &middot;
+  <a href="#codex-bridge">Codex Bridge</a>
 </p>
 
 ---
@@ -59,7 +60,7 @@ Three commands. That's it.
 
 ### Natural Language Works Too
 
-You don't need to memorize slash commands. Just talk:
+You don't need to memorize slash commands. Just talk naturally -- Smelter uses a **Haiku sub-agent classifier** to understand your intent and route it to the right command:
 
 ```
 "새 기능 추가해줘"          --> /feat
@@ -69,7 +70,7 @@ You don't need to memorize slash commands. Just talk:
 "스타일 수정"               --> /qa (TDD exempt)
 ```
 
-The keyword detector maps natural language (English + Korean) to the right command automatically.
+This isn't regex pattern matching. A Claude Haiku instance reads your prompt, classifies its intent (`command` vs `question`), and maps it to the correct workflow -- including branch hints like `extend` (skip learning phase) or `style` (TDD exemption). Works in English and Korean out of the box.
 
 ### Mode Indicators
 
@@ -106,12 +107,12 @@ Step 10: Human Review           -- You decide: ship, rework, or hold
 Steps 4-9 have **gates** that require explicit signals to advance:
 
 ```
-tests_exist_and_red      -- Step 4: tests exist AND fail
-tests_green              -- Step 5: tests pass after implementation
-review_clean             -- Step 6: no CRITICAL/HIGH findings
+tests_exist_and_red        -- Step 4: tests exist AND fail
+tests_green                -- Step 5: tests pass after implementation
+review_clean               -- Step 6: no CRITICAL/HIGH findings
 tests_pass_and_build_clean -- Step 7: scoped suite + tsc clean
-e2e_pass                 -- Step 8: E2E artifacts saved
-team_review_clean        -- Step 9: 95% consensus reached
+e2e_pass                   -- Step 8: E2E artifacts saved
+team_review_clean          -- Step 9: 95% consensus reached
 ```
 
 **No signal = no advance.** The engine waits. This is how Smelter prevents agents from skipping steps.
@@ -167,15 +168,22 @@ Every hook fires at the right moment, prints a yellow tag, and stays out of your
 | **PreCompact** | pre-compact | `[Pre-Compact]` |
 | **SessionEnd** | session-end | `[Doc Sync Check]` |
 
-### Auto-Confirm
+### Auto-Confirm (Context-Aware Continuation)
 
-When the agent ends a turn while tasks remain, Smelter's Stop hook automatically continues:
+When the agent ends a turn while tasks remain, Smelter doesn't just inject a blind "continue." Instead:
+
+1. The **Stop hook** captures the agent's last assistant message and the pending task list
+2. It drops this payload into `.smt/state/queue-<session>.json`
+3. On the next prompt, the **consumer hook** injects the full context (last message + task list) as `additionalContext`
+4. The main agent (Sonnet/Opus) **reads the forwarded context** and decides the next concrete action based on where it left off
+
+This means the agent resumes with full awareness of what it was doing -- not a generic "keep going" instruction.
 
 ```
 [Auto-Confirm] 3 pending task(s) in .smt/. Continue working.
 ```
 
-No human babysitting needed. Disable with `~/.smt/config.json`:
+Disable with `~/.smt/config.json`:
 
 ```json
 { "autoConfirm": false }
@@ -186,7 +194,7 @@ No human babysitting needed. Disable with `~/.smt/config.json`:
 Transient tool errors (ripgrep timeout, file-modified-since-read) are retried automatically up to 3 times:
 
 ```
-[Auto-Retry: rg timeout → retry 1/3]
+[Auto-Retry: rg timeout -> retry 1/3]
 ```
 
 ## File-Based Memory
@@ -209,6 +217,23 @@ Transient tool errors (ripgrep timeout, file-modified-since-read) are retried au
 ```
 
 Every session reads from disk. Every decision writes to disk. Nothing lives in context alone.
+
+## Codex Bridge
+
+Smelter includes an **OAuth-based Codex bridge** that lets Claude Code route model calls through OpenAI's Codex CLI:
+
+- **Wrapper**: `scripts/claude-wrapper.mjs` -- drop-in replacement for `claude` that proxies through Codex
+- **Proxy**: `scripts/codex-proxy.mjs` -- local OAuth proxy on `127.0.0.1:3099`
+
+```bash
+# Use Codex as the backend for a single run
+node scripts/claude-wrapper.mjs --codex "your prompt here"
+
+# Or alias it permanently
+alias claude="node /path/to/smelter/scripts/claude-wrapper.mjs --codex"
+```
+
+Requires `~/.codex/auth.json` with a valid OAuth token. Pass `--claude` to bypass Codex and use the default Claude backend.
 
 ## Agents
 
@@ -246,27 +271,6 @@ presets/         -- Execution preset configs
 hooks/           -- Plugin hook wiring (hooks.json)
 rules-lib/       -- Language-specific coding rules
 ```
-
-## Development
-
-```bash
-npm install
-npm run build
-npm test              # 91+ test cases across 8 test files
-npm run typecheck     # tsc --noEmit
-```
-
-### Test Suite
-
-| Test File | Cases | Coverage |
-|-----------|-------|----------|
-| step-engine.test.mjs | 25 | Gates, CAS, rollback, corrupt recovery |
-| integration-workflow.test.mjs | 5 | Full lifecycle cycles (/feat, /qa, /tasker) |
-| workflow-seeder.test.mjs | 10 | Seeding, slug derivation, cancel, cross-switch |
-| auto-confirm.test.mjs | 12 | Stop hook, queue drop/consume, session scoping |
-| session-end.test.mjs | 22 | Doc sync validation |
-| tool-retry.test.mjs | 14 | Transient error retry |
-| test-keyword-detector.mjs | 3 | Command detection |
 
 ## Requirements
 
