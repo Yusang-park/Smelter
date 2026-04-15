@@ -171,13 +171,13 @@ Every session reads from disk. Every decision writes to disk. Nothing lives in c
 
 ### Codex Bridge
 
-Hit your Claude Code token limit? Switch to OpenAI Codex without changing your workflow:
+Hit your Claude Code token limit? Run the setup script to create a `claude` alias that supports OpenAI Codex models:
 
 ```bash
-node scripts/claude-wrapper.mjs --codex "your prompt here"
+node scripts/plugin-setup.mjs
 ```
 
-OAuth-based proxy on `127.0.0.1:3099`. Requires `~/.codex/auth.json`. Pass `--claude` to switch back.
+After setup, running `claude` lets you choose between Claude and Codex models. OAuth authentication flows through a local proxy -- no API key management needed.
 
 ---
 
