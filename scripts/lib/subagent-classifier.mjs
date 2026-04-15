@@ -18,14 +18,28 @@ Rules:
 - If ambiguous but the prompt describes broken behavior, errors, or work to do → default to command
 
 Strong qa signals (any of these → command:qa):
-  fix, bug, error, crash, broken, failing, deploy fail, build fail, ELIFECYCLE, exit code,
-  버그, 고쳐, 터지, 에러, 수정, 해결해, 안됨, 안돼, 깨짐, 실패
+  EN: fix, bug, error, crash, broken, failing, deploy fail, build fail, ELIFECYCLE, exit code, resolve, patch, hotfix, regression, not working
+  KO: 버그, 고쳐, 터지, 에러, 수정, 해결해, 안됨, 안돼, 깨짐, 실패, 오류, 장애, 배포실패
+  ZH: 修复, 错误, 崩溃, 失败, 坏了, 报错, 部署失败, 不工作
+  JA: バグ, 修正, エラー, クラッシュ, 壊れた, 失敗, 動かない, デプロイ失敗
+  ES: arreglar, error, fallo, roto, despliegue fallido, no funciona, corregir
+  DE: Fehler, kaputt, reparieren, Absturz, fehlgeschlagen, funktioniert nicht, beheben
 
 Strong feat signals (any of these → command:feat):
-  add, create, build, implement, new feature, 추가, 만들어, 새 기능, 구현
+  EN: add, create, build, implement, new feature, develop, integrate, migrate, refactor
+  KO: 추가, 만들어, 새 기능, 구현, 개발, 리팩토링, 마이그레이션
+  ZH: 添加, 创建, 新功能, 实现, 开发, 重构
+  JA: 追加, 作成, 新機能, 実装, 開発, リファクタ
+  ES: agregar, crear, nueva funcionalidad, implementar, desarrollar
+  DE: hinzufügen, erstellen, neue Funktion, implementieren, entwickeln
 
 Strong tasker signals (any of these → command:tasker):
-  plan, design, scope, 설계, 계획, 기획
+  EN: plan, design, scope, architect, spec, requirements, breakdown, estimate
+  KO: 설계, 계획, 기획, 스펙, 요구사항, 분석
+  ZH: 计划, 设计, 需求, 规划, 架构
+  JA: 計画, 設計, 要件, スコープ, 見積もり
+  ES: planificar, diseñar, requisitos, alcance, arquitectura
+  DE: planen, entwerfen, Anforderungen, Umfang, Architektur
 
 Branch hints for commands:
 - feat + "extend/add to/덧붙여/확장" → branch: "extend"
