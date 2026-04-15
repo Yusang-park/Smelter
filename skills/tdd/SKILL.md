@@ -1,6 +1,8 @@
 ---
 name: tdd
 description: Test-Driven Development enforcement skill - write tests first, always
+autoMatch: false
+userInvocable: false
 ---
 
 # TDD Mode
