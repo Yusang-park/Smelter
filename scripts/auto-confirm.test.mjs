@@ -74,19 +74,18 @@ function makeProject({ hasPending }) {
   console.log('  case 2b (user_aborted) OK');
 }
 
-// Case 3: no pending tasks → continue, no queue file
+// Case 3: no pending tasks → still block + queue (auto-confirm always fires on session end)
+// Haiku/Sonnet reads the forwarded last message on the next prompt to decide if work remains.
 {
   const dir = makeProject({ hasPending: false });
-  const res = runScript(HOOK, { cwd: dir, stop_reason: 'end_turn', transcript: [], session_id: 'sess-none' }, { cwd: dir });
+  const transcript = [{ role: 'assistant', content: 'Here is what I did.' }];
+  const res = runScript(HOOK, { cwd: dir, stop_reason: 'end_turn', transcript, session_id: 'sess-none' }, { cwd: dir });
   const out = JSON.parse(res.stdout);
-  assert.equal(out.continue, true, 'no pending → continue');
-  const stateDir = join(dir, '.smt', 'state');
-  if (existsSync(stateDir)) {
-    const files = readdirSync(stateDir).filter(f => f.startsWith('queue-'));
-    assert.equal(files.length, 0, 'must NOT drop queue file when no pending tasks');
-  }
+  assert.equal(out.decision, 'block', 'no pending still blocks — model decides on next prompt');
+  const queuePath = join(dir, '.smt', 'state', 'queue-sess-none.json');
+  assert.ok(existsSync(queuePath), 'queue file dropped even without pending tasks');
   rmSync(dir, { recursive: true, force: true });
-  console.log('  case 3 (no-pending) OK');
+  console.log('  case 3 (no-pending still forwards) OK');
 }
 
 // Case 4: pending + end_turn → block + queue file dropped (NO claude spawn)

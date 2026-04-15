@@ -197,19 +197,18 @@ async function main() {
       }
     }
 
-    // Count pending tasks
+    // Auto-confirm always forwards the last assistant message for Haiku/Sonnet
+    // to read on the next UserPromptSubmit and decide whether to continue.
+    // Pending task list (if any) is included as additional context, but is NOT
+    // the trigger — the trigger is "session ended, let the model decide".
     const pending = readPendingTasks(directory);
-    if (pending.length === 0) {
-      console.log(JSON.stringify({ continue: true }));
-      return;
-    }
-
-    // Response-forward: drop payload into queue file for next UserPromptSubmit.
-    // Never spawn `claude` here — Stop hook timeout is too short for a roundtrip.
     const lastMessage = extractLastAssistantMessage(data);
     queueForwardPayload(directory, lastMessage, pending, sessionId);
 
-    const reason = `[AUTO-CONFIRM] ${pending.length} pending task(s) in .smt/. Continue working — do not end the turn with a confirmation question while tasks remain.`;
+    const taskHint = pending.length > 0
+      ? `${pending.length} pending task(s) in .smt/. `
+      : '';
+    const reason = `[AUTO-CONFIRM] Session ended with an assistant turn. ${taskHint}Read your prior last message in the forwarded context and continue the work — do not end the turn with a confirmation question.`;
 
     printTag('Auto-Confirm: queued');
     console.log(JSON.stringify({ decision: 'block', reason }));
