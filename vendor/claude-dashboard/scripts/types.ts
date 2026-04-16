@@ -119,8 +119,6 @@ export type WidgetId =
   | 'depletionTime'
   | 'cacheHit'
   | 'codexUsage'
-  | 'geminiUsage'
-  | 'geminiUsageAll'
   | 'zaiUsage'
   | 'tokenBreakdown'
   | 'performance'
@@ -136,7 +134,7 @@ export type WidgetId =
   | 'vimMode'
   | 'apiDuration'
   | 'peakHours'
-  | 'taskSummary';
+  | 'workflowStatus';
 
 /**
  * Display mode for status line output
@@ -157,16 +155,16 @@ export const DISPLAY_PRESETS: Record<Exclude<DisplayMode, 'custom'>, WidgetId[][
   normal: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet', 'zaiUsage'],
     ['projectInfo', 'sessionId', 'sessionDuration', 'burnRate', 'todoProgress'],
-    ['taskSummary'],
+    ['workflowStatus'],
   ],
   detailed: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet', 'zaiUsage'],
     ['projectInfo', 'sessionName', 'sessionId', 'sessionDuration', 'burnRate', 'tokenSpeed', 'depletionTime', 'todoProgress'],
     ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit', 'performance'],
     ['tokenBreakdown', 'forecast', 'budget', 'todayCost'],
-    ['codexUsage', 'geminiUsage', 'linesChanged', 'outputStyle', 'version', 'peakHours'],
+    ['codexUsage', 'linesChanged', 'outputStyle', 'version', 'peakHours'],
     ['lastPrompt'],
-    ['taskSummary'],
+    ['workflowStatus'],
   ],
 };
 
@@ -231,7 +229,6 @@ export const PRESET_CHAR_MAP: Record<string, WidgetId> = {
   E: 'depletionTime',
   H: 'cacheHit',
   X: 'codexUsage',
-  G: 'geminiUsage',
   Z: 'zaiUsage',
   K: 'configCounts',
   N: 'tokenBreakdown',
@@ -248,7 +245,7 @@ export const PRESET_CHAR_MAP: Record<string, WidgetId> = {
   m: 'vimMode',
   a: 'apiDuration',
   p: 'peakHours',
-  t: 'taskSummary',
+  w: 'workflowStatus',
 };
 
 /**

@@ -19,10 +19,10 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
   });
 }
 
-// Case 1: /feat seeds workflow.json + active-feature + plan.md
+// Case 1: /build seeds workflow.json + active-feature + plan.md
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat add dark mode toggle', dir);
+  runKD('/build add dark mode toggle', dir);
   const featuresDir = join(dir, '.smt', 'features');
   assert.ok(existsSync(featuresDir), '.smt/features created');
   const slugs = readdirSync(featuresDir);
@@ -33,7 +33,7 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
   const wfPath = join(featuresDir, slug, 'state', 'workflow.json');
   assert.ok(existsSync(wfPath));
   const state = JSON.parse(readFileSync(wfPath, 'utf-8'));
-  assert.equal(state.command, 'feat');
+  assert.equal(state.command, 'build');
   assert.equal(state.step, 'step-1');
   assert.equal(state.retry, 0);
   assert.deepEqual(state.signals, {});
@@ -48,47 +48,47 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
   assert.equal(pointer.slug, slug);
 
   rmSync(dir, { recursive: true, force: true });
-  console.log('  seeder case 1 (/feat seeds state) OK');
+  console.log('  seeder case 1 (/build seeds state) OK');
 }
 
-// Case 2: /qa seeds at step-4
+// Case 2: /fix seeds at step-4
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/qa fix login typo', dir);
+  runKD('/fix fix login typo', dir);
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   const state = JSON.parse(readFileSync(join(featuresDir, slug, 'state', 'workflow.json'), 'utf-8'));
-  assert.equal(state.command, 'qa');
-  assert.equal(state.step, 'step-4', '/qa starts at step-4 (skips 1-3)');
+  assert.equal(state.command, 'fix');
+  assert.equal(state.step, 'step-4', '/fix starts at step-4 (skips 1-3)');
   rmSync(dir, { recursive: true, force: true });
-  console.log('  seeder case 2 (/qa starts at step-4) OK');
+  console.log('  seeder case 2 (/fix starts at step-4) OK');
 }
 
-// Case 3: /tasker seeds at step-1
+// Case 3: /plan seeds at step-1
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/tasker plan onboarding', dir);
+  runKD('/plan plan onboarding', dir);
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   const state = JSON.parse(readFileSync(join(featuresDir, slug, 'state', 'workflow.json'), 'utf-8'));
-  assert.equal(state.command, 'tasker');
+  assert.equal(state.command, 'plan');
   assert.equal(state.step, 'step-1');
   rmSync(dir, { recursive: true, force: true });
-  console.log('  seeder case 3 (/tasker starts at step-1) OK');
+  console.log('  seeder case 3 (/plan starts at step-1) OK');
 }
 
 // Case 4: re-running /feat on existing feature doesn't clobber workflow.json state
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat add dark mode', dir);
+  runKD('/build add dark mode', dir);
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   const wfPath = join(featuresDir, slug, 'state', 'workflow.json');
   // Simulate progression: write advanced state
-  const advanced = { command: 'feat', step: 'step-5', retry: 2, signals: { tests_green: false }, version: 7, updated_at: Date.now() };
+  const advanced = { command: 'build', step: 'step-5', retry: 2, signals: { tests_green: false }, version: 7, updated_at: Date.now() };
   writeFileSync(wfPath, JSON.stringify(advanced));
   // Re-run same prompt
-  runKD('/feat add dark mode', dir);
+  runKD('/build add dark mode', dir);
   const state = JSON.parse(readFileSync(wfPath, 'utf-8'));
   assert.equal(state.step, 'step-5', 'existing workflow.json not clobbered');
   assert.equal(state.version, 7);
@@ -110,7 +110,7 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
 // Case 6: empty-prompt /feat gets collision-resistant slug
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat', dir);
+  runKD('/build', dir);
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   assert.match(slug, /^feature-[a-z0-9]+-[a-f0-9]{6}$/, 'empty prompt → collision-resistant slug');
@@ -121,7 +121,7 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
 // Case 7: punctuation-only prompt gets fallback slug
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat !!!???', dir);
+  runKD('/build !!!???', dir);
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   assert.match(slug, /^feature-[a-z0-9]+-[a-f0-9]{6}$/);
@@ -132,7 +132,7 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
 // Case 8: Korean prompt produces korean-character slug
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat 다크모드 토글', dir);
+  runKD('/build 다크모드 토글', dir);
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   assert.match(slug, /다크모드/, 'Korean preserved');
@@ -143,9 +143,9 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
 // Case 9: /cancel clears active-feature pointer
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat add dark mode', dir);
+  runKD('/build add dark mode', dir);
   const pointerPath = join(dir, '.smt', 'state', 'active-feature.json');
-  assert.ok(existsSync(pointerPath), 'pointer exists after /feat');
+  assert.ok(existsSync(pointerPath), 'pointer exists after /build');
   runKD('/cancel', dir);
   assert.ok(!existsSync(pointerPath), 'pointer cleared after /cancel');
   rmSync(dir, { recursive: true, force: true });
@@ -155,8 +155,8 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
 // Case 10: cross-slug switch preserves previous-feature record
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
-  runKD('/feat add dark mode', dir);
-  runKD('/feat add light mode', dir);
+  runKD('/build add dark mode', dir);
+  runKD('/build add light mode', dir);
   const prevPath = join(dir, '.smt', 'state', 'previous-feature.json');
   assert.ok(existsSync(prevPath), 'previous-feature record written on switch');
   const prev = JSON.parse(readFileSync(prevPath, 'utf-8'));
@@ -167,6 +167,30 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
   assert.match(pointer.slug, /add-light-mode/);
   rmSync(dir, { recursive: true, force: true });
   console.log('  seeder case 10 (cross-slug switch logged) OK');
+}
+
+// Case 11: explicit /fix overrides stale build pointer immediately
+{
+  const dir = mkdtempSync(join(tmpdir(), 'smt-seed-'));
+  runKD('/build add dark mode', dir);
+  const featSlug = readdirSync(join(dir, '.smt', 'features'))[0];
+  const featStatePath = join(dir, '.smt', 'features', featSlug, 'state', 'workflow.json');
+  writeFileSync(featStatePath, JSON.stringify({ command: 'build', step: 'step-3-interview', retry: 0, signals: {}, version: 0, updated_at: Date.now() }, null, 2));
+
+  runKD('/fix fix login typo', dir);
+
+  const featureSlugs = readdirSync(join(dir, '.smt', 'features')).sort();
+  assert.equal(featureSlugs.length, 2, 'new fix feature seeded');
+  const fixSlug = featureSlugs.find((slug) => slug !== featSlug);
+  const pointer = JSON.parse(readFileSync(join(dir, '.smt', 'state', 'active-feature.json'), 'utf-8'));
+  assert.equal(pointer.slug, fixSlug, 'active pointer switches to new fix feature');
+
+  const fixState = JSON.parse(readFileSync(join(dir, '.smt', 'features', fixSlug, 'state', 'workflow.json'), 'utf-8'));
+  assert.equal(fixState.command, 'fix');
+  assert.equal(fixState.step, 'step-4');
+
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  seeder case 11 (/fix overrides stale build pointer) OK');
 }
 
 console.log('workflow-seeder: OK');

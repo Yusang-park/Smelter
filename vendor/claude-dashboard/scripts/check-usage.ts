@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CLI Usage Dashboard
- * Displays usage limits for all AI CLIs (Claude, Codex, Gemini, z.ai)
+ * Displays usage limits for supported AI CLIs (Claude, Codex, z.ai)
  * and recommends the one with the most available capacity.
  * @handbook 7.1-common-api-pattern
  * @tested scripts/__tests__/check-usage.test.ts
@@ -9,7 +9,6 @@
 
 import { fetchUsageLimits } from './utils/api-client.js';
 import { fetchCodexUsage, isCodexInstalled } from './utils/codex-client.js';
-import { fetchGeminiUsage, isGeminiInstalled } from './utils/gemini-client.js';
 import { fetchZaiUsage, isZaiInstalled, type ZaiUsageLimits } from './utils/zai-api-client.js';
 import { isZaiProvider } from './utils/provider.js';
 import { formatTimeRemaining } from './utils/formatters.js';
@@ -18,7 +17,6 @@ import { getTranslationsByLang, detectSystemLanguage } from './utils/i18n.js';
 import type {
   UsageLimits,
   CodexUsageLimits,
-  GeminiUsageLimits,
   Translations,
   CLIUsageInfo,
   BucketUsageInfo,

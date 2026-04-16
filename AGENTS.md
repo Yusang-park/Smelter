@@ -23,7 +23,7 @@ RULE 4: E2E tests required for all interface-changing work (UI, CLI, API, hooks,
 RULE 5: NEVER mark a task complete without passing tests
 ```
 
-Exemption for `/qa` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD (see `document/workflow.md` Step 4).
+Exemption for `/fix` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD (see `document/workflow.md` Step 4).
 
 ## Execution Model
 
@@ -31,9 +31,9 @@ Exemption for `/qa` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue c
 
 | Command | Use | Step Range | E2E |
 |---------|-----|------------|-----|
-| `/tasker` | Create or refine planning state. All state lives in `.smt/features/<slug>/` — no native plan mode. | 1–3 | — |
-| `/feat` | Full development workflow on a prompt. "extend" magic keyword skips Step 2. | 1–10 | surface-based (required for interface changes) |
-| `/qa` | Bug fixes and simple UI/text/dialogue edits. TDD exemption per surface. | 4–10 | surface-based |
+| `/plan` | Deep interview and planning-only mode. All state lives in `.smt/features/<slug>/`. | 1–3 | — |
+| `/build` | Full development workflow on a prompt. "extend" magic keyword skips Step 2. | 1–10 | surface-based (required for interface changes) |
+| `/fix` | Bug fixes and simple UI/text/dialogue edits. TDD exemption per surface. | 4–10 | surface-based |
 
 The planning state is the source of truth. It discovers `features/` directories, then reads each `features/<slug>/task/*.md` to select pending tasks, and keeps working until the selected task set is complete or blocked.
 
@@ -43,20 +43,20 @@ The planning state is the source of truth. It discovers `features/` directories,
 
 | Keyword (en/ko) | Command | Branch hint |
 |-----------------|---------|-------------|
-| `tasker`, `plan`, `설계해줘`, `계획부터` | `/tasker` | — |
-| `new feature`, `새 기능`, `design first` | `/feat` | `new-feature` |
-| `extend`, `add to`, `덧붙여`, `확장해줘` | `/feat` | `extend` (skip Step 2) |
-| `fix`, `bug`, `버그`, `고쳐` | `/qa` | `bug` (E2E forced on) |
-| `style`, `typo`, `텍스트`, `색상`, `i18n`, `문구` | `/qa` | `style` (TDD exemption candidate) |
+| `plan`, `deep interview`, `설계해줘`, `계획부터` | `/plan` | — |
+| `new feature`, `새 기능`, `design first` | `/build` | `new-feature` |
+| `extend`, `add to`, `덧붙여`, `확장해줘` | `/build` | `extend` (skip Step 2) |
+| `fix`, `bug`, `버그`, `고쳐` | `/fix` | `bug` (E2E forced on) |
+| `style`, `typo`, `텍스트`, `색상`, `i18n`, `문구` | `/fix` | `style` (TDD exemption candidate) |
 | `cancel`, `stop` | `/cancel` | — |
 
 ### Workflow examples
 
 ```
-/tasker "new onboarding flow"          → planning state + .smt/ state
-/feat "add dark mode toggle"           → full 10-step workflow
-/feat "extend the existing auth flow"  → Step 2 skipped via magic keyword
-/qa "fix login form error text"        → Step 4-10 with TDD exemption
+/plan "new onboarding flow"            → planning state + .smt/ state
+/build "add dark mode toggle"          → full 10-step workflow
+/build "extend the existing auth flow" → Step 2 skipped via magic keyword
+/fix "fix login form error text"       → Step 4-10 with TDD exemption
 ```
 
 ### Auto-Confirm (global Stop hook)
@@ -175,12 +175,12 @@ src/             — Core TypeScript engine (types, engine, adapters, runners, r
 bin/             — CLI entry point (smelter command)
 agents/          — Specialized subagent definitions
 skills/          — Reusable workflow skill prompts
-commands/        — Slash command definitions (tasker.md, feat.md, qa.md)
+commands/        — Slash command definitions (plan.md, build.md, fix.md)
 hooks/           — hooks.json trigger definitions
 scripts/         — Node.js hook scripts (keyword-detector, auto-confirm, tool-retry, session-end, ...)
-presets/         — Execution preset configs (tasker, feat, qa)
+presets/         — Execution preset configs (plan, build, fix)
 workflows/       — YAML DAG workflow definitions
-rules/           — Language-specific coding rules
+rules-lib/       — Language-specific coding rules
 document/        — Workflow spec and documentation
 ```
 
@@ -197,13 +197,14 @@ Every hook prints a short ANSI-yellow bracketed tag to stderr so you can see wha
 | `[Auto-Retry: <reason>]` | tool-retry |
 | `[Auto-Confirm]` | auto-confirm |
 | `[Run E2E]` | stop-e2e |
-| `[TASKER MODE]` | keyword-detector → /tasker |
+| `[PLAN MODE]` | keyword-detector → /plan |
 | `[Doc Sync Check]` | session-end |
 | `[Session Start]` | session-start-smt |
 | `[Permission]` | permission-handler |
 | `[Pre-Compact]` | pre-compact |
 | `[Agent Check]` | sub-agent review injection |
-| `[FEAT MODE]` / `[QA MODE]` / `[TASKER MODE]` | keyword-detector |
+| `[BUILD MODE]` / `[FIX MODE]` / `[PLAN MODE]` | keyword-detector |
+| `[STEP TITLE: <mode> · Step N · <name>]` | step-injector / step-tracker |
 | `[Inject: rules-lib/<lang>]` | rule-injector |
 
 ### Rules Injection
@@ -241,6 +242,6 @@ Users interact via commands only. Preset names exist for implementation referenc
 
 | Preset | Steps | E2E | Tests | Notes |
 |--------|-------|-----|-------|-------|
-| `tasker` | 1–3 | — | 0 | Planning state only |
-| `feat` | 1–10 | required | 10+ | Full workflow |
-| `qa` | 4–10 | surface-based | 5+ | Narrow exec, TDD exemption applies |
+| `plan` | 1–3 | — | 0 | Planning state only |
+| `build` | 1–10 | required | 10+ | Full workflow |
+| `fix` | 4–10 | surface-based | 5+ | Narrow exec, TDD exemption applies |

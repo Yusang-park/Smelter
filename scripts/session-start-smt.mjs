@@ -19,19 +19,8 @@ printTag('Session Start');
 let stdinData = {};
 try { stdinData = JSON.parse(readFileSync('/dev/stdin', 'utf8')); } catch {}
 
-const TDD_CONTEXT = `[SMELTER — TDD + E2E MODE]
-You MUST follow Test-Driven Development:
-1. Write tests FIRST (RED) — before any implementation code
-2. Run tests — they MUST fail initially
-3. Write minimal code to pass tests (GREEN)
-4. Refactor (IMPROVE)
-5. After all code changes, E2E tests will run automatically
-
-CRITICAL RULES:
-- NEVER write implementation before tests
-- ALWAYS create test file before source file
-- If tests don't exist for a feature, write them first
-- E2E tests are mandatory — they will run automatically after your changes`;
+// TDD rules are in CLAUDE.md — no need to duplicate here.
+const TDD_CONTEXT = '';
 
 const CAVEMAN_CONTEXT = `[RESPONSE STYLE: CONCISE]
 Remove filler words, pleasantries, and hedging from all responses.
@@ -107,7 +96,17 @@ function readSmtContext(smtDir) {
     let slugs = [];
     try { slugs = readdirSync(featuresDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort(); } catch {}
 
+    const totalCount = slugs.length;
+    let skippedCount = 0;
+
     for (const slug of slugs) {
+      // Only include features with an active workflow (workflow.json with valid command + step).
+      const workflowPath = join(featuresDir, slug, 'state', 'workflow.json');
+      if (!existsSync(workflowPath)) { skippedCount++; continue; }
+      let wfState;
+      try { wfState = JSON.parse(readFileSync(workflowPath, 'utf8')); } catch { skippedCount++; continue; }
+      if (!wfState?.command || !wfState?.step) { skippedCount++; continue; }
+
       const taskDirPath = join(featuresDir, slug, 'task');
       if (!existsSync(taskDirPath)) continue;
 
@@ -142,13 +141,19 @@ function readSmtContext(smtDir) {
         sections.push(`## Pending Tasks: ${slug}\n` + taskLines.join('\n\n'));
       }
     }
+
+    const activeCount = totalCount - skippedCount;
+    const summaryLine = `Showing ${activeCount} active feature(s) of ${totalCount} total. Use \`ls .smt/features/\` to see all.`;
+
+    if (sections.length > 0 || totalCount > 0) {
+      const contextStr =
+        `\n\n[SMELTER FILE-BASED MEMORY]\nAgents do not memorize — agents read files.\nStructure: .smt/features/<slug>/task/plan.md + .smt/features/<slug>/task/<task-name>.md\n${summaryLine}\n\n` +
+        (sections.length > 0 ? sections.join('\n\n') : '(No active features.)');
+      return { contextStr, pendingTasks };
+    }
   }
 
-  const contextStr = sections.length === 0 ? '' :
-    `\n\n[SMELTER FILE-BASED MEMORY]\nAgents do not memorize — agents read files.\nStructure: .smt/features/<slug>/task/plan.md + .smt/features/<slug>/task/<task-name>.md\n\n` +
-    sections.join('\n\n');
-
-  return { contextStr, pendingTasks };
+  return { contextStr: '', pendingTasks };
 }
 
 function buildPendingNotification(pendingTasks) {

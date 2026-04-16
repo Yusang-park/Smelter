@@ -17,6 +17,13 @@ import { parseYaml } from './lib/yaml-parser.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const HARNESS_ROOT = resolve(__dirname, '..');
+const MODE_LABELS = { plan: 'PLAN MODE', build: 'BUILD MODE', fix: 'FIX MODE' };
+
+function formatStepTitle(command, stepId, stepName) {
+  const modeLabel = MODE_LABELS[command] || `${String(command || '').toUpperCase()} MODE`;
+  const stepNumber = String(stepId || '').match(/step-(\d+)/)?.[1] || '?';
+  return `STEP TITLE: ${modeLabel.replace(/ MODE$/, '')} · Step ${stepNumber} · ${stepName}`;
+}
 
 function readStdinSync() {
   try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
@@ -32,12 +39,17 @@ function readJsonSafe(path) {
   }
 }
 
-function findActiveFeature(projectDir) {
+function findActiveFeature(projectDir, sessionId = '') {
   const featuresDir = join(projectDir, '.smt', 'features');
   if (!existsSync(featuresDir)) return null;
 
-  // 1. Explicit pointer
-  const pointerPath = join(projectDir, '.smt', 'state', 'active-feature.json');
+  // 1. Explicit pointer — session-scoped ONLY when we have a session id.
+  // Live sessions must not inherit another session's global pointer; the global
+  // file is kept for tests/tools that run without a session id.
+  const stateDir = join(projectDir, '.smt', 'state');
+  const pointerPath = sessionId
+    ? join(stateDir, `active-feature-${sessionId}.json`)
+    : join(stateDir, 'active-feature.json');
   const pointer = readJsonSafe(pointerPath);
   if (pointer?.__corrupt) {
     return { corrupt: true, path: pointer.__path || pointerPath, error: pointer.__error };
@@ -48,6 +60,8 @@ function findActiveFeature(projectDir) {
     if (state?.__corrupt) return { corrupt: true, path: statePath, slug: pointer.slug };
     if (state) return { slug: pointer.slug, state, statePath };
   }
+  // With a session id but no session-scoped pointer → this session has no active workflow.
+  if (sessionId) return null;
 
   // 2. Fallback: most-recent by updated_at
   let latest = null;
@@ -93,6 +107,32 @@ function createOutput(additionalContext) {
   };
 }
 
+function extractPrompt(input) {
+  try {
+    const data = JSON.parse(input);
+    if (typeof data.prompt === 'string') return data.prompt;
+    if (typeof data.message?.content === 'string') return data.message.content;
+    if (Array.isArray(data.parts)) {
+      return data.parts.filter(p => p.type === 'text').map(p => p.text).join(' ');
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+function shouldInjectWorkflow(prompt = '') {
+  const trimmed = String(prompt || '').trim();
+  if (!trimmed) return true;
+  if (/^\/(plan|build|fix)\b/i.test(trimmed)) return false;
+  if (/^\/(cancel|queue|help|model|usage|hud|instinct|evolve|doctor|skill)\b/i.test(trimmed)) return false;
+  return false;
+}
+
+function createSilentOutput() {
+  return { continue: true };
+}
+
 function main() {
   printTag('Step Injector');
   try {
@@ -101,8 +141,14 @@ function main() {
     try { data = JSON.parse(input); } catch {}
 
     const projectDir = data.cwd || data.directory || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    const sessionId = data.session_id || data.sessionId || '';
+    const prompt = extractPrompt(input);
+    if (!shouldInjectWorkflow(prompt)) {
+      console.log(JSON.stringify(createSilentOutput()));
+      return;
+    }
 
-    const active = findActiveFeature(projectDir);
+    const active = findActiveFeature(projectDir, sessionId);
     if (!active) {
       console.log(JSON.stringify({ continue: true }));
       return;
@@ -148,20 +194,29 @@ function main() {
       ? `\n\n[WARNING] Corrupt sibling state detected at:\n  ${shown.join('\n  ')}${more}\nInspect and fix or delete these before switching features.`
       : '';
 
-    let ctx;
-    if (isGate) {
-      ctx = `[Workflow: ${command} | ${stepId}: ${step.name} | Feature: ${slug}]\n\n`
-          + `GATE — PAUSE. Present current state to the user and wait for explicit approval.\n`
-          + (step.options ? `Options: ${Array.isArray(step.options) ? step.options.join(', ') : step.options}\n` : '')
-          + (step.allow_revisit ? `User may request revisit: ${Array.isArray(step.allow_revisit) ? step.allow_revisit.join(', ') : step.allow_revisit}\n` : '');
-    } else {
-      const body = step.prompt ? loadStepPrompt(step.prompt) : null;
-      ctx = `[Workflow: ${command} | ${stepId}: ${step.name} | Feature: ${slug}${retry > 0 ? ` | Retry ${retry}` : ''}]\n\n`
-          + (body || `(step prompt file not found: ${step.prompt})`);
+    const modeLabel = MODE_LABELS[command] || `${String(command || '').toUpperCase()} MODE`;
+    const body = step.prompt ? loadStepPrompt(step.prompt) : null;
+    let ctx = `[Workflow: ${command} | ${stepId}: ${step.name} | Feature: ${slug}${retry > 0 ? ` | Retry ${retry}` : ''}]\n`
+        + `Current mode: ${modeLabel}\n\n`
+        + (body || `(step prompt file not found: ${step.prompt})`);
+
+    if (isGate && step.allow_revisit) {
+      ctx += `\n\nAllow revisit: ${Array.isArray(step.allow_revisit) ? step.allow_revisit.join(', ') : step.allow_revisit}`;
     }
     ctx += corruptWarning;
 
-    printTag(`Step: ${stepId} (${command})`);
+    const workflowLabel = `Workflow: ${command} | ${stepId}: ${step.name} | Feature: ${slug}${retry > 0 ? ` | Retry ${retry}` : ''}`;
+    printTag(formatStepTitle(command, stepId, step.name));
+    printTag(workflowLabel);
+    printTag(`Mode: ${modeLabel}`);
+    if (isGate) {
+      printTag(`Gate: ${stepId} (${command}) auto-continue`);
+      if (step.allow_revisit) {
+        printTag(`Allow Revisit: ${Array.isArray(step.allow_revisit) ? step.allow_revisit.join(', ') : step.allow_revisit}`);
+      }
+    } else {
+      printTag(`Step: ${stepId} (${command})`);
+    }
     console.log(JSON.stringify(createOutput(ctx)));
   } catch (err) {
     process.stderr.write(`[step-injector] error: ${err.message}\n`);

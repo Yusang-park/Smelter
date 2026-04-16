@@ -106,8 +106,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    5. E2E tests will run automatically
    ```
 
-3. **`.smelter/` 디렉토리 탐색** (`findSmelterDir`)
-   - 현재 디렉토리부터 최대 6레벨 상위까지 `.smelter/tasker.md` 탐색
+3. **`.smt/` 디렉토리 탐색** (`findSmelterDir`)
+   - 현재 디렉토리부터 최대 6레벨 상위까지 `.smt/features/*/task/plan.md` 탐색
    - 발견 시 다음 파일 로드:
      - `plan.md` → 최대 2000자까지 로드
      - `task/{기능명}.md` → `- [ ]`, `- [~]`, `- [!]` (미완료/진행중/중요) 항목만 필터링
@@ -136,8 +136,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - `data.prompt`, `data.message.content`, 또는 `data.parts[].text` 에서 추출
 
 2. **명시적 커맨드 매칭** (`extractExplicitHarnessCommand`)
-   - 허용 커맨드: `/tasker`, `/tasker`, `/work`, `/default`, `/ralph`
-   - 정규식: `^/(plan|todo|work|simple|ralph)\\b`
+   - 허용 커맨드: `/plan`, `/build`, `/fix`, `/cancel`, `/queue`
+   - 정규식: `^/(plan|build|fix|cancel|queue)\\b`
    - 자연어 질문이나 메타 대화는 감지하지 않음
 
 3. **상태 파일 생성** (`activateHarnessState`)
@@ -511,7 +511,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
   │                          │                               │
   │                          │  [컨텍스트 윈도우 가득 참]    │
   │                          │──⑦ PreCompact────────────────→│
-  │                          │   pre-compact.mjs             │ 모드/tasker 상태 보존
+  │                          │   pre-compact.mjs             │ 모드/plan 상태 보존
   │                          │                               │
   │                          │  [Claude: 응답 완료]          │
   │                          │──⑧ Stop─────────────────────→│

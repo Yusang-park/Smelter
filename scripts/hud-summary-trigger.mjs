@@ -11,8 +11,29 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
+const CODEX_SUBAGENT_MODEL = 'gpt-5.4-mini';
+const DEFAULT_SUBAGENT_MODEL = 'haiku';
+
 const CACHE_DIR = join(homedir(), '.claude', 'hud', 'task-summary');
 const PASS = JSON.stringify({ continue: true, suppressOutput: true });
+
+function isCodexModel(model = '') {
+  return ['gpt-', 'o3', 'o4', 'codex'].some((prefix) => model.startsWith(prefix));
+}
+
+function readMainModel() {
+  try {
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
+    return String(settings.model ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function selectSummarySubagentModel() {
+  return isCodexModel(readMainModel()) ? CODEX_SUBAGENT_MODEL : DEFAULT_SUBAGENT_MODEL;
+}
 
 function cacheKeyForCwd(cwd) {
   return Buffer.from(cwd || 'default').toString('base64url');
@@ -63,12 +84,14 @@ async function main() {
     : cached.raw_prompt;
 
   const escaped = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
+  const subagentModel = selectSummarySubagentModel();
+  const modelLabel = subagentModel === DEFAULT_SUBAGENT_MODEL ? 'Haiku' : subagentModel;
 
   console.log(JSON.stringify({
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'PostToolUse',
-      additionalContext: `[HUD Summary Required] Spawn a background Haiku agent to summarize the current task. Run: Agent({ subagent_type: "executor-low", model: "haiku", run_in_background: true, prompt: "Read ${cachePath}, update the summary field with a one-line summary (max 30 chars, same language as the request) of: ${escaped}. Write the updated JSON back." })`
+      additionalContext: `[HUD Summary Required] Spawn a background ${modelLabel} agent to summarize the current task. Run: Agent({ subagent_type: "executor-low", model: "${subagentModel}", run_in_background: true, prompt: "Read ${cachePath}, update the summary field with a one-line summary (max 30 chars, same language as the request) of: ${escaped}. Write the updated JSON back." })`
     }
   }));
 }

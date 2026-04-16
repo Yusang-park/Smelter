@@ -161,6 +161,45 @@ function readTaskSummary(cwd, sessionId) {
   }
 }
 
+function readWorkflowStatus(cwd, sessionId = '') {
+  try {
+    // Live sessions must only read the session-scoped pointer so a stale global
+    // pointer from another session cannot leak into this HUD render.
+    const pointerPath = sessionId
+      ? join(cwd, '.smt', 'state', `active-feature-${sessionId}.json`)
+      : join(cwd, '.smt', 'state', 'active-feature.json');
+    const pointer = readJsonFile(pointerPath);
+    if (!pointer?.slug) return null;
+    const workflow = readJsonFile(join(cwd, '.smt', 'features', pointer.slug, 'state', 'workflow.json'));
+    if (!workflow?.command || !workflow?.step) return null;
+    const modeLabel = `${String(workflow.command).toUpperCase()} MODE`;
+    const stepLabel = String(workflow.step);
+    return `${modeLabel} · ${pointer.slug} · ${stepLabel}`;
+  } catch {
+    return null;
+  }
+}
+
+function isWorkflowVisiblePrompt(prompt = '') {
+  const trimmed = String(prompt || '').trim();
+  if (!trimmed) return false;
+  if (/^\/(plan|build|fix)\b/i.test(trimmed)) return true;
+  const lower = trimmed.toLowerCase();
+  return ['continue', 'proceed', 'next step', 'keep going', '계속', '진행', '다음', '이어', '승인'].some((signal) => lower.includes(signal));
+}
+
+function shouldSuppressWorkflowOverlay(input, cwd) {
+  try {
+    const parsed = JSON.parse(input);
+    const prompt = parsed.prompt || parsed.message?.content || '';
+    const sid = parsed.session_id || parsed.sessionId || '';
+    if (!readWorkflowStatus(cwd, sid)) return false;
+    return !isWorkflowVisiblePrompt(prompt);
+  } catch {
+    return false;
+  }
+}
+
 function resolveCwd(input) {
   try {
     const parsed = JSON.parse(input);
@@ -198,7 +237,8 @@ async function main() {
   } catch { /* ignore */ }
 
   const home = homedir();
-  const modelModeState = readJsonFile(join(home, '.omc', 'state', 'model-mode.json'));
+  const modelModeState = readJsonFile(join(cwd, '.smt', 'state', 'model-mode.json'))
+    ?? readJsonFile(join(home, '.omc', 'state', 'model-mode.json'));
   const inCodexMode = modelModeState?.mode === 'codex'
     || process.env.SMELTER_MODEL_MODE === 'codex';
 
@@ -371,11 +411,13 @@ async function main() {
   ];
   const line1 = parts.join(' | ');
 
-  // Line 2: task summary in blue
+  // Line 2: workflow status + task summary in blue
   const taskSummary = readTaskSummary(cwd, stdinSessionId);
+  const workflowStatus = readWorkflowStatus(cwd, stdinSessionId);
   const BLUE = '\x1b[34m';
   const RESET = '\x1b[0m';
-  const line2 = taskSummary ? `${BLUE}${taskSummary}${RESET}` : '';
+  const line2Parts = [workflowStatus, taskSummary].filter(Boolean);
+  const line2 = line2Parts.length > 0 ? `${BLUE}${line2Parts.join(' | ')}${RESET}` : '';
 
   const output = line2 ? `${line1}\n${line2}` : line1;
   process.stdout.write(output);

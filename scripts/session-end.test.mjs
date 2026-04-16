@@ -28,10 +28,10 @@ function makeFixture(opts) {
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   mkdirSync(join(dir, 'doc'), { recursive: true });
 
-  const expected = ['tasker', 'feat', 'qa'];
+  const expected = ['plan', 'build', 'fix'];
   for (const c of expected) {
     writeFileSync(join(dir, 'commands', `${c}.md`), `# /${c}\n`);
-    if (!(missingPreset && c === 'qa')) {
+    if (!(missingPreset && c === 'fix')) {
       writeFileSync(join(dir, 'presets', `${c}.json`), JSON.stringify({ name: c }));
     }
   }
@@ -41,9 +41,9 @@ function makeFixture(opts) {
 
   const md = [
     '# Smelter',
-    '- /tasker plans',
-    '- /feat full',
-    '- /qa narrow',
+    '- /plan plans',
+    '- /build full',
+    '- /fix narrow',
     invalidStep ? 'See Step 99 for details.' : 'See Step 4 for details.',
     includeForbiddenMention ? 'Legacy: /simple docs' : '',
   ].join('\n');
@@ -57,9 +57,9 @@ function makeFixture(opts) {
   }
 
   const kdLines = [
-    "command: 'tasker'",
-    missingKdCommand ? "" : "command: 'feat'",
-    "command: 'qa'",
+    "command: 'plan'",
+    missingKdCommand ? "" : "command: 'build'",
+    "command: 'fix'",
   ].join('\n');
   writeFileSync(join(dir, 'scripts', 'keyword-detector.mjs'), kdLines);
 
@@ -100,7 +100,7 @@ function makeFixture(opts) {
   const dir = makeFixture({ missingPreset: true });
   const r = checkDocSync(dir);
   assert.equal(r.ok, false);
-  assert.ok(r.issues.some(i => /presets\/qa\.json/.test(i.message)));
+  assert.ok(r.issues.some(i => /presets\/fix\.json/.test(i.message)));
   rmSync(dir, { recursive: true, force: true });
   console.log('  case missing-preset OK');
 }
@@ -120,7 +120,7 @@ function makeFixture(opts) {
   const dir = makeFixture({ missingKdCommand: true });
   const r = checkDocSync(dir);
   assert.equal(r.ok, false);
-  assert.ok(r.issues.some(i => /Magic keyword table missing command mapping: feat/.test(i.message)));
+  assert.ok(r.issues.some(i => /Magic keyword table missing command mapping: build/.test(i.message)));
   rmSync(dir, { recursive: true, force: true });
   console.log('  case kd-missing-command OK');
 }
@@ -222,7 +222,7 @@ function makeFixture(opts) {
 // Case 13: exactly the 3 allowed presets → pass
 {
   const dir = makeFixture({});
-  // makeFixture already writes exactly tasker/feat/qa — keep as-is.
+  // makeFixture already writes exactly plan/build/fix — keep as-is.
   const r = checkDocSync(dir);
   // Filter only preset-related issues
   const presetIssues = r.issues.filter(i => i.file === 'presets/');
@@ -255,21 +255,21 @@ function makeFixture(opts) {
   console.log('  case stripNonExecutable (mjs) OK');
 }
 
-// Case 16: tasker-native-plan references in tracked docs → fail
+// Case 16: plan-native-plan references in tracked docs → fail
 {
   const dir = makeFixture({});
   writeFileSync(
-    join(dir, 'commands', 'tasker.md'),
-    '# /tasker\nCall `EnterPlanMode` and record Native Plan File: foo\n',
+    join(dir, 'commands', 'plan.md'),
+    '# /plan\nCall `EnterPlanMode` and record Native Plan File: foo\n',
   );
   const r = checkDocSync(dir);
-  assert.equal(r.ok, false, 'tracked tasker native-plan references must flag');
+  assert.equal(r.ok, false, 'tracked plan native-plan references must flag');
   assert.ok(
     r.issues.some(i => /EnterPlanMode/.test(i.message) || /Native Plan File/.test(i.message)),
     'issue must mention forbidden native-plan reference',
   );
   rmSync(dir, { recursive: true, force: true });
-  console.log('  case tasker-native-plan positive OK');
+  console.log('  case plan-native-plan positive OK');
 }
 
 // Case 17: YAML front matter ending at EOF (no trailing newline) → exempted

@@ -17,13 +17,16 @@
  * Works across /tasker, /feat, /qa.
  */
 
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { printTag } from './lib/yellow-tag.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
+import { classifyAutoConfirm } from './lib/subagent-classifier.mjs';
+
+const AUTO_CONFIRM_RESUME_FILENAME = 'auto-confirm-resume.json';
+const AUTO_CONFIRM_RESUME_MAX_AGE_MS = 5 * 60 * 1000;
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -80,8 +83,24 @@ export function looksLikeConfirmationQuestion(message) {
     /would you like me to /,
     /let me know (?:if|when|whether)/,
     /ready to (?:proceed|continue|push|commit|deploy)\?/,
+    /which approach do you prefer/,
+    /what do you prefer/,
+    /which option do you want/,
     /진행할까요?\?|계속할까요?\?|할까요?\?|맞나요?\?/,
     /proceed\?\s*$|continue\?\s*$|ok\?\s*$/,
+  ];
+  return patterns.some(p => p.test(tail));
+}
+
+export function looksLikeSelfCommitment(message) {
+  if (!message || typeof message !== 'string') return false;
+  const tail = message.slice(-500).toLowerCase();
+  const patterns = [
+    /next i (?:will|ll) /,
+    /i (?:will|ll) (?:now )?(?:update|fix|change|edit|implement|run|finish|continue|handle|refactor)/,
+    /i(?:'|’)m going to /,
+    /다음(?:으로)? .*?(?:하겠습니다|할게요|진행하겠습니다|수정하겠습니다|고치겠습니다)/,
+    /(?:이제|바로|계속) .*?(?:하겠습니다|진행하겠습니다|수정하겠습니다|고치겠습니다)/,
   ];
   return patterns.some(p => p.test(tail));
 }
@@ -90,31 +109,166 @@ export function looksLikeConfirmationQuestion(message) {
  * Extract last assistant message text from the Stop hook payload.
  * Transcripts may appear under `transcript` or `messages`.
  */
+export function extractMessageText(msg) {
+  if (!msg) return '';
+  if (typeof msg.content === 'string') return msg.content.trim();
+  if (Array.isArray(msg.content)) {
+    return msg.content
+      .filter(b => b && b.type === 'text')
+      .map(b => b.text || '')
+      .join('\n')
+      .trim();
+  }
+  return '';
+}
+
 export function extractLastAssistantMessage(data) {
   const transcript = data.transcript || data.messages;
   if (!Array.isArray(transcript)) return '';
   for (let i = transcript.length - 1; i >= 0; i--) {
     const msg = transcript[i];
     if (msg.role !== 'assistant') continue;
-    if (typeof msg.content === 'string') return msg.content.trim();
-    if (Array.isArray(msg.content)) {
-      return msg.content
-        .filter(b => b && b.type === 'text')
-        .map(b => b.text || '')
-        .join('\n')
-        .trim();
-    }
+    return extractMessageText(msg);
   }
   return '';
 }
 
-// Read pending task titles from .smt/features/<slug>/task/<name>.md (excluding plan.md).
-export function readPendingTasks(projectDir) {
+export function extractClaudeHistory(data) {
+  const transcript = data.transcript || data.messages;
+  if (!Array.isArray(transcript)) return [];
+  return transcript
+    .filter(msg => msg && msg.role === 'assistant')
+    .map(extractMessageText)
+    .filter(Boolean)
+    .slice(-3);
+}
+
+export function buildAutoConfirmMessages(lastMessage, claudeHistory) {
+  const history = Array.isArray(claudeHistory) ? claudeHistory.filter(Boolean) : [];
+  const normalizedLast = typeof lastMessage === 'string' ? lastMessage.trim() : '';
+  if (!normalizedLast && history.length === 0) return [];
+  if (!normalizedLast) return history;
+  if (history[history.length - 1] === normalizedLast) return history;
+  return [...history, normalizedLast].filter(Boolean).slice(-3);
+}
+
+export function looksLikeWrapUpMessage(message) {
+  if (!message || typeof message !== 'string') return false;
+  const text = message.toLowerCase();
+  const patterns = [
+    /\bsummary\b/,
+    /no further concrete action remains/,
+    /wrapped up the (?:investigation|work|task)/,
+    /documented the result/,
+    /정리(?:했습니다|했어요|함)/,
+    /마무리(?:했습니다|했어요|함)/,
+  ];
+  return patterns.some(pattern => pattern.test(text));
+}
+
+export function shouldStopForRepeatedWrapUps(history) {
+  if (!Array.isArray(history) || history.length < 3) return false;
+  const recent = history.slice(-3);
+  return recent.every(looksLikeWrapUpMessage);
+}
+
+export function shouldAutoContinueWithHistory(lastMessage, pendingTasks, claudeHistory) {
+  if (looksLikeNoMoreWork(lastMessage)) return false;
+  if (Array.isArray(pendingTasks) && pendingTasks.length > 0) return true;
+  if (looksLikeConfirmationQuestion(lastMessage)) return true;
+  if (looksLikeSelfCommitment(lastMessage)) return true;
+  if (shouldStopForRepeatedWrapUps(claudeHistory)) return false;
+  if (looksLikeWrapUpMessage(lastMessage)) return null;
+  return false;
+}
+
+export function buildPendingTasksPrompt(pendingTasks) {
+  const taskSummary = formatPendingTaskSummary(pendingTasks);
+  return `[AUTO-CONFIRM] Session tasks: ${taskSummary}. Execute these tasks now.`;
+}
+
+export function buildRiskReviewPrompt() {
+  return '[AUTO-CONFIRM] 남은 리스크 해결 및 테스트 및 검토 하라';
+}
+
+export function buildAutoConfirmPrompt(classification) {
+  if (!classification || classification.action === 'stop') return '';
+  if (classification.action === 'risk_review') return buildRiskReviewPrompt();
+  return `[AUTO-CONFIRM] ${classification.prompt}`;
+}
+
+export function shouldAutoContinue(lastMessage, pendingTasks, claudeHistory = []) {
+  return shouldAutoContinueWithHistory(lastMessage, pendingTasks, claudeHistory);
+}
+
+export function classifyAutoConfirmFallback(lastMessage, claudeHistory, directory, sessionId) {
+  const messages = buildAutoConfirmMessages(lastMessage, claudeHistory);
+  if (messages.length === 0) {
+    return {
+      action: 'risk_review',
+      reason: 'no assistant history',
+      prompt: buildRiskReviewPrompt(),
+    };
+  }
+  try {
+    return classifyAutoConfirm(messages, { cwd: directory, sessionId });
+  } catch {
+    return {
+      action: 'risk_review',
+      reason: 'classifier failed',
+      prompt: buildRiskReviewPrompt(),
+    };
+  }
+}
+
+// Resolve the active feature slug for this session via the session-scoped pointer
+// (same logic as step-injector.mjs). Falls back to features with active workflows.
+function resolveActiveSlugs(projectDir, sessionId) {
+  if (!sessionId) return [];
+  const stateDir = join(projectDir, '.smt', 'state');
+  const pointerPath = join(stateDir, `active-feature-${sessionId}.json`);
+  try {
+    if (!existsSync(pointerPath)) return [];
+    const pointer = JSON.parse(readFileSync(pointerPath, 'utf-8'));
+    if (pointer?.slug) return [pointer.slug];
+  } catch {}
+  return [];
+}
+
+function formatPendingTaskSummary(pendingTasks) {
+  if (!Array.isArray(pendingTasks) || pendingTasks.length === 0) return '';
+  return pendingTasks
+    .map((task, index) => `${index + 1}. ${task.title}`)
+    .join(' | ');
+}
+
+function looksLikeNoMoreWork(message) {
+  if (!message || typeof message !== 'string') return false;
+  const tail = message.slice(-500).toLowerCase();
+  const patterns = [
+    /no further concrete action remains/,
+    /no more work remains/,
+    /nothing left to do/,
+    /nothing else to do/,
+    /there(?: is|'s) nothing left/,
+    /더 이상 진행할게 없/,
+    /더 진행할 작업 없/,
+    /더 할 일 없/,
+    /진행할게 없/,
+    /없다\.?\s*더 진행할게 없/,
+  ];
+  return patterns.some(pattern => pattern.test(tail));
+}
+
+// Read pending task titles from the current session's active feature only.
+export function readPendingTasks(projectDir, sessionId = '') {
   const tasks = [];
   const featuresDir = join(projectDir, '.smt', 'features');
   if (!existsSync(featuresDir)) return tasks;
-  let slugs = [];
-  try { slugs = readdirSync(featuresDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch {}
+
+  const slugs = resolveActiveSlugs(projectDir, sessionId);
+  if (slugs.length === 0) return tasks;
+
   for (const slug of slugs) {
     const taskDirPath = join(featuresDir, slug, 'task');
     if (!existsSync(taskDirPath)) continue;
@@ -131,36 +285,6 @@ export function readPendingTasks(projectDir) {
     }
   }
   return tasks;
-}
-
-/**
- * Drop the forwarded payload into `.smt/state/queue-<session_id>.json`
- * using an atomic tmp+rename. Consumed by `auto-confirm-consumer.mjs` on the
- * next UserPromptSubmit. Session-scoped filename prevents two concurrent
- * producers from clobbering each other.
- *
- * Returns true on successful write, false otherwise.
- */
-export function queueForwardPayload(projectDir, lastMessage, pendingTasks, sessionId = '') {
-  try {
-    const stateDir = join(projectDir, '.smt', 'state');
-    if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
-    const safeSid = String(sessionId || 'nosession').replace(/[^a-zA-Z0-9_.-]/g, '_');
-    const queuePath = join(stateDir, `queue-${safeSid}.json`);
-    // Unique tmp per write so two producers in the same session cannot collide.
-    const tmpPath = `${queuePath}.tmp.${process.pid}.${randomBytes(4).toString('hex')}`;
-    const payload = {
-      timestamp: Date.now(),
-      session_id: sessionId || '',
-      last_message: (lastMessage || '').slice(0, 3000),
-      pending_tasks: pendingTasks.slice(0, 20).map(t => ({ status: t.status, title: t.title })),
-    };
-    writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { mode: 0o600 });
-    renameSync(tmpPath, queuePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function main() {
@@ -218,32 +342,30 @@ async function main() {
       }
     }
 
-    // Auto-confirm blocks the stop ONLY when there's actionable work left:
-    //   (a) pending tasks exist in .smt/, OR
-    //   (b) the last assistant message looks like a confirmation/approval question
-    // Otherwise we pass through — no infinite loop on generic "done" replies.
-    const pending = readPendingTasks(directory);
+    const pending = readPendingTasks(directory, sessionId);
     const lastMessage = extractLastAssistantMessage(data);
-    const isAskingConfirmation = looksLikeConfirmationQuestion(lastMessage);
-    const hasWork = pending.length > 0 || isAskingConfirmation;
+    const claudeHistory = extractClaudeHistory(data);
+    const pendingDecision = shouldAutoContinue(lastMessage, pending, claudeHistory);
 
-    if (!hasWork) {
+    if (pendingDecision === false) {
       console.log(JSON.stringify({ continue: true }));
       return;
     }
 
-    queueForwardPayload(directory, lastMessage, pending, sessionId);
+    if (pendingDecision === true) {
+      printTag('Auto-Confirm: tasks');
+      console.log(JSON.stringify({ decision: 'block', reason: buildPendingTasksPrompt(pending) }));
+      return;
+    }
 
-    const taskHint = pending.length > 0
-      ? `${pending.length} pending task(s) in .smt/. `
-      : '';
-    const reasonSuffix = isAskingConfirmation
-      ? 'You ended the turn with a confirmation question. Answer it yourself and continue — do not ask the user.'
-      : 'Read your prior last message in the forwarded context and continue the work.';
-    const reason = `[AUTO-CONFIRM] ${taskHint}${reasonSuffix}`;
+    const classification = classifyAutoConfirmFallback(lastMessage, claudeHistory, directory, sessionId);
+    if (classification.action === 'stop') {
+      console.log(JSON.stringify({ continue: true }));
+      return;
+    }
 
-    printTag('Auto-Confirm: queued');
-    console.log(JSON.stringify({ decision: 'block', reason }));
+    printTag('Auto-Confirm: classifier');
+    console.log(JSON.stringify({ decision: 'block', reason: buildAutoConfirmPrompt(classification) }));
   } catch (err) {
     // Never deadlock on errors
     try { printTag('Auto-Confirm: Error (continue)'); } catch {}

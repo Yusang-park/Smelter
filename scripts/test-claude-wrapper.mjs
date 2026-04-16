@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const wrapper = '/Users/yusang/smelter/scripts/claude-wrapper.mjs';
 const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
+const HUD_SUMMARY_TRIGGER = '/Users/yusang/smelter/scripts/hud-summary-trigger.mjs';
 const tempHome = mkdtempSync(join(tmpdir(), 'claude-wrapper-home-'));
 const versionsDir = join(tempHome, '.local', 'share', 'claude', 'versions');
 mkdirSync(versionsDir, { recursive: true });
@@ -28,6 +29,18 @@ function run(args) {
       encoding: 'utf8',
     }),
   );
+}
+
+function runScript(scriptPath, stdin, env = {}) {
+  return execFileSync('node', [scriptPath], {
+    input: stdin,
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      ...env,
+    },
+    encoding: 'utf8',
+  });
 }
 
 // Reset to a clean claude-alias state before each codex test so model defaulting is deterministic
@@ -76,6 +89,31 @@ const forcedClaude = run(['--codex', '--claude', '--version']);
 assert.equal(forcedClaude.mode, 'claude');
 assert.deepEqual(forcedClaude.passthrough, ['--version']);
 assert.equal(forcedClaude.settings.env.ANTHROPIC_BASE_URL, undefined);
+
+resetModelToSonnet();
+const hudCacheDir = join(tempHome, '.claude', 'hud', 'task-summary');
+mkdirSync(hudCacheDir, { recursive: true });
+const hudCachePath = join(hudCacheDir, Buffer.from(process.cwd()).toString('base64url') + '.json');
+writeFileSync(hudCachePath, JSON.stringify({
+  raw_prompt: 'summarize current work',
+  timestamp: new Date().toISOString(),
+}, null, 2));
+
+const hudClaude = JSON.parse(runScript(HUD_SUMMARY_TRIGGER, JSON.stringify({ cwd: process.cwd() })));
+assert.match(hudClaude.hookSpecificOutput.additionalContext, /model: "haiku"/, 'expected Claude-family main model to keep haiku subagent');
+
+const settings3 = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
+settings3.model = 'gpt-5.4';
+writeFileSync(SETTINGS_PATH, JSON.stringify(settings3, null, 2) + '\n');
+writeFileSync(hudCachePath, JSON.stringify({
+  raw_prompt: 'summarize current work',
+  timestamp: new Date().toISOString(),
+}, null, 2));
+
+const hudCodex = JSON.parse(runScript(HUD_SUMMARY_TRIGGER, JSON.stringify({ cwd: process.cwd() })));
+assert.match(hudCodex.hookSpecificOutput.additionalContext, /model: "gpt-5.4-mini"/, 'expected Codex-family main model to use gpt-5.4-mini subagent');
+
+rmSync(hudCachePath, { force: true });
 
 // Restore original state so tests don't leave system in wrong mode
 writeFileSync(SETTINGS_PATH, savedSettings);

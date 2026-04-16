@@ -1,23 +1,167 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
-const TIMEOUT_MS = 3000;
+const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
+const CODEX_SUBAGENT_MODEL = 'gpt-5.4-mini';
+const DEFAULT_SUBAGENT_MODEL = 'haiku';
+
+function isCodexModel(model = '') {
+  return ['gpt-', 'o3', 'o4', 'codex'].some((prefix) => model.startsWith(prefix));
+}
+
+function readMainModel() {
+  try {
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
+    return String(settings.model ?? '');
+  } catch {
+    return '';
+  }
+}
+
+export function inspectClassifierModel(settingsModel = '') {
+  return isCodexModel(settingsModel) ? CODEX_SUBAGENT_MODEL : DEFAULT_SUBAGENT_MODEL;
+}
+
+function selectClassifierModel() {
+  return inspectClassifierModel(readMainModel());
+}
+
+export { selectClassifierModel };
+
+const TIMEOUT_MS = 20000;
 const CACHE_FILE = 'keyword-cache.json';
+const AUTO_CONFIRM_CACHE_FILE = 'auto-confirm-cache.json';
+
+const AUTO_CONFIRM_PROMPT = `You classify whether Claude should continue automatically after a stop hook.
+
+Return ONLY valid JSON:
+{"action":"continue"|"stop"|"risk_review","reason":"<short>","prompt":"<string>"}
+
+Rules:
+- action=stop when the assistant already clearly said there is nothing left to do.
+- action=continue when the assistant offered concrete next work, options to continue, or implied it should keep going now.
+- action=risk_review when there is no clear next action and no explicit stop signal.
+- For action=continue, write a direct prompt telling the main agent to execute the next concrete work now.
+- For action=risk_review, set prompt exactly to: 남은 리스크 해결 및 테스트 및 검토 하라
+- For action=stop, set prompt to an empty string.
+- Treat Korean and English naturally.
+`;
+
+function semverCompare(a, b) {
+  const pa = a.replace(/^v/, '').split('.').map((part) => parseInt(part, 10) || 0);
+  const pb = b.replace(/^v/, '').split('.').map((part) => parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+function resolveClaudeBinary() {
+  const versionsDir = join(homedir(), '.local', 'share', 'claude', 'versions');
+  let versions = [];
+  try {
+    versions = readdirSync(versionsDir).sort(semverCompare).reverse();
+  } catch {
+    return '';
+  }
+  for (const v of versions) {
+    const p = join(versionsDir, v);
+    try {
+      const s = statSync(p);
+      if (s.size > 0 && (s.mode & 0o111)) return p;
+    } catch {}
+  }
+  return '';
+}
+
+const CLAUDE_BINARY = resolveClaudeBinary();
+
+function extractInnerJson(text) {
+  // Strip markdown code fences if present
+  const stripped = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  // Try direct parse first
+  try { return JSON.parse(stripped); } catch {}
+  // Try each line (last valid JSON wins)
+  const lines = stripped.split('\n').map(l => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try { return JSON.parse(lines[i]); } catch {}
+  }
+  throw new Error('no json object in text: ' + stripped.slice(0, 120));
+}
+
+function normalizeClaudeJson(stdout) {
+  const trimmed = String(stdout || '').trim();
+  if (!trimmed) throw new Error('empty output');
+  // Claude CLI --output-format json wraps output in an envelope: { result: "...", ... }
+  // Try parsing the outer envelope first, then extract the inner result field
+  let outer;
+  try { outer = JSON.parse(trimmed); } catch {}
+  if (outer && typeof outer.result === 'string') {
+    return extractInnerJson(outer.result);
+  }
+  // Fallback: try direct parse of the whole string
+  return extractInnerJson(trimmed);
+}
+
+function invokeClaude(prompt) {
+  const overrideModule = process.env.SMELTER_AUTO_CONFIRM_CLASSIFIER_MODULE;
+  if (overrideModule) {
+    return execFileSync(process.execPath, ['-e', `
+      const mod = await import(process.env.SMELTER_AUTO_CONFIRM_CLASSIFIER_MODULE);
+      const result = mod.classifyAutoConfirm(JSON.parse(process.env.SMELTER_AUTO_CONFIRM_MESSAGES || '[]'));
+      process.stdout.write(JSON.stringify({ result: JSON.stringify(result) }));
+    `], {
+      timeout: TIMEOUT_MS,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+      },
+    });
+  }
+  return execFileSync(CLAUDE_BINARY, ['-p', '--model', selectClassifierModel(), '--output-format', 'json', prompt], {
+    timeout: TIMEOUT_MS,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+  });
+}
+
+function readSessionCache(stateDir, sessionId, cacheFile) {
+  const path = join(stateDir, cacheFile);
+  if (!existsSync(path)) return {};
+  try {
+    const data = JSON.parse(readFileSync(path, 'utf-8'));
+    if (data._session !== sessionId) return {};
+    return data;
+  } catch { return {}; }
+}
+
+function writeSessionCache(stateDir, sessionId, cacheFile, cache) {
+  if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, cacheFile), JSON.stringify({ ...cache, _session: sessionId }));
+}
 
 const CLASSIFICATION_PROMPT = `You are a command classifier for a CLI tool called "smelter". Classify the user's prompt as either a command or a question/explanation request.
 
-Commands available: tasker (planning), feat (full dev workflow), qa (bug fix / simple edit), cancel, queue.
+Commands available: plan (deep planning), build (full dev workflow), fix (bug fix / simple edit), cancel, queue.
 
 Rules:
-- If the user is ASKING about a command (e.g. "how does tasker work?", "explain plan") → question
+- If the user is ASKING about a command (e.g. "how does plan work?", "explain build") → question
 - If the user WANTS TO EXECUTE something → command
 - If the user describes a problem to SOLVE, FIX, BUILD, or IMPLEMENT → command (not question)
 - If ambiguous but the prompt describes broken behavior, errors, or work to do → default to command
 
-Strong qa signals (any of these → command:qa):
+Strong fix signals (any of these → command:fix):
   EN: fix, bug, error, crash, broken, failing, deploy fail, build fail, ELIFECYCLE, exit code, resolve, patch, hotfix, regression, not working
   KO: 버그, 고쳐, 터지, 에러, 수정, 해결해, 안됨, 안돼, 깨짐, 실패, 오류, 장애, 배포실패
   ZH: 修复, 错误, 崩溃, 失败, 坏了, 报错, 部署失败, 不工作
@@ -25,7 +169,7 @@ Strong qa signals (any of these → command:qa):
   ES: arreglar, error, fallo, roto, despliegue fallido, no funciona, corregir
   DE: Fehler, kaputt, reparieren, Absturz, fehlgeschlagen, funktioniert nicht, beheben
 
-Strong feat signals (any of these → command:feat):
+Strong build signals (any of these → command:build):
   EN: add, create, build, implement, new feature, develop, integrate, migrate, refactor
   KO: 추가, 만들어, 새 기능, 구현, 개발, 리팩토링, 마이그레이션
   ZH: 添加, 创建, 新功能, 实现, 开发, 重构
@@ -33,7 +177,7 @@ Strong feat signals (any of these → command:feat):
   ES: agregar, crear, nueva funcionalidad, implementar, desarrollar
   DE: hinzufügen, erstellen, neue Funktion, implementieren, entwickeln
 
-Strong tasker signals (any of these → command:tasker):
+Strong plan signals (any of these → command:plan):
   EN: plan, design, scope, architect, spec, requirements, breakdown, estimate
   KO: 설계, 계획, 기획, 스펙, 요구사항, 분석
   ZH: 计划, 设计, 需求, 规划, 架构
@@ -42,10 +186,10 @@ Strong tasker signals (any of these → command:tasker):
   DE: planen, entwerfen, Anforderungen, Umfang, Architektur
 
 Branch hints for commands:
-- feat + "extend/add to/덧붙여/확장" → branch: "extend"
-- feat + "new feature/새 기능" → branch: "new-feature"
-- qa + "fix/bug/버그/고쳐/터지/에러" → branch: "bug"
-- qa + "style/typo/i18n/텍스트/색상" → branch: "style"
+- build + "extend/add to/덧붙여/확장" → branch: "extend"
+- build + "new feature/새 기능" → branch: "new-feature"
+- fix + "fix/bug/버그/고쳐/터지/에러" → branch: "bug"
+- fix + "style/typo/i18n/텍스트/색상" → branch: "style"
 
 Return ONLY valid JSON (no markdown, no explanation):
 {"intent":"command"|"question","command":"<name>","branch":"<hint-or-empty>","reason":"<short>"}`;
@@ -55,25 +199,18 @@ function promptHash(prompt) {
 }
 
 function readCache(stateDir, sessionId) {
-  const path = join(stateDir, CACHE_FILE);
-  if (!existsSync(path)) return {};
-  try {
-    const data = JSON.parse(readFileSync(path, 'utf-8'));
-    if (data._session !== sessionId) return {};
-    return data;
-  } catch { return {}; }
+  return readSessionCache(stateDir, sessionId, CACHE_FILE);
 }
 
 function writeCache(stateDir, sessionId, cache) {
-  if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(stateDir, CACHE_FILE), JSON.stringify({ ...cache, _session: sessionId }));
+  writeSessionCache(stateDir, sessionId, CACHE_FILE, cache);
 }
 
 let claudeAvailable = null;
 function isClaudeAvailable() {
   if (claudeAvailable !== null) return claudeAvailable;
   try {
-    execFileSync('which', ['claude'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 1000 });
+    execFileSync(CLAUDE_BINARY, ['--version'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 2000 });
     claudeAvailable = true;
   } catch {
     claudeAvailable = false;
@@ -87,38 +224,52 @@ export function classifyPrompt(prompt, { cwd = process.cwd(), sessionId = '' } =
   const cache = readCache(stateDir, sessionId);
 
   if (cache[hash]) return cache[hash];
-
-  let result = { intent: 'question', command: '', branch: '', reason: 'fallback' };
-
   if (!isClaudeAvailable()) {
-    result = { intent: 'question', command: '', branch: '', reason: 'claude-not-available' };
-    cache[hash] = result;
-    try { writeCache(stateDir, sessionId, cache); } catch {}
-    return result;
+    throw new Error('Claude binary is unavailable for prompt classification');
   }
 
-  try {
-    const fullPrompt = `${CLASSIFICATION_PROMPT}\n\nUser prompt: "${prompt}"`;
-    const stdout = execFileSync('claude', ['-p', '--model', 'haiku', '--output-format', 'json', fullPrompt], {
-      timeout: TIMEOUT_MS,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    const parsed = JSON.parse(stdout.trim());
-    if (parsed.intent === 'command' || parsed.intent === 'question') {
-      result = {
-        intent: parsed.intent,
-        command: parsed.command || '',
-        branch: parsed.branch || '',
-        reason: parsed.reason || '',
-      };
-    }
-  } catch {
-    result = { intent: 'question', command: '', branch: '', reason: 'timeout-or-unavailable' };
+  const fullPrompt = `${CLASSIFICATION_PROMPT}\n\nUser prompt: "${prompt}"`;
+  const parsed = normalizeClaudeJson(invokeClaude(fullPrompt));
+  if (parsed.intent !== 'command' && parsed.intent !== 'question') {
+    throw new Error(`Invalid classifier response: ${JSON.stringify(parsed)}`);
   }
+
+  const result = {
+    intent: parsed.intent,
+    command: parsed.command || '',
+    branch: parsed.branch || '',
+    reason: parsed.reason || '',
+  };
 
   cache[hash] = result;
   try { writeCache(stateDir, sessionId, cache); } catch {}
+  return result;
+}
+
+export function classifyAutoConfirm(messages, { cwd = process.cwd(), sessionId = '' } = {}) {
+  const stateDir = join(cwd, '.smt', 'state');
+  const normalizedMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  const hash = promptHash(JSON.stringify(normalizedMessages));
+  const cache = readSessionCache(stateDir, sessionId, AUTO_CONFIRM_CACHE_FILE);
+
+  if (cache[hash]) return cache[hash];
+  if (!process.env.SMELTER_AUTO_CONFIRM_CLASSIFIER_MODULE && !isClaudeAvailable()) {
+    throw new Error('Claude binary is unavailable for auto-confirm classification');
+  }
+
+  const fullPrompt = `${AUTO_CONFIRM_PROMPT}\n\nAssistant messages:\n${JSON.stringify(normalizedMessages, null, 2)}`;
+  const parsed = normalizeClaudeJson(invokeClaude(fullPrompt));
+  if (!['continue', 'stop', 'risk_review'].includes(parsed.action)) {
+    throw new Error(`Invalid auto-confirm response: ${JSON.stringify(parsed)}`);
+  }
+
+  const result = {
+    action: parsed.action,
+    reason: parsed.reason || '',
+    prompt: parsed.prompt || '',
+  };
+
+  cache[hash] = result;
+  try { writeSessionCache(stateDir, sessionId, AUTO_CONFIRM_CACHE_FILE, cache); } catch {}
   return result;
 }

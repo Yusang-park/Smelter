@@ -36,7 +36,7 @@ That's it. Auto-updates on every session start.
 | 4 | **Project-Scoped Memory** | Every feature gets its own directory with plans, tasks, and decisions. Agents stay focused; nothing falls through the cracks. |
 | 5 | **Triple Verification** | Local agent review + team consensus review (95%) + human sign-off. Three layers before anything ships. |
 | 6 | **Cross-Agent Testing** | Dedicated `tdd-guide`, `code-reviewer`, and `security-reviewer` agents verify independently. Each has a single job. |
-| 7 | **3 Commands + Auto-Routing** | `/feat`, `/qa`, `/tasker` -- or just talk naturally. A Haiku classifier routes your intent. No commands to memorize. |
+| 7 | **3 Commands + Auto-Routing** | `/build`, `/fix`, `/plan` -- or just talk naturally. A Haiku classifier routes your intent. No commands to memorize. |
 | 8 | **Independent Sub-Agents** | Each task runs in its own agent with fresh context. No cross-contamination between tasks. |
 | 9 | **Never Stops** | Auto-confirm keeps the agent working while tasks remain. Auto-retry handles transient errors (up to 3x). Zero babysitting. |
 | 10 | **Codex Bridge** | Hit your Claude token limit? Switch to OpenAI Codex via OAuth proxy with one flag. `--codex` |
@@ -61,11 +61,11 @@ That's it. Auto-updates on every session start.
 
 | Command | What it does | Steps |
 |---------|-------------|-------|
-| `/feat` | Full feature development with TDD | 1-10 |
-| `/qa` | Bug fix / small edit (TDD exemptions available) | 4-8, 10 |
-| `/tasker` | Turn ideas into executable task files | 1-3 |
+| `/build` | Light planning + full feature development with TDD | 1-10 |
+| `/fix` | Bug fix / small edit (TDD exemptions available) | 4-8, 10 |
+| `/plan` | Turn ideas into executable task files with deep planning | 1-3 |
 
-Or just talk: *"add dark mode"* -> `/feat` *"fix the login bug"* -> `/qa` *"plan the onboarding"* -> `/tasker`. A Haiku sub-agent classifies your intent and routes automatically.
+Or just talk: *"add dark mode"* -> `/build` *"fix the login bug"* -> `/fix` *"plan the onboarding"* -> `/plan`. A Haiku sub-agent classifies your intent and routes automatically.
 
 ---
 
@@ -112,7 +112,7 @@ The name "Smelter" is intentional. Raw ore goes in, refined metal comes out:
 Workflows are defined as YAML files, not hardcoded logic. Each step declares its prompt, gate condition, retry budget, and failure routing:
 
 ```yaml
-# workflows/feat.yaml
+# workflows/build.yaml
 steps:
   step-4:
     name: Test Design (TDD)
@@ -214,9 +214,9 @@ npx tsx bin/cli.ts init
 This creates `.smt/` with `features/`, `wiki/`, and `session/` directories. Start working:
 
 ```
-/feat "add dark mode toggle"
-/qa "fix login error message"
-/tasker "plan the new onboarding flow"
+/build "add dark mode toggle"
+/fix "fix login error message"
+/plan "plan the new onboarding flow"
 ```
 
 ## Auto-Update

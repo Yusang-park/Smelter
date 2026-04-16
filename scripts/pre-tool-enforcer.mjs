@@ -89,25 +89,29 @@ function main() {
     const sessionId = data.session_id || data.sessionId || '';
 
     // --- Block native EnterPlanMode when Smelter workflow is active ---
-    // Smelter's /tasker + step-3-interview gate OWNS planning. Native plan mode is redundant
+    // Smelter's /plan + step-3-interview gate OWNS planning. Native plan mode is redundant
     // and breaks file-based memory.
     if (toolName === 'ExitPlanMode' || toolName === 'EnterPlanMode') {
-      // Check if an active workflow exists
-      const smtState = join(directory, '.smt', 'state', 'active-feature.json');
-      const featuresDir = join(directory, '.smt', 'features');
+      // Check only the session-scoped pointer — a stale global pointer from
+      // another session must not block this session's native plan mode.
+      const smtState = sessionId
+        ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
+        : join(directory, '.smt', 'state', 'active-feature.json');
       let hasActiveWorkflow = false;
       try {
-        if (existsSync(smtState)) hasActiveWorkflow = true;
-        else if (existsSync(featuresDir)) {
-          const slugs = readdirSync(featuresDir, { withFileTypes: true }).filter(d => d.isDirectory());
-          hasActiveWorkflow = slugs.some(s => existsSync(join(featuresDir, s.name, 'state', 'workflow.json')));
+        if (existsSync(smtState)) {
+          const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
+          if (pointer?.slug) {
+            const statePath = join(directory, '.smt', 'features', pointer.slug, 'state', 'workflow.json');
+            hasActiveWorkflow = existsSync(statePath);
+          }
         }
       } catch {}
       if (hasActiveWorkflow) {
         printTag(`Block: ${toolName} (Smelter workflow active)`);
         console.log(JSON.stringify({
           decision: 'block',
-          reason: `[SMELTER] Native plan mode (${toolName}) is blocked while Smelter workflow is active. Smelter's own 10-step workflow engine (/tasker → step-3-interview gate) handles planning. Use \`/tasker <idea>\` to enter Smelter's planning workflow, or continue the current workflow by following the injected step prompt.`,
+          reason: `[SMELTER] Native plan mode (${toolName}) is blocked while Smelter workflow is active. Smelter's own 10-step workflow engine (/plan → step-3-interview gate) handles planning. Use \`/plan <idea>\` to enter Smelter's planning workflow, or continue the current workflow by following the injected step prompt.`,
         }));
         return;
       }

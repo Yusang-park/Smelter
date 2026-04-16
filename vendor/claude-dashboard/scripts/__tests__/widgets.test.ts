@@ -11,7 +11,6 @@
  * @covers scripts/widgets/cache-hit.ts
  * @covers scripts/widgets/depletion-time.ts
  * @covers scripts/widgets/codex-usage.ts
- * @covers scripts/widgets/gemini-usage.ts
  * @covers scripts/widgets/config-counts.ts
  * @covers scripts/widgets/session-duration.ts
  * @covers scripts/widgets/version.ts
@@ -29,6 +28,7 @@
  * @covers scripts/widgets/vim-mode.ts
  * @covers scripts/widgets/api-duration.ts
  * @covers scripts/widgets/peak-hours.ts
+ * @covers scripts/widgets/workflow-status.ts
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { modelWidget } from '../widgets/model.js';
@@ -42,7 +42,6 @@ import { burnRateWidget } from '../widgets/burn-rate.js';
 import { cacheHitWidget } from '../widgets/cache-hit.js';
 import { depletionTimeWidget } from '../widgets/depletion-time.js';
 import { codexUsageWidget } from '../widgets/codex-usage.js';
-import { geminiUsageWidget } from '../widgets/gemini-usage.js';
 import { configCountsWidget } from '../widgets/config-counts.js';
 import { sessionDurationWidget } from '../widgets/session-duration.js';
 import { versionWidget } from '../widgets/version.js';
@@ -60,16 +59,17 @@ import { lastPromptWidget } from '../widgets/last-prompt.js';
 import { vimModeWidget } from '../widgets/vim-mode.js';
 import { apiDurationWidget } from '../widgets/api-duration.js';
 import { peakHoursWidget, isPeakTime, getMinutesToTransition } from '../widgets/peak-hours.js';
+import { workflowStatusWidget } from '../widgets/workflow-status.js';
 import { renderAllLines } from '../widgets/index.js';
 import * as codexClient from '../utils/codex-client.js';
 import * as zaiClient from '../utils/zai-api-client.js';
 import * as historyParser from '../utils/history-parser.js';
 import * as gitUtils from '../utils/git.js';
-import * as geminiClient from '../utils/gemini-client.js';
 import * as sessionUtils from '../utils/session.js';
 import * as budgetUtils from '../utils/budget.js';
 import * as transcriptParser from '../utils/transcript-parser.js';
 import type { WidgetContext, StdinInput, ModelData } from '../types.js';
+import { DISPLAY_PRESETS, PRESET_CHAR_MAP } from '../types.js';
 import { MOCK_TRANSLATIONS, MOCK_CONFIG, MOCK_STDIN } from './fixtures.js';
 
 // Mock version module for codex-client
@@ -361,6 +361,23 @@ describe('widgets', () => {
 
       expect(data?.contextSize).toBe(1000000);
       expect(data?.percentage).toBe(1);
+    });
+
+    it('should derive gpt-5.4 context percentage from total_input_tokens when official percentage is zero', async () => {
+      const ctx = createContext({
+        model: { id: 'gpt-5.4', display_name: 'gpt-5.4' },
+        context_window: {
+          total_input_tokens: 250000,
+          total_output_tokens: 50000,
+          context_window_size: 200000,
+          used_percentage: 0,
+          current_usage: null,
+        },
+      });
+      const data = await contextWidget.getData(ctx);
+
+      expect(data?.contextSize).toBe(1000000);
+      expect(data?.percentage).toBe(25);
     });
 
     it('should render progress bar and percentage', () => {
@@ -1042,134 +1059,6 @@ describe('widgets', () => {
     });
   });
 
-  describe('geminiUsageWidget', () => {
-    beforeEach(() => {
-      vi.restoreAllMocks();
-    });
-
-    it('should have correct id and name', () => {
-      expect(geminiUsageWidget.id).toBe('geminiUsage');
-      expect(geminiUsageWidget.name).toBe('Gemini Usage');
-    });
-
-    it('should return null when Gemini is not installed', async () => {
-      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(false);
-
-      const ctx = createContext();
-      const data = await geminiUsageWidget.getData(ctx);
-      expect(data).toBeNull();
-    });
-
-    it('should return error state when API call fails', async () => {
-      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
-      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue(null);
-
-      const ctx = createContext();
-      const data = await geminiUsageWidget.getData(ctx);
-
-      // Should return error state instead of null
-      expect(data).not.toBeNull();
-      expect(data?.isError).toBe(true);
-      expect(data?.model).toBe('gemini');
-      expect(data?.usedPercent).toBeNull();
-    });
-
-    it('should return usage data when API call succeeds', async () => {
-      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
-      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue({
-        model: 'gemini-2.5-pro',
-        usedPercent: 25,
-        resetAt: '2026-01-30T10:00:00Z',
-        buckets: [
-          { modelId: 'gemini-2.5-pro', usedPercent: 25, resetAt: '2026-01-30T10:00:00Z' },
-        ],
-      });
-
-      const ctx = createContext();
-      const data = await geminiUsageWidget.getData(ctx);
-
-      expect(data).not.toBeNull();
-      expect(data?.model).toBe('gemini-2.5-pro');
-      expect(data?.usedPercent).toBe(25);
-      expect(data?.resetAt).toBe('2026-01-30T10:00:00Z');
-    });
-
-    it('should handle null usedPercent', async () => {
-      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
-      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue({
-        model: 'gemini-2.0-flash',
-        usedPercent: null,
-        resetAt: null,
-        buckets: [],
-      });
-
-      const ctx = createContext();
-      const data = await geminiUsageWidget.getData(ctx);
-
-      expect(data?.model).toBe('gemini-2.0-flash');
-      expect(data?.usedPercent).toBeNull();
-      expect(data?.resetAt).toBeNull();
-    });
-
-    it('should render model name and percentage', () => {
-      const ctx = createContext();
-      const data = {
-        model: 'gemini-2.5-pro',
-        usedPercent: 35,
-        resetAt: '2026-01-30T10:00:00Z',
-      };
-      const result = geminiUsageWidget.render(data, ctx);
-
-      expect(result).toContain('💎');
-      expect(result).toContain('gemini-2.5-pro');
-      expect(result).toContain('35%');
-    });
-
-    it('should render reset time', () => {
-      const ctx = createContext();
-      // Set reset time to ~2 hours from now
-      const resetAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-      const data = {
-        model: 'gemini-2.0-flash',
-        usedPercent: 50,
-        resetAt,
-      };
-      const result = geminiUsageWidget.render(data, ctx);
-
-      expect(result).toContain('('); // Has reset time in parentheses
-      expect(result).toMatch(/1h\d+m|2h/); // ~2 hours remaining
-    });
-
-    it('should handle null usedPercent in render', () => {
-      const ctx = createContext();
-      const data = {
-        model: 'gemini-3-pro-preview',
-        usedPercent: null,
-        resetAt: null,
-      };
-      const result = geminiUsageWidget.render(data, ctx);
-
-      expect(result).toContain('💎');
-      expect(result).toContain('gemini-3-pro-preview');
-      expect(result).not.toContain('%');
-    });
-
-    it('should render error indicator when isError is true', () => {
-      const ctx = createContext();
-      const data = {
-        model: 'gemini',
-        usedPercent: null,
-        resetAt: null,
-        isError: true,
-      };
-      const result = geminiUsageWidget.render(data, ctx);
-
-      expect(result).toContain('💎');
-      expect(result).toContain('gemini');
-      expect(result).toContain('⚠️');
-    });
-  });
-
   describe('configCountsWidget', () => {
     it('should have correct id and name', () => {
       expect(configCountsWidget.id).toBe('configCounts');
@@ -1690,6 +1579,70 @@ describe('widgets', () => {
 
       expect(result).toContain('»');
       expect(result).toContain('…');
+    });
+  });
+
+  describe('workflowStatusWidget', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('should have correct id and name', () => {
+      expect(workflowStatusWidget.id).toBe('workflowStatus');
+      expect(workflowStatusWidget.name).toBe('Workflow Status');
+    });
+
+    it('should return null when active workflow pointer is missing', async () => {
+      const ctx = createContext();
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return workflow status when active feature exists', async () => {
+      const ctx = createContext({
+        session_id: '7b54ab5c-ab6d-496a-99ee-95b71b402656',
+        workspace: {
+          current_dir: '/Users/yusang/Smelter',
+          project_dir: '/Users/yusang/Smelter',
+        },
+      });
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data).not.toBeNull();
+      expect(data?.text).toContain('QA MODE');
+      expect(data?.text).toContain('verify-hook-removal');
+      expect(data?.text).toContain('step-');
+    });
+
+    it('should read the session-scoped pointer when session_id exists', async () => {
+      const ctx = createContext({
+        session_id: 'missing-session-id',
+        workspace: {
+          current_dir: '/Users/yusang/Smelter',
+          project_dir: '/Users/yusang/Smelter',
+        },
+      });
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should expose workflow status in the normal display preset', () => {
+      expect(DISPLAY_PRESETS.normal[2]).toContain('workflowStatus');
+    });
+
+    it('should support preset shorthand for workflow status widget', () => {
+      expect(PRESET_CHAR_MAP.w).toBe('workflowStatus');
+    });
+
+
+    it('should render workflow text with arrow prefix', () => {
+      const ctx = createContext();
+      const result = workflowStatusWidget.render({ text: 'QA MODE · fix-login-typo · step-10' }, ctx);
+      expect(result).toContain('▸');
+      expect(result).toContain('QA MODE · fix-login-typo · step-10');
+    });
+
+    it('should expose workflow status in the normal display preset', () => {
+      expect(DISPLAY_PRESETS.normal[2]).toContain('workflowStatus');
     });
   });
 

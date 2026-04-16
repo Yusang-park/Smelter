@@ -5,7 +5,7 @@
  * Runs the legacy dist-based processor (if present) AND enforces the
  * smelter documentation sync contract:
  *
- *   1. Command set across tracked md files matches {tasker, feat, qa}
+ *   1. Command set across tracked md files matches {plan, build, fix}
  *   2. Preset JSON filenames match the command names
  *   3. Step number references stay within 1..10
  *   4. Magic keyword table in keyword-detector.mjs stays in sync with command set
@@ -40,9 +40,9 @@ export const TRACKED_MD_FILES = [
 ];
 
 export const TRACKED_COMMAND_FILES = [
-  'commands/tasker.md',
-  'commands/feat.md',
-  'commands/qa.md',
+  'commands/plan.md',
+  'commands/build.md',
+  'commands/fix.md',
 ];
 
 export const TRACKED_CROSS_FILES = [
@@ -63,12 +63,12 @@ export const TRACKED_LEGACY_SCAN = [
   'rules/common/testing.md',
 ];
 
-export const EXPECTED_COMMANDS = ['tasker', 'feat', 'qa'];
+export const EXPECTED_COMMANDS = ['plan', 'build', 'fix'];
 export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'simple'];
 export const FORBIDDEN_LEGACY_PATTERN = /persistent-mode(?:\.cjs|\.mjs|\.sh)?/i;
 export const FORBIDDEN_TASKER_NATIVE_PLAN_PATTERN = /EnterPlanMode|ExitPlanMode|Native Plan File|\[Plan Mode: Enter\]|\[Plan Mode: Exit\]/i;
 // Extra-preset guard: only these 4 preset JSONs are allowed.
-export const ALLOWED_PRESETS = ['tasker', 'feat', 'qa'];
+export const ALLOWED_PRESETS = ['plan', 'build', 'fix'];
 export const FORBIDDEN_EXTRA_PRESETS = ['full', 'narrow', 'planning', 'autopilot', 'e2e-force', 'tdd'];
 
 function readFileSafe(path) {
@@ -346,7 +346,7 @@ export function checkDocSync(projectRoot) {
     }
   }
 
-  // --- 2c. Forbidden tasker native-plan references in tracked docs/commands ---
+  // --- 2c. Forbidden plan native-plan references in tracked docs/commands ---
   for (const rel of mdFiles) {
     const abs = join(projectRoot, rel);
     const content = readFileSafe(abs);
@@ -361,12 +361,12 @@ export function checkDocSync(projectRoot) {
       issues.push({
         severity: 'error',
         file: rel,
-        message: `Forbidden tasker native-plan reference on line ${i + 1}: ${match[0]}`,
+        message: `Forbidden plan native-plan reference on line ${i + 1}: ${match[0]}`,
       });
     }
   }
 
-  // --- 2d. Forbidden extra presets — enforce exactly {tasker,feat,qa} ---
+  // --- 2d. Forbidden extra presets — enforce exactly {plan,build,fix} ---
   // Case-insensitive: normalize filename to lowercase and strip any .json/.JSON
   // suffix before comparing. This catches case-variant filenames like
   // `Full.JSON` on case-insensitive filesystems (macOS default, Windows).
@@ -446,7 +446,7 @@ export function checkDocSync(projectRoot) {
   const kd = readFileSafe(join(projectRoot, 'scripts', 'keyword-detector.mjs'));
   if (kd !== null) {
     for (const cmd of EXPECTED_COMMANDS) {
-      // Match either `command: 'tasker'` or `tasker:` (object key in COMMAND_CONFIG)
+      // Match either `command: 'plan'` or `plan:` (object key in COMMAND_CONFIG)
       const pattern = new RegExp(`(?:command:\\s*['"]${cmd}['"])|(?:^\\s*${cmd}:\\s*\\{)`, 'm');
       if (!pattern.test(kd)) {
         issues.push({
@@ -533,7 +533,7 @@ async function main() {
 
   // Run sync check on the smelter project root by default,
   // but fall back to the session's cwd if it looks like a smelter project.
-  const projectRoot = existsSync(join(directory, 'commands', 'feat.md'))
+  const projectRoot = existsSync(join(directory, 'commands', 'build.md'))
     ? directory
     : PROJECT_ROOT;
 

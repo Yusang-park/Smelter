@@ -10,7 +10,7 @@ import { join } from 'path';
 import type { Widget } from './base.js';
 import type { WidgetContext, ContextData } from '../types.js';
 import { getColorForPercent, colorize, getSeparator } from '../utils/colors.js';
-import { formatTokens, calculatePercent } from '../utils/formatters.js';
+import { formatTokens, calculatePercent, clampPercent } from '../utils/formatters.js';
 import { renderProgressBar, DEFAULT_PROGRESS_BAR_CONFIG } from '../utils/progress-bar.js';
 
 let codexContextHintCache: { value: number | null } | null = null;
@@ -19,6 +19,7 @@ async function inferContextSize(ctx: WidgetContext): Promise<number> {
   const modelId = String(ctx.stdin.model?.id ?? '');
   const modelLabel = String(ctx.stdin.model?.display_name ?? '');
   const explicitSize = ctx.stdin.context_window?.context_window_size;
+  const cwd = String((ctx.stdin as { cwd?: string }).cwd ?? process.cwd());
   if (
     /^gpt-5\.4(?:$|-)/i.test(modelId) ||
     /gpt-5\.4/i.test(modelLabel)
@@ -41,11 +42,20 @@ async function inferContextSize(ctx: WidgetContext): Promise<number> {
   }
 
   try {
-    const statePath = join(homedir(), '.omc', 'state', 'model-mode.json');
-    const state = JSON.parse(await readFile(statePath, 'utf-8')) as { mode?: string; model?: string };
-    if (state.mode === 'codex' && /gpt-5\.4/i.test(String(state.model ?? ''))) {
-      codexContextHintCache = { value: 1000000 };
-      return 1000000;
+    const statePaths = [
+      join(cwd, '.smt', 'state', 'model-mode.json'),
+      join(homedir(), '.omc', 'state', 'model-mode.json'),
+    ];
+    for (const statePath of statePaths) {
+      try {
+        const state = JSON.parse(await readFile(statePath, 'utf-8')) as { mode?: string; model?: string };
+        if (state.mode === 'codex' && /gpt-5\.4/i.test(String(state.model ?? ''))) {
+          codexContextHintCache = { value: 1000000 };
+          return 1000000;
+        }
+      } catch {
+        // try next path
+      }
     }
   } catch {
     // ignore state hint failures
@@ -64,14 +74,25 @@ export const contextWidget: Widget<ContextData> = {
     const usage = context_window?.current_usage;
     const contextSize = await inferContextSize(ctx);
     const officialPercent = context_window?.used_percentage;
+    const totalInputTokens = context_window?.total_input_tokens ?? 0;
+    const shouldIgnoreOfficialPercent =
+      /^gpt-5\.4(?:$|-)/i.test(String(ctx.stdin.model?.id ?? ''))
+      && typeof officialPercent === 'number'
+      && officialPercent <= 0
+      && totalInputTokens > 0;
+    const resolvedOfficialPercent = shouldIgnoreOfficialPercent ? null : officialPercent;
 
     if (!usage) {
+      const inputTokens = totalInputTokens;
+      const outputTokens = context_window?.total_output_tokens ?? 0;
       return {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
         contextSize,
-        percentage: typeof officialPercent === 'number' ? Math.round(officialPercent) : 0,
+        percentage: typeof resolvedOfficialPercent === 'number'
+          ? clampPercent(resolvedOfficialPercent)
+          : calculatePercent(inputTokens, contextSize),
       };
     }
 
@@ -81,8 +102,8 @@ export const contextWidget: Widget<ContextData> = {
       usage.cache_read_input_tokens;
     const outputTokens = usage.output_tokens;
     const totalTokens = inputTokens + outputTokens;
-    const percentage = typeof officialPercent === 'number'
-      ? Math.round(officialPercent)
+    const percentage = typeof resolvedOfficialPercent === 'number'
+      ? clampPercent(resolvedOfficialPercent)
       : calculatePercent(inputTokens, contextSize);
 
     return {

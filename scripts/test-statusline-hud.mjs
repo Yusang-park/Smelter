@@ -9,6 +9,7 @@ const tempRoot = mkdtempSync(join(tmpdir(), 'smelter-statusline-'));
 const cwd = join(tempRoot, 'project');
 const stateDir = join(cwd, '.omc', 'state');
 const smtStateDir = join(cwd, '.smt', 'state');
+const smtFeaturesDir = join(cwd, '.smt', 'features');
 const tempHome = join(tempRoot, 'home');
 const legacyModelModePath = join(tempHome, '.omc', 'state', 'model-mode.json');
 const projectModelModePath = join(smtStateDir, 'model-mode.json');
@@ -22,6 +23,7 @@ if (hadExistingMode) {
 
 mkdirSync(stateDir, { recursive: true });
 mkdirSync(smtStateDir, { recursive: true });
+mkdirSync(smtFeaturesDir, { recursive: true });
 mkdirSync(join(tempHome, '.omc', 'state'), { recursive: true });
 
 function writeProjectModelMode(mode) {
@@ -44,6 +46,19 @@ function writeLegacyModelMode(mode) {
       updated_at: new Date().toISOString(),
     }, null, 2),
   );
+}
+
+function writeWorkflowState({ slug = 'fix-login-typo', command = 'qa', step = 'step-10', featureTitle = 'fix-login-typo' } = {}) {
+  const featureStateDir = join(smtFeaturesDir, slug, 'state');
+  mkdirSync(featureStateDir, { recursive: true });
+  writeFileSync(join(smtStateDir, 'active-feature.json'), JSON.stringify({ slug, updated_at: Date.now() }, null, 2));
+  writeFileSync(join(featureStateDir, 'workflow.json'), JSON.stringify({
+    command,
+    step,
+    retry: 0,
+    updated_at: Date.now(),
+    featureTitle,
+  }, null, 2));
 }
 
 writeLegacyModelMode('claude');
@@ -130,10 +145,16 @@ try {
   assert.match(codexWithLegacyWindow, /ctx 25%/, 'expected codex context percent to be computed against 1M');
 
   // Test 7: 5h usage should prefer Codex-family transcript usage when project mode is codex.
-  assert.match(codexWithLegacyWindow, /2\.2k 11%/, 'expected codex 5h usage instead of claude-family usage');
-  assert.doesNotMatch(codexWithLegacyWindow, /1\.1k 11%/, 'expected claude-family 5h usage not to leak into codex window');
+  assert.match(codexWithLegacyWindow, /5h 2\.2k/, 'expected codex 5h usage instead of claude-family usage');
+  assert.doesNotMatch(codexWithLegacyWindow, /5h 1\.1k/, 'expected claude-family 5h usage not to leak into codex window');
 
-  console.log('statusline HUD test passed (7/7)');
+  // Test 8: workflow state should appear in HUD output, but task summary should not.
+  writeWorkflowState({ slug: 'fix-login-typo', command: 'qa', step: 'step-10' });
+  const withWorkflow = runHud();
+  assert.match(withWorkflow, /QA MODE · fix-login-typo · step-10/, 'expected workflow status in HUD');
+  assert.doesNotMatch(withWorkflow, /summarize|summary/i, 'expected HUD task summary line to be removed');
+
+  console.log('statusline HUD test passed (8/8)');
 } finally {
   if (hadExistingMode && existingMode != null) {
     writeFileSync(legacyModelModePath, existingMode);

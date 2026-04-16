@@ -21,9 +21,9 @@ updated: 2026-04-15
 
 | 축 | 값 | 의미 |
 |---|---|---|
-| 시작 명령 | `/tasker` | planning state 생성/보정 (Step 1-3) |
-| | `/feat` | 구현 작업 (task 없으면 Step 1-10, 있으면 Step 4-10) |
-| | `/qa` | 버그 수정 (Step 4-8, 10 — Step 9 건너뜀) |
+| 시작 명령 | `/plan` | planning state 생성/보정 (Step 1-3) |
+| | `/build` | 구현 작업 (task 없으면 Step 1-10, 있으면 Step 4-10) |
+| | `/fix` | 버그 수정 (Step 4-8, 10 — Step 9 건너뜀) |
 
 아키텍처: `사용자 입력 → keyword-detector (훅) → Skill Tool → commands/*.md (프롬프트) → Claude 실행 → hooks 가드레일 → .smt/ 상태 추적`
 
@@ -35,27 +35,27 @@ updated: 2026-04-15
 
 | 커맨드 | 파일 | 프리셋 | 단계 범위 | E2E | 상태 |
 |--------|------|--------|-----------|-----|------|
-| `/tasker` | `commands/tasker.md` | `tasker` | 1-3 | — | |
-| `/feat` | `commands/feat.md` | `feat` | 1-10 (task 지정시 4-10) | surface-based | |
-| `/qa` | `commands/qa.md` | `qa` | 4-8, 10 | surface-based | |
+| `/plan` | `commands/plan.md` | `plan` | 1-3 | — | |
+| `/build` | `commands/build.md` | `build` | 1-10 (task 지정시 4-10) | surface-based | |
+| `/fix` | `commands/fix.md` | `fix` | 4-8, 10 | surface-based | |
 
 ### 프리셋
 
 | 프리셋 | 파일 | Steps | E2E | 최소 테스트 | 상태 |
 |--------|------|-------|-----|-----------|------|
-| `tasker` | `presets/tasker.json` | 1-3 | false | 0 | |
-| `feat` | `presets/feat.json` | 1-10 | surface | 10+ | |
-| `qa` | `presets/qa.json` | 4-8, 10 | surface | 5+ | |
+| `plan` | `presets/plan.json` | 1-3 | false | 0 | |
+| `build` | `presets/build.json` | 1-10 | surface | 10+ | |
+| `fix` | `presets/fix.json` | 4-8, 10 | surface | 5+ | |
 
 ### 매직 키워드 (keyword-detector.mjs)
 
 | 키워드 | 커맨드 | 분기 힌트 |
 |--------|--------|----------|
-| `tasker`, `plan`, `설계해줘`, `계획부터` | `/tasker` | — |
-| `new feature`, `새 기능`, `design first` | `/feat` | Step 2 포함 |
-| `extend`, `add to`, `덧붙여`, `확장해줘` | `/feat` | Step 2 건너뜀 |
-| `fix`, `bug`, `버그`, `고쳐` | `/qa` | E2E 강제 |
-| `style`, `typo`, `텍스트`, `색상`, `i18n`, `문구` | `/qa` | TDD 면제 |
+| `plan`, `deep interview`, `설계해줘`, `계획부터` | `/plan` | — |
+| `new feature`, `새 기능`, `design first` | `/build` | Step 2 포함 |
+| `extend`, `add to`, `덧붙여`, `확장해줘` | `/build` | Step 2 건너뜀 |
+| `fix`, `bug`, `버그`, `고쳐` | `/fix` | E2E 강제 |
+| `style`, `typo`, `텍스트`, `색상`, `i18n`, `문구` | `/fix` | TDD 면제 |
 | `cancel`, `stop` | `/cancel` | — |
 
 ---
@@ -94,7 +94,7 @@ updated: 2026-04-15
 | 이벤트 | 스크립트 | 역할 | 상태 |
 |--------|---------|------|------|
 | `SessionStart` | `session-start-smelter.mjs` | Caveman 응답 스타일 + TDD 강제 + `.smt/` plan/task 주입 | ✅ |
-| `UserPromptSubmit` | `keyword-detector.mjs` | `/tasker` `/feat` `/qa` `/cancel` `/queue` 감지 → harness state 활성화 + command 주입 | 🔧 |
+| `UserPromptSubmit` | `keyword-detector.mjs` | `/plan` `/build` `/fix` `/cancel` `/queue` 감지 → harness state 활성화 + command 주입 | 🔧 |
 | `UserPromptSubmit` | `auto-confirm-consumer.mjs` | 자동 계속 큐 소비 → 컨텍스트 주입 | ✅ |
 | `UserPromptSubmit` | `skill-injector.mjs` | 학습된 스킬 자동 매칭 및 프롬프트 주입 | ✅ |
 | `PreToolUse` | `pre-tool-enforcer.mjs` | 도구 사용 전 설명 주입 + 취소 시그널 차단 | ✅ |
@@ -322,7 +322,7 @@ updated: 2026-04-15
 
 | Tag | Source | 관련 |
 |-----|--------|------|
-| `[TASKER MODE]` / `[FEAT MODE]` / `[QA MODE]` | keyword-detector | 진입 |
+| `[PLAN MODE]` / `[BUILD MODE]` / `[FIX MODE]` | keyword-detector | 진입 |
 | `[Command: /<name>]` | keyword-detector | 진입 |
 | `[Magic Keyword: <kw> → /<cmd>]` | keyword-detector | 진입 |
 | `[Session Start]` | session-start-smelter | 세션 |
@@ -333,7 +333,7 @@ updated: 2026-04-15
 | `[Auto-Retry: <reason>]` | tool-retry | Step 5, 7 |
 | `[Auto-Confirm: queued]` | auto-confirm | Step 10 |
 | `[Run E2E]` | stop-e2e | Step 8 |
-| `[TASKER MODE]` | /tasker command | Step 1-3 |
+| `[PLAN MODE]` | /plan command | Step 1-3 |
 
 ---
 
@@ -341,35 +341,14 @@ updated: 2026-04-15
 
 > 현재 코드베이스 → workflow.md 정합성 확보를 위한 변경 목록
 
-### 이름 변경 (work→feat, default→qa, ralph 제거)
+### 마이그레이션 이력
 
-| 현재 파일 | 변경 후 | 비고 |
-|----------|---------|------|
-| `commands/work.md` | `commands/feat.md` | 프롬프트 내용도 workflow.md 10단계에 맞춤 |
-| `commands/default.md` | `commands/qa.md` | Step 4-8, 10 (Step 9 건너뜀) 반영 |
-| `commands/ralph.md` | 삭제 | workflow.md에 없는 커맨드 |
-| `presets/work.json` | `presets/feat.json` | name, steps 필드 갱신 |
-| `presets/default.json` | `presets/qa.json` | name, steps 필드 갱신 |
-| `presets/ralph.json` | 삭제 | workflow.md에 없는 프리셋 |
+아래 이름 변경은 이미 완료됨:
 
-### 스크립트 수정
-
-| 파일 | 수정 내용 |
-|------|----------|
-| `keyword-detector.mjs` | `COMMAND_CONFIG` 키: `work→feat`, `default→qa`, `ralph` 제거. MODE_LABELS 갱신 |
-| `session-start-smelter.mjs` | `.smelter/` → `.smt/` 경로 전환 |
-| `auto-confirm.mjs` | `readPendingTasks()` 경로 `.smelter/` → `.smt/`, features 기반 탐색 |
-| `stop-e2e.mjs` | `.smelter/` → `.smt/` 경로 전환 |
-| `post-tool-verifier.mjs` | tracking 경로 필요시 갱신 |
-
-### 문서 수정
-
-| 파일 | 수정 내용 |
-|------|----------|
-| `CLAUDE.md` | 전체 `.smelter/` → `.smt/`, `/work`→`/feat`, `/default`→`/qa` |
-| `AGENTS.md` | 커맨드 이름 갱신 |
-| `document/index.md` | 커맨드 테이블 갱신 |
-| `document/workflow.md` | line 20-21의 "Step 4-11" → "Step 4-10" 정합성 수정 |
+1. `work → feat → build`, `default → qa → fix`, `tasker → plan`
+2. `ralph` 제거
+3. `.smelter/` → `.smt/` 전환 완료
+4. 모든 workflow YAML, command MD, preset JSON, 스크립트, 테스트 갱신 완료
 
 ---
 
@@ -377,13 +356,13 @@ updated: 2026-04-15
 
 | 영역 | 상태 |
 |------|------|
-| 코드 인벤토리 (src/bin) | 15개 TS 파일 목록화, 구현 확인 필요 |
-| 커맨드 | 3개 (이름 변경 필요: work→feat, default→qa, ralph 제거) |
-| 프리셋 | 3개 (이름 변경 필요, ralph 제거) |
-| Hooks (핵심 + 보조 + setup) | 14개 스크립트 연결, 3개 경로 수정 필요 |
-| Skills | 31개 존재 |
+| 코드 인벤토리 (src/bin) | 15개 TS 파일 목록화 |
+| 커맨드 | 3개 (`/plan`, `/build`, `/fix`) |
+| 프리셋 | 3개 (`plan`, `build`, `fix`) |
+| Hooks (핵심 + 보조 + setup) | 14개 스크립트 연결 |
+| Skills | 32개 존재 (deep-interview 추가) |
 | Agents | 34개 존재 |
-| 파일 메모리 | `.smelter/` → `.smt/` 전환 필요 |
+| 파일 메모리 | `.smt/` 기반 |
 | 미구현 집행 훅 | 4개 |
 | 미구현 범용 스킬 | 4개 |
 | 미구현 보강 에이전트 | 4개 |

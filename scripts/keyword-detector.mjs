@@ -9,14 +9,14 @@
  * Priority: (1) explicit slash command → (2) magic keyword (natural language).
  *
  * Supported slash commands:
- *   /tasker /feat /qa /cancel /queue
+ *   /plan /build /fix /cancel /queue
  *
  * Supported magic keywords → command mapping:
- *   tasker / plan / 설계해줘 / 계획부터              → /tasker
- *   new feature / 새 기능 / design first            → /feat (Step 2 included)
- *   extend / add to / 덧붙여                         → /feat (Step 2 skipped)
- *   fix / bug / 버그                                 → /qa (E2E forced on)
- *   style / typo / 텍스트 / 색상 / i18n             → /qa (TDD exemption hint)
+ *   plan / deep interview / 설계해줘 / 계획부터      → /plan
+ *   new feature / 새 기능 / design first            → /build (Step 2 included)
+ *   extend / add to / 덧붙여                         → /build (Step 2 skipped)
+ *   fix / bug / 버그                                 → /fix (E2E forced on)
+ *   style / typo / 텍스트 / 색상 / i18n             → /fix (TDD exemption hint)
  *   cancel / stop                                    → /cancel
  *   queue                                            → /queue (explicit only)
  */
@@ -62,7 +62,7 @@ function extractPrompt(input) {
 function extractExplicitHarnessCommand(prompt) {
   if (!prompt) return null;
   const trimmed = prompt.trim();
-  const match = trimmed.match(/^\/(tasker|feat|qa|cancel|queue)\b(?:[:\s-]*(.*))?$/i);
+  const match = trimmed.match(/^\/(plan|build|fix|cancel|queue)\b(?:[:\s-]*(.*))?$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase(),
@@ -73,9 +73,9 @@ function extractExplicitHarnessCommand(prompt) {
 
 // Command → preset/mode mapping (magic keywords handled by Haiku sub-agent classifier)
 const COMMAND_CONFIG = {
-  tasker: { preset: 'tasker', mode: 'normal' },
-  feat:   { preset: 'feat',   mode: 'normal' },
-  qa:     { preset: 'qa',     mode: 'normal' },
+  plan:  { preset: 'plan',  mode: 'normal' },
+  build: { preset: 'build', mode: 'normal' },
+  fix:   { preset: 'fix',   mode: 'normal' },
 };
 
 function writeStateFile(directory, filename, data) {
@@ -88,9 +88,9 @@ function writeStateFile(directory, filename, data) {
 
 // Map command → initial workflow step
 const INITIAL_STEP = {
-  tasker: 'step-1',
-  feat: 'step-1',
-  qa: 'step-4',
+  plan: 'step-1',
+  build: 'step-1',
+  fix: 'step-4',
 };
 
 // Slug from prompt: first meaningful words, sanitized.
@@ -119,7 +119,7 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '')
   const initialStep = INITIAL_STEP[commandName];
   if (!initialStep) return; // cancel/queue — no workflow state
 
-  // Prefer slash-args for slug derivation (ignore the leading "/feat " literal).
+  // Prefer slash-args for slug derivation (ignore the leading slash-command literal).
   // For natural-language magic-keyword invocations, args is empty so we fall back
   // to the prompt with any leading slash-command token stripped.
   const cleanedPrompt = String(prompt || '').replace(/^\/\w+\b[:\s-]*/, '');
@@ -167,7 +167,7 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '')
       writeAtomic(planPath, planContent);
     }
 
-    // workflow.json — seed only if absent so re-running /feat doesn't reset progress
+    // workflow.json — seed only if absent so re-running a command doesn't reset progress
     const workflowPath = join(stateDir, 'workflow.json');
     if (!existsSync(workflowPath)) {
       const state = {
@@ -185,7 +185,10 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '')
     }
 
     // active-feature pointer (atomic)
-    writeAtomic(pointerPath, JSON.stringify({ slug, updated_at: Date.now() }, null, 2));
+    writeAtomic(pointerPath, JSON.stringify({ slug, session_id: sessionId || '', updated_at: Date.now() }, null, 2));
+    if (sessionId) {
+      writeAtomic(join(smtStateDir, `active-feature-${sessionId}.json`), JSON.stringify({ slug, session_id: sessionId, updated_at: Date.now() }, null, 2));
+    }
   } catch {}
 }
 
@@ -256,7 +259,7 @@ async function main() {
     if (!detected) {
       const classification = classifyPrompt(prompt, { cwd: directory, sessionId });
       if (classification.intent === 'command' && classification.command) {
-        const validCommands = ['tasker', 'feat', 'qa', 'cancel', 'queue'];
+        const validCommands = ['plan', 'build', 'fix', 'cancel', 'queue'];
         const cmd = classification.command.toLowerCase().replace(/^\//, '');
         if (validCommands.includes(cmd)) {
           printTag(`Magic Keyword: Haiku classified command`);
@@ -346,7 +349,7 @@ async function main() {
     }
 
     // MODE banner (once per session per command)
-    const MODE_LABELS = { tasker: 'TASKER MODE', feat: 'FEAT MODE', qa: 'QA MODE' };
+    const MODE_LABELS = { plan: 'PLAN MODE', build: 'BUILD MODE', fix: 'FIX MODE' };
     const modeLabel = MODE_LABELS[detected.name];
     if (modeLabel) {
       const bannerFile = join(directory, '.smt', 'state', `mode-emitted-${sessionId || 'default'}.json`);
@@ -364,7 +367,8 @@ async function main() {
 
     if (detected.source === 'magic') {
       const hintTag = detected.hint ? ` (${detected.hint})` : '';
-      printTag(`Magic Keyword: ${detected.matched} → /${detected.name}${hintTag}`);
+      const publicName = detected.name;
+      printTag(`Magic Keyword: ${detected.matched} → /${publicName}${hintTag}`);
     } else {
       printTag(`Command: /${detected.name}`);
     }

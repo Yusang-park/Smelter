@@ -30,7 +30,6 @@ import { burnRateWidget } from './burn-rate.js';
 import { depletionTimeWidget } from './depletion-time.js';
 import { cacheHitWidget } from './cache-hit.js';
 import { codexUsageWidget } from './codex-usage.js';
-import { geminiUsageWidget, geminiUsageAllWidget } from './gemini-usage.js';
 import { zaiUsageWidget } from './zai-usage.js';
 import { sessionIdWidget, sessionIdFullWidget } from './session-id.js';
 import { tokenBreakdownWidget } from './token-breakdown.js';
@@ -47,7 +46,7 @@ import { lastPromptWidget } from './last-prompt.js';
 import { vimModeWidget } from './vim-mode.js';
 import { apiDurationWidget } from './api-duration.js';
 import { peakHoursWidget } from './peak-hours.js';
-import { taskSummaryWidget } from './task-summary.js';
+import { workflowStatusWidget } from './workflow-status.js';
 
 function isCodexModel(ctx: WidgetContext): boolean {
   return /^(gpt-|o\d)/i.test(ctx.stdin.model?.id ?? '');
@@ -91,8 +90,6 @@ const widgetRegistry = new Map<WidgetId, Widget>([
   ['depletionTime', depletionTimeWidget],
   ['cacheHit', cacheHitWidget],
   ['codexUsage', codexUsageWidget],
-  ['geminiUsage', geminiUsageWidget],
-  ['geminiUsageAll', geminiUsageAllWidget],
   ['zaiUsage', zaiUsageWidget],
   ['sessionId', sessionIdWidget],
   ['sessionIdFull', sessionIdFullWidget],
@@ -110,7 +107,7 @@ const widgetRegistry = new Map<WidgetId, Widget>([
   ['vimMode', vimModeWidget],
   ['apiDuration', apiDurationWidget],
   ['peakHours', peakHoursWidget],
-  ['taskSummary', taskSummaryWidget],
+  ['workflowStatus', workflowStatusWidget],
 ] as [WidgetId, Widget][]);
 
 /**

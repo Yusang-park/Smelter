@@ -19,6 +19,15 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { printTag } from './lib/yellow-tag.mjs';
 import { parseYaml } from './lib/yaml-parser.mjs';
+import { classifyPrompt } from './lib/subagent-classifier.mjs';
+
+const MODE_LABELS = { plan: 'PLAN', build: 'BUILD', fix: 'FIX' };
+
+function formatStepTitle(command, stepId, stepName) {
+  const modeLabel = MODE_LABELS[command] || String(command || '').toUpperCase();
+  const stepNumber = String(stepId || '').match(/step-(\d+)/)?.[1] || '?';
+  return `STEP TITLE: ${modeLabel} · Step ${stepNumber} · ${stepName}`;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,17 +57,22 @@ function parseWorkflow(command) {
   }
 }
 
-function findActiveFeature(projectDir) {
+function findActiveFeature(projectDir, sessionId = '') {
   const featuresDir = join(projectDir, '.smt', 'features');
   if (!existsSync(featuresDir)) return null;
 
-  const pointerPath = join(projectDir, '.smt', 'state', 'active-feature.json');
+  const stateDir = join(projectDir, '.smt', 'state');
+  const pointerPath = sessionId
+    ? join(stateDir, `active-feature-${sessionId}.json`)
+    : join(stateDir, 'active-feature.json');
   const pointer = readJsonSafe(pointerPath);
   if (pointer?.slug) {
     const statePath = join(featuresDir, pointer.slug, 'state', 'workflow.json');
     const state = readJsonSafe(statePath);
     if (state) return { slug: pointer.slug, state, statePath };
   }
+  // With a session id but no session-scoped pointer → no active workflow for this session.
+  if (sessionId) return null;
 
   let latest = null;
   let slugs = [];
@@ -110,12 +124,23 @@ function writeState(statePath, state) {
 // Pointer updates are idempotent (same {slug} repeated is harmless). Last-writer-wins
 // is acceptable because the pointer reflects the most-recently-touched feature, which is
 // exactly what parallel tracker invocations would converge on anyway.
-function updateActivePointer(projectDir, slug) {
-  const pointerPath = join(projectDir, '.smt', 'state', 'active-feature.json');
+function updateActivePointer(projectDir, slug, sessionId = '') {
+  const stateDir = join(projectDir, '.smt', 'state');
+  const pointerPath = join(stateDir, 'active-feature.json');
   const current = readJsonSafe(pointerPath);
   // Skip write when pointer already names this slug to reduce contention
-  if (current && !current.__corrupt && current.slug === slug) return;
-  writeJsonAtomic(pointerPath, { slug, updated_at: Date.now() });
+  if (current && !current.__corrupt && current.slug === slug) {
+    if (sessionId) {
+      const sessionPointerPath = join(stateDir, `active-feature-${sessionId}.json`);
+      writeJsonAtomic(sessionPointerPath, { slug, session_id: sessionId, updated_at: Date.now() });
+    }
+    return;
+  }
+  writeJsonAtomic(pointerPath, { slug, session_id: sessionId || '', updated_at: Date.now() });
+  if (sessionId) {
+    const sessionPointerPath = join(stateDir, `active-feature-${sessionId}.json`);
+    writeJsonAtomic(sessionPointerPath, { slug, session_id: sessionId, updated_at: Date.now() });
+  }
 }
 
 /**
@@ -140,6 +165,39 @@ function createOutput(additionalContext) {
   };
 }
 
+function classifyPlanExecutionTarget(state, projectDir, sessionId) {
+  const prompt = String(state.prompt || '').trim();
+  if (!prompt) return 'build';
+  try {
+    const result = classifyPrompt(prompt, { cwd: projectDir, sessionId });
+    if (result.intent === 'command' && (result.command === 'fix' || result.command === 'build')) {
+      return result.command;
+    }
+  } catch (err) {
+    process.stderr.write(`[step-tracker] plan routing classifier failed: ${err.message}\n`);
+  }
+  return 'build';
+}
+
+function routePlanToExecution({ state, statePath, projectDir, sessionId, slug }) {
+  const targetCommand = classifyPlanExecutionTarget(state, projectDir, sessionId);
+  const ok = writeState(statePath, {
+    ...state,
+    command: targetCommand,
+    step: 'step-4',
+    retry: 0,
+    signals: {},
+  });
+  if (!ok) {
+    console.log(JSON.stringify(createOutput(`[CAS conflict at ${state.step} — another writer advanced; re-read workflow.json]`)));
+    return true;
+  }
+  updateActivePointer(projectDir, slug, sessionId);
+  printTag(`Step: ${state.step} → ${targetCommand}/step-4 (plan route)`);
+  console.log(JSON.stringify(createOutput(`[Plan ${state.step} auto-routed → ${targetCommand} step-4]`)));
+  return true;
+}
+
 function main() {
   printTag('Step Tracker');
   try {
@@ -148,8 +206,9 @@ function main() {
     try { data = JSON.parse(input); } catch {}
 
     const projectDir = data.cwd || data.directory || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    const sessionId = data.session_id || data.sessionId || '';
 
-    const active = findActiveFeature(projectDir);
+    const active = findActiveFeature(projectDir, sessionId);
     if (!active) {
       console.log(JSON.stringify({ continue: true }));
       return;
@@ -164,14 +223,32 @@ function main() {
 
     const step = workflow.steps[state.step];
 
-    // Gate steps are passive — don't touch state, don't update pointer
+    // Keep the active-feature pointer current for every active step, including gates.
+    updateActivePointer(projectDir, slug, sessionId);
+
+    // Gate steps auto-continue to their configured next step. Human approval is removed.
     if (step.type === 'gate') {
+      if (state.command === 'plan' && state.step === 'step-3-interview') {
+        routePlanToExecution({ state, statePath, projectDir, sessionId, slug });
+        return;
+      }
+      if (step.next) {
+        const ok = writeState(statePath, { ...state, step: step.next, retry: 0, signals: {} });
+        if (!ok) {
+          console.log(JSON.stringify(createOutput(`[CAS conflict at ${state.step} — another writer advanced; re-read workflow.json]`)));
+          return;
+        }
+        const nextStep = workflow.steps[step.next];
+        if (nextStep?.name) printTag(formatStepTitle(state.command, step.next, nextStep.name));
+        printTag(`Step: ${state.step} → ${step.next} (auto gate)`);
+        console.log(JSON.stringify(createOutput(`[Step ${state.step} auto-continued → ${step.next}]`)));
+        return;
+      }
       console.log(JSON.stringify({ continue: true }));
       return;
     }
 
-    // Keep the active-feature pointer current (only for active non-gate steps)
-    updateActivePointer(projectDir, slug);
+    // Evaluate gate condition (fail-closed)
 
     // Evaluate gate condition (fail-closed)
     const gateName = step.gate;
@@ -242,6 +319,8 @@ function main() {
         console.log(JSON.stringify(createOutput(`[CAS conflict at ${state.step} — another writer advanced; re-read workflow.json]`)));
         return;
       }
+      const nextStep = workflow.steps[step.next];
+      if (nextStep?.name) printTag(formatStepTitle(state.command, step.next, nextStep.name));
       printTag(`Step: ${state.step} → ${step.next}`);
       console.log(JSON.stringify(createOutput(`[Step ${state.step} complete → ${step.next}]`)));
       return;

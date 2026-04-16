@@ -225,7 +225,7 @@ Update the plugin and refresh the statusLine path in settings. Run after updatin
 <details>
 <summary><strong>Rate limits showing ⚠️</strong></summary>
 
-- API token may be expired - re-login to Claude Code
+- API token may be expired - log in to Claude Code again
 - Network issue - check internet connection
 - API rate limited - wait 60 seconds for cache refresh
 
