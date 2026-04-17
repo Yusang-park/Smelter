@@ -71,6 +71,43 @@ function extractExplicitHarnessCommand(prompt) {
   };
 }
 
+const FIX_PATTERNS = [
+  /\bfix\b/i,
+  /\bcorrect(?:ion)?\b/i,
+  /\bpatch\b/i,
+  /\bresolve\b/i,
+  /\bdirect correction\b/i,
+  /버그|고쳐|수정|해결해|오류|에러/,
+];
+
+const PLAN_PATTERNS = [
+  /\bcheck\b/i,
+  /\binvestigate\b/i,
+  /\binspect\b/i,
+  /\bdiagnose\b/i,
+  /\bverify\b/i,
+  /\blook into\b/i,
+  /\btriage\b/i,
+  /\bdebug\b/i,
+  /\broot cause\b/i,
+  /분석|조사|확인해|살펴봐|진단/,
+];
+
+export function detectNaturalLanguageCommand(prompt) {
+  const text = String(prompt || '').trim();
+  if (!text) return null;
+  const hasFix = FIX_PATTERNS.some((pattern) => pattern.test(text));
+  const hasPlan = PLAN_PATTERNS.some((pattern) => pattern.test(text));
+
+  if (hasFix) {
+    return { name: 'fix', args: '', hint: 'bug', matched: 'local:fix', source: 'magic' };
+  }
+  if (hasPlan) {
+    return { name: 'plan', args: '', hint: null, matched: 'local:plan', source: 'magic' };
+  }
+  return null;
+}
+
 // Command → preset/mode mapping (magic keywords handled by Haiku sub-agent classifier)
 const COMMAND_CONFIG = {
   plan:  { preset: 'plan',  mode: 'normal' },
@@ -255,7 +292,15 @@ async function main() {
     // (1) Explicit slash command takes priority
     let detected = extractExplicitHarnessCommand(prompt);
 
-    // (2) Haiku sub-agent classifier for non-slash prompts
+    // (2) Deterministic natural-language routing for high-confidence prompts
+    if (!detected) {
+      detected = detectNaturalLanguageCommand(prompt);
+      if (detected) {
+        printTag(`Magic Keyword: Local classified command`);
+      }
+    }
+
+    // (3) Haiku sub-agent classifier for remaining non-slash prompts
     if (!detected) {
       const classification = classifyPrompt(prompt, { cwd: directory, sessionId });
       if (classification.intent === 'command' && classification.command) {

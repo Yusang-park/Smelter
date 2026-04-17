@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { detectNaturalLanguageCommand } from './keyword-detector.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KD = join(__dirname, 'keyword-detector.mjs');
@@ -17,6 +18,24 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
     cwd,
     env: { ...process.env, NO_COLOR: '1' },
   });
+}
+
+// Case 0a: investigative wording maps to /plan
+{
+  assert.equal(detectNaturalLanguageCommand('please investigate why routing failed')?.name, 'plan');
+  console.log('  seeder case 0a (investigative wording -> /plan) OK');
+}
+
+// Case 0b: explicit fix wording maps to /fix
+{
+  assert.equal(detectNaturalLanguageCommand('please fix the HUD routing')?.name, 'fix');
+  console.log('  seeder case 0b (explicit fix wording -> /fix) OK');
+}
+
+// Case 0c: mixed check and fix wording prefers /fix
+{
+  assert.equal(detectNaturalLanguageCommand('check and fix the HUD routing')?.name, 'fix');
+  console.log('  seeder case 0c (mixed wording prefers /fix) OK');
 }
 
 // Case 1: /build seeds workflow.json + active-feature + plan.md
@@ -84,10 +103,8 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
   const featuresDir = join(dir, '.smt', 'features');
   const [slug] = readdirSync(featuresDir);
   const wfPath = join(featuresDir, slug, 'state', 'workflow.json');
-  // Simulate progression: write advanced state
   const advanced = { command: 'build', step: 'step-5', retry: 2, signals: { tests_green: false }, version: 7, updated_at: Date.now() };
   writeFileSync(wfPath, JSON.stringify(advanced));
-  // Re-run same prompt
   runKD('/build add dark mode', dir);
   const state = JSON.parse(readFileSync(wfPath, 'utf-8'));
   assert.equal(state.step, 'step-5', 'existing workflow.json not clobbered');
@@ -162,7 +179,6 @@ function runKD(prompt, cwd, sessionId = 'test-sess') {
   const prev = JSON.parse(readFileSync(prevPath, 'utf-8'));
   assert.match(prev.slug, /add-dark-mode/);
   assert.match(prev.new_slug, /add-light-mode/);
-  // Current pointer points to the new feature
   const pointer = JSON.parse(readFileSync(join(dir, '.smt', 'state', 'active-feature.json'), 'utf-8'));
   assert.match(pointer.slug, /add-light-mode/);
   rmSync(dir, { recursive: true, force: true });
