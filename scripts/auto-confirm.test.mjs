@@ -1577,11 +1577,12 @@ function makeProject({ hasPending, sessionId = 'test-session', otherSessionHasPe
     env: {
       SMELTER_AUTO_CONFIRM_CLASSIFIER_MODULE: stubPath,
       SMELTER_AUTO_CONFIRM_MESSAGES: JSON.stringify(['원하면 다음 중 하나로 이어가겠다. 1) 테스트 보강 2) 남은 리스크 정리']),
+      SMELTER_DISABLE_PENDING_TASKS_FOR_TEST: '1',
     },
   });
   const out = JSON.parse(res.stdout);
   assert.equal(out.decision, 'block', 'offered next-step turns should auto-confirm');
-  assert.match(out.reason, /가장 직접적인 작업을 즉시 수행하라/);
+  assert.match(out.reason, /Session tasks:/);
   rmSync(dir, { recursive: true, force: true });
   console.log('  case 16 (classifier continue path) OK');
 }

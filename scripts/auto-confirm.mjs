@@ -86,10 +86,28 @@ export function looksLikeConfirmationQuestion(message) {
     /which approach do you prefer/,
     /what do you prefer/,
     /which option do you want/,
+    /원하면 다음 중 하나로 이어가겠다/,
+    /i can continue with one of/,
     /진행할까요?\?|계속할까요?\?|할까요?\?|맞나요?\?/,
     /proceed\?\s*$|continue\?\s*$|ok\?\s*$/,
   ];
   return patterns.some(p => p.test(tail));
+}
+
+export function looksLikeOfferedNextSteps(message) {
+  if (!message || typeof message !== 'string') return false;
+  const tail = message.slice(-500).toLowerCase();
+  const patterns = [
+    /원하면 다음 중 하나로 이어가겠다/,
+    /다음 중 하나로 이어가겠다/,
+    /i can continue with one of/,
+    /one of the following next steps/,
+  ];
+  return patterns.some(pattern => pattern.test(tail));
+}
+
+export function buildOfferedNextStepsPrompt(lastMessage) {
+  return `[AUTO-CONFIRM] The last response offered concrete next steps. Execute the most direct next step now based on this message: ${lastMessage}`;
 }
 
 export function looksLikeSelfCommitment(message) {
@@ -262,6 +280,7 @@ function looksLikeNoMoreWork(message) {
 
 // Read pending task titles from the current session's active feature only.
 export function readPendingTasks(projectDir, sessionId = '') {
+  if (process.env.SMELTER_DISABLE_PENDING_TASKS_FOR_TEST === '1') return [];
   const tasks = [];
   const featuresDir = join(projectDir, '.smt', 'features');
   if (!existsSync(featuresDir)) return tasks;
@@ -355,6 +374,12 @@ async function main() {
     if (pendingDecision === true) {
       printTag('Auto-Confirm: tasks');
       console.log(JSON.stringify({ decision: 'block', reason: buildPendingTasksPrompt(pending) }));
+      return;
+    }
+
+    if (looksLikeOfferedNextSteps(lastMessage)) {
+      printTag('Auto-Confirm: offered-next-steps');
+      console.log(JSON.stringify({ decision: 'block', reason: buildOfferedNextStepsPrompt(lastMessage) }));
       return;
     }
 
