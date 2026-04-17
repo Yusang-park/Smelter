@@ -121,12 +121,12 @@ function extractPrompt(input) {
   }
 }
 
-function shouldInjectWorkflow(prompt = '') {
+export function shouldInjectWorkflow(prompt = '') {
   const trimmed = String(prompt || '').trim();
   if (!trimmed) return true;
   if (/^\/(plan|build|fix)\b/i.test(trimmed)) return false;
   if (/^\/(cancel|queue|help|model|usage|hud|instinct|evolve|doctor|skill)\b/i.test(trimmed)) return false;
-  return false;
+  return true;
 }
 
 function createSilentOutput() {

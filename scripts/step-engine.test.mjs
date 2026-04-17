@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { parseYaml } from './lib/yaml-parser.mjs';
+import { shouldInjectWorkflow } from './step-injector.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INJECTOR = join(__dirname, 'step-injector.mjs');
@@ -82,6 +83,15 @@ steps:
 // step-injector tests
 // -----------------------------------------------------------------------------
 
+{
+  assert.equal(shouldInjectWorkflow('investigate the routing issue'), true);
+  assert.equal(shouldInjectWorkflow('check and fix the routing issue'), true);
+  assert.equal(shouldInjectWorkflow('/fix investigate routing'), false);
+  assert.equal(shouldInjectWorkflow('/help'), false);
+  console.log('  injector case 0 (workflow gating helper) OK');
+}
+
+
 // Case 1: no active workflow → no-op
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-inj-'));
@@ -106,7 +116,7 @@ steps:
   console.log('  injector case 1b (unrelated slash suppresses stale workflow) OK');
 }
 
-// Case 1c: ordinary unrelated prompt suppresses stale workflow injection
+// Case 1c: ordinary natural-language prompt receives active workflow injection
 {
   const dir = mkdtempSync(join(tmpdir(), 'smt-inj-'));
   makeFeatureDir(dir, 'demo', { command: 'fix', step: 'step-10', retry: 0, updated_at: Date.now() });
@@ -114,9 +124,10 @@ steps:
   const res = runScript(INJECTOR, { cwd: dir, prompt: 'Templates랑 dashboard에서 로딩 flicker 고쳐줘' }, { cwd: dir });
   const out = JSON.parse(res.stdout);
   assert.equal(out.continue, true);
-  assert.ok(!out.hookSpecificOutput, 'unrelated natural-language request must not get stale workflow overlay');
+  assert.match(out.hookSpecificOutput.additionalContext, /Workflow: fix/);
+  assert.match(out.hookSpecificOutput.additionalContext, /step-10/);
   rmSync(dir, { recursive: true, force: true });
-  console.log('  injector case 1c (unrelated prompt suppresses stale workflow) OK');
+  console.log('  injector case 1c (ordinary prompt receives workflow injection) OK');
 }
 
 // Case 2: step-1 prompt injected
