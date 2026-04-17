@@ -288,10 +288,10 @@ async function main() {
   let modelLabel;
   const cache = claudeJson?.additionalModelOptionsCache;
   const codexModeLabel = inCodexMode ? (modelModeState?.model ?? 'Codex') : null;
-  if (windowIsCodex && codexModeLabel) {
-    modelLabel = codexModeLabel;
-  } else if (stdinModelId && /^(gpt-|o\d)/i.test(stdinModelId)) {
+  if (stdinModelId && /^(gpt-|o\d)/i.test(stdinModelId)) {
     modelLabel = resolveModelLabel(stdinModelId, cache) ?? stdinModelLabel ?? stdinModelId;
+  } else if (windowIsCodex && codexModeLabel) {
+    modelLabel = codexModeLabel;
   } else if (stdinModelLabel) {
     modelLabel = stdinModelLabel;
   } else if (cachedModel?.label) {
@@ -356,15 +356,9 @@ async function main() {
     usagePart = `5h ${formatTokens(usedTokens)}${resetSuffix}`;
   }
 
-  // Primary display: "[모델명]  612k / [전체] 95% (5h)"
-  let primary = '';
-  if (modelLabel && usagePart) {
-    primary = `${modelLabel}  ${usagePart}`;
-  } else if (modelLabel) {
-    primary = modelLabel;
-  } else if (usagePart) {
-    primary = usagePart;
-  }
+  // Primary display: usage only. The Claude Code statusline already shows the model name,
+  // so repeating it here creates duplicate labels.
+  let primary = usagePart || '';
 
   // Session + context badges from stdin. Subagents also trigger the statusline with their own
   // (near-zero) context windows, causing ctx% to flicker. Discriminate by context_window_size:
@@ -372,10 +366,11 @@ async function main() {
   const infoBadges = [];
   let ctxWindowSize = null;
   try { ctxWindowSize = JSON.parse(input).context_window?.context_window_size ?? null; } catch {}
-  const effectiveCtxWindowSize =
-    windowIsCodex && ctxWindowSize === 200_000
+  const codexCtxWindowSize =
+    windowIsCodex && ctxWindowSize === 200_000 && /^gpt-5\.4$/i.test(String(stdinModelId ?? ''))
       ? 1_000_000
       : ctxWindowSize;
+  const effectiveCtxWindowSize = codexCtxWindowSize;
   const effectiveCtxUsedPct =
     ctxUsedPct
     ?? (
@@ -383,7 +378,7 @@ async function main() {
         ? (totalInputTokens / effectiveCtxWindowSize) * 100
         : null
     );
-  const isMainSession = effectiveCtxWindowSize === null || effectiveCtxWindowSize > 200_000;
+  const isMainSession = windowIsCodex || effectiveCtxWindowSize === null || effectiveCtxWindowSize > 200_000;
   if (isMainSession && sessionOutputTokens !== null && sessionOutputTokens > 0) {
     infoBadges.push(`${formatTokens(sessionOutputTokens)} out`);
   }

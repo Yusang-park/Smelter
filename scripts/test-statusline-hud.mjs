@@ -115,8 +115,9 @@ try {
   assert.match(runHud(), /ULTRAWORK/, 'expected ULTRAWORK badge when ultrawork mode is active');
   rmSync(join(stateDir, 'ultrawork-state.json'));
 
-  // Test 3: Model label comes from project-local .smt state, not stale legacy .omc state
-  assert.match(runHud(), /Codex gpt-5\.4/, 'expected Codex model label when project model mode is active');
+  // Test 3: HUD should not duplicate the model label already shown by Claude Code,
+  // but stale legacy state still must not leak a Claude label into Codex mode.
+  assert.doesNotMatch(runHud(), /Codex gpt-5\.4/, 'expected Codex model label to stay hidden in HUD');
   assert.doesNotMatch(runHud(), /Sonnet 4\.6/, 'expected stale legacy mode state not to override project codex mode');
 
   // Test 4: Percentage display when rate_limits in stdin
@@ -140,7 +141,7 @@ try {
     context_window: { context_window_size: 200000, total_input_tokens: 250000, total_output_tokens: 50000 },
     model: { id: 'gpt-5.4', display_name: 'gpt-5.4' },
   });
-  assert.match(codexWithLegacyWindow, /Codex gpt-5\.4/, 'expected codex label for gpt-5.4');
+  assert.doesNotMatch(codexWithLegacyWindow, /Codex gpt-5\.4/, 'expected model label to be hidden when HUD already shows model elsewhere');
   assert.match(codexWithLegacyWindow, /50\.0k out/, 'expected codex session output badge to render');
   assert.match(codexWithLegacyWindow, /ctx 25%/, 'expected codex context percent to be computed against 1M');
 
@@ -148,13 +149,22 @@ try {
   assert.match(codexWithLegacyWindow, /5h 2\.2k/, 'expected codex 5h usage instead of claude-family usage');
   assert.doesNotMatch(codexWithLegacyWindow, /5h 1\.1k/, 'expected claude-family 5h usage not to leak into codex window');
 
-  // Test 8: workflow state should appear in HUD output, but task summary should not.
+  // Test 8: non-gpt-5.4 Codex models should still display context badges for 200k windows.
+  const codexMiniWindow = runHud({
+    context_window: { context_window_size: 200000, total_input_tokens: 80000, total_output_tokens: 12000 },
+    model: { id: 'gpt-5.4-mini', display_name: 'gpt-5.4-mini' },
+  });
+  assert.doesNotMatch(codexMiniWindow, /gpt-5\.4-mini/, 'expected model label to be hidden for Codex mini too');
+  assert.match(codexMiniWindow, /12\.0k out/, 'expected codex mini session output badge to render');
+  assert.match(codexMiniWindow, /ctx 40%/, 'expected codex mini context badge to render for 200k windows');
+
+  // Test 9: workflow state should appear in HUD output, but task summary should not.
   writeWorkflowState({ slug: 'fix-login-typo', command: 'qa', step: 'step-10' });
   const withWorkflow = runHud();
   assert.match(withWorkflow, /QA MODE · fix-login-typo · step-10/, 'expected workflow status in HUD');
   assert.doesNotMatch(withWorkflow, /summarize|summary/i, 'expected HUD task summary line to be removed');
 
-  console.log('statusline HUD test passed (8/8)');
+  console.log('statusline HUD test passed (9/9)');
 } finally {
   if (hadExistingMode && existingMode != null) {
     writeFileSync(legacyModelModePath, existingMode);
