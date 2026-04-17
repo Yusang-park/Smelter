@@ -162,12 +162,26 @@ Rules:
 - If ambiguous but the prompt describes broken behavior, errors, or work to do → default to command
 
 Strong fix signals (any of these → command:fix):
-  EN: fix, bug, error, crash, broken, failing, deploy fail, build fail, ELIFECYCLE, exit code, resolve, patch, hotfix, regression, not working
+  EN: fix, correct, correction, patch, resolve, direct correction, bug, error, crash, broken, failing, deploy fail, build fail, ELIFECYCLE, exit code, hotfix, regression, not working
   KO: 버그, 고쳐, 터지, 에러, 수정, 해결해, 안됨, 안돼, 깨짐, 실패, 오류, 장애, 배포실패
   ZH: 修复, 错误, 崩溃, 失败, 坏了, 报错, 部署失败, 不工作
   JA: バグ, 修正, エラー, クラッシュ, 壊れた, 失敗, 動かない, デプロイ失敗
   ES: arreglar, error, fallo, roto, despliegue fallido, no funciona, corregir
   DE: Fehler, kaputt, reparieren, Absturz, fehlgeschlagen, funktioniert nicht, beheben
+
+If a prompt contains explicit repair wording such as "fix" or a direct correction request, route to command:fix immediately, even when the prompt also contains investigative words.
+
+Strong plan signals (any of these → command:plan):
+  EN: plan, design, scope, architect, spec, requirements, breakdown, estimate, check, investigate, inspect, diagnose, verify, look into, triage, debug, root cause
+  KO: 설계, 계획, 기획, 스펙, 요구사항, 분석, 조사, 확인해, 살펴봐, 진단
+  ZH: 计划, 设计, 需求, 规划, 架构, 调查, 检查, 诊断
+  JA: 計画, 設計, 要件, スコープ, 見積もり, 調査, 確認, 診断
+  ES: planificar, diseñar, requisitos, alcance, arquitectura, investigar, revisar, diagnosticar
+  DE: planen, entwerfen, Anforderungen, Umfang, Architektur, untersuchen, prüfen, diagnostizieren
+
+If a prompt is primarily investigative or diagnostic (for example "check", "investigate", or "look into") and does not contain explicit repair wording, route to command:plan.
+
+If a prompt contains both investigative wording and explicit repair wording (for example "check and fix"), explicit repair wording wins and the result must be command:fix.
 
 Strong build signals (any of these → command:build):
   EN: add, create, build, implement, new feature, develop, integrate, migrate, refactor
@@ -176,14 +190,6 @@ Strong build signals (any of these → command:build):
   JA: 追加, 作成, 新機能, 実装, 開発, リファクタ
   ES: agregar, crear, nueva funcionalidad, implementar, desarrollar
   DE: hinzufügen, erstellen, neue Funktion, implementieren, entwickeln
-
-Strong plan signals (any of these → command:plan):
-  EN: plan, design, scope, architect, spec, requirements, breakdown, estimate
-  KO: 설계, 계획, 기획, 스펙, 요구사항, 분석
-  ZH: 计划, 设计, 需求, 规划, 架构
-  JA: 計画, 設計, 要件, スコープ, 見積もり
-  ES: planificar, diseñar, requisitos, alcance, arquitectura
-  DE: planen, entwerfen, Anforderungen, Umfang, Architektur
 
 Branch hints for commands:
 - build + "extend/add to/덧붙여/확장" → branch: "extend"
