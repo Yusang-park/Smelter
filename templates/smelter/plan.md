@@ -39,6 +39,11 @@
 |------|-----------|
 | | |
 
+## Automation Summary Contract
+- Human-readable plan/checklists live in markdown documents.
+- Machine-readable automation state lives in `.smt/features/<slug>/state/summary.json`.
+- Hooks should prefer `summary.json` over scanning large task documents for E2E/test/review gating.
+
 ## Dependencies
 - 
 

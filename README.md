@@ -3,14 +3,19 @@
 </p>
 
 <p align="center">
-  <strong>TDD-first, file-based, multi-agent AI development harness for Claude Code</strong>
+  <strong>Skill-composition workflow engine for Claude Code — TDD-first, file-based, multi-agent.</strong>
 </p>
 
 <p align="center">
-  <a href="#features-at-a-glance">Features</a> &middot;
-  <a href="#workflow-engine">Workflow</a> &middot;
+  <a href="#features">Features</a> &middot;
+  <a href="#commands">Commands</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
-  <a href="#why-smelter">Philosophy</a>
+  <a href="#iron-laws">Iron Laws</a> &middot;
+  <a href="#philosophy">Philosophy</a>
+</p>
+
+<p align="center">
+  <code>v2.3.0</code>
 </p>
 
 ---
@@ -22,221 +27,203 @@ claude plugin marketplace add Yusang-park/Smelter
 claude plugin install smelter@smelter-marketplace
 ```
 
-That's it. Auto-updates on every session start.
+Auto-updates on every session start.
 
 ---
 
-## Features at a Glance
+## TL;DR
 
-| | Feature | What it does |
-|---|---------|-------------|
-| 1 | **10-Step Workflow Engine** | Enforces TDD, E2E testing, and multi-agent review at every stage. No skipping steps. |
-| 2 | **Auto-Confirm (Intelligent)** | Agent reads its own last message + pending tasks, then decides the next action. Not a blind "continue." |
-| 3 | **File-Based Context Survival** | Plans, tasks, and decisions persist on disk. Context compaction and session restarts don't lose state. |
-| 4 | **Project-Scoped Memory** | Every feature gets its own directory with plans, tasks, and decisions. Agents stay focused; nothing falls through the cracks. |
-| 5 | **Triple Verification** | Local agent review + team consensus review (95%) + human sign-off. Three layers before anything ships. |
-| 6 | **Cross-Agent Testing** | Dedicated `tdd-guide`, `code-reviewer`, and `security-reviewer` agents verify independently. Each has a single job. |
-| 7 | **3 Commands + Auto-Routing** | `/build`, `/fix`, `/plan` -- or just talk naturally. A Haiku classifier routes your intent. No commands to memorize. |
-| 8 | **Independent Sub-Agents** | Each task runs in its own agent with fresh context. No cross-contamination between tasks. |
-| 9 | **Never Stops** | Auto-confirm keeps the agent working while tasks remain. Auto-retry handles transient errors (up to 3x). Zero babysitting. |
-| 10 | **Codex Bridge** | Hit your Claude token limit? Switch to OpenAI Codex via OAuth proxy with one flag. `--codex` |
-
-### The 10-Step Workflow
-
-| Step | Name | Gate |
-|------|------|------|
-| 1 | Problem Recognition | Task file created |
-| 2 | Pre Review (Learning) | 95% consensus on approach |
-| 3 | Planning | Executable checkbox tree |
-| -- | **User Interview** | **You approve before implementation begins** |
-| 4 | TDD (Test Design) | Tests exist AND fail (RED) |
-| 5 | Implementation | Tests pass (GREEN) |
-| 6 | Local Agent Review | No CRITICAL/HIGH findings |
-| 7 | Scoped Test | Suite pass + typecheck clean |
-| 8 | E2E Validation | Artifacts saved, assertions pass |
-| 9 | Team Code Review | 3-agent consensus (95%) |
-| 10 | Human Review | You decide: ship, rework, or hold |
-
-### Three Commands
-
-| Command | What it does | Steps |
-|---------|-------------|-------|
-| `/build` | Light planning + full feature development with TDD | 1-10 |
-| `/fix` | Bug fix / small edit (TDD exemptions available) | 4-8, 10 |
-| `/plan` | Turn ideas into executable task files with deep planning | 1-3 |
-
-Or just talk: *"add dark mode"* -> `/build` *"fix the login bug"* -> `/fix` *"plan the onboarding"* -> `/plan`. A Haiku sub-agent classifies your intent and routes automatically.
+- **5 commands**: `/plan`, `/implement`, `/fix`, `/simple-fix`, `/investigate`. Natural-language input is auto-routed — explicit slash commands override.
+- **13 workflow skills** compose into modes (no fixed 10-step pipeline). Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
+- **8 Iron Laws** are runtime-enforced via hooks (`auto-confirm`, `critic-watchdog`), not just prompts.
+- **Multi-Pass Verification**: all 6 review skills run 3 mandatory rounds (omission / contradiction / edge_case) before declaring `pass`.
+- **File-based state**: every task has a single-source `*.state.json` at schema v2.3.0. Agents read files, not memory.
 
 ---
 
-## Why Smelter?
+## Features
 
-Real developers don't just write code. They receive tasks, study the problem, design a plan, write tests, implement, get reviews, verify, and present to a human. **Smelter automates this entire human workflow** -- not just the coding part.
+| # | Feature                       | What it gives you                                                                                  |
+|---|-------------------------------|----------------------------------------------------------------------------------------------------|
+| 1 | Auto-routing mode classifier  | `scripts/mode-classifier.mjs` maps `"버그 고쳐줘"` → `/fix`, `"검증하고 수정해"` → `investigate → fix chain` |
+| 2 | Producer-chain routing        | On fail, the engine routes to the upstream skill that produced the artifact — *never* retries blindly |
+| 3 | Auto-confirm (never-halt)     | Stop hook drops a continuation payload into `.smt/state/auto-confirm-queue.json`; `UserPromptSubmit` consumer injects it on the next turn. Session keeps moving |
+| 4 | Risk auto-tasking             | Risk keywords ("리스크", "TODO", "나중에") in the agent's reply auto-spawn a `sub-tasker` task so concerns never get lost |
+| 5 | Stall Cascade (4 levels)      | `scripts/stall-detector.mjs` emits 6 signals; Level 1 spawns a ReadOnly `debugger`, Level 2 reroutes via producer chain, Level 3 sub-tasks the blocker, Level 4 requests mode upgrade |
+| 6 | Team Agent Patterns           | A (Specialist) • B (95% Consensus: advocate + critic + arbitrator) • C (Parallel Delegation + Aggregator + Conflict-Resolver) • D (Hierarchical Lead + sub-agents) • E (Critic Watchdog) |
+| 7 | Critic Watchdog (2 layers)    | Layer 1: `PostToolUse` hook, 10 formal rules, CRITICAL = exit 2 (block). Layer 2: semantic ReadOnly agent every 5–10 tool calls during `workflow-coding` |
+| 8 | Multi-Pass Verification       | Review skills run `omission → contradiction → edge_case` rounds; `pass` requires all 3; no prior-round leakage |
+| 9 | Surface-based exemption       | CSS / i18n / typo / dialogue surfaces auto-skip TDD; keyword table encoded in each mode           |
+| 10 | File-based single source       | `.smt/features/<slug>/task/<task>.state.json` (schema v2.3.0) is the single source of truth — no in-memory state, no hidden retries |
 
-### 1. The Human Workflow, Automated
+---
 
-```
-PM assigns task -> Study -> Design -> TDD -> Implement -> Verify -> Human Review -> Iterate
-```
+## Commands
 
-Smelter encodes this as a 10-step engine. Every feature goes through the same disciplined process a senior engineering team would follow -- planning, test-first development, multi-agent review, and human sign-off.
+| Command        | Mode          | Entry skill                      | Use when                                                |
+|----------------|---------------|----------------------------------|---------------------------------------------------------|
+| `/plan`        | `plan`        | `workflow-brainstorm` (deep)     | New feature or refactor; planning comes first           |
+| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | Build on existing code; lightweight interview           |
+| `/fix`         | `fix`         | `workflow-investigate`           | Bug / logic repair requiring investigation              |
+| `/simple-fix`  | `simple_fix`  | `workflow-coding`                | Trivial text, CSS, or constant substitution             |
+| `/investigate` | `investigate` | `workflow-investigate`           | Read-only investigation; exit to another mode after     |
 
-### 2. Agents Don't Memorize. Agents Read Files.
-
-LLMs lose everything when the session ends. Smelter solves this with **file-based state** -- plans, tasks, decisions, and progress all live on disk. Goals are pinned to files, task state is tracked explicitly, and contradictions discovered mid-work are reflected back into the documents.
-
-### 3. Fixed-Role Agents, Not One Agent Doing Everything
-
-| Agent | Owns | Does NOT do |
-|-------|------|-------------|
-| `planner` | Planning state, scope, task breakdown | Implementation, final verification |
-| `executor` | Code changes for assigned tasks | Replanning, architecture decisions |
-| `architect` | Architecture review, debug analysis | Implementation, plan creation |
-| `tdd-guide` | Test-first discipline, test strategy | Feature ownership, final approval |
-| `code-reviewer` | Quality/security/maintainability review | Implementation, scope expansion |
-
-### 4. Triple Verification -- Smelter Refines, Not Just Executes
-
-The name "Smelter" is intentional. Raw ore goes in, refined metal comes out:
-
-- **Step 6**: Local agent review -- quality, gaps, edge cases caught immediately
-- **Step 9**: Team code review -- multi-perspective final review (95% consensus required)
-- **Step 10**: Human review -- you decide with evidence (test output, build logs, E2E artifacts)
+Natural-language auto-routing covers Korean + English verbs (`검증`, `분석`, `파악`, `만들어줘`, `리팩토링`, `verify`, `validate`, `implement`, …) and compound intents (`검증하고 수정해` → `investigate → fix`).
 
 ---
 
 ## How It Works
 
-### Workflow Engine: YAML-Defined Step DAG
+### 1. Skill composition over fixed steps
 
-Workflows are defined as YAML files, not hardcoded logic. Each step declares its prompt, gate condition, retry budget, and failure routing:
+Each mode is a **subset of the 13 workflow skills** plus an entry point.
+
+```
+fix mode:
+  investigate → investigate-review → tasker → tasker-review →
+  write-test → coding → agent-review →
+  e2e → e2e-review → team-code-review → human-check
+```
+
+Every skill declares a contract in `skills/workflow-*/SKILL.md`:
 
 ```yaml
-# workflows/build.yaml
-steps:
-  step-4:
-    name: Test Design (TDD)
-    prompt: steps/step-4-tdd.md
-    gate: tests_exist_and_red
-    exempt_if: [css, i18n, typo, dialogue]
-    next: step-5
-
-  step-5:
-    name: Implementation
-    gate: tests_green
-    max_retry: 3
-    on_max_retry: step-2       # 3 failures = approach is wrong
-    next: step-6
+name: workflow-coding
+consumes: *.test.* (RED) OR active_feedback
+produces: src files changed
+default_pattern: A
+default_agent: executor
+supports_patterns: [A, C]
+gate:
+  pre:
+    - tdd_cycle: "test_cycles has action=added_case|modified_case + run_result=fail"
+  post:
+    - src_changed: true
+    - typecheck_clean: true
+    - scoped_tests_pass: true
 ```
 
-Two hooks drive the engine:
-- **`step-injector`** (UserPromptSubmit) -- reads `workflow.json`, loads the current step's prompt, injects it as context
-- **`step-tracker`** (PostToolUse) -- evaluates gate signals, advances or rolls back the workflow
+### 2. Producer-chain routing (no retries)
 
-Adding a new workflow = adding a YAML file. No code changes.
-
-### Fail-Closed Gates
-
-Steps 4-9 have gates that **require explicit signals** to advance. No signal = no advance. The engine waits.
-
-When a gate fails, it doesn't just block -- it routes back to the right step:
-
-| Failure | Routes to |
-|---------|-----------|
-| Tests won't pass after 3 retries | Step 2 (approach is wrong) |
-| Code review finds plan mismatch | Step 3 (replan) |
-| Code review finds bug | Step 5 (fix implementation) |
-| Team review: CRITICAL/HIGH | Step 3 (significant rework) |
-| Team review: LOW | Continue (log as known limitation) |
-
-### Auto-Confirm: Context-Aware, Not Blind
-
-When the agent ends a turn while tasks remain:
-
-1. **Stop hook** captures the agent's last message + pending task list
-2. Payload is queued to disk (session-scoped, atomic write)
-3. On next prompt, **consumer hook** injects the full forwarded context
-4. The main agent (Sonnet/Opus) **reads what it was doing** and decides the next concrete action
-
-This is not "continue working." The agent sees its own prior reasoning and the exact task state. It resumes intelligently.
-
-### File-Based Memory
+When a skill fails, `scripts/route-on-fail.mjs` looks up the producer:
 
 ```
-.smt/
-├── features/
-│   └── <feature-slug>/
-│       ├── task/
-│       │   ├── plan.md            -- goal, scope, acceptance criteria
-│       │   └── <task-name>.md     -- individual task (atomic)
-│       ├── decisions.md           -- architecture decisions
-│       ├── state/
-│       │   └── workflow.json      -- engine state (step, signals, version)
-│       └── artifacts/             -- E2E videos, screenshots, logs
-├── wiki/                          -- project knowledge base
-└── session/                       -- daily session logs
+workflow-coding (tdd_cycle fail) → workflow-write-test
+workflow-coding (scope_mismatch fail) → workflow-tasker
+workflow-team-code-review (CRITICAL) → workflow-tasker
+workflow-team-code-review (MEDIUM)   → workflow-coding
+workflow-e2e-review (file_absent)    → workflow-e2e
+workflow-e2e-review (insufficient_scenario) → workflow-coding
+workflow-human-check (rework) → active_feedback[].target_skill
 ```
 
-Every session reads from disk. Every decision writes to disk. Nothing lives in context alone.
+If the routed target is outside the mode's `allowed_skills`, the engine emits a **mode upgrade** request — user-gated.
 
-### Codex Bridge
+### 3. Queue-drop auto-confirm
 
-Hit your Claude Code token limit? Run the setup script to create a `claude` alias that supports OpenAI Codex models:
+Stop hooks have a 15-second cap. Smelter splits the "never halt" logic:
 
-```bash
-node scripts/plugin-setup.mjs
+- `scripts/auto-confirm.mjs` (Stop) — reads `*.state.json`, runs the decide tree, drops the injection payload into `.smt/state/auto-confirm-queue.json`, emits a `block` decision.
+- `scripts/auto-confirm-consumer.mjs` (UserPromptSubmit) — reads the queue (ignores entries older than 5 min), injects via `additionalContext`, deletes the queue.
+
+The only halt conditions: explicit user stop, `workflow-human-check` awaiting input, mode-upgrade decision, or no active state.
+
+### 4. Team patterns (A–E)
+
+Selected by `workflow-tasker` at plan-time, stored in `state.team_runtime[skill]`:
+
+- **A. Specialist** — 1 skill, 1 agent. Default for most skills.
+- **B. Team Consensus (95%)** — `advocate` + `critic` + `arbitrator` run rounds until agreement ≥ 95%. Default for `workflow-tasker-review` and `workflow-team-code-review`; `workflow-agent-review` uses a Pattern B dual (code-reviewer + security-reviewer → arbitrator).
+- **C. Parallel Delegation** — N agents split by area / file / module, `aggregator` merges at `sync_point`, `conflict-resolver` adjudicates merge failures. Default for `workflow-investigate` (area), `workflow-write-test` (file), `workflow-coding` (module, when split).
+- **D. Hierarchical** — lead agent orchestrates sub-agents. Default for `workflow-tasker` (architect + researcher + executor) and `workflow-brainstorm` deep (planner + product/engineer/design personas).
+- **E. Adversarial Watchdog** — `scripts/critic-watchdog.mjs` (Layer 1, hook) + `agents/critic-watchdog.md` (Layer 2, periodic agent). Always active during `workflow-coding`.
+
+### 5. Multi-Pass Verification (review skills only)
+
+Every review skill runs 3 mandatory rounds:
+
+| Round | Focus          | Asks                                                             |
+|-------|----------------|------------------------------------------------------------------|
+| 1     | omission       | What's missing from the artifact?                                |
+| 2     | contradiction  | What conflicts internally or with upstream?                      |
+| 3     | edge_case      | What corner cases are unaddressed?                               |
+
+Rounds are recorded in `state.team_runtime[skill].rounds[]`. `pass` requires `completed_rounds === 3` and every round `result === 'pass'`. Hook-blocked against premature `pass`.
+
+### 6. Stall Cascade (§11-7)
+
+6 signals: parallel-agent tool-inactive, repeated fail, sync-point wait, tdd-no-green, feedback backlog, state stale.
+
 ```
-
-After setup, running `claude` lets you choose between Claude and Codex models. OAuth authentication flows through a local proxy -- no API key management needed.
+Level 1 debugger (ReadOnly)   — diagnose + propose unblock
+Level 2 producer reroute      — jump upstream
+Level 3 sub-tasker extract    — blocker becomes a new task
+Level 4 mode upgrade          — only user-facing level
+```
 
 ---
 
-## Quick Start
+## Iron Laws
 
-### Install as Claude Code Plugin (Recommended)
+Non-negotiable. Runtime-enforced.
 
-```bash
-claude plugin marketplace add Yusang-park/Smelter
-claude plugin install smelter@smelter-marketplace
-```
+1. **Never halt after failure** — the session keeps moving via producer chain + queue-drop.
+2. **No evasion** — risk keywords in replies auto-spawn sub-tasks; critic-watchdog R08 flags `??`-chain / TODO evasion.
+3. **No skill self-failure** — `events[].declarer` ∈ `{hook, user}`; skill-declared fails are rejected by state schema.
+4. **No retry** — producer-chain routing replaces `max_retry`. Same skill may self-rerun after upstream state changes; not a retry.
+5. **File is truth** — agents read `.state.json`, not in-memory claims.
+6. **Workflow whitelist is user decision** — any `workflow-*` outside the mode's allowed set requires user-gated mode upgrade.
+7. **Independent queues, shared session** — per-task queues; specialist agents assignable.
+8. **Scoped testing** — full regression only at `workflow-human-check`.
 
-Updates are automatic -- Smelter checks on every session start and pulls new commits.
+See `document/workflow.md` §0 for details.
 
-### Install from Source
+---
 
-```bash
-git clone https://github.com/Yusang-park/Smelter.git
-cd Smelter
-npm install && npm run build
-npx tsx bin/cli.ts init
-```
-
-This creates `.smt/` with `features/`, `wiki/`, and `session/` directories. Start working:
+## Project layout
 
 ```
-/build "add dark mode toggle"
-/fix "fix login error message"
-/plan "plan the new onboarding flow"
+agents/                          ← 39 sub-agent definitions (10 core v2.3.0 + 29 specialists)
+commands/                        ← 5 slash-command entry points
+document/                        ← workflow.md (spec), implementation-v2.md (this arch), Introduce.md, index.md
+hooks/hooks.json                 ← Claude Code hook registrations
+modes/                           ← 5 mode JSON files
+scripts/                         ← runtime scripts (auto-confirm, mode-classifier, route-on-fail, stall-detector, critic-watchdog, …)
+skills/                          ← 13 workflow-* skills + utility skills (deep-interview, queue)
+src/                             ← core TypeScript engine
+.smt/                            ← project-local state (features, state, session, wiki)
 ```
 
-## Auto-Update
+---
 
-Smelter checks for updates on every session start. If your local copy is behind origin, it automatically pulls and rebuilds:
+## Philosophy
 
-```
-[Session Start]
-[Smelter v1.1.0]
-[Update: 3 commit(s) behind]
-[Updated: pulled 3 commit(s)]
-```
+> **Agents do not memorize. Agents read files.**
 
-If auto-pull fails (merge conflicts, etc.), you'll see a notice to update manually. No data is ever lost -- only fast-forward pulls are attempted.
+Every plan, task, decision, and event is persisted to `.smt/`. Session start = re-read files. Progress = update files. Memory lives in files, not in the context window.
 
-## Requirements
+> **Automate the actual human developer workflow.**
 
-- Node.js >= 20.0.0
-- Claude Code installed and authenticated
+Receive work → investigate → plan → TDD → implement → review (self + team) → verify (E2E) → human-check → deploy. Smelter models this as a skill graph; Claude Code executes it.
+
+> **User-driven, not autonomous.**
+
+Mode upgrade, human-check verdict, and mode transitions are gated by the user. Everything else keeps moving.
+
+---
+
+## Status
+
+- Version: `2.3.0`
+- Canonical spec: [`document/workflow.md`](document/workflow.md)
+- Implementation reference: [`document/implementation-v2.md`](document/implementation-v2.md)
+- Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)
+- Test suites: `scripts/auto-confirm.test.mjs` (51 cases), `scripts/mode-classifier.test.mjs` (15 cases)
+
+Tested on macOS 14+ with Node 20+. Plugin-scope installs via `claude plugin install`.
+
+---
 
 ## License
 
-Private
+Private. See `plugin.json` for metadata.

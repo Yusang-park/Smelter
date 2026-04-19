@@ -1,16 +1,16 @@
 # Smelter — Agent Instructions
 
-This is the **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
+This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 1.0.0
+**Version:** 2.3.0
 
 ## Core Philosophy
 
 **"Agents do not memorize. Agents read files."**
 
 - All plans, tasks, decisions → written to `.smt/` files
-- Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md`
-- Progress tracked by updating `features/<slug>/task/{task-name}.md`
+- Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md` + `*.state.json`
+- Progress tracked by updating `features/<slug>/task/{task-name}.md` and `.state.json`
 - Memory lives in files, not in context
 
 ## TDD is Mandatory
@@ -23,48 +23,63 @@ RULE 4: E2E tests required for all interface-changing work (UI, CLI, API, hooks,
 RULE 5: NEVER mark a task complete without passing tests
 ```
 
-Exemption for `/fix` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD (see `document/workflow.md` Step 4).
+Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD. See `document/workflow.md` §7-4.
 
 ## Execution Model
 
-### Commands (3)
+### Commands (5)
 
-| Command | Use | Step Range | E2E |
-|---------|-----|------------|-----|
-| `/plan` | Deep interview and planning-only mode. All state lives in `.smt/features/<slug>/`. | 1–3 | — |
-| `/build` | Full development workflow on a prompt. "extend" magic keyword skips Step 2. | 1–10 | surface-based (required for interface changes) |
-| `/fix` | Bug fixes and simple UI/text/dialogue edits. TDD exemption per surface. | 4–10 | surface-based |
+| Command | Mode | Entry skill | Use |
+|---------|------|-------------|-----|
+| `/plan` | `plan` | `workflow-brainstorm` (deep) | New features / refactors; planning first. |
+| `/implement` | `implement` | `workflow-brainstorm` (light) | Build on existing code; lightweight. |
+| `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. |
+| `/simple-fix` | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution. |
+| `/investigate` | `investigate` | `workflow-investigate` | Investigation only. |
 
-The planning state is the source of truth. It discovers `features/` directories, then reads each `features/<slug>/task/*.md` to select pending tasks, and keeps working until the selected task set is complete or blocked.
+The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language input; explicit slash commands override the classifier.
 
 ### Magic Keywords (natural-language entry)
 
-`scripts/keyword-detector.mjs` maps natural-language phrases to the same commands when no explicit slash is present. Priority: explicit slash > magic keyword.
-
-| Keyword (en/ko) | Command | Branch hint |
-|-----------------|---------|-------------|
-| `plan`, `deep interview`, `설계해줘`, `계획부터` | `/plan` | — |
-| `new feature`, `새 기능`, `design first` | `/build` | `new-feature` |
-| `extend`, `add to`, `덧붙여`, `확장해줘` | `/build` | `extend` (skip Step 2) |
-| `fix`, `bug`, `버그`, `고쳐` | `/fix` | `bug` (E2E forced on) |
-| `style`, `typo`, `텍스트`, `색상`, `i18n`, `문구` | `/fix` | `style` (TDD exemption candidate) |
-| `cancel`, `stop` | `/cancel` | — |
+| Keyword (en / ko) | Routes to | Branch hint |
+|-------------------|-----------|-------------|
+| "design X", "plan Y", "refactor", "설계해줘", "계획부터" | `/plan` | — |
+| "build X", "add X", "implement X", "extend", "덧붙여", "확장해줘" | `/implement` | `extend` skips brainstorm |
+| "fix", "bug", "error", "버그", "고쳐" | `/fix` | `bug` forces E2E on interface surface |
+| "text change", "CSS", "rename", "typo", "i18n", "텍스트", "색상" | `/simple-fix` | TDD exemption auto-applied |
+| "analyze", "investigate", "how does X work", "파악해", "분석해" | `/investigate` | — |
+| `cancel`, `stop` | `/cancel` | hard stop |
 
 ### Workflow examples
 
 ```
-/plan "new onboarding flow"            → planning state + .smt/ state
-/build "add dark mode toggle"          → full 10-step workflow
-/build "extend the existing auth flow" → Step 2 skipped via magic keyword
-/fix "fix login form error text"       → Step 4-10 with TDD exemption
+/plan "new onboarding flow"          → plan mode; brainstorm-deep → investigate → tasker
+/implement "add dark mode toggle"    → implement mode; brainstorm-light → full pipeline
+/implement "extend the auth flow"    → magic 'extend' skips brainstorm
+/fix "login form error text"         → fix mode; investigate → tasker → write-test → coding
+/simple-fix "rename button label"    → simple_fix mode; coding → e2e → human-check
+/investigate "how does billing work" → investigate only; exits to /fix or /plan
 ```
 
 ### Auto-Confirm (global Stop hook)
 
-`scripts/auto-confirm.mjs` runs on every Stop event. If pending tasks remain in `.smt/`, it forwards the main agent's last response to a sub-agent which returns the next action — the main session then continues without waiting for the human.
+`scripts/auto-confirm.mjs` runs on every Stop event. It drops the main agent's last response + pending tasks into `.smt/state/auto-confirm-queue.json`; `scripts/auto-confirm-consumer.mjs` injects the queued payload on the next UserPromptSubmit. The session never waits on the human for routine continuations.
 
 - Gate: `~/.smt/config.json` → `{ "autoConfirm": true }` (default on)
 - Respects context-limit and user-abort stops (never blocks those)
+
+### Iron Laws (8)
+
+Summary. Full detail in `document/workflow.md` §0.
+
+1. Never stop after failure — only user stop ends the session.
+2. No evasion — a fail must be resolved, not reclassified as "known limit".
+3. No self-failure declaration — a skill cannot output "can't do it".
+4. No retry — producer-chain routing, not blind re-runs.
+5. File is truth — postcondition files determine completion, not agent claims.
+6. Workflow whitelist is user decision — mode upgrades require explicit user consent.
+7. Independent queue, shared session, specialist assignment.
+8. Scoped testing — only changed-surface tests run before `workflow-human-check`.
 
 ### Transient-Error Auto-Retry
 
@@ -72,15 +87,27 @@ The planning state is the source of truth. It discovers `features/` directories,
 
 ## Available Agents
 
+### v2 specialist agents (workflow support)
+
+| Agent | Purpose |
+|-------|---------|
+| `aggregator` | Merge Pattern C parallel outputs into a single artifact |
+| `conflict-resolver` | Adjudicate aggregator merge failures (§12-7) |
+| `critic-watchdog` | Real-time Iron Law enforcement during coding (§12-8) |
+| `debugger` | Stall diagnostician at Cascade Level 1 (§11-7) |
+| `advocate` / `critic` / `arbitrator` | Pattern B 95% consensus roles |
+
+### General-purpose agents
+
 | Agent | Purpose | When to Use |
 |-------|---------|-------------|
 | `executor` | Code implementation | Standard features, refactoring |
 | `executor-low` | Simple fix / lookup | Small edits, single-file changes |
 | `executor-high` | Complex refactoring | Large multi-file tasks |
-| `architect` | Architecture & debug advice | Architectural decisions |
+| `architect` | Architecture & debug advice | Architectural decisions, Pattern D lead |
 | `architect-low` | Quick analysis | Fast code questions |
 | `explore` | File/code search | Finding files, patterns |
-| `explore-high` | Deep codebase search | Complex architectural search |
+| `explore-medium` / `explore-high` | Deeper search | Complex architectural search |
 | `tdd-guide` | TDD enforcement | New features, bug fixes |
 | `qa-tester` | E2E testing | Critical user flows |
 | `designer` | UI/frontend | Component and page work |
@@ -89,7 +116,6 @@ The planning state is the source of truth. It discovers `features/` directories,
 | `build-fixer` | Fix build/type errors | When build fails |
 | `git-master` | Git operations | Commits, rebasing, history |
 | `planner` | Strategic planning | Complex features |
-| `critic` | Plan review | Before executing plans |
 | `analyst` | Requirements analysis | Early-stage feature scoping |
 | `researcher` | External documentation | Library/API research |
 | `scientist` | Data analysis | Data and ML tasks |
@@ -107,19 +133,25 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     ├── features/
     │   └── <feature-slug>/
     │       ├── task/
-    │       │   ├── plan.md  ← feature goal, scope, acceptance criteria
-    │       │   └── <task-name>.md ← individual task (atomic, agent-readable)
-    │       └── decisions.md      ← architecture decisions for this feature
-    ├── wiki/                     ← project knowledge base
-    └── session/                  ← session logs
+    │       │   ├── plan.md                  ← feature goal, scope, acceptance criteria
+    │       │   ├── <task-name>.md           ← human-readable task record
+    │       │   └── <task-name>.state.json   ← v2.3.0 machine state
+    │       ├── decisions.md                  ← architecture decisions
+    │       └── artifacts/                    ← e2e video, screenshots, logs
+    ├── archive/                              ← archived legacy features
+    ├── state/                                ← global session state (auto-confirm queue, active_task)
+    ├── wiki/                                 ← project knowledge base
+    └── session/                              ← session logs (YYYY-MM-DD.md)
 ```
 
+`task/*.md` are human-readable. `task/*.state.json` (v2.3.0 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
+
 **Protocol:**
-1. Session start → Read `features/*/task/plan.md` + relevant `features/*/task/*.md`
-2. Before coding → verify task file exists at `features/<slug>/task/<task-name>.md`
-3. Task complete → update `features/<slug>/task/<task-name>.md`
-4. New decision → append to `features/<slug>/decisions.md`
-5. Session end → append to `session/YYYY-MM-DD.md`
+1. Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md` and `*.state.json`.
+2. Before coding → verify task file and state.json exist at `features/<slug>/task/<task-name>.{md,state.json}`.
+3. Task complete → update `features/<slug>/task/<task-name>.md` + `.state.json`.
+4. New decision → append to `features/<slug>/decisions.md`.
+5. Session end → append to `session/YYYY-MM-DD.md`.
 
 ## Completion Rules
 
@@ -127,10 +159,12 @@ Before marking ANY task complete:
 - [ ] Unit tests written AND passing
 - [ ] Integration tests passing (if applicable)
 - [ ] E2E tests passing (if the selected tasks changed any interface: UI, CLI, API, hook, or script)
-- [ ] `features/<slug>/task/<task-name>.md` updated
-- [ ] No TypeScript errors (`tsc --noEmit`)
+- [ ] Multi-Pass Verification: all 3 rounds passed for each review skill (§9-3)
+- [ ] `features/<slug>/task/<task-name>.md` + `.state.json` updated
+- [ ] No TypeScript errors (`tsc --noEmit`) scoped to changed surface
+- [ ] `workflow-human-check` approved
 
-**If ANY unchecked → CONTINUE WORKING.**
+**If ANY unchecked → CONTINUE WORKING.** (Iron Law #1)
 
 ## Security Guidelines
 
@@ -154,6 +188,8 @@ If a security issue is found: STOP → `security-reviewer` → fix CRITICAL issu
 
 **Input validation:** Validate all user input at system boundaries. Fail fast with clear messages.
 
+**English-only source:** All code, comments, log messages, and documentation in English. Korean is permitted ONLY as data for input-pattern recognition (mode-classifier regex, keyword-detector patterns, RISK_KEYWORDS, magic_keyword keys).
+
 ## Testing Requirements
 
 Minimum coverage: 80%
@@ -161,8 +197,29 @@ Minimum coverage: 80%
 1. **Unit tests** — Individual functions, utilities, components
 2. **Integration tests** — API endpoints, database operations
 3. **E2E tests** — Test through the real interface (UI→Playwright, CLI→subprocess, API→real server, hook→stdin/stdout pipe)
+4. **Multi-Pass Verification** — All 6 review skills run 3 rounds (omission / contradiction / edge case) before declaring pass (§9-3)
 
 TDD workflow: write test first (RED) → minimal implementation (GREEN) → refactor → verify 80%+ coverage.
+
+## Code Navigation (Serena MCP)
+
+Smelter wires a Serena MCP server via `.mcp.json` (project scope) for LSP-based symbol navigation. **Prefer symbol-level tools over full-file `Read` when the target is a specific symbol.**
+
+| Task | Use |
+|------|-----|
+| Locate function / class / method | `mcp__serena__find_symbol` |
+| Pre-edit file outline | `mcp__serena__get_symbols_overview` |
+| Cross-file callers / references | `mcp__serena__find_referencing_symbols` |
+| Replace symbol body / insert around symbol | `mcp__serena__replace_symbol_body`, `mcp__serena__insert_after_symbol` |
+| Broad full-file inspection | fall back to `Read` |
+
+Token budget: symbol-level reads typically cut 70-95 % vs. whole-file `Read`. LSP cross-file resolution is semantically accurate (unlike Grep-based approximation).
+
+Runtime: `uv` + `serena-agent` (Python 3.13). Setup: `brew install uv && uv tool install -p 3.13 serena-agent@latest --prerelease=allow && serena init`. MCP registered via `claude mcp add serena -s project -- serena start-mcp-server --context claude-code --project "$(pwd)"`.
+
+## Documentation Sync
+
+On every code update, also update `document/workflow.md` and `document/implementation.md` to reflect the change. Code and these two documents must stay in sync — no code-only commits.
 
 ## Git Workflow
 
@@ -173,15 +230,17 @@ Commit format: `<type>: <description>`. Types: feat, fix, refactor, docs, test, 
 ```
 src/             — Core TypeScript engine (types, engine, adapters, runners, rules)
 bin/             — CLI entry point (smelter command)
-agents/          — Specialized subagent definitions
-skills/          — Reusable workflow skill prompts
-commands/        — Slash command definitions (plan.md, build.md, fix.md)
-hooks/           — hooks.json trigger definitions
-scripts/         — Node.js hook scripts (keyword-detector, auto-confirm, tool-retry, session-end, ...)
-presets/         — Execution preset configs (plan, build, fix)
-workflows/       — YAML DAG workflow definitions
+agents/          — Specialized subagent definitions (incl. aggregator, conflict-resolver, critic-watchdog, debugger)
+skills/          — workflow-* skills (13) + utility skills
+modes/           — Mode definitions (5 JSON files)
+commands/        — Slash command entry points (plan, simple-fix, fix, investigate, implement)
+hooks/           — hooks.json trigger registration
+scripts/         — Node.js hook scripts (state-schema, mode-classifier, route-on-fail, auto-confirm, critic-watchdog, stall-detector, verification-rounds, ...)
+templates/       — Verification prompt templates + scaffolds
+.mcp.json        — Project-scope MCP servers (Serena for symbol navigation)
+.claudeignore    — Context auto-load suppression (sessions, backups, vendored dirs)
 rules-lib/       — Language-specific coding rules
-document/        — Workflow spec and documentation
+document/        — Workflow spec, implementation status, philosophy
 ```
 
 ## Visibility — Yellow Tags
@@ -190,22 +249,22 @@ Every hook prints a short ANSI-yellow bracketed tag to stderr so you can see wha
 
 | Tag | Source |
 |-----|--------|
-| `[Command: /<name>]` / `[Magic Keyword: <kw> → /<cmd>]` | keyword-detector |
+| `[Command: /<name>]` / `[Magic Keyword: <kw> → /<cmd>]` | keyword-detector / mode-classifier |
 | `[Inject: <skill>]` | skill-injector |
 | `[TDD Gate]` / `[Security Gate]` | pre-tool-enforcer |
 | `[Post Verify]` | post-tool-verifier |
 | `[Auto-Retry: <reason>]` | tool-retry |
 | `[Auto-Confirm]` | auto-confirm |
 | `[Run E2E]` | stop-e2e |
-| `[PLAN MODE]` | keyword-detector → /plan |
 | `[Doc Sync Check]` | session-end |
 | `[Session Start]` | session-start-smt |
 | `[Permission]` | permission-handler |
 | `[Pre-Compact]` | pre-compact |
 | `[Agent Check]` | sub-agent review injection |
-| `[BUILD MODE]` / `[FIX MODE]` / `[PLAN MODE]` | keyword-detector |
-| `[STEP TITLE: <mode> · Step N · <name>]` | step-injector / step-tracker |
 | `[Inject: rules-lib/<lang>]` | rule-injector |
+| `[Stall Cascade: L<n>]` | stall-detector |
+| `[Critic-Watchdog: rule <n>]` | critic-watchdog |
+| `[Verify: round <n> <focus>]` | verification-rounds |
 
 ### Rules Injection
 
@@ -222,10 +281,13 @@ Sessions are observed automatically. Patterns become instincts:
 
 | Path | Purpose |
 |------|---------|
-| `{project}/.smt/` | File-based memory (features/, wiki/, session/) |
-| `{project}/.smt/features/<slug>/task/` | Individual task files per feature |
+| `{project}/.smt/` | File-based memory (features/, wiki/, session/, state/) |
+| `{project}/.smt/features/<slug>/task/` | Individual task files per feature (md + state.json) |
 | `{project}/.smt/features/<slug>/decisions.md` | Architecture decisions per feature |
-| `~/.smt/config.json` | Global `autoConfirm` toggle |
+| `{project}/.smt/features/<slug>/artifacts/` | e2e video, screenshots, logs |
+| `{project}/.smt/state/` | auto-confirm-queue, active_task pointer |
+| `{project}/.smt/archive/` | Archived legacy features |
+| `~/.smt/config.json` | Global `autoConfirm`, `subTaskerOnRisk` toggles |
 | `~/.claude/homunculus/` | ECC instinct data |
 
 ## Cancel
@@ -233,15 +295,3 @@ Sessions are observed automatically. Patterns become instincts:
 - `/cancel [hard]` — hard stop
 - `/queue <intent>` — finish current work then redirect
 - Disable auto-confirm: set `autoConfirm: false` in `~/.smt/config.json`
-
----
-
-## Appendix — Internal preset names
-
-Users interact via commands only. Preset names exist for implementation reference:
-
-| Preset | Steps | E2E | Tests | Notes |
-|--------|-------|-----|-------|-------|
-| `plan` | 1–3 | — | 0 | Planning state only |
-| `build` | 1–10 | required | 10+ | Full workflow |
-| `fix` | 4–10 | surface-based | 5+ | Narrow exec, TDD exemption applies |

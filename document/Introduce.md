@@ -1,105 +1,116 @@
-### 1. 인간 워크플로우 그대로 (11-Step Automation)
+---
+title: Smelter — Philosophy & Direction
+type: canonical
+tags: [smelter, philosophy, workflow, skill-composition]
+updated: 2026-04-20
+---
 
-| Smelter                                          |
-| ------------------------------------------------ |
-| PM 업무 수령 → 학습 → 설계 → TDD → 구현 → 검증 → 휴먼 리뷰 -> 반복 |
-| 10단계 체계적 워크플로우                                   |
-| TDD + E2E + 교차 에이전트 리뷰                           |
+# Smelter — Philosophy & Direction
+
+> "Automate the actual human developer workflow."
+
+Smelter is not a Claude Code configuration layer. It is a **workflow engine** that models the real team software development process — receive work from PM, investigate, plan, TDD, implement, verify, review, deploy — and orchestrates Claude Code to execute it.
 
 ---
 
-### 2. LLM Wiki를 활용한 파일 기반 Spec / Task 관리
+## 1. Skill-composition
 
-> **Agents do not memorize. Agents read files.**
+Smelter composes atomic **workflow skills** (`workflow-*`) into modes:
 
-smelter는 **현재 제품 작업의 spec과 task 상태를 파일로 유지하면서**, 단계적 workflow를 따라 누락된 작업이 없도록 관리한다. 동시에 작업의 흐름을 위키처럼 누적 관리하며, 문서를 기반으로 작업의 검증을 지속한다.
+| Mode | Entry skill | Use |
+|------|-------------|-----|
+| `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution |
+| `fix` | `workflow-investigate` | Bug / logic repair |
+| `investigate` | `workflow-investigate` | Investigation only |
+| `plan` | `workflow-brainstorm` (deep) | New feature / refactor, planning first |
+| `implement` | `workflow-brainstorm` (light) | Lightweight build on existing code |
 
-- **Plan / Tasks / PRD**: 현재 작업의 spec과 실행 상태
-- **Schema**: AGENT.md (CLAUDE.md)
+Each skill declares a contract (`consumes`, `produces`, `gate`). Failures route via **producer chain** — no retries, no evasion, no self-failure. See `document/workflow.md` §5.
 
+---
 
+## 2. Agents do not memorize — agents read files
 
-planning state의 기본 구조:
+All plans, decisions, and execution state live on disk under `.smt/`:
 
 ```
-.smelter/
+.smt/
 ├── features/
-│   └── <slug>/
+│   └── <feature-slug>/
 │       ├── task/
-│       │   ├── plan.md     ← feature 목표, 범위, acceptance criteria
-│       │   └── <task_slug>.md   ← 개별 task (atomic, agent-readable)
-│       └── decisions.md         ← 이 작업의 아키텍처 결정 기록
-├── wiki/                        ← 프로젝트 지식 베이스
-└── session/                     ← 세션 로그
+│       │   ├── plan.md                   ← feature goal, scope, acceptance criteria
+│       │   ├── <task-name>.md            ← human-readable task record
+│       │   └── <task-name>.state.json    ← machine state (v2.3.0 schema)
+│       ├── decisions.md
+│       └── artifacts/                    ← e2e video, screenshots, logs
+└── state/                                ← global session state
 ```
 
-이 패턴의 결과:
-- 현재 목표와 범위가 파일에 고정됨
-- 실행할 task와 상태가 명확히 추적됨
-- 계획 수정과 진행 상황이 누적 기록됨
-- 관련 문서 간 교차 참조를 유지할 수 있음
-- 작업의 검증 여부를 정확하게 확인 할 수 있음
-- **작업 중 드러난 변경 사항이나 모순을 문서에 반영할 수 있음**
+Consequences:
+- Current goal and scope are pinned to files.
+- Pending tasks and their status are explicitly tracked.
+- Plan revisions accumulate, not overwrite.
+- Cross-references between documents are preserved.
+- Verification evidence is file-backed, not agent-claimed.
 
 ---
 
-### 3. 학습 시스템 (ECC continuous-learning-v2)
+## 3. Fixed-role agent structure
 
-> **ECC(everything-claude-code)의 instinct 학습 시스템 채택.**
+| Agent | Primary role | Does NOT do |
+|-------|--------------|-------------|
+| `planner` | Planning state, scope, acceptance criteria, task breakdown | Implementation, final verification |
+| `executor` | Concrete code change for an assigned task | Re-planning, architectural decisions, final approval |
+| `architect` | Architecture review, debugging analysis, implementation verification | Implementation, plan generation |
+| `tdd-guide` | Test-first workflow, RED/GREEN discipline | Feature ownership, final feature approval |
+| `code-reviewer` | Independent review for quality, security, maintainability | Implementation, scope expansion |
+| `security-reviewer` | Vulnerability / permission / data-exposure review | Implementation |
+| `qa-tester` | E2E execution, artifact capture | Implementation |
+| `aggregator` | Pattern C parallel-result merging | Decision-making, conflict resolution |
+| `conflict-resolver` | Adjudicates aggregator merge failures | Initial authoring |
+| `critic-watchdog` | Real-time Iron Law rule enforcement | Anything beyond read-only observation |
+| `debugger` | Stall diagnosis (Cascade L1) | Write actions |
 
-일반 LLM은 세션이 끝나면 모든 패턴을 잊는다. smelter는 **관찰 → 패턴 인식 → instinct 생성 → 영구화** 사이클로 실제로 학습한다:
-
-```
-도구 호출
-   ↓
-observe.sh → JSONL 기록 (PreToolUse/PostToolUse)
-   ↓
-20개 관찰 누적 → Haiku가 패턴 분석
-   ↓
-confidence 0.3~0.9 instinct YAML 생성
-   ↓
-/evolve → skill/command/agent로 영구화
-```
-
-| 명령 | 역할 |
-|------|------|
-| `/instinct-status` | 학습된 패턴 조회 |
-| `/evolve` | instinct → skill/command 진화 |
-
-저장 경로: `~/.claude/homunculus/projects/{git-hash}/`
+Each agent has a clear primary role and hands off only when necessary.
 
 ---
 
-### 4. 역할 고정 구조 (Fixed-Role Structure)
+## 4. Multi-layer verification
 
-smelter는 역할 고정 방식으로 동작한다:
+Smelter does not accept "execute then done". It re-smelts the output through multiple independent verifications:
 
-| 에이전트 | 주 역할 | 맡지 않는 책임 |
-|------|---------|--------------|
-| `planner` | planning state, 범위, acceptance criteria, task breakdown | 구현, 최종 검증 |
-| `executor` | 할당된 task의 구체적인 코드 변경 | 재계획, 아키텍처 결정, 최종 승인 |
-| `architect` | 아키텍처 리뷰, 디버깅 분석, 구현 검증 | 구현, 계획 생성 |
-| `tdd-guide` | test-first workflow, 테스트 전략, RED/GREEN discipline | 기능 소유권, 최종 기능 승인 |
-| `code-reviewer` | 품질/보안/유지보수성에 대한 독립 리뷰 | 구현, 범위 확장 |
-
-각 에이전트는 주 역할이 분명하며, 필요할 때만 서로 handoff한다.
+- **Multi-Pass Verification (§9-3)**: every review skill runs 3 rounds — omission / contradiction / edge case — before declaring pass.
+- **Pattern B Dual Adversarial (agent-review)**: `code-reviewer` + `security-reviewer` run in parallel; `arbitrator` merges.
+- **Pattern B 95% Consensus (team-code-review)**: advocate / critic / arbitrator iterate to consensus.
+- **Critic Watchdog (§12-8)**: 10-rule hook layer continuously enforces Iron Laws during implementation.
+- **Human Check (§10)**: final user gate with Video / Log / Diff report.
 
 ---
 
-### 6. 다중 검증 구조
+## 5. Iron Laws (8)
 
-smelter는 단순 "실행 후 완료"가 아니라, 최소 3번 이상의 검증을 거쳐 완벽하게 결과물을 '재련'한다.
+See `document/workflow.md` §0. The eight non-negotiables:
 
-```
-Step 6: 3중 에이전트 리뷰
-  → 구현 직후 품질, 누락, 엣지 케이스 점검
+1. Never stop after failure — only user stop ends the session.
+2. No evasion — a fail must be resolved, not reclassified as "known limit".
+3. No self-failure declaration — a skill cannot output "can't do it".
+4. No retry — producer-chain routing, not blind re-runs.
+5. File is truth — postcondition files determine completion, not agent claims.
+6. Workflow whitelist is user decision — mode upgrades require explicit user consent.
+7. Independent queue, shared session, specialist assignment — task queues never interleave; session context may be shared across tasks.
+8. Scoped testing — only changed-surface tests run before `workflow-human-check`.
 
-Step 9: 팀 에이전트 리뷰
-  → 여러 관점의 에이전트들로 파이널 리뷰
+---
 
-Step 10: 휴먼 리뷰
-  → Video, Log 등을 기반으로 휴먼 리뷰
-```
+## 6. Entry points
 
------------------
+| User input | Mode classifier routes to |
+|------------|----------------------------|
+| "text fix", "CSS", "rename", "typo", "translation" | `simple_fix` |
+| "bug", "error", "not working", "broken" | `fix` |
+| "analyze", "investigate", "how does X work" | `investigate` |
+| "design", "plan", "refactor", "new feature" | `plan` |
+| "build", "add", "implement", "extend" | `implement` |
+| Ambiguous | `fix` (safe default) |
 
+Explicit slash commands (`/simple-fix`, `/fix`, `/investigate`, `/plan`, `/implement`) override the classifier.

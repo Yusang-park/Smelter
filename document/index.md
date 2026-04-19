@@ -1,53 +1,64 @@
 ---
-title: smelter — Claude Code Agent CLI
+title: Smelter — Claude Code Workflow Engine
 type: index
-tags: [smelter, harness, omc, cli, agent]
-created: 2026-04-11
-updated: 2026-04-13
+tags: [smelter, harness, workflow, v2.3.0]
+updated: 2026-04-20
 ---
 
+# Smelter
 
-# ⚙️ smelter
+> **Claude Code workflow engine.** Located at `/Users/yusang/Smelter/`.
 
-> **Claude Code 기반 Agent CLI 설정 도구.** `/Users/yusang/smelter/`
+> **Principle: the wiki is the single source of truth.**
+> This document set is the authoritative specification for Smelter's skills, agents, modes, and file layout.
+> Any entry removed or modified here must also be changed in the codebase. Items that exist only in code but not in the wiki are considered incomplete.
 
-> 📌 **원칙: 위키 = 유일한 진실의 원천 (Source of Truth)**
-> 이 문서가 smelter의 스킬·에이전트·모드·파일 구성에 대한 **최종 기준**이다.
-> 위키에서 제거/수정된 항목은 항상 코드베이스에서도 물리적으로 변경해야 하며, 코드에만 존재하고 위키에 없는 항목은 완료되지 않은 것으로 간주한다. 아래의 페이지들도 반드시 함께 수정되어야한다.
+## Canonical documents
 
-## 구현
-[[implementation]] - 전체 구현에 대한 상태 및 흐름
+- [[workflow]] — v2.3.0 specification: modes, skills, routing, verification, teams, hooks.
+- [[implementation]] — implementation status tracker (what is built, what ships next).
+- [[Introduce]] — philosophy, direction, and the eight Iron Laws.
 
-## 사용자 관점의 워크플로우
-[[workflow]] - 이해를 위해 정리. 해둔 문서
+## 🎯 What Smelter is
 
-## 철학
-[[Introduce]] - 하네스의 원칙 및 지향을 담음
+> "Automate the actual human developer workflow."
 
+Smelter is a workflow engine that orchestrates Claude Code through the real team software development process: PM intake → investigation → planning → TDD → implementation → verification → team review → human approval → deploy.
 
+## Current architecture (v2.3.0)
 
----
+| Item | Current state |
+|------|---------------|
+| Form | Claude Code plugin layer (hooks + scripts + commands + skills) |
+| Configuration | File-based task tracking at `.smt/features/<slug>/task/` |
+| Model routing | Per-agent explicit model selection (haiku / sonnet / opus) |
+| Verification | TDD + scoped-surface E2E + Multi-Pass Verification (3 rounds) |
+| Task state | `.smt/` (plan, tasks, state.json, sessions, wiki) |
+| Entry points | Magic keyword auto-routing OR explicit slash command |
+| Commands (5) | `/plan`, `/implement`, `/fix`, `/simple-fix`, `/investigate` |
+| Workflow skills (13) | `workflow-*` prefix, composable per mode |
+| Execution guarantee | Iron Law #1 — never stops until user says stop |
 
-## 🎯 소개 — smelter란 무엇인가
+## Directory layout
 
-> **"인간 개발자의 워크플로우를 그대로 자동화한다."**
+```
+Smelter/
+├── agents/               ← specialized subagent definitions
+├── skills/               ← workflow-* + utility skills
+├── modes/                ← mode definitions (5 JSON files)
+├── commands/             ← slash command entry points (5 md files)
+├── hooks/                ← hooks.json trigger registration
+├── scripts/              ← Node.js hook scripts (state, routing, verification, etc.)
+├── templates/            ← verification prompt templates + scaffolds
+├── rules-lib/            ← language-specific coding rules (auto-injected)
+├── document/             ← canonical workflow / implementation / philosophy docs
+├── src/                  ← Core TypeScript engine
+└── bin/                  ← smelter CLI entry
+```
 
-smelter는 단순한 Claude Code 설정이 아니다. PM에게 업무를 받고, 조사하고, 설계하고, TDD로 개발하고, 검증하고, 리뷰하고, 배포하는 **실제 팀 개발 프로세스를 AI로 자동화하는 워크플로우 엔진**이다.
+## Where to start
 
----
-
-## 현재 구조
-
-| 항목       | 현재 기준                                           |
-| -------- | ----------------------------------------------- |
-| 형태       | Claude Code 설정 레이어 (hooks + scripts + commands) |
-| 설정 방식    | 파일 기반 작업 추적                                     |
-| 모델 라우팅   | 에이전트 테이블로 명시적 모델 선택 (haiku/sonnet/opus)         |
-| 검증 방식    | TDD 우선 + selected task의 change surface 기반 검증    |
-| 작업 계획 상태 | `.smelter/` (plan/tasks/prd/sessions/wiki)      |
-| 학습 시스템   | continuous-learning-v2 사용                       |
-| 사용자 진입점  | magic keyword 혹은 직접 커맨드 입력으로 각 모드에 진입한다         |
-
-
----
-
+- Writing a new workflow skill? Read [[workflow]] §3 (Registry) then [[workflow]] §12 (Team Agent Patterns).
+- Adding a utility skill? Utility skills (no `workflow-` prefix) are mode-unrestricted. Put them under `skills/<name>/SKILL.md`.
+- Modifying routing? See [[workflow]] §5 + `scripts/route-on-fail.mjs`.
+- Adding a new review? Multi-Pass Verification (§9-3) is mandatory. Register in `scripts/verification-rounds.mjs`.

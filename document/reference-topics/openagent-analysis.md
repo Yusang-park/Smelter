@@ -178,16 +178,16 @@ onSubagentSessionCreated(sessionId) {
 
 ## 주요 훅 목록
 
-| 훅 | 역할 |
-|----|------|
-| `hashline-read-enhancer` | 파일 읽기 결과에 LINE#ID 자동 삽입 |
-| `preemptive-compaction` | 컨텍스트 한도 80% 전 자동 압축 |
-| `todo-continuation-enforcer` | 미완료 Todo 있으면 에이전트 계속 강제 |
-| `ralph-loop` | self-referential 루프 구현 |
-| `model-fallback` | API 오류 시 fallback 모델 자동 전환 |
-| `session-recovery` | 세션 에러/컨텍스트 초과 시 자동 복구 |
-| `keyword-detector` | 키워드 감지 → 슬래시 커맨드 트리거 |
-| `comment-checker` | AI 슬롭 주석 감지 후 제거 |
+| 훅                            | 역할                         |
+| ---------------------------- | -------------------------- |
+| `hashline-read-enhancer`     | 파일 읽기 결과에 LINE#ID 자동 삽입    |
+| `preemptive-compaction`      | 컨텍스트 한도 80% 전 자동 압축        |
+| `todo-continuation-enforcer` | 미완료 Todo 있으면 에이전트 계속 강제    |
+| `ralph-loop`                 | self-referential 루프 구현     |
+| `model-fallback`             | API 오류 시 fallback 모델 자동 전환 |
+| `session-recovery`           | 세션 에러/컨텍스트 초과 시 자동 복구      |
+| `keyword-detector`           | 키워드 감지 → 슬래시 커맨드 트리거       |
+| `comment-checker`            | AI 슬롭 주석 감지 후 제거           |
 
 ---
 

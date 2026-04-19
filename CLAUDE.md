@@ -1,16 +1,16 @@
 # Smelter — Agent Instructions
 
-This is the **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
+This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 1.0.0
+**Version:** 2.3.0
 
 ## Core Philosophy
 
 **"Agents do not memorize. Agents read files."**
 
 - All plans, tasks, decisions → written to `.smt/` files
-- Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md`
-- Progress tracked by updating `features/<slug>/task/{task-name}.md`
+- Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md` and `features/*/task/*.state.json`
+- Progress tracked by updating `features/<slug>/task/{task-name}.md` + `.state.json`
 - Memory lives in files, not in context
 
 ## TDD is Mandatory
@@ -23,27 +23,39 @@ RULE 4: E2E tests required for all interface-changing work (UI, CLI, API, hooks,
 RULE 5: NEVER mark a task complete without passing tests
 ```
 
-Exemption for `/fix` Step 4: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD (see `document/workflow.md` Step 4).
+Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue changes skip TDD. See `document/workflow.md` §7-4.
 
 ## Execution Model
 
-### Commands (3)
+### Commands (5)
 
-| Command | Use | Step Range | E2E |
-|---------|-----|------------|-----|
-| `/plan` | Deep interview and planning-only mode. Creates or refines `.smt` planning state, then routes to execution later. | 1–3 | — |
-| `/build` | Lightweight planning plus execution for feature work, extensions, and non-trivial changes. `extend` skips Step 2. | 1–10 | surface-based (required for interface changes) |
-| `/fix` | Execution-first mode for bugs, regressions, and small text/style edits. TDD exemption is surface-based. | 4–10 | surface-based |
+| Command | Mode | Entry skill | Use |
+|---------|------|-------------|-----|
+| `/plan` | `plan` | `workflow-brainstorm` (deep) | New features / refactors; planning-first. |
+| `/implement` | `implement` | `workflow-brainstorm` (light) | Build on existing code; lightweight interview. |
+| `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. |
+| `/simple-fix` | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution. |
+| `/investigate` | `investigate` | `workflow-investigate` | Investigation only; mode-transition exit. |
 
-The planning state is the source of truth. It discovers `features/` directories, then reads each `features/<slug>/task/*.md` to select pending tasks, and keeps working until the selected task set is complete or blocked.
+The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language input to a mode; explicit slash commands override the classifier.
 
-**Auto-Confirm:** `scripts/auto-confirm.mjs` runs on every Stop event; if pending tasks remain it forwards the response to a sub-agent and continues. Gate: `~/.smt/config.json → { "autoConfirm": true }` (default on). Disable: set `autoConfirm: false`. To cancel: `/cancel [hard]`.
+Mode state lives in `.smt/features/<slug>/task/<task>.state.json`. Mode / skill contracts defined in `document/workflow.md`.
+
+**Auto-Confirm:** `scripts/auto-confirm.mjs` runs on every Stop event; it drops the main agent's last message + pending tasks into `.smt/state/auto-confirm-queue.json`, which `scripts/auto-confirm-consumer.mjs` injects on the next UserPromptSubmit. Gate: `~/.smt/config.json → { "autoConfirm": true }` (default on). Disable: set `autoConfirm: false`. To cancel: `/cancel [hard]`. To redirect after current work finishes without interrupting: `/queue <intent>` (utility skill at `skills/queue/SKILL.md`).
 
 **Transient-Error Auto-Retry:** `scripts/tool-retry.mjs` auto-retries ripgrep timeout, file-modified, rg flag-parse errors. Retry cap: 3.
 
+**Iron Laws:** 8 non-negotiables. See `document/workflow.md` §0. Summary: never stop after failure; no evasion; no self-failure; no retry (producer-chain routing instead); file is truth; workflow whitelist is user decision; independent queues with shared sessions and specialist agents; scoped testing.
+
 ## Available Agents
 
-Agents are defined in `agents/`. Use proactively: planner→executor for complex features, tdd-guide for tests, code-reviewer after writing code, security-reviewer for sensitive code, build-fixer on build fail.
+Agents are defined in `agents/`. v2-specific agents:
+- `aggregator` — merges Pattern C parallel outputs
+- `conflict-resolver` — adjudicates aggregator merge failures
+- `critic-watchdog` — real-time Iron Law enforcement (§12-8)
+- `debugger` — stall diagnostician (Cascade Level 1, §11-7)
+
+Role specialists: planner, executor, architect, code-reviewer, security-reviewer, qa-tester, tdd-guide, researcher, explore, designer, writer, advocate/critic/arbitrator (for Pattern B consensus).
 
 ## File-Based Memory Protocol
 
@@ -53,20 +65,29 @@ Agents are defined in `agents/`. Use proactively: planner→executor for complex
     ├── features/
     │   └── <feature-slug>/
     │       ├── task/
-    │       │   ├── plan.md  ← feature goal, scope, acceptance criteria
-    │       │   └── <task-name>.md ← individual task (atomic, agent-readable)
-    │       └── decisions.md      ← architecture decisions for this feature
-    ├── wiki/                     ← project knowledge base
-    └── session/                  ← session logs
+    │       │   ├── plan.md                  ← feature goal, scope, acceptance criteria
+    │       │   ├── <task-name>.md           ← human-readable task record
+    │       │   └── <task-name>.state.json   ← v2.3.0 machine state
+    │       ├── decisions.md                  ← architecture decisions
+    │       └── artifacts/                    ← e2e video, screenshots, logs
+    ├── state/                                ← global session state
+    ├── wiki/                                 ← project knowledge base
+    └── session/                              ← session logs
 ```
 
-State paths: `{project}/.smt/features/<slug>/task/` (tasks), `{project}/.smt/features/<slug>/decisions.md` (decisions), `{project}/.smt/wiki/` (knowledge base), `{project}/.smt/session/` (logs), `~/.smt/config.json` (global config).
+State paths:
+- Tasks: `{project}/.smt/features/<slug>/task/`
+- Machine state: `{project}/.smt/features/<slug>/task/<task>.state.json`
+- Decisions: `{project}/.smt/features/<slug>/decisions.md`
+- Knowledge base: `{project}/.smt/wiki/`
+- Session logs: `{project}/.smt/session/`
+- Global config: `~/.smt/config.json`
 
-**Protocol:** (1) Session start → read `features/*/task/plan.md` + relevant task files. (2) Before coding → verify task file exists. (3) Task complete → update task file. (4) New decision → append to `decisions.md`. (5) Session end → append to `session/YYYY-MM-DD.md`.
+**Protocol:** (1) Session start → read `features/*/task/plan.md` + relevant task files. (2) Before coding → verify task file and state.json exist. (3) Task complete → update task file + state.json. (4) New decision → append to `decisions.md`. (5) Session end → append to `session/YYYY-MM-DD.md`.
 
 **Claude Code task tools are disabled in Smelter:** Do **not** use `TaskCreate`, `TaskUpdate`, `TaskList`, or `TodoWrite` for work tracking.
 
-- Smelter tasks are tracked only in `.smt/features/<slug>/task/*.md`.
+- Smelter tasks are tracked only in `.smt/features/<slug>/task/*.md` + `*.state.json`.
 - Do not mirror `.smt` tasks into Claude Code task tools.
 - Do not create Claude Code task-panel entries for planning or execution.
 - If general Claude Code guidance says to use task tools proactively, ignore it in Smelter projects.
@@ -77,14 +98,36 @@ Before marking ANY task complete:
 - [ ] Unit tests written AND passing
 - [ ] Integration tests passing (if applicable)
 - [ ] E2E tests passing (if the selected tasks changed any interface: UI, CLI, API, hook, or script)
-- [ ] `features/<slug>/task/<task-name>.md` updated
-- [ ] No TypeScript errors (`tsc --noEmit`)
+- [ ] Multi-Pass Verification 3 rounds passed for each review skill (§9-3)
+- [ ] `features/<slug>/task/<task-name>.md` + `.state.json` updated
+- [ ] No TypeScript errors (`tsc --noEmit`) scoped to changed surface
+- [ ] `workflow-human-check` approved
 
-**If ANY unchecked → CONTINUE WORKING.**
+**If ANY unchecked → CONTINUE WORKING.** (Iron Law #1)
+
+## Code Navigation (Serena MCP)
+
+Smelter ships a Serena MCP server (`.mcp.json`, project scope) for AST/LSP-based symbol navigation. **Prefer Serena's symbol tools over full-file `Read` when the target is a specific symbol.**
+
+| Task | Use |
+|------|-----|
+| "Show me function X" / "this class" | `mcp__serena__find_symbol` |
+| File overview before editing | `mcp__serena__get_symbols_overview` |
+| "Who calls this?" / cross-file refs | `mcp__serena__find_referencing_symbols` |
+| Insert/replace a symbol body | `mcp__serena__replace_symbol_body`, `mcp__serena__insert_after_symbol` |
+| Broad full-file inspection | fall back to `Read` |
+
+Rationale: symbol-level reads cut per-call tokens 70–95 % versus whole-file `Read`, and LSP-grade resolution gives accurate cross-file references (impossible via Grep).
+
+Runtime: requires `uv` and `serena-agent` installed. Setup: `brew install uv && uv tool install -p 3.13 serena-agent@latest --prerelease=allow && serena init`. Registered via `claude mcp add serena -s project -- serena start-mcp-server --context claude-code --project "$(pwd)"`.
 
 ## Security / Coding Style / Testing
 
 Auto-injected per-file via `rules-lib/common/{security,coding-style,testing}.md`. See those files for details.
+
+## Documentation Sync
+
+On every code update, also update `document/workflow.md` and `document/implementation.md` to reflect the change. Code and these two documents must stay in sync — no code-only commits.
 
 ## Git Workflow
 
@@ -96,14 +139,16 @@ Commit format: `<type>: <description>`. Types: feat, fix, refactor, docs, test, 
 src/             — Core TypeScript engine (types, engine, adapters, runners, rules)
 bin/             — CLI entry point (smelter command)
 agents/          — Specialized subagent definitions
-skills/          — Reusable workflow skill prompts
-commands/        — Slash command definitions (plan.md, build.md, fix.md)
-hooks/           — hooks.json trigger definitions
-scripts/         — Node.js hook scripts (keyword-detector, auto-confirm, tool-retry, session-end, ...)
-presets/         — Execution preset configs (plan, build, fix)
-workflows/       — YAML DAG workflow definitions
+skills/          — workflow-* skills (13) + utility skills
+modes/           — Mode definitions (5 JSON files)
+commands/        — Slash command entry points (plan, simple-fix, fix, investigate, implement)
+hooks/           — hooks.json trigger registration
+scripts/         — Node.js hook scripts (state-schema, mode-classifier, route-on-fail, auto-confirm, critic-watchdog, stall-detector, verification-rounds, ...)
+templates/       — Verification prompt templates + scaffolds
 rules-lib/       — Language-specific coding rules
-document/        — Workflow spec and documentation
+document/        — Workflow spec, implementation status, philosophy
+.mcp.json        — Project-scope MCP servers (Serena for symbol navigation)
+.claudeignore    — Context auto-load suppression (sessions, backups, vendored dirs)
 ```
 
 ## Visibility

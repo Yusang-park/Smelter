@@ -150,7 +150,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 
 5. **출력 생성**
    - `[MAGIC KEYWORD: XXX]` 형식의 additionalContext를 만들어 해당 command를 즉시 invoke하도록 지시
-   - 현재 이 훅은 문서화된 5개 command 외 자연어 키워드, MCP 위임, 혼합 모드 조합을 처리하지 않음
+   - 고신뢰 자연어는 deterministic local routing으로 먼저 처리한다. 예: investigative wording → `/plan`, explicit fix wording → `/fix`, mixed `check and fix` → `/fix`
+   - 나머지 비-slash 프롬프트는 classifier fallback을 사용한다
 
 **출력:** `{ continue: true, hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: "..." } }`
 
