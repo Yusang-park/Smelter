@@ -21,7 +21,8 @@ Smelter composes atomic **workflow skills** (`workflow-*`) into modes:
 |------|-------------|-----|
 | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution |
 | `fix` | `workflow-investigate` | Bug / logic repair |
-| `investigate` | `workflow-investigate` | Investigation only |
+| `investigate` | `workflow-investigate` | Static investigation (맥락·근거 파악) |
+| `verify` | `workflow-verify` | Non-modifying verification (tests + static inspect + E2E) |
 | `plan` | `workflow-brainstorm` (deep) | New feature / refactor, planning first |
 | `implement` | `workflow-brainstorm` (light) | Lightweight build on existing code |
 
@@ -40,7 +41,7 @@ All plans, decisions, and execution state live on disk under `.smt/`:
 │       ├── task/
 │       │   ├── plan.md                   ← feature goal, scope, acceptance criteria
 │       │   ├── <task-name>.md            ← human-readable task record
-│       │   └── <task-name>.state.json    ← machine state (v2.3.0 schema)
+│       │   └── <task-name>.state.json    ← machine state (v2.4.0 schema)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e video, screenshots, logs
 └── state/                                ← global session state

@@ -68,7 +68,31 @@ const RULES = [
       /추가해줘/,
       /구현해줘/,
       /구현해/,
+      /덧붙여/,           // spec §1-2 magic keyword for implement (skip brainstorm)
+      /확장(?:해줘|해|할)?/, // ko: extend
       /\bimplement\b/i,
+      /\bextend\b/i,       // spec §1-2 magic keyword for implement
+      /\badd\s+to\b/i,     // spec §1-2 "add to" pattern
+    ],
+  },
+  {
+    // verify mode — dynamic: run tests + inspect + E2E. Priority above investigate
+    // so "테스트"/"점검"/"run tests" take precedence over static-read verbs.
+    mode: 'verify',
+    priority: 7,
+    patterns: [
+      // Korean — "test" / "run" / "health-check" tokens
+      /테스트\s*(?:해|돌려|실행|해봐|돌려봐|실행해봐)/,
+      /돌려\s*(?:봐|봐요|보자)?/,
+      /실행\s*(?:해|해봐|해보자)/,
+      /점검(?:\s*해|\s*좀|해봐|해보자)?/,
+      /헬스\s*체크/,
+      // English
+      /\brun\s+(?:the\s+)?tests?\b/i,
+      /\brun\s+verification\b/i,
+      /\bhealth\s*check\b/i,
+      /\bsanity\s*check\b/i,
+      /\btest\s+it\b/i,
     ],
   },
   {
@@ -84,12 +108,11 @@ const RULES = [
       /알아봐/,
       /어떻게\s*되어\s*(?:있어|있나)/,
       /어떤\s*구조/,
-      // Verification keywords (Korean) — no \b, Korean is outside \w
+      // Static-read verbs (Korean). 점검 is moved to /verify (dynamic).
       /검증(?:해|하고|한|할|좀)?/,
       /확인(?:해|하고|한|할|좀)?/,
       /체크(?:해|하고|한|할|좀)?/,
-      /점검(?:해|하고|한|할|좀)?/,
-      // Verification keywords (English) — word-boundary aware
+      // English static-read verbs — word-boundary aware
       /\bverify\b/i,
       /\bvalidate\b/i,
       /\bcheck\b/i,
@@ -121,11 +144,18 @@ const DEFAULT_MODE = 'fix';
 // Each entry: a pattern that matches a standalone action verb, and the mode it implies.
 // Word-boundary \b used only for English tokens (Korean is outside \w).
 const CHAIN_ACTION_MAP = [
-  // investigate verbs
+  // verify verbs (dynamic — run tests / inspect / e2e)
+  { pattern: /테스트(?:해|하고|한|할|해봐|돌려|실행)?/, mode: 'verify' },
+  { pattern: /점검(?:해|하고|한|할)?/, mode: 'verify' },
+  { pattern: /돌려(?:봐|보고|보자)?/, mode: 'verify' },
+  { pattern: /실행(?:해|하고|한|할|해봐)?/, mode: 'verify' },
+  { pattern: /\brun\s+(?:the\s+)?tests?\b/i, mode: 'verify' },
+  { pattern: /\brun\s+verification\b/i, mode: 'verify' },
+  { pattern: /\btest\s+it\b/i, mode: 'verify' },
+  // investigate verbs (static read — 검증/확인/체크/파악/분석/조사, verify/validate/check/investigate/analyze)
   { pattern: /검증(?:해|하고|한|할)?/, mode: 'investigate' },
   { pattern: /확인(?:해|하고|한|할)?/, mode: 'investigate' },
   { pattern: /체크(?:해|하고|한|할)?/, mode: 'investigate' },
-  { pattern: /점검(?:해|하고|한|할)?/, mode: 'investigate' },
   { pattern: /파악(?:해|하고|한|할)?/, mode: 'investigate' },
   { pattern: /분석(?:해|하고|한|할)?/, mode: 'investigate' },
   { pattern: /조사(?:해|하고|한|할)?/, mode: 'investigate' },
@@ -144,7 +174,10 @@ const CHAIN_ACTION_MAP = [
   { pattern: /구현(?:해|해줘|하고|할)?/, mode: 'implement' },
   { pattern: /추가(?:해|해줘|하고|할)?/, mode: 'implement' },
   { pattern: /만들어(?:줘)?/, mode: 'implement' },
+  { pattern: /덧붙여(?:서|줘)?/, mode: 'implement' },        // spec §1-2
+  { pattern: /확장(?:해|해줘|하고|할)?/, mode: 'implement' }, // ko: extend
   { pattern: /\bimplement\b/i, mode: 'implement' },
+  { pattern: /\bextend\b/i, mode: 'implement' },               // spec §1-2
   { pattern: /\badd\b/i, mode: 'implement' },
   // fix verbs
   { pattern: /고쳐(?:줘)?/, mode: 'fix' },
@@ -232,7 +265,7 @@ export function classifyChain(input) {
 
 // Keep the whitelist in this module so we don't create a hard dependency
 // on state-schema from classifier imports; the two lists must stay in sync.
-const MODES_WHITELIST = Object.freeze(['simple_fix', 'fix', 'investigate', 'plan', 'implement']);
+const MODES_WHITELIST = Object.freeze(['simple_fix', 'fix', 'investigate', 'verify', 'plan', 'implement']);
 
 export function classify(input) {
   if (!input || typeof input !== 'string') {

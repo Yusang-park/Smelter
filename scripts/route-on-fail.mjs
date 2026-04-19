@@ -28,6 +28,17 @@ const PRODUCER_CHAIN = Object.freeze({
     onFailDefault: 'workflow-coding',
   },
   'workflow-agent-review':        { onFail: 'workflow-coding' },
+  'workflow-verify': {
+    // verify mode is non-modifying; any cause = code is broken → /fix
+    onFailByCase: {
+      test_run:   'workflow-coding',
+      typecheck:  'workflow-coding',
+      lint:       'workflow-coding',
+      build:      'workflow-coding',
+      assertion:  'workflow-coding',
+    },
+    onFailDefault: 'workflow-coding',
+  },
   'workflow-e2e':                 { onFail: 'workflow-coding' },
   'workflow-e2e-review': {
     // branch by cause: missing artifacts re-run e2e; thin scenarios go to coding

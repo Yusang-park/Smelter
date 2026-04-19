@@ -1,0 +1,22 @@
+{
+  "mode": "verify",
+  "description": "Non-modifying verification — run tests + inspect code logic + exercise E2E interface, then report.",
+  "entry_skill": "workflow-verify",
+  "allowed_skills": [
+    "workflow-verify",
+    "workflow-e2e",
+    "workflow-e2e-review",
+    "workflow-human-check"
+  ],
+  "default_team_overrides": {
+    "workflow-verify":      { "pattern": "A", "default_agent": "qa-tester" },
+    "workflow-e2e":         { "pattern": "A", "default_agent": "qa-tester" },
+    "workflow-e2e-review":  { "pattern": "A", "default_agent": "code-reviewer" }
+  },
+  "default_exempt": { "tdd": true, "e2e": false },
+  "magic_keywords": {},
+  "transitions": {
+    "upgrade_to":   ["fix", "implement", "plan"],
+    "downgrade_to": []
+  }
+}

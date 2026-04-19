@@ -1,14 +1,14 @@
 ---
-title: Smelter v2.3.0 — Implementation Reference
+title: Smelter v2.4.0 — Implementation Reference
 type: implementation-reference
-tags: [smelter, implementation, v2.3.0, architecture, scripts, agents, hooks]
-version: 2.3.0
+tags: [smelter, implementation, v2.4.0, architecture, scripts, agents, hooks]
+version: 2.4.0
 created: 2026-04-20
 updated: 2026-04-20
 status: canonical
 ---
 
-# Smelter v2.3.0 — Implementation Reference
+# Smelter v2.4.0 — Implementation Reference
 
 > Companion to `document/workflow.md` (the behavioral spec).
 > This file documents **what's shipped**, **where it lives**, and **how the pieces wire together**.
@@ -39,7 +39,7 @@ status: canonical
 
 ---
 
-## 1. Execution surface (5 commands × 5 modes × 13 skills)
+## 1. Execution surface (6 commands × 6 modes × 14 skills)
 
 ### 1-1. Commands (`commands/*.md`)
 
@@ -49,7 +49,8 @@ status: canonical
 | `/implement`   | `implement`   | `workflow-brainstorm` (light)    | Build on existing code. Lightweight interview           |
 | `/fix`         | `fix`         | `workflow-investigate`           | Bug or logic repair                                     |
 | `/simple-fix`  | `simple_fix`  | `workflow-coding`                | Trivial text / CSS / constant substitution              |
-| `/investigate` | `investigate` | `workflow-investigate`           | Investigation-only; mode-transition exit                |
+| `/investigate` | `investigate` | `workflow-investigate`           | Static investigation (맥락·근거 파악); mode-transition exit |
+| `/verify`      | `verify`      | `workflow-verify`                | Non-modifying verification: test run + static inspection + E2E interface in one pass |
 
 Commands are thin prompts that seed state and defer to the skill pipeline. `scripts/mode-classifier.mjs` auto-routes natural-language input to these modes; explicit slash commands override.
 
@@ -63,7 +64,7 @@ Each mode declares:
 - `magic_keywords{}` — natural-language triggers that set flags (e.g., `css` → `exempt.tdd:true`)
 - `transitions{upgrade_to, downgrade_to}` — allowed mode transitions
 
-### 1-3. Workflow skills (`skills/workflow-*/SKILL.md`, 13 files)
+### 1-3. Workflow skills (`skills/workflow-*/SKILL.md`, 14 files)
 
 | # | Skill                          | Default Pattern | Consumes → Produces                                     |
 |---|--------------------------------|-----------------|---------------------------------------------------------|
@@ -79,7 +80,8 @@ Each mode declares:
 | 10 | `workflow-e2e`                | A (qa-tester)   | built `src/**` → `artifacts/` (video/log/screenshots)   |
 | 11 | `workflow-e2e-review`         | A               | `artifacts/` → `e2e_review.md`                          |
 | 12 | `workflow-team-code-review`   | B (advocate+critic+arbitrator) | whole change → `team_review.md` + severity |
-| 13 | `workflow-human-check`        | User            | all artifacts → user decision (rework / complete / hold / upgrade) |
+| 13 | `workflow-verify`             | A (qa-tester)   | current codebase → `verify_report.md` (3 phases: tests + static + E2E) |
+| 14 | `workflow-human-check`        | User            | all artifacts → user decision (rework / complete / hold / upgrade) |
 
 All 6 review skills (rows 2, 4, 6, 9, 11, 12) enforce **Multi-Pass Verification** (§9-3 of `workflow.md`): 3 mandatory rounds with focus ∈ {omission, contradiction, edge_case}. Skill-level `pass` is only declared when `completed_rounds === 3` and every round passed. Anti-evasion rule 4 is hook-enforced.
 

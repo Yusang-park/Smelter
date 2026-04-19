@@ -3,7 +3,7 @@ title: Smelter Workflow
 type: canonical
 tags: [smelter, workflow, skill-composition, producer-routing, tdd, e2e, auto-confirm]
 status: canonical
-version: 2.3.0
+version: 2.4.0
 created: 2026-04-19
 updated: 2026-04-20
 ---
@@ -61,7 +61,8 @@ Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 
 
 | 입력 패턴 (자연어) | 분기 모드 | 명시 커맨드 |
 |-------------------|-----------|-------------|
-| "파악해", "분석해", "어떻게 되어있어?", "조사해" | `investigate` | `/investigate` |
+| "파악해", "분석해", "어떻게 되어있어?", "조사해", "검증해", "확인해", "체크해" | `investigate` | `/investigate` |
+| "테스트 해봐", "점검해", "돌려봐", "실행해", "run tests", "health check" | `verify` | `/verify` |
 | "만들거야", "리팩토링할거야", "설계해", "기획해" | `plan` | `/plan` |
 | "~만들어줘", "~추가해줘", "~구현해줘" | `implement` | `/implement` |
 | "텍스트 수정", "이름 바꿔", "색깔 변경", "css", "오타", "번역" | `simple_fix` | `/simple-fix` |
@@ -79,7 +80,8 @@ Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 
 |------|---------|------|
 | `simple_fix` | `workflow-coding` | 텍스트/CSS/상수 등 명확한 값 치환 |
 | `fix` | `workflow-investigate` | 버그·문제 수정. 로직/흐름 변경 필요. |
-| `investigate` | `workflow-investigate` | 파악만 수행, 이후 다른 모드로 전환 |
+| `investigate` | `workflow-investigate` | 정적 파악만 수행 (맥락·근거). 이후 mode transition. |
+| `verify` | `workflow-verify` | 비수정 검증 (테스트·점검·E2E 인터페이스). 단일 리포트 산출. |
 | `plan` | `workflow-brainstorm` (deep) | 신규 기능·리팩토링 기획 우선 |
 | `implement` | `workflow-brainstorm` (light) | 기존 코드 기반 경량 구현 |
 
@@ -261,7 +263,7 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 
 ---
 
-## 3. Workflow Skill Registry (13 skills)
+## 3. Workflow Skill Registry (14 skills)
 
 > 스킬 정의는 **전역 1개소** (`skills/workflow-<name>/SKILL.md`). 모드 간 공유.
 
@@ -279,7 +281,8 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 | 10 | `workflow-e2e` | `src/**` built | `artifacts/` (비디오·스크린샷·로그) | surface 기반: UI/CLI/API/DB/Hook |
 | 11 | `workflow-e2e-review` | `artifacts/` | `e2e_review.md` | 시나리오 충분성 검토 |
 | 12 | `workflow-team-code-review` | 전체 변경 | `team_review.md` (severity 분류) | **다중 에이전트 95% 합의** |
-| 13 | `workflow-human-check` | 모든 산출물 | 사용자 결정 (`rework` / `complete` / `hold` / `upgrade`) | 최종 게이트 |
+| 13 | `workflow-verify` | 현 코드베이스 (no RED 요구) | `verify_report.md` (Phase 1 tests + Phase 2 static inspection + Phase 3 E2E) | `/verify` 모드 진입 스킬. 수정 없음. Multi-Pass 미사용 (리뷰 스킬 아님). |
+| 14 | `workflow-human-check` | 모든 산출물 | 사용자 결정 (`rework` / `complete` / `hold` / `upgrade`) | 최종 게이트 |
 
 ### 3-1. Skill Contract 예시 (`skills/workflow-coding/SKILL.md`)
 

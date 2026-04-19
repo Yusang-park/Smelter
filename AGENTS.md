@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.3.0
+**Version:** 2.4.0
 
 ## Core Philosophy
 
@@ -27,7 +27,7 @@ Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue chan
 
 ## Execution Model
 
-### Commands (5)
+### Commands (6)
 
 | Command | Mode | Entry skill | Use |
 |---------|------|-------------|-----|
@@ -35,7 +35,8 @@ Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue chan
 | `/implement` | `implement` | `workflow-brainstorm` (light) | Build on existing code; lightweight. |
 | `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. |
 | `/simple-fix` | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution. |
-| `/investigate` | `investigate` | `workflow-investigate` | Investigation only. |
+| `/investigate` | `investigate` | `workflow-investigate` | Static investigation (맥락·근거 파악); mode-transition exit. |
+| `/verify` | `verify` | `workflow-verify` | Non-modifying verification (테스트·점검): test run + static inspection + E2E interface in one pass. |
 
 The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language input; explicit slash commands override the classifier.
 
@@ -47,7 +48,8 @@ The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language
 | "build X", "add X", "implement X", "extend", "덧붙여", "확장해줘" | `/implement` | `extend` skips brainstorm |
 | "fix", "bug", "error", "버그", "고쳐" | `/fix` | `bug` forces E2E on interface surface |
 | "text change", "CSS", "rename", "typo", "i18n", "텍스트", "색상" | `/simple-fix` | TDD exemption auto-applied |
-| "analyze", "investigate", "how does X work", "파악해", "분석해" | `/investigate` | — |
+| "analyze", "investigate", "how does X work", "파악해", "분석해", "검증해", "확인해", "체크해" | `/investigate` | static read only |
+| "테스트 해봐", "점검해", "돌려봐", "run tests", "health check" | `/verify` | tests + static inspect + E2E |
 | `cancel`, `stop` | `/cancel` | hard stop |
 
 ### Workflow examples
@@ -135,7 +137,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     │       ├── task/
     │       │   ├── plan.md                  ← feature goal, scope, acceptance criteria
     │       │   ├── <task-name>.md           ← human-readable task record
-    │       │   └── <task-name>.state.json   ← v2.3.0 machine state
+    │       │   └── <task-name>.state.json   ← v2.4.0 machine state
     │       ├── decisions.md                  ← architecture decisions
     │       └── artifacts/                    ← e2e video, screenshots, logs
     ├── archive/                              ← archived legacy features
@@ -144,7 +146,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     └── session/                              ← session logs (YYYY-MM-DD.md)
 ```
 
-`task/*.md` are human-readable. `task/*.state.json` (v2.3.0 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
+`task/*.md` are human-readable. `task/*.state.json` (v2.4.0 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
 
 **Protocol:**
 1. Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md` and `*.state.json`.

@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export const SCHEMA_VERSION = '2.3.0';
+export const SCHEMA_VERSION = '2.4.0';
 
 export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-brainstorm',
@@ -26,10 +26,11 @@ export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-e2e',
   'workflow-e2e-review',
   'workflow-team-code-review',
+  'workflow-verify',
   'workflow-human-check',
 ]);
 
-export const MODES = Object.freeze(['simple_fix', 'fix', 'investigate', 'plan', 'implement']);
+export const MODES = Object.freeze(['simple_fix', 'fix', 'investigate', 'verify', 'plan', 'implement']);
 
 export const CAUSE_ENUM = Object.freeze([
   'typecheck', 'lint', 'test_run', 'build', 'assertion',

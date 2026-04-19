@@ -4,7 +4,7 @@ version: 2.3.0
 type: workflow
 consumes: "*.test.*" (RED) OR active_feedback
 produces: src files changed
-default_pattern: A
+default_pattern: C
 default_agent: executor
 supports_patterns: [A, C]
 team_template:

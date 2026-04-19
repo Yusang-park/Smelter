@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <code>v2.3.0</code>
+  <code>v2.4.0</code>
 </p>
 
 ---
@@ -33,8 +33,8 @@ Auto-updates on every session start.
 
 ## TL;DR
 
-- **5 commands**: `/plan`, `/implement`, `/fix`, `/simple-fix`, `/investigate`. Natural-language input is auto-routed — explicit slash commands override.
-- **13 workflow skills** compose into modes (no fixed 10-step pipeline). Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
+- **6 commands**: `/plan`, `/implement`, `/fix`, `/simple-fix`, `/investigate`, `/verify`. Natural-language input is auto-routed — explicit slash commands override.
+- **14 workflow skills** compose into modes (no fixed 10-step pipeline). Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
 - **8 Iron Laws** are runtime-enforced via hooks (`auto-confirm`, `critic-watchdog`), not just prompts.
 - **Multi-Pass Verification**: all 6 review skills run 3 mandatory rounds (omission / contradiction / edge_case) before declaring `pass`.
 - **File-based state**: every task has a single-source `*.state.json` at schema v2.3.0. Agents read files, not memory.
@@ -66,7 +66,8 @@ Auto-updates on every session start.
 | `/implement`   | `implement`   | `workflow-brainstorm` (light)    | Build on existing code; lightweight interview           |
 | `/fix`         | `fix`         | `workflow-investigate`           | Bug / logic repair requiring investigation              |
 | `/simple-fix`  | `simple_fix`  | `workflow-coding`                | Trivial text, CSS, or constant substitution             |
-| `/investigate` | `investigate` | `workflow-investigate`           | Read-only investigation; exit to another mode after     |
+| `/investigate` | `investigate` | `workflow-investigate`           | Static read (맥락·근거 파악); exit via mode transition |
+| `/verify`      | `verify`      | `workflow-verify`                | Non-modifying verification (테스트·점검·E2E in one pass) |
 
 Natural-language auto-routing covers Korean + English verbs (`검증`, `분석`, `파악`, `만들어줘`, `리팩토링`, `verify`, `validate`, `implement`, …) and compound intents (`검증하고 수정해` → `investigate → fix`).
 
@@ -214,7 +215,7 @@ Mode upgrade, human-check verdict, and mode transitions are gated by the user. E
 
 ## Status
 
-- Version: `2.3.0`
+- Version: `2.4.0`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
 - Implementation reference: [`document/implementation-v2.md`](document/implementation-v2.md)
 - Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)

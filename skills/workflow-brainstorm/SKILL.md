@@ -4,7 +4,7 @@ version: 2.3.0
 type: workflow
 consumes: trigger_prompt
 produces: brainstorm.md
-default_pattern: A
+default_pattern: D
 default_agent: planner
 supports_patterns: [A, D]
 params:

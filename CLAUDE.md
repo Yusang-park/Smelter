@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.3.0
+**Version:** 2.4.0
 
 ## Core Philosophy
 
@@ -27,7 +27,7 @@ Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue chan
 
 ## Execution Model
 
-### Commands (5)
+### Commands (6)
 
 | Command | Mode | Entry skill | Use |
 |---------|------|-------------|-----|
@@ -35,7 +35,8 @@ Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue chan
 | `/implement` | `implement` | `workflow-brainstorm` (light) | Build on existing code; lightweight interview. |
 | `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. |
 | `/simple-fix` | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution. |
-| `/investigate` | `investigate` | `workflow-investigate` | Investigation only; mode-transition exit. |
+| `/investigate` | `investigate` | `workflow-investigate` | Static investigation (맥락·근거 파악). Exits via mode transition. |
+| `/verify` | `verify` | `workflow-verify` | Non-modifying verification (테스트·점검): test run + static inspection + E2E interface. |
 
 The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language input to a mode; explicit slash commands override the classifier.
 
