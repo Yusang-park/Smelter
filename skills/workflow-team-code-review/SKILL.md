@@ -1,6 +1,6 @@
 ---
 name: workflow-team-code-review
-version: 2.3.0
+version: 2.4.1
 type: workflow
 consumes: full task change + e2e artifacts
 produces: team_review.md

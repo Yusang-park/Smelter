@@ -41,7 +41,7 @@ All plans, decisions, and execution state live on disk under `.smt/`:
 │       ├── task/
 │       │   ├── plan.md                   ← feature goal, scope, acceptance criteria
 │       │   ├── <task-name>.md            ← human-readable task record
-│       │   └── <task-name>.state.json    ← machine state (v2.4.0 schema)
+│       │   └── <task-name>.state.json    ← machine state (v2.4.1 schema)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e video, screenshots, logs
 └── state/                                ← global session state

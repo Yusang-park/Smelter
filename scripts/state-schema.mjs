@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export const SCHEMA_VERSION = '2.4.0';
+export const SCHEMA_VERSION = '2.4.1';
 
 export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-brainstorm',

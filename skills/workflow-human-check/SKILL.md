@@ -1,6 +1,6 @@
 ---
 name: workflow-human-check
-version: 2.3.0
+version: 2.4.1
 type: workflow
 consumes: all artifacts + team_review.md
 produces: user decision (rework | complete | hold | upgrade)

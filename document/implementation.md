@@ -1,13 +1,13 @@
 ---
-title: Smelter Workflow v2.3.0 — Implementation Status
+title: Smelter Workflow v2.4.1 — Implementation Status
 status: complete
 started: 2026-04-20
 completed: 2026-04-20
 ---
 
-# Smelter v2.3.0 Implementation Status
+# Smelter v2.4.1 Implementation Status
 
-> Source of truth: `document/workflow.md` (spec v2.3.0).
+> Source of truth: `document/workflow.md` (spec v2.4.1).
 > Principle: sequential execution, respect dependencies, no omissions.
 
 ## Phase 1 — Foundation
@@ -36,7 +36,7 @@ completed: 2026-04-20
 - [x] 13. Critic Watchdog Agent Layer 2 → `agents/critic-watchdog.md`
 - [x] 14. Pattern D Hierarchical (tasker / brainstorm) → SKILL.md templates include lead + sub-agents
 
-## Phase 5 — Multi-Pass Verification (v2.3.0)
+## Phase 5 — Multi-Pass Verification (v2.4.1)
 
 - [x] 15. Verification engine → `scripts/verification-rounds.mjs`
 - [x] 16. Round prompt templates → `templates/verification/round-{1,2,3}*.md`

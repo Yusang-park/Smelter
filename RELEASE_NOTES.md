@@ -1,4 +1,64 @@
-# Release Notes
+# Release Notes (English)
+
+> This file is the canonical release log. Korean translation: [`RELEASE_NOTES.ko.md`](RELEASE_NOTES.ko.md).
+> The English version is always the source of truth.
+
+---
+
+## v2.4.1 — E2E Real-Interface Enforcement
+**Released**: 2026-04-20
+
+Strengthens the E2E stage contract: `workflow-e2e` and `workflow-verify` Phase 3 must drive the **actual user-facing interface** (real browser, real subprocess, real HTTP port, real DB engine, real hook stdin/stdout) and produce per-surface artifact files. Test-runner stdout alone (e.g., `pnpm test`, `vitest run`) is NOT a valid E2E pass.
+
+### Enforcement
+
+- **`skills/workflow-e2e/SKILL.md`** — rewritten with a prominent "NOT a test-runner stage" notice, a per-surface Real Interface Contract table, explicit "what does NOT count" / "what does count" sections, and mandatory artifacts layout.
+- **Gate postconditions** added:
+  - `real_interface_invoked: true`
+  - `no_interface_mocks: true`
+  - `per_surface_artifact_present: true`
+- **`critic-watchdog.mjs` R11** (CRITICAL): blocks attempts to record an E2E pass while `.smt/features/<slug>/artifacts/` contains none of the allowed file types (`.webm`, `.mp4`, `.png`, `.jpg`, `.log`, `.transcript`, `.json`, `.sql`, `.exit`). Hook exits 2.
+- **Fail causes** (new): `artifact_missing`, `mocked_interface`. Both route to `workflow-e2e` self-rerun (correct runner / mocks removed).
+- **`skills/workflow-verify/SKILL.md`** — Phase 3 explicitly says "NOT a test-runner phase"; same per-surface artifact requirements.
+
+### Real interface per surface
+
+| Surface | Real interface | Required artifact |
+|---------|----------------|-------------------|
+| UI / Frontend | Real browser launched by Playwright | video (`.webm`) + screenshots (`.png`) + console.log |
+| CLI / Script | Real subprocess (stdin, argv, exit code) | command transcript (`.transcript`) |
+| HTTP API | Real server on a real port + real fetch/curl | request/response log |
+| Database | Real DB engine (no driver stubs) | query log + before/after state |
+| Hook script | Real `cat payload \| node hook.mjs` pipe | input JSON + output JSON + exit code |
+
+### Disallowed
+
+- Running `pnpm test` / `vitest run` / `jest` alone.
+- In-process handler calls without the interface wrapper.
+- Mocking the surface under test (MSW when HTTP is the subject, stubs when DB is the subject).
+- Playwright dry-run / `--list`.
+- Asserting on return values without observing the externally visible side effect.
+
+### Schema
+
+- `CAUSE_ENUM` adds `artifact_missing` and `mocked_interface` (additive, back-compat).
+- `SCHEMA_VERSION` → `2.4.1`.
+
+### Docs
+
+- `document/workflow.md` §8 — full Real-Interface Contract section added; §3 Registry row 10 updated.
+- `document/workflow.md` is now the English canonical; Korean translation lives at `document/workflow.ko.md`.
+- `RELEASE_NOTES.md` is now the English canonical; Korean translation at `RELEASE_NOTES.ko.md`.
+- Version bump to `2.4.1` across `plugin.json`, `.claude-plugin/plugin.json`, `package.json`, `CLAUDE.md`, `AGENTS.md`, `state-schema.mjs`.
+
+### Tests
+
+- `mode-classifier.test.mjs`: 15/15
+- `auto-confirm.test.mjs`: 51/51
+- `workflow-scenarios.test.mjs`: 111/111
+- Manual R11 smoke: 3/3 (no artifact → block; artifact present → allow; non-e2e stage → R11 silent)
+
+---
 
 ## v2.4.0 — `/verify` Mode (테스트·점검 Dedicated Entry)
 **Released**: 2026-04-20

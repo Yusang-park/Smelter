@@ -27,5 +27,196 @@
   },
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
-  "_comment": "Smelter runs directly from this ~/.claude-linked repo. Plugin marketplace wiring and duplicate hook registration were removed to avoid double execution and prompt inflation."
+  "_comment": "Smelter runs directly from this ~/.claude-linked repo. Plugin marketplace wiring and duplicate hook registration were removed to avoid double execution and prompt inflation.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/keyword-detector.mjs\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/auto-confirm-consumer.mjs\"",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/skill-injector.mjs\"",
+            "timeout": 3
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/session-start-smt.mjs\"",
+            "timeout": 5
+          }
+        ],
+        "_smelter_dev_managed": true
+      },
+      {
+        "matcher": "init",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/setup-init.mjs\"",
+            "timeout": 30
+          }
+        ],
+        "_smelter_dev_managed": true
+      },
+      {
+        "matcher": "maintenance",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/setup-maintenance.mjs\"",
+            "timeout": 60
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/pre-tool-enforcer.mjs\"",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/rule-injector.mjs\"",
+            "timeout": 3
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/permission-handler.mjs\"",
+            "timeout": 5
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/post-tool-verifier.mjs\"",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/tool-retry.mjs\"",
+            "timeout": 3
+          }
+        ],
+        "_smelter_dev_managed": true
+      },
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/critic-watchdog.mjs\"",
+            "timeout": 5
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/subagent-tracker.mjs\" start",
+            "timeout": 3
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/subagent-tracker.mjs\" stop",
+            "timeout": 5
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/pre-compact.mjs\"",
+            "timeout": 10
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/auto-confirm.mjs\"",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/stop-e2e.mjs\"",
+            "timeout": 120
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/session-end.mjs\"",
+            "timeout": 10
+          }
+        ],
+        "_smelter_dev_managed": true
+      }
+    ]
+  },
+  "_smelter_dev_note": "hooks entries tagged with _smelter_dev_managed are generated by scripts/dev-install.mjs from /Users/yusang/Smelter/hooks/hooks.json — re-run the script to refresh; run with --uninstall to remove."
 }

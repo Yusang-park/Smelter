@@ -30,7 +30,7 @@ $ARGUMENTS
 ├── task/
 │   ├── plan.md                   ← Queue, Approaches, target_type
 │   ├── <task-name>.md            ← individual task (atomic, agent-readable)
-│   └── <task-name>.state.json    ← machine state (v2.3.0 schema)
+│   └── <task-name>.state.json    ← machine state (v2.4.1 schema)
 ├── decisions.md
 └── artifacts/
 ```

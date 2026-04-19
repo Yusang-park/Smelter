@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.4.0
+**Version:** 2.4.1
 
 ## Core Philosophy
 
@@ -137,7 +137,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     │       ├── task/
     │       │   ├── plan.md                  ← feature goal, scope, acceptance criteria
     │       │   ├── <task-name>.md           ← human-readable task record
-    │       │   └── <task-name>.state.json   ← v2.4.0 machine state
+    │       │   └── <task-name>.state.json   ← v2.4.1 machine state
     │       ├── decisions.md                  ← architecture decisions
     │       └── artifacts/                    ← e2e video, screenshots, logs
     ├── archive/                              ← archived legacy features
@@ -146,7 +146,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     └── session/                              ← session logs (YYYY-MM-DD.md)
 ```
 
-`task/*.md` are human-readable. `task/*.state.json` (v2.4.0 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
+`task/*.md` are human-readable. `task/*.state.json` (v2.4.1 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
 
 **Protocol:**
 1. Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md` and `*.state.json`.

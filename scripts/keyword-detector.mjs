@@ -9,16 +9,18 @@
  * Priority: (1) explicit slash command → (2) magic keyword (natural language).
  *
  * Supported slash commands:
- *   /plan /build /fix /cancel /queue
+ *   plan, simple-fix, fix, investigate, verify, implement, cancel, queue.
  *
- * Supported magic keywords → command mapping:
- *   plan / deep interview / 설계해줘 / 계획부터      → /plan
- *   new feature / 새 기능 / design first            → /build (Step 2 included)
- *   extend / add to / 덧붙여                         → /build (Step 2 skipped)
- *   fix / bug / 버그                                 → /fix (E2E forced on)
- *   style / typo / 텍스트 / 색상 / i18n             → /fix (TDD exemption hint)
- *   cancel / stop                                    → /cancel
- *   queue                                            → /queue (explicit only)
+ * Supported magic-keyword (natural-language) mapping:
+ *   plan / deep interview / 설계해줘 / 계획부터      -> plan
+ *   new feature / 새 기능 / design first             -> plan (planning-first)
+ *   extend / add to / 덧붙여                         -> implement (brainstorm skipped)
+ *   fix / bug / 버그                                 -> fix (E2E forced for interface surface)
+ *   style / typo / 텍스트 / 색상 / i18n              -> simple-fix (TDD exemption hint)
+ *   verify / validate / 검증 / 점검                  -> verify
+ *   analyze / investigate / 파악 / 분석              -> investigate
+ *   cancel / stop                                    -> cancel
+ *   queue                                            -> queue (explicit only)
  */
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync, renameSync } from 'fs';
@@ -109,11 +111,15 @@ export function detectNaturalLanguageCommand(prompt) {
   return null;
 }
 
-// Command → preset/mode mapping (magic keywords handled by Haiku sub-agent classifier)
+// Command → v2 mode mapping. The six workflow commands map to modes in
+// `modes/<mode>.json`; `queue` and `cancel` are utility commands (no mode).
 const COMMAND_CONFIG = {
-  plan:  { preset: 'plan',  mode: 'normal' },
-  build: { preset: 'build', mode: 'normal' },
-  fix:   { preset: 'fix',   mode: 'normal' },
+  plan:         { mode: 'plan' },
+  'simple-fix': { mode: 'simple_fix' },
+  fix:          { mode: 'fix' },
+  investigate:  { mode: 'investigate' },
+  verify:       { mode: 'verify' },
+  implement:    { mode: 'implement' },
 };
 
 function writeStateFile(directory, filename, data) {
@@ -124,12 +130,11 @@ function writeStateFile(directory, filename, data) {
   try { writeFileSync(join(localDir, filename), JSON.stringify(data, null, 2), { mode: 0o600 }); } catch {}
 }
 
-// Map command → initial workflow step
-const INITIAL_STEP = {
-  plan: 'step-1',
-  build: 'step-1',
-  fix: 'step-4',
-};
+// v2 no longer uses fixed step numbers. Retained empty for back-compat so
+// `seedWorkflowState` short-circuits (see guard below) — v2 state.json is
+// seeded on demand by `scripts/state-schema.mjs` when an actual workflow
+// skill advances, not on command detection.
+const INITIAL_STEP = {};
 
 // Slug from prompt: first meaningful words, sanitized.
 // Empty/punctuation-only prompts get a collision-resistant timestamp+random fallback.

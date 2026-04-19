@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.4.0
+**Version:** 2.4.1
 
 ## Core Philosophy
 
@@ -68,7 +68,7 @@ Role specialists: planner, executor, architect, code-reviewer, security-reviewer
     │       ├── task/
     │       │   ├── plan.md                  ← feature goal, scope, acceptance criteria
     │       │   ├── <task-name>.md           ← human-readable task record
-    │       │   └── <task-name>.state.json   ← v2.3.0 machine state
+    │       │   └── <task-name>.state.json   ← v2.4.1 machine state
     │       ├── decisions.md                  ← architecture decisions
     │       └── artifacts/                    ← e2e video, screenshots, logs
     ├── state/                                ← global session state

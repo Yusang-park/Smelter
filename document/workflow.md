@@ -1,46 +1,48 @@
 ---
 title: Smelter Workflow
 type: canonical
+lang: en
 tags: [smelter, workflow, skill-composition, producer-routing, tdd, e2e, auto-confirm]
 status: canonical
-version: 2.4.0
+version: 2.4.1
 created: 2026-04-19
 updated: 2026-04-20
+translations: document/workflow.ko.md
 ---
 
 # Smelter Workflow — Skill-Composition Model
 
-> Smelter는 **Skill을 조합**하여 모드를 구성한다. 각 스킬은 자기 contract (`consumes` / `produces` / `gate`)를 선언하고, 실패 시 **producer chain**으로 라우팅된다.
-> **Workflow 스킬** (`workflow-*` 접두사)만 mode whitelist의 제약을 받으며, 일반 유틸리티 스킬은 자유롭게 사용 가능하다.
+> Smelter composes **workflow skills** into modes. Each skill declares a `consumes → produces → gate` contract; on failure the engine routes via **producer chain** — no retries, no evasion, no self-failure.
+> Only `workflow-*` skills are subject to mode whitelist; utility skills are freely callable.
 
 ---
 
-## 0. 핵심 원칙 (Iron Laws)
+## 0. Iron Laws
 
-| # | 원칙 | 의미 |
-|---|------|------|
-| 1 | **절대 정지 금지** | 에이전트는 "실패 후 멈춤"을 선언할 수 없다. 유일한 정지 조건은 **사용자의 명시적 stop** (섹션 11 auto-confirm hook 참고). |
-| 2 | **회피 금지** | fail을 "known limit"으로 퉁치거나 자기선언 완료 불가. 문제를 해결할 때까지 producer chain으로 재라우팅한다. |
-| 3 | **자기 포기 금지** | 스킬은 "못하겠음"을 출력할 수 없다. `result ∈ { pass, fail }`만 허용. |
-| 4 | **재시도 없음** | 동일 동작의 기계적 재실행(`max_retry`) 개념을 삭제한다. 대신 producer로 라우팅하여 **상류 원인을 수정 후** 복귀. 이는 재시도가 아니라 전진. |
-| 5 | **파일이 진실** | 스킬 완료는 **파일 검증 가능한 postcondition**으로만 인정. 에이전트 자기선언 금지. |
-| 6 | **Workflow whitelist는 사용자 결정** | `workflow-*` 스킬만 mode의 `allowed_skills`에 제약받는다. 현재 모드가 허용하지 않는 workflow 스킬이 필요해지면 에이전트가 판단하지 않고 **사용자에게 mode upgrade 요청**. 일반 유틸리티 스킬(`ui-ux-pro-max`, `copywriting`, `claude-api` 등)은 **제약 없이 자유 사용**. |
-| 7 | **독립 큐, 공유 세션, 전문가 할당** | Task의 **Queue**는 독립 관리. 같은 세션에서 **여러 task 공유 진행** 허용. Task는 **specialist agent** (frontend, backend, security 등) 할당 가능. **Team Agent** (다중 에이전트 협업) 지원. |
-| 8 | **스코프 테스트** | 변경 파일과 연관된 테스트만 실행. 전체 회귀는 `workflow-human-check`에서 명시적으로만. |
+| # | Law | Meaning |
+|---|-----|---------|
+| 1 | **Never halt after failure** | Agents cannot declare "stop after fail". The only halt is an explicit user stop (see §11 auto-confirm hook). |
+| 2 | **No evasion** | Fail cannot be papered over as "known limit" or self-declared complete. The agent keeps routing via producer chain until the problem is resolved. |
+| 3 | **No self-failure** | Skills cannot emit "I can't do it". `result ∈ { pass, fail }` only. |
+| 4 | **No retry** | The mechanical `max_retry` concept is removed. Instead, failures route to the producer to fix the upstream cause and advance — this is forward motion, not retry. |
+| 5 | **File is truth** | Skill completion is recognized only via **file-verifiable postconditions**. Self-claims are rejected. |
+| 6 | **Workflow whitelist is user-decision** | Only `workflow-*` skills are constrained by the mode's `allowed_skills`. If a workflow skill outside the current mode is needed, the agent does not decide — it **requests a user-gated mode upgrade**. Utility skills (`ui-ux-pro-max`, `copywriting`, `claude-api`, ...) are **freely usable** with no constraint. |
+| 7 | **Independent queues, shared sessions, specialist agents** | Each task's **Queue** is independent. Multiple tasks may share a session. Tasks may delegate to **specialist agents** (frontend, backend, security, ...). **Team Agents** (multi-agent collaboration) are supported. |
+| 8 | **Scoped testing** | Only tests related to changed files run by default. Full regression only at `workflow-human-check` with explicit request. |
 
 ---
 
-## 1. 실행 모델
+## 1. Execution Model
 
-### 1-1. 구조
+### 1-1. Structure
 
 ```
 ┌─────────────┐     ┌──────────┐     ┌───────────────────┐
 │   Command   │ ──▶ │   Mode   │ ──▶ │  workflow-* Skill │
-│  (사용자)    │     │whitelist │    │   (atomic)        │
+│   (user)    │     │whitelist │    │   (atomic)        │
 └─────────────┘     └──────────┘     └───────────────────┘
                                               ▲
-                                              │ (whitelist 무관)
+                                              │ (whitelist-free)
                                      ┌─────────────────────┐
                                      │  Utility Skills     │
                                      │  (ui-ux-pro-max,    │
@@ -48,58 +50,58 @@ updated: 2026-04-20
                                      └─────────────────────┘
 ```
 
-- **Command**: 사용자 진입점 (힌트, 자동 분기 우선)
-- **Mode**: 허용된 `workflow-*` 스킬 집합 + 초기 스킬
-- **Workflow Skill**: `workflow-*` 접두사. mode whitelist 대상. 상태 변경 수반.
-- **Utility Skill**: 접두사 없음. 자유 사용. 상태 변경 없음.
+- **Command**: user entry point (hint; auto-routing takes precedence).
+- **Mode**: allowed `workflow-*` skill set + initial skill.
+- **Workflow Skill**: `workflow-*` prefix. Subject to mode whitelist. Mutates state.
+- **Utility Skill**: no prefix. Free use. No state mutation.
 
-### 1-2. Commands & 자동 분기
+### 1-2. Commands & Auto-Routing
 
-Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 분기**. 사용자가 명시적으로 커맨드를 호출해도 되지만, 자연어 입력을 받았을 때 엔트리 시점에 자동 분류한다.
+Commands are **hints**; the default is **rule-based auto-routing** from natural-language input. Users can invoke explicit slash commands, but when an utterance arrives the classifier assigns a mode at entry.
 
-#### 자동 분기 테이블
+#### Auto-routing table
 
-| 입력 패턴 (자연어) | 분기 모드 | 명시 커맨드 |
-|-------------------|-----------|-------------|
-| "파악해", "분석해", "어떻게 되어있어?", "조사해", "검증해", "확인해", "체크해" | `investigate` | `/investigate` |
+| Input pattern (natural language) | Mode | Explicit command |
+|----------------------------------|------|------------------|
+| "파악해", "분석해", "how does X work?", "investigate", "verify" (static), "validate", "check", "확인", "검증", "체크" | `investigate` | `/investigate` |
 | "테스트 해봐", "점검해", "돌려봐", "실행해", "run tests", "health check" | `verify` | `/verify` |
-| "만들거야", "리팩토링할거야", "설계해", "기획해" | `plan` | `/plan` |
-| "~만들어줘", "~추가해줘", "~구현해줘" | `implement` | `/implement` |
+| "만들거야", "리팩토링할거야", "설계해", "기획해", "design", "refactor" | `plan` | `/plan` |
+| "~만들어줘", "~추가해줘", "~구현해줘", "implement", "extend" | `implement` | `/implement` |
 | "텍스트 수정", "이름 바꿔", "색깔 변경", "css", "오타", "번역" | `simple_fix` | `/simple-fix` |
-| "버그", "문제", "에러", "작동 안 해", "고쳐줘" | `fix` | `/fix` |
-| 불명확 | `fix` (안전 기본값) | — |
+| "버그", "문제", "에러", "작동 안 해", "고쳐줘", "bug", "fix" | `fix` | `/fix` |
+| ambiguous | `fix` (safe default) | — |
 
-**원칙**:
-- 분기 판단은 **엔트리 시점에만** 수행. 워크플로우 중간 모드 변경은 사용자 결정 (upgrade gate).
-- 자동 분기는 **패턴 매칭 규칙 기반**이며, LLM 추론에 맡기지 않는다 (회피 금지 원칙).
-- 사용자가 `/fix` 등 명시 커맨드를 입력하면 자동 분기를 **오버라이드**한다.
+**Principles**:
+- The classifier runs **only at entry**. Mid-workflow mode changes are user-gated (upgrade).
+- Routing is **rule-based** — no LLM inference (Iron Law #2, no evasion).
+- An explicit slash command **overrides** the classifier.
 
-#### 모드 요약
+#### Mode summary
 
-| Mode | 진입 스킬 | 용도 |
-|------|---------|------|
-| `simple_fix` | `workflow-coding` | 텍스트/CSS/상수 등 명확한 값 치환 |
-| `fix` | `workflow-investigate` | 버그·문제 수정. 로직/흐름 변경 필요. |
-| `investigate` | `workflow-investigate` | 정적 파악만 수행 (맥락·근거). 이후 mode transition. |
-| `verify` | `workflow-verify` | 비수정 검증 (테스트·점검·E2E 인터페이스). 단일 리포트 산출. |
-| `plan` | `workflow-brainstorm` (deep) | 신규 기능·리팩토링 기획 우선 |
-| `implement` | `workflow-brainstorm` (light) | 기존 코드 기반 경량 구현 |
+| Mode | Entry skill | Purpose |
+|------|-------------|---------|
+| `simple_fix` | `workflow-coding` | Text/CSS/constant substitution. |
+| `fix` | `workflow-investigate` | Bug / logic repair. |
+| `investigate` | `workflow-investigate` | Static read only (맥락·근거 파악). Exits via mode transition. |
+| `verify` | `workflow-verify` | Non-modifying verification (test run + static inspection + real-interface E2E). Single report output. |
+| `plan` | `workflow-brainstorm` (deep) | New feature / refactor, planning first. |
+| `implement` | `workflow-brainstorm` (light) | Lightweight build on existing code. |
 
-### 1-3. Magic Keyword
+### 1-3. Magic Keywords
 
-자연어 내에 포함되면 스킬 플래그를 세팅한다. (자동 분기와 별개로 surface 기반 제약을 전달)
+Natural-language tokens that flip flags independently of the auto-routing branch:
 
-| 키워드 | 동작 |
-|--------|------|
-| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | `workflow-write-test` TDD 면제 플래그 auto-set (surface-based exemption) |
-| `extend`, `add to`, `덧붙여` | `implement`의 `workflow-brainstorm` 단계 **skip** |
-| `fix`, `bug`, `버그`, `문제` | `fix` 모드 유도 (`/simple-fix` 진입 중에도 interface 변경 감지 시 mode upgrade 제안) |
+| Keyword | Action |
+|---------|--------|
+| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | auto-set `workflow-write-test` TDD exemption (surface-based) |
+| `extend`, `add to`, `덧붙여` | skip `workflow-brainstorm` in `implement` |
+| `fix`, `bug`, `버그`, `문제` | nudge toward `fix` mode (even inside `/simple-fix` upon interface change detection) |
 
-### 1-4. Workflow Skills vs Utility Skills
+### 1-4. Workflow vs. Utility Skills
 
-Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬에만 적용**.
+Only **workflow skills** are constrained by mode whitelist. Utility skills are free.
 
-#### workflow-* 스킬 (mode whitelist 대상, 13개)
+#### workflow-* skills (mode whitelist target, 14)
 
 - `workflow-brainstorm`, `workflow-brainstorm-review`
 - `workflow-investigate`, `workflow-investigate-review`
@@ -108,45 +110,48 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 - `workflow-agent-review`
 - `workflow-e2e`, `workflow-e2e-review`
 - `workflow-team-code-review`
+- `workflow-verify`
 - `workflow-human-check`
 
-특징:
-- Mode의 `allowed_skills`에 선언된 것만 실행
-- `state.json` 갱신 (events, test_cycles 등)
-- Producer chain 라우팅 대상
-- 각 스킬은 `skills/<name>/SKILL.md`에 정의, contract 포함
+Characteristics:
+- Subject to the mode's `allowed_skills`.
+- Mutates `state.json` (events, test_cycles, team_runtime, ...).
+- Target of producer-chain routing.
+- Defined in `skills/<name>/SKILL.md` with a contract.
 
-#### 일반 유틸리티 스킬 (자유 사용)
+#### Utility skills (free use)
 
-예: `ui-ux-pro-max`, `copywriting`, `claude-api`, `test-driven-development`, `vercel-react-best-practices`, `e2e-testing-patterns`, 기타.
+Examples: `ui-ux-pro-max`, `copywriting`, `claude-api`, `test-driven-development`, `vercel-react-best-practices`, `e2e-testing-patterns`, `queue`, `deep-interview`.
 
-특징:
-- Mode 제약 없이 언제든 호출 가능
-- `state.json` 상태 변경 없음 (보조 도구)
-- Producer chain 외부
-- workflow 스킬 내부에서 자유롭게 호출 가능 (예: `workflow-coding`이 `ui-ux-pro-max`를 호출)
+Characteristics:
+- No mode constraint; callable any time.
+- No state mutation (auxiliary tools).
+- Outside the producer chain.
+- Freely callable from within a workflow skill (e.g., `workflow-coding` calling `ui-ux-pro-max`).
 
-> **원칙**: `workflow-*`는 **작업 진행의 단위**, 유틸리티는 **도구**.
+> **Rule**: `workflow-*` is the **unit of progress**, utility skills are **tools**.
 
 ---
 
 ## 2. Task State Model
 
-### 2-1. 파일 레이아웃
+### 2-1. File layout
 
 ```
 .smt/features/<feature-slug>/
 ├── task/
-│   ├── plan.md                  ← 기능 목표·범위·acceptance criteria
-│   ├── <task-name>.md           ← 사람이 읽는 작업 기록│   └── <task-name>.state.json   ← 기계 상태 (단일 출처)
+│   ├── plan.md                  ← feature goal, scope, acceptance criteria
+│   ├── <task-name>.md           ← human-readable task record
+│   └── <task-name>.state.json   ← machine state (single source)
 ├── decisions.md
-└── artifacts/                   ← e2e 비디오·스크린샷·로그
+└── artifacts/                   ← e2e video, screenshots, logs, transcripts, IO samples
 ```
 
-### 2-2. State JSON 스키마
+### 2-2. State JSON schema
 
 ```json
 {
+  "schema_version": "2.4.1",
   "task_id": "fix-empty-input-bug",
   "mode": "fix",
   "allowed_skills": [
@@ -159,336 +164,156 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
     "workflow-human-check"
   ],
   "current_stage": "workflow-coding",
-  "completed_stages": [
-    "workflow-investigate",
-    "workflow-investigate-review",
-    "workflow-tasker",
-    "workflow-tasker-review",
-    "workflow-write-test"
-  ],
+  "completed_stages": ["workflow-investigate", "workflow-investigate-review", "workflow-tasker", "workflow-tasker-review", "workflow-write-test"],
+  "chained_modes": [],
   "created_at": "2026-04-19T10:00:00Z",
   "updated_at": "2026-04-19T10:45:00Z",
   "target_type": "bug_fix",
   "surface": ["ui"],
   "exempt": { "tdd": false, "e2e": false },
-  "team_runtime": {
-    "workflow-investigate": {
-      "pattern": "A",
-      "assigned_agents": [{ "id": "a1", "agent_type": "explore-medium", "status": "done" }]
-    },
-    "workflow-coding": {
-      "pattern": "A",
-      "assigned_agents": [{ "id": "a2", "agent_type": "executor", "status": "in_progress" }],
-      "watchdog_enabled": true
-    },
-    "workflow-e2e": {
-      "pattern": "A",
-      "assigned_agents": [{ "id": "a3", "agent_type": "qa-tester", "status": "pending" }]
-    },
-    "workflow-agent-review": {
-      "pattern": "B",
-      "assigned_agents": [
-        { "id": "a4", "agent_type": "code-reviewer", "status": "pending" },
-        { "id": "a5", "agent_type": "security-reviewer", "status": "pending" }
-      ],
-      "aggregator": "arbitrator"
-    },
-    "workflow-team-code-review": {
-      "pattern": "B",
-      "assigned_agents": [
-        { "id": "a6", "agent_type": "advocate", "status": "pending" },
-        { "id": "a7", "agent_type": "critic", "status": "pending" },
-        { "id": "a8", "agent_type": "arbitrator", "status": "pending" }
-      ],
-      "aggregator": "arbitrator"
-    }
-  },
-  "events": [
-    {
-      "t": "2026-04-19T10:00:00Z",
-      "skill": "workflow-investigate",
-      "result": "pass",
-      "declarer": "hook",
-      "cause": null,
-      "evidence": { "type": "file_present", "detail": "investigation.md created" }
-    },
-    {
-      "t": "2026-04-19T10:20:00Z",
-      "skill": "workflow-coding",
-      "result": "fail",
-      "declarer": "hook",
-      "cause": "typecheck",
-      "evidence": { "type": "exit_code", "detail": "tsc exit 2, 3 errors" }
-    }
-  ],
-  "test_cycles": [
-    {
-      "t": "2026-04-19T10:30:00Z",
-      "file": "src/lib/validator.test.ts",
-      "action": "added_case",
-      "case_name": "returns null when input is empty (bug #123)",
-      "run_result": "fail",
-      "error": "Expected null, got undefined"
-    }
-  ],
-  "active_feedback": [
-    {
-      "id": "fb-001",
-      "from": "workflow-human-check@2026-04-19T11:00:00Z",
-      "target_skill": "workflow-coding",
-      "text": "validation 로직이 너무 방어적. null 케이스만 필요.",
-      "evidence_ref": "events[8]",
-      "resolved": false
-    }
-  ],
+  "team_runtime": { /* per-skill runtime state */ },
+  "events": [ /* append-only audit log */ ],
+  "test_cycles": [ /* TDD RED→GREEN record */ ],
+  "active_feedback": [ /* unresolved review feedback */ ],
   "sub_tasks": []
 }
 ```
 
-### 2-3. 새 task 초기화 규칙 (hook 강제)
+Validated invariants:
+- `allowed_skills` ⊆ the 14 workflow skills.
+- `events[].declarer` ∈ `{hook, user}` (skill-declarer forbidden per Iron Law #3).
+- `events[].cause` ∈ the fixed enum (see §6-3).
+- `team_runtime[skill].rounds[i]` (when present) has `focus` ∈ `{omission, contradiction, edge_case}` and `result` ∈ `{null, pass, fail}`.
+- `active_feedback[i].target_skill` ∈ workflow skills; `resolved` boolean.
 
-- 새 `<task-name>.md` 생성 시 동일 basename의 `.state.json`을 아래 초기값으로 생성:
-  - `current_stage: null`
-  - `completed_stages: []`
-  - `events: []`, `test_cycles: []`, `active_feedback: []`, `sub_tasks: []`
-  - `team_runtime: {}` (tasker가 채움)
-- 세션 내에서 여러 task를 오가도 **각 state.json만 참조**. active task는 `.smt/active_task` 심링크로 지시.
+### 2-3. Token optimization
 
-### 2-4. 토큰 최적화
-
-- 프롬프트 주입 시 `events` 최근 **5개**만 포함
-- `test_cycles`는 현재 `current_stage`와 관련된 파일만
-- `active_feedback`는 `resolved: false`만
-- 나머지는 디스크에 남으나 컨텍스트에 미포함
+- Prompt injection uses only the **last 5** events.
+- `test_cycles` is filtered to files related to `current_stage`.
+- `active_feedback` is filtered to `resolved: false`.
+- The rest stays on disk but outside the context window.
 
 ---
 
 ## 3. Workflow Skill Registry (14 skills)
 
-> 스킬 정의는 **전역 1개소** (`skills/workflow-<name>/SKILL.md`). 모드 간 공유.
+> Skill definitions live in a single location (`skills/<name>/SKILL.md`). Shared across modes.
 
-| # | Skill | Consumes | Produces | 비고 |
-|---|-------|----------|----------|------|
-| 1 | `workflow-brainstorm` | `<trigger_prompt>` | `brainstorm.md` | `depth: deep\|light` 파라미터 |
+| # | Skill | Consumes | Produces | Notes |
+|---|-------|----------|----------|-------|
+| 1 | `workflow-brainstorm` | trigger prompt | `brainstorm.md` | `depth: deep\|light` |
 | 2 | `workflow-brainstorm-review` | `brainstorm.md` | `brainstorm_review.md` | pass/fail/reshape |
-| 3 | `workflow-investigate` | `brainstorm.md` OR `<trigger_prompt>` | `investigation.md` | 기존 코드·데이터 조사 |
+| 3 | `workflow-investigate` | brainstorm.md or trigger | `investigation.md` | static read (structure, references) |
 | 4 | `workflow-investigate-review` | `investigation.md` | `investigate_review.md` | pass/fail/reshape |
-| 5 | `workflow-tasker` | `investigation.md` [+`brainstorm.md`] | `plan.md` (Queue + Approaches), `target_type`, `team_runtime` 초기 할당 | `target_type: new_feature\|refactor\|extend_existing\|migration\|bug_fix` |
-| 6 | `workflow-tasker-review` | `plan.md` | `tasker_review.md` | side-effect 검토 포함. pass/fail/reshape |
-| 7 | `workflow-write-test` | `plan.md` | `*.test.*` files (RED), `test_cycles` 엔트리 | surface-based 면제 적용 |
-| 8 | `workflow-coding` | `*.test.*` (RED) OR `active_feedback` | `src/**` 파일 변경 | 실제 코드 구현 |
-| 9 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` 갱신 | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" 시 A로 격하. |
-| 10 | `workflow-e2e` | `src/**` built | `artifacts/` (비디오·스크린샷·로그·transcript·io-samples) | **실제 인터페이스** 구동 강제 (UI=브라우저, CLI=subprocess, API=실 서버·네트워크, DB=실 엔진, Hook=실제 파이프). 테스트 러너 출력만으론 pass 불가. |
-| 11 | `workflow-e2e-review` | `artifacts/` | `e2e_review.md` | 시나리오 충분성 검토 |
-| 12 | `workflow-team-code-review` | 전체 변경 | `team_review.md` (severity 분류) | **다중 에이전트 95% 합의** |
-| 13 | `workflow-verify` | 현 코드베이스 (no RED 요구) | `verify_report.md` (Phase 1 tests + Phase 2 static inspection + Phase 3 E2E) | `/verify` 모드 진입 스킬. 수정 없음. Multi-Pass 미사용 (리뷰 스킬 아님). |
-| 14 | `workflow-human-check` | 모든 산출물 | 사용자 결정 (`rework` / `complete` / `hold` / `upgrade`) | 최종 게이트 |
-
-### 3-1. Skill Contract 예시 (`skills/workflow-coding/SKILL.md`)
-
-```yaml
----
-name: workflow-coding
-produces: src_files_changed
-consumes: test_red_files  # OR active_feedback_target_coding
-gate:
-  - postcondition: "git diff --cached --name-only | grep -v '\\.test\\.'"
-  - tdd_cycle: "test_cycles has action=added_case|modified_case + run_result=fail for this task"
-default_agent: executor
-can_delegate_to: [ui-ux-pro-max, copywriting, vercel-react-best-practices]
----
-```
+| 5 | `workflow-tasker` | investigation.md (+brainstorm.md) | `plan.md`, `target_type`, initial `team_runtime` | |
+| 6 | `workflow-tasker-review` | `plan.md` | `tasker_review.md` | side-effect / scope check; pass/fail/reshape |
+| 7 | `workflow-write-test` | `plan.md` | `*.test.*` (RED), `test_cycles` entries | surface-based exemption applies |
+| 8 | `workflow-coding` | `*.test.*` (RED) or `active_feedback` | `src/**` changes | implementation |
+| 9 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` updates | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" → A. |
+| 10 | `workflow-e2e` | built `src/**` | `artifacts/` (video / screenshots / logs / transcripts / IO samples) | **Drives the real interface** (browser, subprocess, HTTP port, DB engine, hook pipe). Test-runner stdout alone is NOT a valid pass. |
+| 11 | `workflow-e2e-review` | `artifacts/` | `e2e_review.md` | scenario coverage / artifact quality |
+| 12 | `workflow-team-code-review` | whole change | `team_review.md` (severity-tagged) | **Multi-agent 95% consensus** |
+| 13 | `workflow-verify` | current codebase (no RED required) | `verify_report.md` (Phase 1 tests + Phase 2 static inspection + Phase 3 E2E interface) | Entry skill of `/verify`. Non-modifying. Not a review skill — no Multi-Pass rounds. |
+| 14 | `workflow-human-check` | all artifacts | user decision (`rework` / `complete` / `hold` / `upgrade`) | final gate |
 
 ---
 
 ## 4. Mode Definitions
 
-### 4-1. simple_fix (entry: `/simple-fix` 또는 자동 분기)
+Each mode is a subset of the 14 workflow skills plus an entry point.
 
-**allowed_skills**: `workflow-coding`, `workflow-e2e`, `workflow-human-check`
+### 4-1. simple_fix (`/simple-fix`)
 
-```
-   ╭─────────────────╮     ╭──────────────╮     ╭──────────────────────╮
-   │ workflow-coding │────▶│ workflow-e2e │────▶│ workflow-human-check │
-   ╰─────────────────╯     ╰──────────────╯     ╰──────────────────────╯
-           ▲                      │                        │
-           │ fail                 │ fail                   │ rework
-           │                      ▼                        │
-           └──────────────────────┴────────────────────────┘
-```
+**allowed**: `workflow-coding`, `workflow-e2e`, `workflow-human-check`.
+**defaults**: `exempt.tdd: true`, `exempt.e2e: false`.
+Interface changes force `/fix` mode upgrade at `workflow-human-check`.
 
-**특징**:
-- 텍스트·CSS·상수 치환 전용
-- TDD 면제 (surface-based auto-apply)
-- interface 변경이 있으면 `workflow-e2e`는 반드시 수행
-- 로직 변경이 감지되면 `workflow-human-check`에서 사용자에게 **mode upgrade to `fix` 제안**
+### 4-2. fix (`/fix`)
 
-### 4-2. fix (entry: `/fix` 또는 자동 분기)
+**allowed**: all 11 core skills (no brainstorm; investigate-first pipeline).
+Full bug-repair pipeline: investigate → investigate-review → tasker → tasker-review → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check.
 
-**allowed_skills**: simple_fix의 3개 + `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`, `workflow-write-test`, `workflow-agent-review`, `workflow-e2e-review`, `workflow-team-code-review`
+### 4-3. investigate (`/investigate`)
 
-```
-  ╭──────────────────────╮    ╭───────────────────────────╮    ╭─────────────────╮
-  │ workflow-investigate │───▶│ workflow-investigate-review│───▶│ workflow-tasker │
-  ╰──────────────────────╯    ╰───────────────────────────╯    ╰─────────────────╯
-            ▲                         │ reshape                         │
-            │ fail                    │                                 ▼
-            └─────────────────────────┘                       ╭─────────────────────╮
-                                                              │workflow-tasker-review│
-                                                              ╰─────────────────────╯
-                                                                      │ pass
-                                                                      ▼
-  ╭────────────────────╮   ╭─────────────────╮   ╭───────────────────────╮
-  │ workflow-write-test│──▶│ workflow-coding │──▶│ workflow-agent-review │
-  ╰────────────────────╯   ╰─────────────────╯   ╰───────────────────────╯
-                                  ▲                        │ pass
-                                  │ fail                   ▼
-                                  │                ╭──────────────╮   ╭─────────────────────╮
-                                  │                │ workflow-e2e │──▶│ workflow-e2e-review │
-                                  │                ╰──────────────╯   ╰─────────────────────╯
-                                  │                       ▲                     │ pass
-                                  │                       │                     ▼
-                                  │                       │          ╭────────────────────────╮
-                                  │                       │          │workflow-team-code-review│
-                                  │                       │          ╰────────────────────────╯
-                                  │                       │                     │ pass
-                                  │                       │                     ▼
-                                  │                       │          ╭──────────────────────╮
-                                  │                       │          │ workflow-human-check │
-                                  │                       │          ╰──────────────────────╯
-                                  │                       │                     │
-                                  └───────────────────────┴─────────────────────┘
-                                                  all fail → workflow-coding
-```
+**allowed**: `workflow-investigate`, `workflow-investigate-review`.
+Static read only. Exits via user-chosen mode transition.
 
-### 4-3. investigate (entry: `/investigate` 또는 자동 분기)
+### 4-4. verify (`/verify`)
 
-**allowed_skills**: `workflow-investigate`, `workflow-investigate-review`
+**allowed**: `workflow-verify`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`.
+**defaults**: `exempt.tdd: true`, `exempt.e2e: false`.
+Non-modifying verification. `workflow-verify` runs three phases in one invocation (tests + static inspection + real-interface E2E). Report-only. Fails route to `/fix` via mode upgrade (or chain auto-advance).
 
-```
-  ╭──────────────────────╮   ╭────────────────────────────╮   ╭──────────────────────╮
-  │ workflow-investigate │──▶│ workflow-investigate-review│──▶│   mode_transition    │
-  ╰──────────────────────╯   ╰────────────────────────────╯   ╰──────────────────────╯
-            ▲                        │                         │       │       │
-            │ fail                   │                         ▼       ▼       ▼
-            └────────────────────────┘                       /fix   /plan  free_chat
-```
+### 4-5. plan (`/plan`)
 
-**출구**: 사용자가 다음 모드 선택. 자동 전환 금지(사용자 확인 필수).
+**allowed**: brainstorm + investigate + tasker (+ reviews). Planning-only mode.
+Entry: `workflow-brainstorm` with `depth: deep`. Exits to `/implement`.
 
-### 4-4. plan (entry: `/plan` 또는 자동 분기)
+### 4-6. implement (`/implement`)
 
-**allowed_skills**: `workflow-brainstorm`, `workflow-brainstorm-review`, `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`
-
-```
-  ╭─────────────────────╮      ╭────────────────────────────╮      ╭──────────────────────╮
-  │ workflow-brainstorm │─────▶│ workflow-brainstorm-review │─────▶│ workflow-investigate │
-  ╰─────────────────────╯      ╰────────────────────────────╯      ╰──────────────────────╯
-           ▲                          │ ▲                                     │
-           │ fail                     │ │ reshape                             │
-           └──────────────────────────┘ └─────────────────────────────────────┤
-                                                                              ▼
-  ╭────────────────────────────╮    ╭─────────────────╮    ╭─────────────────────────╮
-  │ workflow-investigate-review│───▶│ workflow-tasker │───▶│ workflow-tasker-review  │
-  ╰────────────────────────────╯    ╰─────────────────╯    ╰─────────────────────────╯
-              ▲                                                         │ pass
-              │ fail                                                    ▼
-              └─────────────────                              ╭──────────────────╮
-                                                             │ mode_transition  │
-                                                             ╰──────────────────╯
-                                                                      │
-                                                                      ▼
-                                                                  /implement
-```
-
-**특징**:
-- `workflow-brainstorm` (deep) → 기획 우선
-- `workflow-brainstorm ↔ workflow-investigate` 양방향 (reshape edge)
-- 최종 출구는 `/implement`
-
-### 4-5. implement (entry: `/implement` 또는 자동 분기)
-
-**allowed_skills**: plan + fix의 합집합 (13개 전체)
-
-```
-  ╭──────────────────────────╮    ╭────────────────────────────╮    ╭──────────────────────╮
-  │ workflow-brainstorm(light)│───▶│ workflow-brainstorm-review │───▶│ workflow-investigate │
-  ╰──────────────────────────╯    ╰────────────────────────────╯    ╰──────────────────────╯
-           │  skip_if: extend               │ ▲                                 │
-           └────────────────────────────────┘ │ reshape                         │
-                                              └─────────────────────────────────┤
-                                                                                ▼
-                                                        [fix와 동일:
-                                                         workflow-investigate-review
-                                                          → workflow-tasker → ...
-                                                          → workflow-human-check]
-```
-
-**특징**:
-- `workflow-brainstorm(light)`: 프롬프트 기반 간단 인터뷰 (`depth: light`)
-- `extend` 키워드 시 brainstorm 단계 skip
-- 이후 흐름은 fix와 동일
+**allowed**: all 14 skills.
+Entry: `workflow-brainstorm` with `depth: light`. Full pipeline after brainstorm.
+`extend` / `add to` / `덧붙여` magic keywords skip brainstorm.
 
 ---
 
 ## 5. Routing Rules
 
-### 5-1. Producer Chain (기본 실패 라우팅)
+### 5-1. Producer chain (default fail routing)
 
 ```
 workflow-brainstorm-review   ─fail─▶ workflow-brainstorm
 workflow-investigate-review  ─fail─▶ workflow-investigate
 workflow-tasker-review       ─fail─▶ workflow-tasker
-workflow-write-test          ─fail─▶ workflow-tasker          (계획 재검토 필요)
-workflow-coding              ─fail─▶ workflow-write-test      (RED cycle 불충족 시)
-                                      OR workflow-tasker      (계획이 틀림)
+workflow-write-test          ─fail─▶ workflow-tasker
+workflow-coding              ─fail─▶ workflow-write-test      (RED cycle missing)
+                                    OR workflow-tasker       (scope mismatch)
 workflow-agent-review        ─fail─▶ workflow-coding
-workflow-e2e                 ─fail─▶ workflow-coding
-workflow-e2e-review          ─fail─▶ workflow-coding
-workflow-team-code-review    ─fail─▶ workflow-coding (medium/low)
-                                      workflow-tasker (high/critical)
-workflow-human-check         ─fail─▶ active_feedback[].target_skill (기본 workflow-coding)
+workflow-e2e                 ─fail─▶ workflow-coding          (assertion, typecheck, build)
+                                    OR workflow-e2e          (artifact_missing / mocked_interface)
+workflow-e2e-review          ─fail─▶ workflow-coding          (insufficient_scenario)
+                                    OR workflow-e2e          (file_absent)
+workflow-team-code-review    ─fail─▶ workflow-coding          (medium/low)
+                                    OR workflow-tasker        (high/critical)
+workflow-verify              ─fail─▶ workflow-coding          (any runtime failure → /fix upgrade)
+workflow-human-check         ─fail─▶ active_feedback[].target_skill (default workflow-coding)
 ```
 
-### 5-2. Reshape Edge (review 스킬만 사용)
+Origin skills (brainstorm, investigate, tasker) re-run themselves on fail.
 
-Review 스킬은 `result ∈ { pass, fail, reshape }` 출력 가능.
-- `pass`: 다음 스킬로 전진
-- `fail`: producer로 복귀 (원본 재작업)
-- `reshape`: **더 상위 스킬로 복귀** (원본이 아닌, 범위 재설정)
+### 5-2. Reshape edge (review skills only)
 
-예: `workflow-investigate-review`가 "조사 결과 범위가 달라짐"이라 판단 → `reshape → workflow-brainstorm`
-(`reshape`는 evidence 필드에 근거 기록 필수. 자의적 선언 금지.)
+Review skills emit `result ∈ { pass, fail, reshape }`:
+- `pass`: advance.
+- `fail`: route to producer (rework the input).
+- `reshape`: jump further upstream (scope change; evidence required).
 
-### 5-3. Mode Whitelist 검증 (hook 강제)
+Example: `workflow-investigate-review` declaring `reshape` → `workflow-brainstorm`.
 
-**적용 대상**: `workflow-*` 접두사 스킬만. 유틸리티 스킬은 검증 생략.
+### 5-3. Mode whitelist check (hook-enforced)
 
-라우팅 target이 `workflow-*`이고 `allowed_skills` 밖이면:
+**Applies to workflow-* only.** Utility skills skip this.
 
-1. **Producer chain fallback**: 상류로 탐색, 가장 가까운 allowed skill로 대체
-2. **Fallback 실패 시 에스컬레이션**: `workflow-human-check`의 "mode upgrade" 옵션으로 사용자 결정
+If a fail-route target is `workflow-*` but not in `allowed_skills`:
+1. Walk the producer chain upstream for the nearest allowed target.
+2. If none: escalate via `workflow-human-check` mode-upgrade option.
 
-### 5-4. Mode Upgrade
+### 5-4. Mode upgrade
 
-**방향**: 모두 허용 (양방향 포함)
+Any direction allowed; always user-gated.
 
 ```
 simple_fix ──▶ fix ──▶ implement ──▶ plan
               ◀──     ◀──           ◀──
-   (← 되돌아가기도 허용, 단 사용자 결정 필수)
 ```
 
-**업그레이드 시 state.json 갱신**:
-- `mode` 필드 치환
-- `allowed_skills` 재계산
-- `events`, `test_cycles`, `active_feedback`, `sub_tasks` **보존**
+On upgrade: `mode` and `allowed_skills` are rewritten; `events`, `test_cycles`, `active_feedback`, `sub_tasks` are **preserved**.
 
 ---
 
 ## 6. Fail Model
 
-### 6-1. Fail 이벤트 구조 (고정 스키마)
+### 6-1. Fail event structure (fixed schema)
 
 ```json
 {
@@ -501,42 +326,48 @@ simple_fix ──▶ fix ──▶ implement ──▶ plan
 }
 ```
 
-### 6-2. Declarer 우선순위
+### 6-2. Declarer priority
 
-| Declarer | 권한 | 적용 |
-|----------|------|------|
-| `hook` | 최우선 | typecheck, lint, test_run, build, file_absent, tdd_cycle |
-| `skill` | ❌ **금지** | "못하겠음" 셀프 페일 불가 (원칙 3) |
-| `user` | 최종 | `workflow-human-check`에서만 선언 가능 |
+| Declarer | Authority | Applies to |
+|----------|-----------|-----------|
+| `hook` | highest | typecheck, lint, test_run, build, file_absent, tdd_cycle, artifact_missing, mocked_interface |
+| `skill` | ❌ forbidden | Self-declared fail is rejected (Iron Law #3) |
+| `user` | final | Only at `workflow-human-check` |
 
-### 6-3. Cause Enum (고정)
+### 6-3. Cause enum (fixed)
 
-| Cause | 적용 스킬 | 검증 방식 |
-|-------|----------|----------|
-| `typecheck` | workflow-write-test, workflow-coding, workflow-e2e | `tsc --noEmit` exit code |
-| `lint` | workflow-write-test, workflow-coding | eslint exit code |
-| `test_run` | workflow-coding, workflow-e2e, workflow-team-code-review | 테스트 러너 exit code |
-| `build` | workflow-e2e | `npm run build` exit code |
-| `assertion` | workflow-e2e | 테스트 어서션 실패 |
-| `file_absent` | 모든 리뷰 스킬 | postcondition 파일 부재 |
-| `tdd_cycle` | workflow-coding | test_cycles에 RED 엔트리 부재 |
-| `review_reject` | workflow-human-check | 사용자 명시 거부 |
-| `scope_mismatch` | workflow-tasker-review, workflow-team-code-review | 계획 vs 구현 불일치 |
-| `side_effect` | workflow-tasker-review | 타 기능 영향 감지 |
-| `security` | workflow-agent-review, workflow-team-code-review | 취약점 발견 |
-| `insufficient_scenario` | workflow-e2e-review | 시나리오 커버리지 부족 |
+| Cause | Emitted by | Detection |
+|-------|-----------|-----------|
+| `typecheck` | write-test, coding, e2e, verify | `tsc --noEmit` exit |
+| `lint` | write-test, coding, verify | eslint exit |
+| `test_run` | coding, e2e, team-code-review, verify | test runner exit |
+| `build` | e2e | `npm run build` exit |
+| `assertion` | e2e | test assertion failure |
+| `file_absent` | all review skills | postcondition file missing |
+| `tdd_cycle` | coding | test_cycles has no RED entry |
+| `review_reject` | human-check | explicit user rejection |
+| `scope_mismatch` | tasker-review, team-code-review | plan vs. implementation mismatch |
+| `side_effect` | tasker-review | other-feature impact detected |
+| `security` | agent-review, team-code-review | vulnerability found |
+| `insufficient_scenario` | e2e-review | scenario coverage thin |
+| `stall_cascade` | auto-confirm (stall-detector) | cascade-level event |
+| `conflict_merge_failed` | aggregator | Pattern C merge failed |
+| `verification_failed` | Multi-Pass review skills | a verification round failed |
+| `artifact_missing` | e2e, verify | E2E pass claim without real-interface artifacts (§8) |
+| `mocked_interface` | e2e, verify | the surface under test was mocked (§8) |
 
-### 6-4. Evidence Type Enum
+### 6-4. Evidence type enum
 
-| Type | 내용 |
-|------|------|
-| `exit_code` | 명령 exit code + stderr 요약 |
-| `file_absent` | 기대 파일 경로 |
-| `parse` | 로그·출력 파싱 결과 |
-| `user_input` | 사용자 입력 원문 |
-| `diff` | git diff 발췌 |
+| Type | Content |
+|------|---------|
+| `exit_code` | command exit + stderr excerpt |
+| `file_absent` | expected file path |
+| `file_present` | produced file path |
+| `parse` | log/output parse result |
+| `user_input` | user input transcript |
+| `diff` | git diff excerpt |
 
-### 6-5. Fail 이후 동작
+### 6-5. Post-fail behavior
 
 ```
 ┌─────────────┐
@@ -548,28 +379,27 @@ simple_fix ──▶ fix ──▶ implement ──▶ plan
                                                 │
                          ┌──────────────────────┤
                          ▼                      ▼
-                   [producer 허용]          [producer 불허]
+                   [producer allowed]     [producer not allowed]
                          │                      │
                          ▼                      ▼
-                   producer 스킬 실행     mode upgrade 제안 → 사용자
+                   run producer          propose mode upgrade → user
                          │                      │
                          └──────────────────────┘
                                    │
                                    ▼
-                          [auto-confirm hook 개입]
+                          [auto-confirm hook]
                                    │
                                    ▼
-                          워크플로우 전진 계속
-                          (유일한 정지: 사용자 stop)
+                          workflow advances (only user stop halts)
 ```
 
-**원칙 1·2·4의 결합**: 에이전트는 producer chain을 따라 **무한히 전진 시도**. 루프 감지는 사용자의 역할. retry count 없음.
+The combination of Iron Laws #1, #2, #4: agents follow the producer chain indefinitely. Loop detection is the user's job. No retry counter.
 
 ---
 
 ## 7. TDD Cycle Log
 
-### 7-1. 구조
+### 7-1. Structure
 
 ```json
 "test_cycles": [
@@ -584,206 +414,132 @@ simple_fix ──▶ fix ──▶ implement ──▶ plan
 ]
 ```
 
-### 7-2. 기존 기능 수정 지원
+### 7-2. Existing-feature modification
 
-- 기존 test file이 이미 존재해도 OK
-- `action: added_case` 또는 `modified_case` 엔트리 필수
-- `case_name`은 task 설명 또는 bug id와 문자열 매칭 (느슨)
+- An existing test file is OK.
+- At least one entry with `action ∈ {added_case, modified_case}` required.
+- `case_name` should string-match the task description or bug id (loose).
 
-### 7-3. TDD Gate (hook 강제)
+### 7-3. TDD gate (hook-enforced)
 
-**`workflow-coding` 진입 시**:
-- 해당 task의 `test_cycles`에 `action ∈ {added_case, modified_case}` + `run_result: fail` 엔트리 최소 1개
-- 없으면 `declarer: hook, cause: tdd_cycle` → `workflow-write-test`로 라우팅
+**On `workflow-coding` entry**:
+- At least one `action ∈ {added_case, modified_case}` + `run_result: fail` entry.
+- Otherwise: `declarer: hook, cause: tdd_cycle` → route to `workflow-write-test`.
 
-**workflow-e2e / workflow-team-code-review 통과 시**:
-- 최근 `run_result: pass` 확인
+**On `workflow-e2e` / `workflow-team-code-review` pass**:
+- Verify a recent `run_result: pass` entry.
 
-### 7-4. Surface-based Exemption
+### 7-4. Surface-based exemption
+
 | Surface | TDD | E2E |
 |---------|-----|-----|
-| CSS / style / typography | ❌ 면제 | ❌ (시각검증만) |
-| i18n / copy | ❌ 면제 | ❌ |
-| Typo (주석·문서) | ❌ 면제 | ❌ |
-| Pure dialogue (코드 無) | ❌ 면제 | ❌ |
-| Bug fix (로직) | ✅ 필수 | ✅ if interface |
-| 기존 기능 behavior 변경 | ✅ 필수 | ✅ if user-visible |
-| 신규 로직 | ✅ 필수 | ✅ if interface |
+| CSS / style / typography | ❌ exempt | ❌ (visual check only) |
+| i18n / copy | ❌ exempt | ❌ |
+| Typo (comments / docs) | ❌ exempt | ❌ |
+| Pure dialogue (no code) | ❌ exempt | ❌ |
+| Bug fix (logic) | ✅ required | ✅ if interface |
+| Existing-feature behavior change | ✅ required | ✅ if user-visible |
+| New logic | ✅ required | ✅ if interface |
 
-**면제 시 기록**: `state.json.exempt` 필드 + `decisions.md`에 `TDD: exempt (<reason>)`.
-
----
-
-## 8. Active Feedback Flow
-
-### 8-1. 생성
-
-review 스킬 실패 또는 `workflow-human-check`의 `rework` 결정 시:
-
-```json
-"active_feedback": [
-  {
-    "id": "fb-001",
-    "from": "workflow-human-check@2026-04-19T11:00:00Z",
-    "target_skill": "workflow-coding",
-    "text": "validation 로직이 너무 방어적. null 케이스만 필요.",
-    "evidence_ref": "events[8]",
-    "resolved": false
-  }
-]
-```
-
-### 8-2. 소비
-
-- 다음 실행 스킬(주로 `workflow-coding`)의 **프롬프트 컨텍스트에 주입**
-- `resolved: false`인 것만 로드
-- 스킬 완료 시 해당 id를 `resolved: true`로 마킹
-
-### 8-3. 누적
-
-- 복수 피드백 자동 누적 (리뷰 2회 이상)
-- 해결되지 않은 피드백이 남아있으면 `workflow-team-code-review`에서 재확인
+Record exemption at `state.json.exempt` + `decisions.md: TDD: exempt (<reason>)`.
 
 ---
 
-## 9. Review Skills (역할 분리)
+## 8. E2E Policy — Real-Interface Contract
 
-| 스킬 | 시점 | 검토 대상 | 기본 Pattern / 수행자 | Fail 시 |
-|------|------|----------|------|---------|
-| `workflow-brainstorm-review` | brainstorm 직후 | 기획의 모호·모순 | **B Adversarial** (critic only) | workflow-brainstorm |
-| `workflow-investigate-review` | investigate 직후 | 조사 누락·리스크 | **A Single** (explore-high) | workflow-investigate |
-| `workflow-tasker-review` | tasker 직후 | 계획 side-effect, 범위 | **B Team Consensus** (95%) | workflow-tasker |
-| `workflow-agent-review` | coding 직후, e2e 전 | 코드 품질·버그·보안·Risk 등록 | **B Dual Adversarial** (code-reviewer + security-reviewer) | workflow-coding |
-| `workflow-e2e-review` | e2e 직후 | 시나리오 커버리지, 로그·비디오 검증 | **A Single** | workflow-coding |
-| `workflow-team-code-review` | e2e-review 직후 | 전체 변경 홀리스틱 | **B Team Consensus** (advocate + critic + arbitrator) | severity 따라 workflow-coding/workflow-tasker |
-| `workflow-human-check` | 최종 | 비즈니스 맥락·의도 부합 | **User** | active_feedback.target_skill |
+> **E2E is not a test-runner stage.** `vitest run`, `jest`, and `pytest` alone **do not satisfy** `workflow-e2e` or `workflow-verify` Phase 3.
 
-> Pattern 상세는 섹션 12 참조. tasker가 per-skill 오버라이드 가능.
+### 8-1. Every E2E run must:
 
-### 9-1. 95% 합의 프로세스 (Pattern B)
+1. Drive the **actual user-facing interface** for the surface under test.
+2. Produce an **artifact file** in `.smt/features/<slug>/artifacts/` for each exercised surface.
+3. Record the event with `evidence.type ∈ {exit_code, parse, diff, file_present}` referencing the artifact path (not a test-runner stdout scrape).
 
-**기본 적용**: `workflow-team-code-review`, `workflow-tasker-review`
-**승격 가능**: `workflow-agent-review`는 dual adversarial (투표 없이 병합), `workflow-brainstorm-review`는 critic-only 단일.
+### 8-2. Per-surface real interface
 
-```
-advocate  (긍정): 장점·올바른 결정 옹호
-critic    (부정): 문제·엣지케이스 지적
-arbitrator(중립): 종합·점수 계산
+| Surface | Real interface | Required artifact |
+|---------|----------------|-------------------|
+| UI / Frontend | Real browser launched by Playwright, real clicks/typing | `.webm` video + `.png` screenshots + `console.log` |
+| CLI / Script | Real subprocess with real stdin/argv/exit | command transcript file |
+| HTTP API | Real server bound to real port, real fetch/curl | request/response log (method/path/status/body/timing) |
+| Database | Real DB engine (or compatible in-process, never a stub) | query log + before/after state |
+| Hook script | Actual `cat payload.json \| node hook.mjs` pipe | input JSON + output JSON + exit code |
 
-라운드 반복: 모든 에이전트 동의율 ≥ 95% 도달까지
-```
+### 8-3. Disallowed
 
-### 9-2. Severity 분류 (team-code-review / human-check)
+- `pnpm test` / `vitest run` / `jest` alone (that is `workflow-write-test` or `workflow-verify` Phase 1).
+- Calling a handler function in-process without the interface wrapper.
+- Mocking the surface under test (MSW when HTTP is the subject, stubs when DB is the subject).
+- Playwright `--list` / dry runs.
+- Asserting on function return values without the externally visible side effect.
 
-| Severity | 기준 | 라우팅 |
-|----------|------|-------|
-| `CRITICAL` | 데이터 손실, 보안 취약, 서비스 중단 | workflow-tasker (재설계) |
-| `HIGH` | 주요 버그·엣지 누락 | workflow-tasker |
-| `MEDIUM` | 마이너 버그·개선 | workflow-coding |
-| `LOW` | 스타일·네이밍 | Risks 기록, 계속 |
+### 8-4. Enforcement
 
-`## Risks` 섹션은 task 문서에 유지.
-
-### 9-3. Multi-Pass Verification (3-Round 강제)
-
-> **모든 review 스킬은 3 라운드를 강제**로 거친다. 각 라운드는 서로 다른 초점으로 실행되며, 세 라운드가 **모두 pass**일 때만 review 스킬 전체 pass.
-
-#### 3 Round 구조
-
-| Round | Focus | 검증 질문 |
-|-------|-------|---------|
-| 1 | **누락** (omission) | "필요한 것이 빠졌는가? 요구사항·테스트 케이스·고려사항이 모두 포함되었는가?" |
-| 2 | **모순** (contradiction) | "논리적으로 충돌하거나 모순되는 결정·주장이 있는가? 선행 산출물과 불일치는 없는가?" |
-| 3 | **엣지 케이스** (edge case) | "경계 조건·예외·특수 상황을 놓쳤는가? Null/empty/boundary/race condition/동시성 커버?" |
-
-#### 적용 스킬
-
-다음 6개 review 스킬에 **필수 적용**:
-
-- `workflow-brainstorm-review`
-- `workflow-investigate-review`
-- `workflow-tasker-review`
-- `workflow-agent-review`
-- `workflow-e2e-review`
-- `workflow-team-code-review`
-
-(`workflow-human-check` 제외 — 사용자가 직접 판단)
-
-#### Agent 할당 전략
-
-| Pattern | Round별 Agent |
-|---------|---------------|
-| **Pattern A** (single agent) | 각 Round에 **다른 agent 타입** 권장. 불가 시 동일 agent라도 **이전 라운드 산출물 컨텍스트 제거**하고 focus 프롬프트 교체 (fresh perspective). |
-| **Pattern B** (consensus) | 각 Round을 N-agent 95% 합의로 진행 (3 × N agents × M rounds). tasker가 복잡도 따라 축소 가능. |
-| **Pattern D** (hierarchical) | Lead agent가 3 라운드 orchestration. 각 라운드별 하위 agent 다른 관점 할당. |
-
-#### state.json 확장 (team_runtime 내부)
-
-```json
-"team_runtime": {
-  "workflow-agent-review": {
-    "pattern": "B",
-    "min_verification_rounds": 3,
-    "rounds": [
-      {
-        "n": 1,
-        "focus": "omission",
-        "result": "pass",
-        "agent_type": "code-reviewer",
-        "findings": []
-      },
-      {
-        "n": 2,
-        "focus": "contradiction",
-        "result": "pass",
-        "agent_type": "security-reviewer",
-        "findings": []
-      },
-      {
-        "n": 3,
-        "focus": "edge_case",
-        "result": "fail",
-        "agent_type": "qa-tester",
-        "findings": ["boundary: negative input not handled", "race: concurrent writes 미검증"]
-      }
-    ],
-    "completed_rounds": 2,
-    "status": "in_progress"
-  }
-}
-```
-
-#### Fail 처리
-
-- **어느 라운드든 fail** → review 스킬 전체 fail
-- `events`에 `cause: verification_failed, evidence: {round: N, focus: X, findings: [...]}` 기록
-- Producer chain 라우팅 (기존 5-1 규칙)
-- 재진입 시 **전체 3 라운드 재실행** (pass한 라운드라도). 수정된 산출물에 대해 처음부터 검증.
-
-#### 회피 방지 장치 (원칙 2 강화)
-
-1. **각 라운드 독립 실행**: 이전 라운드 결론을 현재 라운드 프롬프트에 주입 금지 (bias 제거)
-2. **"이미 검증함" 답변 차단**: Critic Watchdog이 skip 발언 감지 시 hook으로 round 무효화 + fail 처리
-3. **agent 반복 감지**: 같은 agent가 3 라운드 연속 시 warning 기록 (Pattern A 최소 2종 혼합 권장)
-4. **Round 건너뛰기 금지**: `completed_rounds < 3` 상태에서 review 스킬 pass 선언 불가 (hook 강제)
-
-#### 비용 vs 엄격성 조절
-
-기본 `min_verification_rounds: 3`. 예외:
-- tasker가 "trivial 수정"으로 판단 시 → `min_verification_rounds: 1`로 축소 선언 가능 (state.json에 명시)
-- 축소 사유는 `decisions.md`에 기록 (`Verification: reduced to 1 round (reason: ...)`)
-
-#### 95% 합의와의 관계
-
-- Pattern B의 95% 합의는 **한 라운드 내부의 agent 간 동의** 달성 방식
-- Multi-Pass Verification은 **라운드 간의 focus 전환**
-- 둘은 **직교**: Pattern B × 3-round = 각 라운드마다 95% 합의 달성 (최고 엄격)
+- `workflow-e2e` gate postconditions include `real_interface_invoked`, `no_interface_mocks`, `per_surface_artifact_present`.
+- `critic-watchdog` rule R11 (CRITICAL) blocks any attempt to record an E2E pass while `artifacts/` holds none of the allowed file types (`.webm`, `.mp4`, `.png`, `.jpg`, `.log`, `.transcript`, `.json`, `.sql`, `.exit`).
+- New fail causes: `artifact_missing`, `mocked_interface`. Both route to `workflow-e2e` (self-rerun with correct runner / without mocks).
 
 ---
 
-## 10. Human Check 상세
+## 9. Review Skills
 
-### 10-1. 제시 자료
+| Skill | When | Reviews | Performer | On fail |
+|-------|------|---------|-----------|---------|
+| `workflow-brainstorm-review` | after brainstorm | ambiguity / contradiction in plan | single critic | workflow-brainstorm |
+| `workflow-investigate-review` | after investigate | coverage / risk validation | single explore-high | workflow-investigate |
+| `workflow-tasker-review` | after tasker | plan side-effects / scope | Pattern B 95% consensus | workflow-tasker |
+| `workflow-agent-review` | after coding, before e2e | code quality / bugs / security / Risks | Pattern B dual (code-reviewer + security-reviewer) | workflow-coding |
+| `workflow-e2e-review` | after e2e | scenario coverage / artifact quality | single code-reviewer | workflow-coding |
+| `workflow-team-code-review` | after e2e-review | whole change, holistic | Pattern B 95% consensus (advocate + critic + arbitrator) | severity routes to coding or tasker |
+| `workflow-human-check` | final | business context / intent | **user** | active_feedback.target_skill |
+
+### 9-1. 95% consensus process (Pattern B)
+
+```
+advocate   (positive): defend implementation merits
+critic     (negative): call out defects, missed cases, bugs
+arbitrator (neutral):  synthesize, compute score, render final verdict
+
+Rounds repeat until all agents' agreement ≥ 95%.
+```
+
+### 9-2. Severity classification (team-code-review / human-check)
+
+| Severity | Criterion | Routing |
+|----------|-----------|---------|
+| `CRITICAL` | data loss, security vulnerability, service outage | `workflow-tasker` (redesign) |
+| `HIGH` | major bugs, missed edge cases | `workflow-tasker` |
+| `MEDIUM` | minor bugs, improvements | `workflow-coding` |
+| `LOW` | style, naming | record in `## Risks`, continue |
+
+The `## Risks` section is retained in the task document.
+
+### 9-3. Multi-Pass Verification (3-round enforcement)
+
+All 6 review skills enforce:
+
+```yaml
+min_verification_rounds: 3
+verification_rounds:
+  - n: 1
+    focus: omission         # what's missing?
+  - n: 2
+    focus: contradiction    # what conflicts?
+  - n: 3
+    focus: edge_case        # what boundary is unaddressed?
+```
+
+`pass` requires `completed_rounds === 3` and every round `result === 'pass'`. Anti-evasion guards:
+1. No prior-round conclusions injected into the current round.
+2. `critic-watchdog` blocks "already verified" skip statements.
+3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥ 2 types).
+4. Declaring `pass` with `completed_rounds < 3` is hook-blocked.
+
+---
+
+## 10. Human Check
+
+### 10-1. Presented report
 
 ```
 ┌────────────────────────────────────────────────┐
@@ -792,133 +548,86 @@ arbitrator(중립): 종합·점수 계산
 │ Feature  : <slug>                              │
 │ Task     : <title>                             │
 │ Mode     : <mode>                              │
-│ Stages   : [완료 스킬 목록]                      │
-│                                                │
+│ Stages   : [completed workflow skills]         │
 │ Artifacts:                                     │
 │   - Video : <path>                             │
 │   - Log   : <path>                             │
 │   - Diff  : <summary>                          │
-│                                                │
-│ Risks   : <## Risks 섹션>                       │
-│ TDD     : <test_cycles 요약>                    │
-│ E2E     : <surface + pass/fail>                │
+│ Risks    : <## Risks section>                  │
+│ TDD      : <test_cycles summary>               │
+│ E2E      : <surface + pass/fail + artifacts>   │
 └────────────────────────────────────────────────┘
 ```
 
-(템플릿: `document/templates/report.md.md`)
-
-### 10-2. 사용자 선택지
+### 10-2. User options
 
 ```
-[1] rework   → 재작업 대상 명시 → active_feedback 생성 → target_skill 라우팅
-[2] complete → Git 옵션
-[3] hold     → status: blocked 기록
-[4] upgrade  → 현재 모드가 부족 → 상위 모드로 전환
+[1] rework   → specify rework targets → create active_feedback → target_skill routing
+[2] complete → Git options (push current / push new branch / local only)
+[3] hold     → record status: blocked
+[4] upgrade  → mode upgrade
 ```
 
-### 10-3. Git 옵션 (complete)
+### 10-3. Completion
 
-```
-[a] 현재 브랜치 push
-[b] 새 브랜치 push  (브랜치명 입력)
-[c] 로컬 완료 (push 없음)
-```
-
-### 10-4. 마무리
-
-`state.json` → `current_stage: done`, task md 체크박스 `[x]`, `session/YYYY-MM-DD.md` 로그.
+On `complete`: `state.json.current_stage: done`, task md checkboxes `[x]`, append to `session/YYYY-MM-DD.md`, write `results.md`.
 
 ---
 
-## 11. Auto-Confirm Hook — 핵심 운영 메커니즘
+## 11. Auto-Confirm Hook — Never-Halt Engine
 
-> **원칙 1 (절대 정지 금지)의 실행 엔진**. 워크플로우가 완료되거나 사용자 stop 전까지 에이전트가 멈추지 않도록 강제한다.
+> The runtime implementation of Iron Law #1. The session never halts until the workflow completes or the user stops.
 
-### 11-1. Hook 동작 조건
-
-매 `Stop` 이벤트마다 auto-confirm hook이 실행:
+### 11-1. Hook flow
 
 ```
-[Stop event 발생]
-       │
-       ▼
-[state.json 읽기: current_stage, events, active_feedback, test_cycles]
-       │
-       ▼
-[에이전트 마지막 응답 텍스트 분석]
-       │
-       ▼
-[종합 판단: 아래 결정 트리]
-       │
-       ▼
-[다음 행동 결정 → 프롬프트 주입] ──▶ 새 서브에이전트 진입
+[Stop event]
+     │
+     ▼
+ auto-confirm.mjs
+     ├── read state.json (current_stage, events, active_feedback, test_cycles)
+     ├── analyze last assistant response
+     ├── apply decision tree (§11-2)
+     └── drop payload to .smt/state/auto-confirm-queue.json
+         + emit { decision: 'block' } (exit 2)
+     │
+     ▼ (on next UserPromptSubmit)
+ auto-confirm-consumer.mjs
+     ├── read queue (ignore entries older than 5 min, delete)
+     └── emit { decision: 'continue', additionalContext: <injection> }
 ```
 
-### 11-2. 결정 트리
+### 11-2. Decision tree
 
-| 신호 조합 | 다음 동작 |
-|---------|----------|
-| `events[-1].result == pass` + `current_stage` 완료 | **다음 workflow 스킬 자동 진입** |
-| `events[-1].result == fail` | **Producer chain 라우팅** |
-| `active_feedback`에 `resolved: false` 있음 | **target_skill 재진입** |
-| 응답에 리스크/TODO/미해결 항목 언급 | **sub-tasker 호출 → 큐에 새 task 추가** |
-| `test_cycles`에 RED 있으나 `workflow-coding` 미진입 | **workflow-coding 진입** |
-| `current_stage == workflow-human-check && result == complete` | **세션 정리, `session/YYYY-MM-DD.md` 기록** |
-| `mode_upgrade` 요청 감지 | 사용자 입력 대기 (유일 정지) |
+| Signal | Next action |
+|--------|-------------|
+| `events[-1].result === pass` + `current_stage` done | **advance to next workflow skill** |
+| `events[-1].result === fail` | **producer-chain routing** |
+| `active_feedback` has `resolved: false` | **re-enter target_skill** |
+| Risk keyword in response text | **spawn sub-tasker → add new task to queue** |
+| `test_cycles` has RED but no `workflow-coding` entered | **enter workflow-coding** |
+| `current_stage === workflow-human-check && result === complete` | **wrap session, write session log** |
+| `chained_modes.length > 1` + transition signal | **auto-advance the chain** |
+| `mode_upgrade` requested | user input awaited (only halt) |
 
-### 11-3. 리스크 자동 태스크화 (Sub-tasker 패턴)
+### 11-3. Risk auto-tasking (sub-tasker)
 
-에이전트 응답에 다음 키워드/패턴이 감지되면 **자동으로 하위 task화**:
-
-**트리거 키워드**:
+Trigger keywords in the agent's response:
 - "리스크", "위험", "주의해야", "잠재적"
 - "TODO", "나중에", "추후"
 - "고려 필요", "검토 필요"
 - "이상하지만", "임시로", "일단"
 
-**동작**:
-```
-[키워드 감지]
-       │
-       ▼
-[sub-tasker 서브에이전트 호출]
-       │
-       ▼
-[응답 컨텍스트에서 리스크 내용 추출]
-       │
-       ▼
-[새 task 파일 생성: .smt/features/<slug>/task/risk-<timestamp>.md]
-       │
-       ▼
-[원 task의 state.json.sub_tasks에 id 추가]
-       │
-       ▼
-[원 워크플로우 계속 진행]
-```
+Flow: keyword → call `sub-tasker` agent → extract the risk from context → create a new task under `.smt/features/<slug>/task/risk-<timestamp>.md` → append id to `state.sub_tasks[]` → original workflow continues.
 
-**의미**: 에이전트가 "리스크 있다"고 말하고 끝내는 것을 금지. 언급한 모든 미해결 항목은 **자동으로 큐에 올라간다**. 원칙 2(회피 금지)의 기술적 구현.
+### 11-4. Halt conditions (only allowed)
 
-### 11-4. 멈춤 허용 조건 (유일)
+1. Explicit user stop (`/cancel`, `/stop`, or manual abort).
+2. `workflow-human-check` awaiting user input.
+3. Mode-upgrade decision awaited.
+4. `investigate` mode terminal (user picks the next mode).
 
-다음 경우에만 auto-confirm hook이 세션 정지를 **허용**한다:
-
-1. **사용자 명시적 stop**: `/cancel`, `/stop`, 또는 사용자의 직접 정지 지시
-2. **`workflow-human-check` 진행 중**: 사용자 입력 대기
-3. **Mode upgrade 제안**: 사용자 결정 대기
-4. **`workflow-investigate` 모드의 자연 종료**: 사용자가 다음 모드 선택 대기
-
-이 외에는 **무한히 전진**한다. 같은 실패가 반복되면 `events`에 동일 패턴이 누적되고, 사용자가 인지하여 개입한다.
-
-### 11-5. 판단 근거의 우선순위
-
-auto-confirm이 마지막 응답 텍스트를 해석할 때:
-
-1. **`state.json` 내용** (정형 데이터) — 최우선
-2. **Hook 검증 결과** (typecheck, test 등) — 객관
-3. **에이전트 응답 텍스트 패턴** (리스크 키워드 등) — 보조 신호
-4. **암시적 완료 선언은 무시** — 파일 검증 되지 않은 "완료했습니다" 금지 (원칙 5)
-
-### 11-6. 설정
+### 11-5. Config
 
 `~/.smt/config.json`:
 
@@ -931,569 +640,249 @@ auto-confirm이 마지막 응답 텍스트를 해석할 때:
 }
 ```
 
-- `autoConfirm: false` → hook 비활성화 (디버그 용도)
-- `subTaskerOnRisk: false` → 리스크 자동 태스크화 비활성화
-- `maxSessionHours` → 안전 장치 (사용자가 수동 정지하지 못한 경우)
+### 11-6. Stall Detection & Internal Resolution Cascade
 
-### 11-7. Stall Detection & 내부 해결 Cascade
+> The Smelter UX principle: **minimize user monitoring**. Stalls are resolved internally first.
 
-> **Smelter 핵심 UX 원칙**: 사용자가 워크플로우를 **모니터링할 일을 최소화**한다. 정체(stall)는 세션 내부에서 자동 해결을 우선 시도하며, 최후에만 사용자를 부른다.
+Stall signals (checked periodically):
 
-#### Stall 감지 신호 (auto-confirm hook이 주기적으로 검사)
+| Signal | Threshold |
+|--------|-----------|
+| parallel agent idle (no tool use) | 5 min or 10 tool calls |
+| same `skill@fail` repeats | 3 in a row |
+| sync-point wait on specific agents | 3 min after peers done |
+| `test_cycles` accumulated without `run_result: pass` | 10+ |
+| `active_feedback` backlog unresolved | 3+ |
+| `state.json.updated_at` not refreshed | 10 min |
 
-| 신호 | 임계값 |
-|------|--------|
-| 병렬 agent의 tool 무사용 | 5분 또는 10 tool call |
-| 동일 `skill@fail` 연속 반복 | 3회 이상 |
-| Sync point 대기 중 특정 agent만 미완료 | 타 agent 완료 후 3분 |
-| `test_cycles`가 축적되어도 `run_result: pass` 없음 | 10회 이상 |
-| `active_feedback` 미해결 누적 | 3개 이상 |
-| `state.json.updated_at` 갱신 없음 | 10분 |
-
-#### 내부 해결 Cascade (4 Level, 사용자 개입 없음)
+Four-level cascade (Levels 1-3 user-silent):
 
 ```
-[Stall 감지]
-    │
-    ▼
-┌────────────────────────────────────────────────┐
-│ Level 1: Debugger 서브에이전트                  │
-│          (ReadOnly tools: Read, Grep, Glob)    │
-│          현재 컨텍스트 분석 → 블로커 진단      │
-│          → unblock 전략 제시 + state 주입       │
-└──────────┬─────────────────────────────────────┘
-           │ 해결 실패 (debugger가 "unblockable" 반환)
-           ▼
-┌────────────────────────────────────────────────┐
-│ Level 2: Producer Chain 재라우팅                │
-│          현 스킬 포기 → 상류 producer로 복귀    │
-│          state.json.events에 stall_cascade     │
-│          엔트리 append                          │
-└──────────┬─────────────────────────────────────┘
-           │ 해결 실패 (상류 재실행 후에도 동일 stall)
-           ▼
-┌────────────────────────────────────────────────┐
-│ Level 3: Sub-tasker로 블로커 분리               │
-│          블로커를 새 task로 추출                │
-│          현 task는 `status: blocked` 대기       │
-│          새 task가 해결되면 current_stage 복귀   │
-└──────────┬─────────────────────────────────────┘
-           │ 해결 실패 (sub-task도 stall)
-           ▼
-┌────────────────────────────────────────────────┐
-│ Level 4: Mode Upgrade 자동 제안                 │
-│          현 모드 범위 초과 판단 → 상위 모드 제시 │
-│          → 사용자 결정 대기 (유일한 사용자 진입) │
-└────────────────────────────────────────────────┘
-           │ 사용자 거부 또는 mode 내 불가능
-           ▼
-      [사용자 알림]   ← 최후, 치명적 시스템 오류 포함
+[Stall detected]
+   ├─ Level 1: spawn debugger agent (ReadOnly) → diagnosis + unblock strategy
+   ├─ Level 2: producer-chain reroute to upstream
+   ├─ Level 3: sub-tasker extracts blocker as new task; current task → blocked
+   └─ Level 4: propose mode upgrade (user-gated)
+       └─ Level 4 refused or fatal: user notification
 ```
 
-**Level 1~3**: 사용자 개입 **없이** 진행. 자동 전진.
-**Level 4**: 사용자 결정 필요 (Iron Law #1의 유일 예외 경로).
-
-#### 구현 세부
-
-- 각 Level에서 최대 **2회 시도** 후 다음 Level로
-- Level 2 진입 시 stall 타이머 **리셋 금지** (무한 cascade 방지)
-- Level 3의 sub-task는 독립 state.json 생성. 해결 후 원 task `status: in_progress` 자동 복구
-- Cascade 전 과정은 `events`에 `cause: stall_cascade, evidence.level: 1|2|3|4`로 기록
-
-#### Debugger 서브에이전트 역할
-
-ReadOnly tool만 사용. 진단 출력:
-
-```json
-{
-  "stall_signal": "parallel agent tool_inactive 5min",
-  "diagnosis": "investigator-3 stuck on external doc fetch timeout",
-  "unblock_strategy": "switch to offline source, redistribute scope",
-  "resolvable_in_session": true
-}
-```
-
-`resolvable_in_session: false` 반환 시 즉시 Level 2로 진행.
+Each level retries up to 2 times before escalating. Level 2 onward do not reset the stall timer (prevents infinite cascade).
 
 ---
 
-## 12. Team Agent Patterns & Agent Assignment
+## 12. Team Agent Patterns
 
-### 12-1. 5 Pattern Framework (공식 정의)
+### 12-1. Five patterns
 
-| ID | 이름 | 구조 | 대표 사용처 |
-|----|------|------|-------------|
-| A | **Specialist Assignment** | 1 skill = 1 agent | 단순·집중 작업, 기본값 |
-| B | **Team Consensus** | N agents 투표 (95% 합의) | 판단·합의 필요 (team-code-review, tasker-review) |
-| C | **Parallel Delegation** | N agents 병렬 + Aggregator | 독립 영역 병렬 (investigate, coding, write-test) |
-| D | **Hierarchical** | Lead + 하위 agents | 복잡 설계·이념 다양성 (tasker, brainstorm) |
-| E | **Adversarial Watchdog** | 백그라운드 critic | Iron Law 실시간 감시 (coding 중) |
+| ID | Name | Shape | Use |
+|----|------|-------|-----|
+| A | **Specialist Assignment** | 1 skill = 1 agent | Simple / focused; default |
+| B | **Team Consensus** | N agents vote to 95% | Judgment / consensus (team-code-review, tasker-review) |
+| C | **Parallel Delegation** | N agents parallel + Aggregator | Independent areas (investigate area-split, coding module-split, write-test file-split) |
+| D | **Hierarchical** | Lead + sub-agents | Complex design / multi-perspective (tasker architect-lead, brainstorm personas) |
+| E | **Adversarial Watchdog** | Background critic | Iron-Law live surveillance (during workflow-coding) |
 
-### 12-2. 패턴 정의 위치 (중요)
+### 12-2. Pattern declaration layers
 
-패턴은 **세 레이어에서 선언**된다. 각 레이어의 책임이 분리되어 있다.
+| Layer | Owns | Role |
+|-------|------|------|
+| `SKILL.md` (template) | skill | default pattern / aggregator / sync strategy / rules |
+| `workflow-tasker` output (override) | tasker | complexity- / surface-signal override |
+| `state.json.team_runtime` (runtime) | runtime | actually assigned agent IDs / current status / artifact path |
 
-| 레이어 | 소유 | 역할 |
-|--------|------|------|
-| **`SKILL.md`** (템플릿) | 스킬 | 기본 패턴·aggregator·sync 전략·규칙 |
-| **`workflow-tasker` 산출물** (override) | tasker | 복잡도·영역 signal 기반 오버라이드 |
-| **`state.json.team_runtime`** (인스턴스) | 런타임 | 실제 할당된 agent ID·현재 상태·산출물 경로 |
+### 12-3. Aggregator & Conflict-Resolver
 
-> **원칙**: 패턴은 스킬이 알고, tasker가 재단하고, state가 기록한다.
+- **Aggregator** (default `architect`): merges parallel outputs into a single file. First pass of dedup / contradiction cleanup.
+- **Conflict-Resolver**: dedicated agent called when aggregator declares merge failure. Adjudicates per conflict, writes the final consolidated file. Can declare `resolved: false` with reason (information_gap / business_decision / requirements_conflict) → sub-tasker takes over.
 
-#### SKILL.md 예시 (`skills/workflow-investigate/SKILL.md`)
+### 12-4. Per-skill pattern matrix
 
-```yaml
----
-name: workflow-investigate
-default_pattern: A                       # 기본은 single agent
-default_agent: explore-medium
-supports_patterns: [A, C]                # parallel로도 승격 가능
-team_template:
-  C:
-    parallel_split_by: area              # 분할 기준
-    agents: [explore-medium]             # 반복 사용
-    aggregator: architect
-    conflict_resolver: conflict-resolver
-    sync_point: "investigation.md merge"
----
-```
+| Skill | Primary pattern | Fallback | Aggregator |
+|-------|----------------|----------|-----------|
+| workflow-brainstorm (deep) | D (planner lead + 3 personas) | A | planner |
+| workflow-brainstorm (light) | A | — | — |
+| workflow-brainstorm-review | B (critic-only adversarial) | A | — |
+| workflow-investigate | C (area-split) | A (explore-medium) | architect |
+| workflow-investigate-review | A (explore-high) | — | — |
+| workflow-tasker | D (architect lead) | A | architect |
+| workflow-tasker-review | B (95% consensus) | A | arbitrator |
+| workflow-write-test | C (file-split) | A (executor) | executor |
+| workflow-coding | C (module-split) + E (watchdog always-on) | A (executor) + E | architect + code-reviewer |
+| workflow-agent-review | B dual (code-reviewer + security-reviewer) | A | arbitrator |
+| workflow-e2e | A (qa-tester) | — | — |
+| workflow-e2e-review | A | — | — |
+| workflow-team-code-review | B 95% consensus | — | arbitrator |
+| workflow-verify | A (qa-tester) | C (parallel phases) | arbitrator |
+| workflow-human-check | User | — | — |
 
-#### state.json 예시 (런타임 인스턴스)
+### 12-5. Critic Watchdog (Pattern E)
 
-```json
-"team_runtime": {
-  "workflow-investigate": {
-    "pattern": "C",
-    "assigned_agents": [
-      { "id": "agent-1", "agent_type": "explore-medium", "area": "database", "status": "done" },
-      { "id": "agent-2", "agent_type": "explore-medium", "area": "api", "status": "done" },
-      { "id": "agent-3", "agent_type": "explore-medium", "area": "ui", "status": "in_progress" }
-    ],
-    "aggregator": "architect",
-    "sync_point_reached": false,
-    "aggregation_result": null,
-    "conflicts": []
-  }
-}
-```
+Two-layer architecture:
 
-### 12-3. Pattern A — Specialist Assignment (기본)
+- **Layer 1** — `scripts/critic-watchdog.mjs` (PostToolUse hook, **11 formal rules**, millisecond latency):
 
-단일 에이전트가 스킬 전체를 수행. `SKILL.md`의 `default_agent` 또는 tasker 오버라이드.
+| # | Rule | Severity |
+|---|------|----------|
+| R01 | Test file deletion | CRITICAL |
+| R02 | `--no-verify` / `--force` | CRITICAL |
+| R03 | `.env` / secrets write | CRITICAL |
+| R04 | Complete claim with unresolved feedback | CRITICAL |
+| R05 | Coding entry without RED cycle | CRITICAL |
+| R06 | workflow-* outside mode whitelist | CRITICAL |
+| R07 | Scope leak (file not in plan.md Queue) | HIGH |
+| R08 | Evasion patterns (`??` chain, TODO flood) | HIGH |
+| R09 | Parallel file conflict | HIGH |
+| R10 | Complete without session log | MEDIUM |
+| **R11** | **E2E pass claim without real-interface artifact** | **CRITICAL** |
 
-```
-┌─────────────────┐
-│ workflow-skill  │ ─▶ [specialist agent] ─▶ 산출물
-└─────────────────┘
-```
+- **Layer 2** — `agents/critic-watchdog.md` (periodic agent, ReadOnly, every 5-10 tool calls during coding): semantic checks that Layer 1 cannot do (scope drift via intent, evasion via type gap, logic evasion, half-done, Iron-Law evasion).
 
-복잡도가 낮거나 분할 이점이 없는 스킬 기본값.
+### 12-6. Session sharing
 
-### 12-4. Pattern B — Team Consensus (95% 합의)
-
-N명 에이전트가 **같은 대상**을 독립 검토 → 투표 → 합의 도달까지 라운드 반복.
-
-```
-        ┌──────────────┐
-        │   advocate   │──┐
-        └──────────────┘  │
-        ┌──────────────┐  │   ┌─────────────┐   ┌──────────┐
-        │    critic    │──┼──▶│ arbitrator  │──▶│ ≥95% 합의 │
-        └──────────────┘  │   └─────────────┘   └──────────┘
-        ┌──────────────┐  │        │ No
-        │  (optional)  │──┘        ▼
-        └──────────────┘      다음 라운드
-```
-
-사용처: `workflow-team-code-review` (기본), `workflow-tasker-review` (side-effect 검토 시 승격).
-
-### 12-5. Pattern C — Parallel Delegation (신규)
-
-독립 영역을 N agent에 분배 → 각자 실행 → sync point에서 Aggregator가 통합.
-
-```
-┌──────────────────┐
-│ workflow-tasker  │──▶ parallel split 선언 (영역 + agent 배분)
-└────────┬─────────┘
-         ▼
-┌────────────────────────────────────────────────┐
-│ N agents 병렬 실행                              │
-│ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐   │
-│ │agent 1 │ │agent 2 │ │agent 3 │ │agent N │   │
-│ │area A  │ │area B  │ │area C  │ │area ...│   │
-│ └────┬───┘ └────┬───┘ └────┬───┘ └────┬───┘   │
-└──────┼──────────┼──────────┼──────────┼───────┘
-       │          │          │          │
-       ▼          ▼          ▼          ▼
-┌────────────────────────────────────────────────┐
-│  Sync Point (모두 완료 대기)                    │
-└────────────────┬───────────────────────────────┘
-                 ▼
-        ┌────────────────────┐
-        │    Aggregator      │  단일 산출물로 통합
-        │   (architect 등)   │
-        └──────────┬─────────┘
-                   ▼
-         ┌─────────────────────┐
-         │ 충돌 감지?           │
-         └────┬───────────┬────┘
-              │ Yes       │ No
-              ▼           ▼
-      ┌────────────────┐  최종 산출물
-      │ Conflict-      │
-      │ Resolver       │  (섹션 12-7)
-      └────────────────┘
-```
-
-#### 분할 기준 (`parallel_split_by`)
-
-| 기준 | 적용 스킬 |
-|------|----------|
-| `area` | investigate (DB/API/UI/security), brainstorm (product/eng/design 페르소나) |
-| `file` | write-test (파일당 1 agent), coding (독립 파일) |
-| `module` | coding (frontend/backend/shared) |
-| `persona` | brainstorm (viewpoint별) |
-
-#### Sync Point 동작
-
-- 모든 assigned_agents가 `status: done` 또는 `failed`이 될 때까지 aggregator는 대기
-- 1명이 stall → 섹션 11-7 cascade 적용
-- 부분 실패 시 aggregator가 "누락된 영역"을 명시하여 재실행 결정
-
-### 12-6. Pattern D — Hierarchical (신규)
-
-리드 에이전트가 방향을 정하고 하위 에이전트에게 위임. 결과는 리드가 통합 후 제출.
-
-```
-        ┌──────────────────┐
-        │  Lead Agent      │  (architect / researcher-high)
-        │  (방향 결정)      │
-        └────────┬─────────┘
-                 │ 위임
-      ┌──────────┼──────────┐
-      ▼          ▼          ▼
-  ┌──────┐  ┌──────┐  ┌──────┐
-  │ sub  │  │ sub  │  │ sub  │    하위 agents
-  │agent │  │agent │  │agent │
-  └──┬───┘  └──┬───┘  └──┬───┘
-     │         │         │
-     └─────────┼─────────┘
-               ▼
-        ┌──────────────────┐
-        │  Lead 재통합      │
-        └──────────────────┘
-```
-
-사용처:
-- `workflow-tasker`: architect가 설계 방향 결정 → researcher가 선행 기술 조사 → executor가 구체 task 나열
-- `workflow-brainstorm` (deep): 진행자가 주제 정리 → product/eng/design 페르소나가 관점 제시 → 진행자가 종합
-
-Pattern C와의 차이: C는 **대칭 병렬**, D는 **리드 종속**. D는 리드의 판단이 우선.
-
-### 12-7. Aggregator & Conflict-Resolver (충돌 병합 안전 장치)
-
-#### Aggregator 역할
-
-병렬 산출물을 단일 파일로 통합. 1차 중복·모순 정리.
-
-| 스킬 | 기본 Aggregator |
-|------|-----------------|
-| workflow-investigate | `architect` (영역별 정리) |
-| workflow-coding | `architect` + `code-reviewer` (통합 검토) |
-| workflow-write-test | `executor` (파일별 병합) |
-| workflow-brainstorm | 진행자 역할 `planner` |
-
-#### Conflict-Resolver 역할 (신규, 충돌 병합 실패 안전 장치)
-
-Aggregator가 **병합 실패**를 선언하면 호출되는 전용 에이전트.
-
-**Aggregator의 실패 선언 조건**:
-- 같은 파일에 서로 다른 agent가 양립 불가한 변경
-- 같은 API 시그니처에 다른 정의 제안
-- 논리적으로 모순되는 결론 (예: investigate에서 "A는 안전" vs "A는 위험")
-- 자동 머지 도구가 해결하지 못한 텍스트 충돌
-
-**Conflict-Resolver 동작**:
-
-```
-[Aggregator 병합 실패 신호]
-    │
-    ▼
-┌──────────────────────────────────────┐
-│ Conflict-Resolver 에이전트           │
-│                                       │
-│ 1. 충돌 원인 분석 (원 에이전트들의     │
-│    근거·선택지 수집)                  │
-│ 2. 결정 근거 명시 (trade-off 표)      │
-│ 3. 수정안 작성 (통합 산출물 제안)     │
-│ 4. state.json.team_runtime.conflicts  │
-│    에 기록                            │
-└──────────┬───────────────────────────┘
-           │
-   ┌───────┴─────────┐
-   ▼                 ▼
-해결 성공         해결 실패
-   │                 │
-   ▼                 ▼
-통합 산출물 확정    Sub-tasker 호출
-                    "충돌 해결" task 생성
-                    순차 재실행으로 fallback
-                         │
-                         ▼
-                    Sub-task도 실패
-                         │
-                         ▼
-                    섹션 11-7 Level 4
-                    사용자 결정 대기
-```
-
-**Conflict-Resolver의 권한**:
-- 원 에이전트 산출물 읽기 전용
-- 최종 통합 파일 쓰기 권한
-- `state.json.events`에 `conflict_resolved` 이벤트 기록
-- **자기 해결 불가 선언 가능** (예외: 원칙 3과 무관. resolver는 기술적 판정자, 회피가 아님)
-
-**Conflict-Resolver는 기본 전용 agent**로 정의: `agents/conflict-resolver.md`. code-reviewer와 architect의 판단을 합친 성격.
-
-### 12-8. Pattern E — Adversarial Watchdog (Critic Watchdog)
-
-> Iron Law 위반을 **실시간 감시**하는 백그라운드 critic.
-
-#### 구현 가능성 (솔직 평가)
-
-| 접근 | 가능성 | 이유 |
-|------|--------|------|
-| Hook 기반 즉각 감시 (PostToolUse) | ✅ **완전 가능** | Claude Code hook API 제공, 정형 규칙 체크 적합 |
-| 주기적 agent-critic (polling) | ⚠️ **근사 실시간** | Agent tool 호출 기반이므로 완전 스트리밍 아님, 5~10 tool call마다 호출로 근사 |
-| 연속 백그라운드 스트리밍 감시 | ❌ **현 SDK 제약** | Claude Code에 continuous observer 패턴 없음 |
-
-**채택 구조**: Hook Layer 1 + 주기적 Agent Layer 2 **2중 방어**.
-
-#### Layer 1 — Hook-Based Mini-Critic
-
-- 스크립트: `scripts/critic-watchdog.mjs`
-- 트리거: `PostToolUse` on `Edit`, `Write`, `Bash` (git/rm 관련)
-- 실행: 정형 규칙 10개를 **동시 체크** (경량, 밀리초 수준)
-- 위반 감지 시: `state.json.events`에 `skill: critic-watchdog, result: fail` append → auto-confirm이 producer 라우팅
-
-#### Layer 2 — Periodic Agent-Critic
-
-- `workflow-coding` 진행 중에만 활성
-- 매 5~10 tool call 마다 critic agent 호출 (ReadOnly tools)
-- 담당: **의미적 위반 감지** (scope 이탈, 회피 패턴, 논리적 규칙 위반)
-- 발견 시: `active_feedback` 추가 + `target_skill` 재진입 지시
-
-#### 감시 룰 (초기 10개, Hook Layer)
-
-| # | 룰 | 감지 방식 | 심각도 |
-|---|------|----------|--------|
-| 1 | 테스트 파일 삭제 금지 | git diff에 `*.test.*` 삭제 | CRITICAL |
-| 2 | `--no-verify` / `--force` 사용 금지 | Bash args 스캔 | CRITICAL |
-| 3 | `.env`·secrets 파일 접근 금지 | Edit/Read 대상 경로 매칭 | CRITICAL |
-| 4 | `active_feedback` resolved:false인 상태로 완료 선언 금지 | state.json 검사 | CRITICAL |
-| 5 | `test_cycles`에 RED 없이 workflow-coding 진입 금지 | TDD cycle 검증 | CRITICAL |
-| 6 | `allowed_skills` 외 `workflow-*` 호출 금지 | 스킬 dispatch 시 whitelist | CRITICAL |
-| 7 | Scope 이탈 (plan.md Queue 밖 파일 수정) | 수정 파일 vs Queue 매칭 | HIGH |
-| 8 | 회피 패턴 (fallback `??` 남발, TODO로 우회) | 코드 패턴 스캔 | HIGH |
-| 9 | 병렬 agent 간 동일 파일 동시 수정 | team_runtime 상태 vs git diff | HIGH |
-| 10 | `session/YYYY-MM-DD.md` 기록 없이 complete 전환 | state → log 매칭 | MEDIUM |
-
-#### 위반 시 동작
-
-| 심각도 | 동작 |
-|--------|------|
-| CRITICAL (1~6) | 즉시 **해당 tool 호출 차단** (hook exit 2) + 변경 revert + producer 라우팅 |
-| HIGH (7~9) | `active_feedback` 추가 + 다음 skill에서 확인 강제 |
-| MEDIUM (10) | 경고 기록, 계속 진행 |
-
-#### 구현 제약
-
-- Hook 스크립트는 **ReadOnly 접근**만 사용 (state.json은 append-only)
-- Agent-critic은 **ReadOnly tools만** (Read, Grep, Glob, Bash read-only)
-- False positive 관리: 각 룰에 `confidence` 필드, 임계값 미만은 경고만
-
-### 12-9. Per-Skill Pattern Matrix
-
-| Skill | Primary Pattern | Fallback | Aggregator | 비고 |
-|-------|-----------------|----------|-----------|------|
-| `workflow-brainstorm` (deep) | D Hierarchical (진행자 + 3 personas) | A single | planner | Planning mode |
-| `workflow-brainstorm` (light) | A Specialist | — | — | Implement mode |
-| `workflow-brainstorm-review` | B Adversarial (critic only) | A single | — | critic만, advocate 불필요 |
-| `workflow-investigate` | C Parallel (area별) | A single (explore-medium) | architect | 가장 큰 이득 |
-| `workflow-investigate-review` | A Single (explore-high) | — | — | 통합 산출 리뷰 |
-| `workflow-tasker` | D Hierarchical (architect 리드) | A architect 단독 | architect | 설계 주도 |
-| `workflow-tasker-review` | B Team Consensus (95%) | A single | arbitrator | side-effect 다각 검토 |
-| `workflow-write-test` | C Parallel (file별) | A executor | executor | 독립 파일 병렬 |
-| `workflow-coding` | C Parallel (module별) + E Watchdog | A executor + E Watchdog | architect + code-reviewer | watchdog은 모든 경우 활성 |
-| `workflow-agent-review` | B Dual Adversarial (code-reviewer + security-reviewer) | A code-reviewer | arbitrator | "no security surface" 선언 시 A |
-| `workflow-e2e` | A Specialist (qa-tester) | — | — | 도메인 집중 |
-| `workflow-e2e-review` | A Single | — | — | 산출물 검토 |
-| `workflow-team-code-review` | B Team Consensus 95% | — | arbitrator | advocate + critic + arbitrator |
-| `workflow-human-check` | User | — | — | N/A |
-
-**tasker가 matrix 오버라이드 가능**. 예: "단순 버그 fix이니 investigate도 A로" 선언 → 기본 C를 우회.
-
-### 12-10. 세션 간 공유
-
-| 요소 | 정책 |
-|------|------|
-| Queue (체크박스) | **독립** (task별) |
-| State (state.json) | **독립** (task별) |
-| Session (세션 컨텍스트) | **공유 허용** (한 세션에 여러 task) |
-| Specialist agent | tasker가 skill별 할당 |
-| Team Agent | 5 패턴(A/B/C/D/E) 전역 지원 |
-| Conflict Resolver | 별도 전용 agent |
-| Critic Watchdog | Hook Layer 1 + Agent Layer 2 |
-
-**주의**:
-- 토큰 효율 목적으로는 task 전환 시 새 서브에이전트 할당이 권장됨.
-- 공유가 유리한 경우: 같은 feature 내 연관 task 연속 진행, 같은 specialist가 여러 task 처리.
-- 공유가 불리한 경우: 독립 feature 간 교차, 긴 컨텍스트로 잡음 증가.
+Per-task queues are independent; session context may be shared. Specialist agents assignable. Team Agents supported across all 5 patterns.
 
 ---
 
-## 13. 전체 모드 그래프 (통합)
+## 13. Complete mode graph (unified)
 
 ```
                                 ╭──────────────────╮
-                                │ 자연어 입력 or   │
-                                │   명시 Command    │
+                                │ natural input or │
+                                │ explicit command │
                                 ╰──────────────────╯
                                          │
                                          ▼
                                 ╭──────────────────╮
-                                │ 자동 분기 엔진    │
-                                │ (패턴 매칭)       │
+                                │  classifier       │
+                                │ (pattern match)   │
                                 ╰──────────────────╯
                                          │
-       ┌──────────┬──────────┬───────────┼──────────┬─────────────┐
-       ▼          ▼          ▼           ▼          ▼             ▼
-  simple_fix    fix    investigate    plan    implement     (override:
-                                                             명시 command)
-       │          │          │           │          │
-       │          │          │           │          │
-       │          ▼          ▼           ▼          ▼
-       │      ╭──────────────────────────────────────────╮
-       │      │         SHARED PIPELINE (workflow-*)     │
-       │      │                                           │
-       │      │  brainstorm ◀──▶ investigate             │
-       │      │       │                │                  │
-       │      │       ▼                ▼                  │
-       │      │  brainstorm-review  investigate-review   │
-       │      │                        │                  │
-       │      │                        ▼                  │
-       │      │  tasker ──▶ tasker-review                │
-       │      │                        │                  │
-       │      │                        ▼                  │
-       │      │  write-test ──▶ coding                   │
-       │      │                        │                  │
-       │      │                        ▼                  │
-       │      │  agent-review ──▶ e2e                    │
-       │      │                        │                  │
-       │      │                        ▼                  │
-       │      │  e2e-review ──▶ team-code-review         │
-       │      │                        │                  │
-       │      │                        ▼                  │
-       │      │                  human-check              │
-       │      ╰──────────────────┬────────────────────────╯
-       │                         │
-       │                         ▼
-       └──────────▶        ╭───────────────╮
-                           │workflow-coding│
-                           ╰───────────────╯
-                                   │
-                                   ▼
-                        workflow-e2e → workflow-human-check
-                        (simple_fix 경로)
+       ┌──────┬──────────┬─────────┬──────┼───────┬──────────┐
+       ▼      ▼          ▼         ▼      ▼       ▼          ▼
+  simple_fix fix    investigate  verify  plan  implement  (explicit override)
+       │       │          │         │      │        │
+       │       ▼          ▼         ▼      ▼        ▼
+       │   ╭────────────────────────────────────────────────╮
+       │   │           SHARED PIPELINE (workflow-*)          │
+       │   │                                                  │
+       │   │  brainstorm ◀──▶ investigate                    │
+       │   │       │                │                         │
+       │   │       ▼                ▼                         │
+       │   │  brainstorm-review  investigate-review          │
+       │   │                        │                         │
+       │   │                        ▼                         │
+       │   │  tasker ──▶ tasker-review                       │
+       │   │                        │                         │
+       │   │                        ▼                         │
+       │   │  write-test ──▶ coding                          │
+       │   │                        │                         │
+       │   │                        ▼                         │
+       │   │  agent-review ──▶ e2e (real interface)          │
+       │   │                        │                         │
+       │   │                        ▼                         │
+       │   │  e2e-review ──▶ team-code-review                │
+       │   │                        │                         │
+       │   │                        ▼                         │
+       │   │                  human-check                     │
+       │   ╰──────────────────────┬──────────────────────────╯
+       │                          │
+       │                          ▼
+       └──────────▶         ╭───────────────╮
+                            │workflow-coding│
+                            ╰───────────────╯
+                                    │
+                                    ▼
+                         workflow-e2e → workflow-human-check
+                         (simple_fix path)
 
-               [utility skills 는 어디서든 자유 호출]
+           verify path: workflow-verify → (e2e / e2e-review) → workflow-human-check
+
+           [utility skills are callable anywhere]
 ```
-
-각 모드는 이 파이프라인의 **부분집합**을 `allowed_skills`로 선언.
 
 ---
 
 ## 14. Context Isolation & Scoped Testing
 
-### 14-1. Queue 독립 (유지)
+### 14-1. Independent queues (preserved)
 
 ```
 plan.md:
-  - [ ] Task A  →  독립 queue + independent state.json
-  - [ ] Task B  →  독립 queue + independent state.json
-  - [ ] Task C  →  독립 queue + independent state.json
+  - [ ] Task A  →  independent queue + its own state.json
+  - [ ] Task B  →  independent queue + its own state.json
+  - [ ] Task C  →  independent queue + its own state.json
 ```
 
-각 task의 checkbox tree와 state는 서로 간섭하지 않는다.
+### 14-2. Session sharing
 
-### 14-2. Session 공유
+Multiple tasks may run in a single session:
+- Specialist agent assignment preserves expertise per task.
+- On task switch, auto-confirm reconstructs context from `state.json`.
 
-같은 세션에서 여러 task 진행 가능:
-- Specialist agent 할당으로 전문성 유지
-- Task 간 전환 시 auto-confirm hook이 `state.json` 기준으로 컨텍스트 재구성
-
-### 14-3. Scoped Testing
+### 14-3. Scoped testing
 
 ```bash
-# 변경 파일 식별
+# find changed files
 git diff --name-only
 
-# 관련 테스트만
+# run only related tests
 pnpm vitest run <changed_test_files>
 npx playwright test <changed_specs>
 
-# ❌ 금지 (workflow-human-check 전까지)
-pnpm test          # 전체
-npx playwright test # 전체
+# ❌ forbidden before workflow-human-check
+pnpm test
+npx playwright test
 ```
 
-전체 회귀는 `workflow-human-check` 시 사용자 요청 또는 명시적 옵션으로만.
+Full regression only at `workflow-human-check` via explicit user request.
 
 ---
 
 ## 15. Rules Injection
-`rules-lib/<lang>/*.md`는 파일 확장자 기반으로 `PreToolUse` 훅에서 주입.
 
-| Tag | 의미 |
-|-----|------|
-| `[Inject: rules-lib/typescript]` | .ts/.tsx 편집 시 |
-| `[Inject: rules-lib/python]` | .py 편집 시 |
+`rules-lib/<lang>/*.md` is injected by `PreToolUse` based on file extension.
 
-각 workflow 스킬에 추가로 자체 rules가 주입될 수 있음 (예: `workflow-coding`은 `common/coding-style.md`).
+| Tag | Meaning |
+|-----|---------|
+| `[Inject: rules-lib/typescript]` | editing `.ts` / `.tsx` |
+| `[Inject: rules-lib/python]` | editing `.py` |
+
+Per-skill rules may also be injected (e.g., `workflow-coding` pulls `common/coding-style.md`).
 
 ---
 
-## 16. 출력 규칙 (REQUIRED OUTPUT FORMAT)
+## 16. Output Format (REQUIRED)
 
-각 workflow 스킬 진입 시 영어 헤더:
+Every workflow skill entry prints an English header:
 
 ```
 --- Skill: workflow-coding (mode: fix, agent: executor) ---
 Goal: Apply RED → GREEN for validator.test.ts bug #123
 ```
 
-**규칙**:
-- 영어만
-- workflow 스킬 전환 시 반드시 헤더 출력
-- `agent: <assigned>` 포함 (team_runtime 참조)
-- Goal 1줄
+Rules:
+- English only.
+- Header on every workflow-skill transition.
+- Include `agent:` reflecting `team_runtime`.
+- One-line `Goal:`.
 
 ---
 
-## 17. 파일 구조
+## 17. File Structure
 
 ```
 .smt/features/<slug>/
 ├── task/
 │   ├── plan.md
-│   ├── <task>.md                    ← 사람이 읽는 작업 기록
-│   └── <task>.state.json            ← 기계 상태 (단일 출처)
+│   ├── <task>.md                    ← human-readable
+│   └── <task>.state.json            ← machine state (single source)
 ├── decisions.md
 └── artifacts/
-    ├── e2e-video.webm
-    ├── screenshots/
-    └── logs/
+    ├── ui/                           ← .webm / .png / console.log
+    ├── cli/                          ← .transcript
+    ├── api/                          ← request/response .log
+    ├── db/                           ← .sql.log + state samples
+    └── hook/                         ← input/output .json + .exit
 
 skills/
 ├── workflow-brainstorm/SKILL.md
@@ -1508,15 +897,20 @@ skills/
 ├── workflow-e2e/SKILL.md
 ├── workflow-e2e-review/SKILL.md
 ├── workflow-team-code-review/SKILL.md
+├── workflow-verify/SKILL.md
 ├── workflow-human-check/SKILL.md
-├── (utility skills, prefix 없음)
-│   ├── ui-ux-pro-max/SKILL.md
-│   ├── copywriting/SKILL.md
-│   └── ...
+└── (utility skills, no prefix)
+    ├── ui-ux-pro-max/SKILL.md
+    ├── copywriting/SKILL.md
+    ├── queue/SKILL.md
+    ├── deep-interview/SKILL.md
+    └── ...
+
 modes/
 ├── simple_fix.json
 ├── fix.json
 ├── investigate.json
+├── verify.json
 ├── plan.json
 └── implement.json
 
@@ -1524,83 +918,47 @@ commands/
 ├── simple-fix.md
 ├── fix.md
 ├── investigate.md
+├── verify.md
 ├── plan.md
 └── implement.md
 
 scripts/
-├── auto-confirm.mjs       ← 섹션 11 Stop hook (queue-drop)
-├── auto-confirm-consumer.mjs ← UserPromptSubmit consumer (queue 소비)
-├── state-schema.mjs       ← state.json 스키마 + 검증 (섹션 2)
-├── mode-classifier.mjs    ← 자동 분기 엔진 (섹션 1-2)
-├── route-on-fail.mjs      ← Producer chain 라우터 (섹션 5-1)
-├── stall-detector.mjs     ← Stall 6 신호 감지 (섹션 11-7)
-├── critic-watchdog.mjs    ← Hook Layer 1 감시 10규칙 (섹션 12-8)
-├── parallel-dispatcher.mjs ← Pattern A/B/C/D dispatch
-├── feature-version-check.mjs ← `.smt/features/*` 상태 무결성 점검
-└── rule-injector.mjs      ← rules-lib 주입
-
-templates/verification/
-├── round-1-omission.md    ← 누락 focus 프롬프트 (섹션 9-3)
-├── round-2-contradiction.md ← 모순 focus 프롬프트
-└── round-3-edge-case.md   ← 엣지 케이스 focus 프롬프트
+├── auto-confirm.mjs              ← §11 Stop hook (queue-drop)
+├── auto-confirm-consumer.mjs     ← UserPromptSubmit consumer
+├── state-schema.mjs              ← state.json schema + validator (§2)
+├── mode-classifier.mjs           ← natural-language routing (§1-2)
+├── route-on-fail.mjs             ← producer chain (§5-1)
+├── stall-detector.mjs            ← §11-6 stall signals + cascade
+├── critic-watchdog.mjs           ← Pattern E Layer 1 (11 rules, §12-5)
+├── parallel-dispatcher.mjs       ← Pattern A/B/C/D dispatch plan
+├── feature-version-check.mjs     ← .smt/features/* state integrity
+└── rule-injector.mjs             ← rules-lib injection
 
 agents/
-├── debugger.md            ← Stall Cascade Level 1 (섹션 11-7)
-├── aggregator.md          ← 병렬 산출물 통합 (섹션 12-7)
-├── conflict-resolver.md   ← 병합 실패 안전 장치 (섹션 12-7)
-├── critic.md              ← Watchdog Agent Layer 2 (섹션 12-8)
-├── advocate.md            ← Pattern B 합의 역할
-├── critic-b.md            ← Pattern B 합의 역할
-├── arbitrator.md          ← Pattern B 합의 역할
-└── (기타 specialist: executor, code-reviewer, security-reviewer, qa-tester, architect, explore-*, researcher, ...)
-```
-
-### 17-1. Mode 정의 예시 (`modes/fix.json`)
-
-```json
-{
-  "mode": "fix",
-  "entry_skill": "workflow-investigate",
-  "allowed_skills": [
-    "workflow-investigate", "workflow-investigate-review",
-    "workflow-tasker", "workflow-tasker-review",
-    "workflow-write-test", "workflow-coding",
-    "workflow-agent-review",
-    "workflow-e2e", "workflow-e2e-review",
-    "workflow-team-code-review", "workflow-human-check"
-  ],
-  "default_team_overrides": {
-    "workflow-coding":        { "pattern": "A", "default_agent": "executor" },
-    "workflow-agent-review":  { "pattern": "A", "default_agent": "code-reviewer" },
-    "workflow-e2e":           { "pattern": "A", "default_agent": "qa-tester" }
-  },
-  "magic_keywords": {
-    "style": { "set": "exempt.tdd=true, exempt.e2e=false" },
-    "i18n":  { "set": "exempt.tdd=true, exempt.e2e=false" },
-    "typo":  { "set": "exempt.tdd=true, exempt.e2e=true" }
-  },
-  "transitions": {
-    "upgrade_to": ["implement", "plan"],
-    "downgrade_to": ["simple_fix"]
-  }
-}
+├── debugger.md                   ← Stall Cascade Level 1
+├── aggregator.md                 ← Parallel output integrator
+├── conflict-resolver.md          ← Merge-failure adjudicator
+├── critic-watchdog.md            ← Pattern E Layer 2 (ReadOnly)
+├── advocate.md | critic.md | arbitrator.md   ← Pattern B trio
+├── product-persona.md | engineer-persona.md | design-persona.md  ← Pattern D brainstorm personas
+└── (role specialists: executor, code-reviewer, security-reviewer, qa-tester, architect, explore-*, researcher, planner, ...)
 ```
 
 ---
 
-## 18. 관련 문서
+## 18. Related Documents
 
-- 스킬 정의: `skills/workflow-<name>/SKILL.md`
-- 유틸리티 스킬: `skills/<name>/SKILL.md` (접두사 없음)
-- 모드 정의: `modes/<mode>.json`
-- 커맨드: `commands/<command>.md`
-- 템플릿: `document/templates/task.md.md`, `report.md.md`, `plan.md.md`
-- Auto-confirm 구현: `scripts/auto-confirm.mjs` + `scripts/auto-confirm-consumer.mjs`
-- 구현 현황: `document/implementation.md`
+- English spec (this file): `document/workflow.md`
+- Korean translation: `document/workflow.ko.md`
+- Implementation reference: `document/implementation-v2.md` + `.ko.md`
+- Release notes: `RELEASE_NOTES.md` + `.ko.md`
+- Public overview: `README.md` + `.ko.md`
+- Project intro: `document/Introduce.md`
+- Root agent instructions: `CLAUDE.md`, `AGENTS.md`
 
 ---
 
-## Appendix A — 스킬 간 Producer Chain (전체)
+## Appendix A — Producer Chain (complete)
 
 ```
                          ┌──────────────────────┐
@@ -1643,7 +1001,8 @@ agents/
                  └──────────┬───────────┘   │
                             ▼               │
                  ┌──────────────────────┐   │
-                 │   workflow-e2e       │───┤
+                 │   workflow-e2e       │───┤ (assertion / typecheck / build / test_run)
+                 │   (real interface)   │   │
                  └──────────┬───────────┘   │
                             ▼               │
                  ┌──────────────────────┐   │
@@ -1651,7 +1010,7 @@ agents/
                  └──────────┬───────────┘   │
                             ▼               │
                  ┌─────────────────────────┐│
-                 │workflow-team-code-review│┤ fail (medium/low)
+                 │workflow-team-code-review│┤ fail (medium / low)
                  └──────────┬──────────────┘│
                             ▼               │
                  ┌──────────────────────────┐│
@@ -1661,73 +1020,68 @@ agents/
                             ▼                │
                          complete            │
                                              │
-                  (fail: 모든 경로)          ▼
-                                    (producer 또는
+                  (fail: all paths)          ▼
+                                    (producer or
                                      active_feedback.target)
 ```
 
 ---
 
-## Appendix B — 결정 사항 요약
+## Appendix B — Design Decisions
 
-| 항목 | 결정 |
-|------|------|
-| 스킬 접두사 | `workflow-*` (mode whitelist 대상) vs utility (자유 사용) |
-| 라우팅 | Producer chain 기반 |
-| 재시도 | 없음 (원칙 4) |
-| 자기 페일 | 금지 (원칙 3) |
-| Cause enum | 고정 (섹션 6-3) |
-| Declarer | hook > user > (skill 금지) |
-| Mode 업그레이드 | 모두 허용, 사용자 결정 |
-| brainstorm ↔ investigate | 양방향 (reshape edge) |
-| Implement의 brainstorm | `depth: light` 파라미터로 공유 |
-| 명확/불명확 Fix 분기 | **자동 분기 우선** (패턴 매칭), `/simple-fix`·`/fix` 커맨드는 override |
-| State 저장소 | `<task>.state.json` (JSON, task 단위) |
-| 이벤트 히스토리 컨텍스트 | 최근 5개 |
-| TDD 검증 | `test_cycles`에 RED 엔트리 강제 |
-| 피드백 | `active_feedback` 누적, resolved 플래그 |
-| Session 격리 | **완화** — Queue 독립, session 공유 허용 |
-| Specialist agent | tasker가 할당, SKILL.md에 기본값 |
-| Team Agent 패턴 | **5개 공식화** (A Specialist / B Consensus / C Parallel / D Hierarchical / E Watchdog) |
-| 패턴 정의 위치 | **SKILL.md (템플릿)** + tasker (override) + state.json (런타임 인스턴스) |
-| Parallel Delegation (C) | investigate(area), coding(module), write-test(file), brainstorm(persona) |
-| Hierarchical (D) | tasker(architect 리드), brainstorm-deep(진행자 + 페르소나) |
-| Aggregator | 병렬 산출물 통합 전담 (architect/executor/planner) |
-| **Conflict-Resolver** | 신규 전용 agent. Aggregator 실패 시 호출. sub-tasker fallback. |
-| **Critic Watchdog (E)** | Hook Layer 1 (정형 10규칙, 즉각 차단) + Agent Layer 2 (의미 검증, 주기적) |
-| 연속 스트리밍 감시 | 불가 (SDK 제약). 주기적 polling으로 근사. |
-| **Stall Detection** | Auto-confirm hook 주기 검사. 6개 신호. |
-| **내부 해결 Cascade** | 4 Level (Debugger → Producer 재라우팅 → Sub-tasker → Mode Upgrade). Level 1-3은 사용자 개입 없음. |
-| 사용자 알림 조건 | 최후. Cascade Level 4 거부 시 또는 치명적 시스템 오류. |
-| Auto-confirm hook | 섹션 11 — 무한 전진, 리스크 자동 태스크화, stall cascade |
-| **Multi-Pass Verification** | 모든 review 스킬 **3 라운드 강제** (누락/모순/엣지). tasker가 축소 가능 (1 round). 회피 방지 4 장치. |
-| 유틸리티 스킬 | whitelist 밖, 자유 사용 |
+| Topic | Decision |
+|-------|----------|
+| Skill prefix | `workflow-*` is mode-whitelist-constrained; utility skills are free. |
+| Routing | Producer chain (replaces step-engine `on_fail`). |
+| Retry | **None** (Iron Law #4). |
+| Skill self-fail | **Forbidden** (Iron Law #3). |
+| Cause enum | Fixed (§6-3). |
+| Declarer | hook > user > (skill forbidden). |
+| Mode upgrade | Always user-gated; any direction. |
+| brainstorm ↔ investigate | Bidirectional (reshape edge). |
+| Implement brainstorm | `depth: light` shared skill. |
+| Simple-fix vs fix routing | **Auto-classifier first** (pattern match); `/simple-fix` and `/fix` overrides. |
+| State store | `<task>.state.json` (JSON, per-task). |
+| Event history in context | Last 5 events. |
+| TDD verification | `test_cycles` RED entry required. |
+| Feedback | `active_feedback` accumulation with `resolved` flag. |
+| Session isolation | Queue independent; session shared; specialists / teams supported. |
+| Team patterns | 5 formalized (A / B / C / D / E). |
+| Pattern declaration | SKILL.md (template) + tasker (override) + state (runtime). |
+| Parallel Delegation (C) | investigate (area), coding (module), write-test (file), brainstorm (persona). |
+| Hierarchical (D) | tasker (architect lead), brainstorm-deep (planner + personas). |
+| Aggregator | Dedicated agent per skill. |
+| **Conflict-Resolver** | Dedicated agent for aggregator failure. Sub-tasker fallback. |
+| **Critic Watchdog (E)** | Hook Layer 1 (11 rules) + Agent Layer 2 (periodic semantic). |
+| **Stall Detection** | 6 signals + 4-Level Cascade (§11-6). |
+| Utility skills | No whitelist; free use. |
+| **E2E real-interface enforcement (§8)** | Mandatory artifacts per surface; test-runner output alone fails the gate. R11 blocks. |
 
 ---
 
-## Appendix C — 구현 로드맵 (순차, 누락 없이)
+## Appendix C — Implementation Roadmap (checklist)
 
-| # | 항목 | 의존 | 비고 |
-|---|------|------|------|
-| 1 | `state.json` 스키마 v2 정의 | 없음 | 모든 hook이 읽는 단일 출처 |
-| 2 | Mode classifier 엔진 (`scripts/mode-classifier.mjs`) | 1 | 자연어 → mode 자동 분기 |
-| 3 | Mode 정의 파일 (`modes/*.json`) | 1 | 5개 mode + allowed_skills |
-| 4 | 13개 `skills/workflow-*/SKILL.md` 작성 | 1 | contract + 기본 패턴 선언 |
-| 5 | Producer chain 라우터 (`scripts/route-on-fail.mjs`) | 1, 4 | fail 이벤트 → producer lookup |
-| 6 | Auto-confirm hook v2 (`scripts/auto-confirm.mjs`) | 1, 5 | 결정 트리 + 리스크 sub-tasker |
-| 7 | Stall detection (11-7) | 6 | 6개 신호 + 4-Level cascade |
-| 8 | Pattern C: Parallel Delegation | 4, 6 | investigate 먼저 (가장 큰 이득) |
-| 9 | Aggregator (`agents/aggregator.md`) | 8 | architect 기반, 병합 1차 |
-| 10 | Conflict-Resolver (`agents/conflict-resolver.md`) | 9 | 병합 실패 안전 장치 |
-| 11 | Pattern B: Dual Adversarial for agent-review | 4 | code-reviewer + security-reviewer |
-| 12 | Critic Watchdog Hook Layer 1 (`scripts/critic-watchdog.mjs`) | 1, 6 | 10 규칙 즉각 차단 |
-| 13 | Critic Watchdog Agent Layer 2 | 12 | 주기 호출 (5-10 tool call) |
-| 14 | Pattern D: Hierarchical for tasker/brainstorm | 4 | architect 리드 구조 |
-| 15 | **Multi-Pass Verification 엔진** (`scripts/verification-rounds.mjs`) | 4, 6 | 3-round 강제, round별 agent 교체, completed_rounds gate |
-| 16 | **Round-focus 프롬프트 템플릿** (`templates/verification/round-{1,2,3}.md`) | 15 | 누락/모순/엣지 각각의 focus 프롬프트 |
-| 17 | Feature state 무결성 점검 유틸 | 1 | `feature-version-check.mjs` |
-
-**실행 순서 보장**: 각 단계는 이전 의존성이 완결된 후 진행. 누락 시 전체 시스템 무결성 붕괴.
+| # | Item | Depends on | Notes |
+|---|------|-----------|-------|
+| 1 | `state.json` schema v2.4.1 | none | single source of truth |
+| 2 | Mode classifier (`scripts/mode-classifier.mjs`) | 1 | natural-language → mode |
+| 3 | Mode definition files (`modes/*.json`) | 1 | 6 modes + allowed_skills |
+| 4 | 14 `skills/workflow-*/SKILL.md` | 1 | contract + default pattern |
+| 5 | Producer-chain router (`scripts/route-on-fail.mjs`) | 1, 4 | |
+| 6 | Auto-confirm hook (`scripts/auto-confirm.mjs`) | 1, 5 | decide tree + risk sub-tasker + chain advance |
+| 7 | Auto-confirm consumer (`scripts/auto-confirm-consumer.mjs`) | 6 | queue-drop pattern pair |
+| 8 | Stall detection | 6 | 6 signals + 4-Level cascade |
+| 9 | Pattern C Parallel Delegation | 4, 6 | investigate first (biggest ROI) |
+| 10 | Aggregator agent | 9 | architect-based |
+| 11 | Conflict-Resolver agent | 10 | merge-failure safety |
+| 12 | Pattern B Dual Adversarial (agent-review) | 4 | code-reviewer + security-reviewer |
+| 13 | Critic Watchdog Hook Layer 1 | 1, 6 | 11 rules (R01–R11) |
+| 14 | Critic Watchdog Agent Layer 2 | 13 | periodic semantic checks |
+| 15 | Pattern D Hierarchical (tasker / brainstorm) | 4 | architect + personas |
+| 16 | Multi-Pass Verification engine | 4 | 3-round enforcement for review skills |
+| 17 | Feature state integrity utility (`feature-version-check.mjs`) | 1 | orphan scan |
+| 18 | `/verify` mode + `workflow-verify` skill | 4, 13 | tests + static + real-interface E2E |
+| 19 | **E2E real-interface enforcement (§8)** | 13 | R11 CRITICAL block, artifact_missing / mocked_interface causes, per-surface artifact gate |
 
 ---
 

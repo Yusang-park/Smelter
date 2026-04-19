@@ -1,6 +1,6 @@
 ---
 name: workflow-write-test
-version: 2.3.0
+version: 2.4.1
 type: workflow
 consumes: plan.md
 produces: "*.test.*" files (RED), test_cycles entries

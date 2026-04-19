@@ -1,6 +1,6 @@
 ---
 name: workflow-investigate
-version: 2.3.0
+version: 2.4.1
 type: workflow
 consumes: brainstorm.md OR trigger_prompt
 produces: investigation.md

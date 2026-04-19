@@ -15,12 +15,18 @@
 </p>
 
 <p align="center">
-  <code>v2.4.0</code>
+  <code>v2.4.1</code>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.ko.md">한국어</a>
 </p>
 
 ---
 
 ## Install
+
+### End users (one-time, auto-updates)
 
 ```bash
 claude plugin marketplace add Yusang-park/Smelter
@@ -28,6 +34,27 @@ claude plugin install smelter@smelter-marketplace
 ```
 
 Auto-updates on every session start.
+
+### Developers (working on Smelter itself)
+
+Clone the repo, then run the developer installer once:
+
+```bash
+git clone https://github.com/Yusang-park/Smelter.git ~/Smelter
+node ~/Smelter/scripts/dev-install.mjs
+```
+
+What it does:
+1. Symlinks `~/.claude/{skills,commands,agents}` → `~/Smelter/{skills,commands,agents}` so edits are live instantly in any new session.
+2. Merges `hooks/hooks.json` into `~/.claude/settings.json` under `hooks`, substituting `${CLAUDE_PLUGIN_ROOT}` with the absolute repo path. Entries are tagged `_smelter_dev_managed: true` so re-runs never duplicate.
+3. Refuses to run when the production plugin is installed (prevents double-fire). `--force` to override.
+
+Flags:
+- `--dry-run`   — preview, no writes
+- `--uninstall` — remove dev symlinks + dev-managed hooks only
+- `--force`     — bypass plugin-conflict check
+
+Activation: start a new Claude Code session (hooks load at session start).
 
 ---
 
@@ -37,7 +64,7 @@ Auto-updates on every session start.
 - **14 workflow skills** compose into modes (no fixed 10-step pipeline). Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
 - **8 Iron Laws** are runtime-enforced via hooks (`auto-confirm`, `critic-watchdog`), not just prompts.
 - **Multi-Pass Verification**: all 6 review skills run 3 mandatory rounds (omission / contradiction / edge_case) before declaring `pass`.
-- **File-based state**: every task has a single-source `*.state.json` at schema v2.3.0. Agents read files, not memory.
+- **File-based state**: every task has a single-source `*.state.json` at schema v2.4.1. Agents read files, not memory.
 
 ---
 
@@ -54,7 +81,8 @@ Auto-updates on every session start.
 | 7 | Critic Watchdog (2 layers)    | Layer 1: `PostToolUse` hook, 10 formal rules, CRITICAL = exit 2 (block). Layer 2: semantic ReadOnly agent every 5–10 tool calls during `workflow-coding` |
 | 8 | Multi-Pass Verification       | Review skills run `omission → contradiction → edge_case` rounds; `pass` requires all 3; no prior-round leakage |
 | 9 | Surface-based exemption       | CSS / i18n / typo / dialogue surfaces auto-skip TDD; keyword table encoded in each mode           |
-| 10 | File-based single source       | `.smt/features/<slug>/task/<task>.state.json` (schema v2.3.0) is the single source of truth — no in-memory state, no hidden retries |
+| 10 | File-based single source       | `.smt/features/<slug>/task/<task>.state.json` (schema v2.4.1) is the single source of truth — no in-memory state, no hidden retries |
+| 11 | **E2E real-interface enforcement** | `workflow-e2e` and `workflow-verify` Phase 3 must drive the **actual user-facing interface** (real browser, real subprocess, real HTTP port, real DB engine, real hook pipe) and produce per-surface artifacts. Test-runner stdout alone is NOT a valid pass. Critic Watchdog R11 (CRITICAL) blocks offenders. |
 
 ---
 
@@ -184,7 +212,7 @@ See `document/workflow.md` §0 for details.
 ## Project layout
 
 ```
-agents/                          ← 39 sub-agent definitions (10 core v2.3.0 + 29 specialists)
+agents/                          ← 39 sub-agent definitions (10 core v2.4.1 + 29 specialists)
 commands/                        ← 5 slash-command entry points
 document/                        ← workflow.md (spec), implementation-v2.md (this arch), Introduce.md, index.md
 hooks/hooks.json                 ← Claude Code hook registrations
@@ -215,7 +243,7 @@ Mode upgrade, human-check verdict, and mode transitions are gated by the user. E
 
 ## Status
 
-- Version: `2.4.0`
+- Version: `2.4.1`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
 - Implementation reference: [`document/implementation-v2.md`](document/implementation-v2.md)
 - Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)

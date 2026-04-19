@@ -28,7 +28,7 @@ When exempt, record `TDD: exempt (<reason>)` in `features/<slug>/decisions.md`.
 
 ## Iron Law
 
-- Iron Law #6: `simple_fix.allowed_skills` does NOT include investigate/tasker/write-test. If the change turns out to need them, DO NOT silently bypass — request mode upgrade.
+- Iron Law #6: `simple_fix.allowed_skills` does NOT include investigate, tasker, or write-test. If the change turns out to need them, DO NOT silently bypass — request mode upgrade.
 - Iron Law #2 (evasion): DO NOT classify a logic change as "trivial" to stay in simple_fix. Escalate.
 - Iron Law #4 (no retry): failures route via producer chain (`route-on-fail.mjs`), not blind re-runs.
 

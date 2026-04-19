@@ -1,14 +1,14 @@
 ---
-title: Smelter v2.4.0 — Implementation Reference
+title: Smelter v2.4.1 — Implementation Reference
 type: implementation-reference
-tags: [smelter, implementation, v2.4.0, architecture, scripts, agents, hooks]
+tags: [smelter, implementation, v2.4.1, architecture, scripts, agents, hooks]
 version: 2.4.0
 created: 2026-04-20
 updated: 2026-04-20
 status: canonical
 ---
 
-# Smelter v2.4.0 — Implementation Reference
+# Smelter v2.4.1 — Implementation Reference
 
 > Companion to `document/workflow.md` (the behavioral spec).
 > This file documents **what's shipped**, **where it lives**, and **how the pieces wire together**.
@@ -21,19 +21,19 @@ status: canonical
 ```
 /Users/yusang/Smelter/
 ├── agents/                          ← specialized sub-agent definitions (39 files)
-├── commands/                        ← 5 slash-command entry points
+├── commands/                        ← 6 slash-command entry points
 ├── document/                        ← canonical spec + indices (this dir)
 ├── hooks/                           ← hooks.json (Claude Code hook registration)
-├── modes/                           ← 5 mode definitions (JSON)
+├── modes/                           ← 6 mode definitions (JSON)
 ├── scripts/                         ← runtime scripts (hooks, engines, validators)
-├── skills/                          ← 13 workflow-* + utility skills
+├── skills/                          ← 14 workflow-* + utility skills
 ├── src/                             ← core TypeScript engine
 ├── bin/                             ← smelter CLI entry
 ├── rules-lib/                       ← language-specific coding rules
 ├── templates/                       ← verification round prompts + task/plan/report templates
-├── plugin.json                      ← Claude Code plugin manifest (v2.3.0)
-├── .claude-plugin/plugin.json       ← plugin metadata (v2.3.0)
-├── package.json                     ← npm manifest (v2.3.0)
+├── plugin.json                      ← Claude Code plugin manifest (v2.4.1)
+├── .claude-plugin/plugin.json       ← plugin metadata (v2.4.1)
+├── package.json                     ← npm manifest (v2.4.1)
 └── settings.json                    ← Smelter settings
 ```
 
@@ -122,7 +122,7 @@ Mode-unrestricted (Iron Law #6). Two shipped:
 
 | Script                       | Role                                                                         |
 |------------------------------|------------------------------------------------------------------------------|
-| `state-schema.mjs`           | `.state.json` schema v2.3.0 — `createInitialState`, `validate`, `readState`, `writeState`, enums (modes, causes, evidence types, target types, patterns, verification focuses) |
+| `state-schema.mjs`           | `.state.json` schema v2.4.1 — `createInitialState`, `validate`, `readState`, `writeState`, enums (modes, causes, evidence types, target types, patterns, verification focuses) |
 | `mode-classifier.mjs`        | Natural-language → mode; `classifyChain` for compound intents (e.g., 검증하고 수정해 → `[investigate, fix]`) |
 | `mode-classifier.test.mjs`   | 15-case test suite (single, chained, non-chain negatives, direct API)        |
 | `auto-confirm.mjs`           | Stop-hook decide tree (§11-2), chain-advance (§4-3), risk sub-tasker (§11-3), queue-drop writer |
@@ -165,7 +165,7 @@ Validated invariants:
 
 ## 4. Agents catalog (`agents/`)
 
-### 4-1. Core v2.3.0 workflow-support agents
+### 4-1. Core v2.4.1 workflow-support agents
 
 | Agent                    | Role                                                            | Tools           | Used by                                             |
 |--------------------------|-----------------------------------------------------------------|-----------------|-----------------------------------------------------|
@@ -361,7 +361,7 @@ Remediation applied post-audit:
 - `route-on-fail.mjs` e2e-review split into `file_absent → workflow-e2e` / `insufficient_scenario → workflow-coding`
 - `session-end.mjs` FORBIDDEN_COMMANDS: removed `simple` (was false-positiving `/simple-fix`)
 - `plugin.json`, `.claude-plugin/plugin.json`, `package.json` all bumped to `2.3.0`
-- `document/index.md` tag normalized to `v2.3.0`
+- `document/index.md` tag normalized to `v2.4.1`
 - `workflow.md` footer `End of workflow-v2.md` → `End of workflow.md`
 
 ---

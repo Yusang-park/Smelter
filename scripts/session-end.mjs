@@ -61,8 +61,8 @@ export const TRACKED_LEGACY_SCAN = [
   'rules/common/testing.md',
 ];
 
-// Canonical five-command set.
-export const EXPECTED_COMMANDS = ['plan', 'simple-fix', 'fix', 'investigate', 'implement'];
+// Canonical six-command set (workflow modes). /queue is a utility command and intentionally excluded.
+export const EXPECTED_COMMANDS = ['plan', 'simple-fix', 'fix', 'investigate', 'verify', 'implement'];
 // Retired command names and other legacy terms that must not appear as commands.
 // NOTE: `simple` is intentionally NOT listed because `/simple-fix` is canonical;
 // the doc-sync regex must not collide with it.
