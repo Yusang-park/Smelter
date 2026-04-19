@@ -1,5 +1,66 @@
 # Release Notes
 
+## v2.4.0 — `/verify` Mode (테스트·점검 Dedicated Entry)
+**Released**: 2026-04-20
+
+A new mode for **non-modifying verification** — runs tests + static inspection + E2E interface in a single pass and produces one consolidated `verify_report.md`. Closes a UX gap where "테스트 해봐" / "점검해" wrongly defaulted to the `/fix` pipeline.
+
+### New
+
+- **Command**: `/verify` — non-modifying verification (6th command in the Smelter command set).
+- **Mode**: `verify` — allowed skills: `workflow-verify`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`.
+- **Skill**: `workflow-verify` — runs 3 phases in one invocation:
+  1. Test code execution (vitest/jest/pytest, scoped to changed surface)
+  2. Code logic inspection (tsc, eslint, state-schema integrity, doc-sync)
+  3. E2E interface verification (Playwright / API / CLI per 5-Surface Mapping)
+- **Output artifact**: `verify_report.md` with per-phase breakdown and summary verdict.
+
+### Classifier changes
+
+- `테스트 해봐 / 돌려봐 / 점검해 / 실행해 / run the tests / health check` → `/verify`
+- `점검` **moved from `/investigate` to `/verify`** (rationale: 점검 implies dynamic execution; `/investigate` is strictly static read).
+- `검증 / 확인 / 체크 / verify / validate / check` **remain on `/investigate`** (static read semantics).
+- Chain detection:
+  - `테스트하고 고쳐` → `[verify, fix]`
+  - `점검하고 수정해` → `[verify, fix]`
+  - `run tests then fix` → `[verify, fix]`
+
+### Producer chain
+
+`workflow-verify` fail causes (`test_run` / `typecheck` / `lint` / `build` / `assertion`) route to `workflow-coding`. In `/verify` mode (which does not whitelist coding), this surfaces a `whitelist_violation` → user-gated `/fix` mode upgrade. When the input was chained (`테스트하고 고쳐`), auto-confirm advances the chain automatically.
+
+### State schema
+
+- `SCHEMA_VERSION` → `2.4.0`
+- `WORKFLOW_SKILLS` adds `workflow-verify` (14 total)
+- `MODES` adds `verify` (6 total)
+
+### Tests
+
+- `workflow-scenarios.test.mjs`: 111 scenarios (updated skill/mode counts to 14/6; 점검해 expectation moved from `investigate` to `verify`; added 테스트 해봐 / run the tests → `verify`)
+- `mode-classifier.test.mjs`: 15/15 (no regressions)
+- `auto-confirm.test.mjs`: 51/51 (no regressions)
+- New: `scripts/session-sim.mjs` — end-to-end session simulator (Stop/UserPromptSubmit/PostToolUse)
+
+### Docs
+
+- `document/workflow.md` §1-2 adds verify row + investigate-vs-verify guidance; §3 registry 13 → 14 rows.
+- `document/implementation-v2.md`: "6 commands × 6 modes × 14 skills"
+- `CLAUDE.md` / `AGENTS.md` / `README.md`: 6-command tables, version `2.4.0`
+- `plugin.json` / `.claude-plugin/plugin.json` / `package.json` → `2.4.0`
+
+### Semantics recap
+
+| Mode | Reads | Executes | Modifies |
+|------|-------|----------|----------|
+| `/investigate` | yes | no  | no |
+| `/verify`      | yes | yes | no |
+| `/fix`, `/implement`, `/simple-fix`, `/plan` | yes | yes | yes |
+
+`/verify` is the missing third member: dynamic runtime verification without any source edits.
+
+---
+
 ## v2.3.0 — Skill-Composition Workflow Engine
 **Released**: 2026-04-20
 
