@@ -609,6 +609,10 @@ On `complete`: `state.json.current_stage: done`, task md checkboxes `[x]`, appen
 | `current_stage === workflow-human-check && result === complete` | **wrap session, write session log** |
 | `chained_modes.length > 1` + transition signal | **auto-advance the chain** |
 | `mode_upgrade` requested | user input awaited (only halt) |
+| Last assistant message asks permission ("진행할까요?", "shall I proceed?", "ready to continue?", etc.) | **auto-confirm: continue (spawn sub-agent with selected model)** |
+| No signal + no proceed prompt | **halt** (no infinite loop) |
+
+The queued payload includes `sub_agent_model` so the next-turn agent spawns the work via a sub-agent using the selected model. Default = `sonnet`. When `~/.smt/config.json.codexMode === true` or env `CODEX_MODE=1`, the model switches to `haiku` (mini) for the Codex CLI runtime.
 
 ### 11-3. Risk auto-tasking (sub-tasker)
 
@@ -626,6 +630,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 2. `workflow-human-check` awaiting user input.
 3. Mode-upgrade decision awaited.
 4. `investigate` mode terminal (user picks the next mode).
+5. **No actionable signal AND last assistant message contains no proceed prompt** — halt to prevent the previous "no explicit signal, prompting to proceed" infinite loop. The Stop hook reads the last message every time; only auto-confirms when the agent explicitly asked permission (see §11-2).
 
 ### 11-5. Config
 
@@ -635,10 +640,13 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 {
   "autoConfirm": true,
   "subTaskerOnRisk": true,
+  "codexMode": false,
   "maxSessionHours": 24,
   "stopOnCostLimit": false
 }
 ```
+
+`codexMode: true` (or env `CODEX_MODE=1`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime.
 
 ### 11-6. Stall Detection & Internal Resolution Cascade
 

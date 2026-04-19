@@ -424,7 +424,14 @@ export function checkDocSync(projectRoot) {
   if (kd !== null) {
     for (const cmd of EXPECTED_COMMANDS) {
       // Match either `command: 'plan'` or `plan:` (object key in COMMAND_CONFIG)
-      const pattern = new RegExp(`(?:command:\\s*['"]${cmd}['"])|(?:^\\s*${cmd}:\\s*\\{)`, 'm');
+      // Match either a quoted-key form `'simple-fix': {` or a bare-key form `plan: {`
+      // or an explicit `command: 'simple-fix'` literal.
+      const pattern = new RegExp(
+        `(?:command:\\s*['"]${cmd}['"])`
+        + `|(?:^\\s*['"]${cmd}['"]\\s*:\\s*\\{)`
+        + `|(?:^\\s*${cmd}:\\s*\\{)`,
+        'm'
+      );
       if (!pattern.test(kd)) {
         issues.push({
           severity: 'error',

@@ -26,6 +26,8 @@ import {
   buildChainedTransitionPrompt,
   decide,
   detectRiskKeyword,
+  detectProceedPrompt,
+  pickSubAgentModel,
   buildPromptInjection,
 } from './auto-confirm.mjs';
 
@@ -141,6 +143,53 @@ test('Clean message returns false', () => {
 });
 test('Empty string returns false', () => {
   assert.equal(detectRiskKeyword(''), false);
+});
+
+// ----------------------------------------------------------------------------
+section('detectProceedPrompt (Korean + English ask-permission patterns)');
+// ----------------------------------------------------------------------------
+test('Korean 진행할까요 detected', () => {
+  assert.equal(detectProceedPrompt('이대로 진행할까요?'), true);
+});
+test('Korean 계속할까요 detected', () => {
+  assert.equal(detectProceedPrompt('계속할까요?'), true);
+});
+test('Korean 다음 단계로 진행할까요 detected', () => {
+  assert.equal(detectProceedPrompt('다음 단계로 진행할까요?'), true);
+});
+test('English shall I proceed detected', () => {
+  assert.equal(detectProceedPrompt('Shall I proceed?'), true);
+});
+test('English should I continue detected', () => {
+  assert.equal(detectProceedPrompt('Should I continue with the implementation?'), true);
+});
+test('English ready to proceed detected', () => {
+  assert.equal(detectProceedPrompt('Ready to proceed.'), true);
+});
+test('Clean completion message NOT detected', () => {
+  assert.equal(detectProceedPrompt('All tests pass. Implementation complete.'), false);
+});
+test('Empty string NOT detected', () => {
+  assert.equal(detectProceedPrompt(''), false);
+});
+test('Null input NOT detected', () => {
+  assert.equal(detectProceedPrompt(null), false);
+});
+
+// ----------------------------------------------------------------------------
+section('pickSubAgentModel (sonnet default, mini under codex)');
+// ----------------------------------------------------------------------------
+test('default returns sonnet', () => {
+  delete process.env.CODEX_MODE;
+  assert.equal(pickSubAgentModel(), 'sonnet');
+});
+test('CODEX_MODE=1 env returns haiku', () => {
+  process.env.CODEX_MODE = '1';
+  try {
+    assert.equal(pickSubAgentModel(), 'haiku');
+  } finally {
+    delete process.env.CODEX_MODE;
+  }
 });
 
 // ----------------------------------------------------------------------------
@@ -301,9 +350,19 @@ test('test_cycles RED without coding entry → enter_skill workflow-coding', () 
   assert.equal(d.action, 'enter_skill');
   assert.equal(d.payload.skill, 'workflow-coding');
 });
-test('no signal → continue fallback', () => {
+test('no signal + neutral message → halt (no infinite loop)', () => {
   const s = baseState({ current_stage: 'workflow-tasker', events: [] });
-  const d = decide({ state: s, lastAssistantText: 'neutral text' });
+  const d = decide({ state: s, lastAssistantText: 'Implementation complete.' });
+  assert.equal(d.action, 'halt');
+});
+test('no signal + Korean proceed prompt → continue (auto-confirm)', () => {
+  const s = baseState({ current_stage: 'workflow-tasker', events: [] });
+  const d = decide({ state: s, lastAssistantText: '다음 단계로 진행할까요?' });
+  assert.equal(d.action, 'continue');
+});
+test('no signal + English proceed prompt → continue (auto-confirm)', () => {
+  const s = baseState({ current_stage: 'workflow-tasker', events: [] });
+  const d = decide({ state: s, lastAssistantText: 'Shall I proceed with the next step?' });
   assert.equal(d.action, 'continue');
 });
 
@@ -375,6 +434,22 @@ test('spawn_sub_tasker prompt mentions sub-tasker', () => {
   const text = buildPromptInjection({ action: 'spawn_sub_tasker', reason: 'r', payload: { text: '리스크' } }, s);
   assert.match(text, /sub-tasker/i);
 });
+test('continue action embeds sub-agent model hint (default sonnet)', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection({ action: 'continue', reason: 'asked permission' }, s);
+  assert.match(text, /sub-agent/i);
+  assert.match(text, /sonnet/);
+});
+test('continue action with codex sub-agent model emits haiku hint', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection({ action: 'continue', reason: 'asked permission' }, s, { subAgentModel: 'haiku' });
+  assert.match(text, /haiku/);
+});
+test('enter_skill action embeds sub-agent model hint', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection({ action: 'enter_skill', reason: 'r', payload: { skill: 'workflow-coding' } }, s, { subAgentModel: 'sonnet' });
+  assert.match(text, /sonnet/);
+});
 test('buildChainedTransitionPrompt handles single remaining mode', () => {
   const text = buildChainedTransitionPrompt('fix', ['fix']);
   assert.match(text, /Chained intent/);
@@ -437,6 +512,50 @@ test('no active state → exit 0 (no_state), no decision emitted', () => {
     const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
     assert.equal(res.status, 0, `stderr: ${res.stderr}\nstdout: ${res.stdout}`);
     assert.equal(res.stdout.trim(), '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('active state + neutral message → exit 0, no queue (halt path)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const featDir = join(dir, '.smt', 'features', 'h', 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, 'h.state.json');
+    const state = baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [] });
+    writeState(statePath, state);
+    mkdirSync(join(dir, '.smt'), { recursive: true });
+    writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+    const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'Implementation complete.' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
+    assert.equal(res.status, 0, `expected halt exit 0, got ${res.status}\nstderr: ${res.stderr}`);
+    assert.equal(res.stdout.trim(), '');
+    const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    assert.equal(existsSync(queuePath), false, 'no queue file should be dropped on halt');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('active state + proceed prompt → exit 2, queue-drop with sub_agent_model', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const featDir = join(dir, '.smt', 'features', 'p', 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, 'p.state.json');
+    const state = baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [] });
+    writeState(statePath, state);
+    mkdirSync(join(dir, '.smt'), { recursive: true });
+    writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+    const payload = JSON.stringify({ cwd: dir, last_assistant_text: '진행할까요?' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
+    assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
+    const out = JSON.parse(res.stdout);
+    assert.equal(out.decision, 'block');
+    assert.equal(out.meta.sub_agent_model, 'sonnet');
+    const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    const queue = JSON.parse(readFileSync(queuePath, 'utf-8'));
+    assert.equal(queue.sub_agent_model, 'sonnet');
+    assert.match(queue.additionalContext, /sub-agent/i);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

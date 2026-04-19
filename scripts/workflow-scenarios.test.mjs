@@ -405,17 +405,26 @@ section('SCENARIO 9 — test_cycles RED forces workflow-coding entry');
     assert.equal(d.action, 'enter_skill');
     assert.equal(d.payload.skill, 'workflow-coding');
   });
-  test('RED test_cycle but coding already in progress → no loop', () => {
+  test('RED test_cycle but coding already in progress → no enter_skill loop', () => {
     const s = fixModeState({ current_stage: 'workflow-coding' });
     s.test_cycles = [{
       t: new Date().toISOString(), file: 'src/x.test.ts',
       action: 'added_case', case_name: 'bug#123',
       run_result: 'fail', error: 'x',
     }];
-    // events empty → fall through to 'continue' fallback (safe)
+    // events empty + no proceed prompt → falls through.
+    // The invariant this test protects: the engine must NOT re-inject
+    // `enter_skill: workflow-coding` when already in that stage (would loop).
+    // After the decide() fallback tightening, a no-signal no-events state
+    // halts (safe) instead of emitting 'continue' — either is acceptable here
+    // because both prevent the loop. Only re-entry must be forbidden.
     const d = decide({ state: s, lastAssistantText: '' });
-    assert.notEqual(d.action, 'halt');
-    assert.equal(d.action, 'continue');
+    if (d.action === 'enter_skill') {
+      assert.notEqual(d.payload.skill, 'workflow-coding', 'must not re-enter the current stage');
+    }
+    // Positive: the fallback is either halt (no-signal safety) or continue
+    // (proceed-prompt detected). Any other action here is a bug.
+    assert.ok(['halt', 'continue'].includes(d.action), `unexpected action: ${d.action}`);
   });
 }
 

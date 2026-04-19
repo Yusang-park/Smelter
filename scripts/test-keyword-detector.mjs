@@ -67,3 +67,34 @@ test('explicit /qa command triggers skill only — no state file written', async
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test('explicit /investigate command routes to investigate skill', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
+
+  try {
+    const result = runDetector({ cwd, prompt: '/investigate the auth regression' });
+
+    assert.equal(result.continue, true);
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
+    assert.match(result.hookSpecificOutput.additionalContext, /MAGIC KEYWORD: INVESTIGATE/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('natural-language "investigate" routes to /investigate, not /plan', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
+
+  try {
+    const result = runDetector({
+      cwd,
+      prompt: 'Assign agent teams to investigate at least three security vulnerabilities each in the backend and frontend',
+    });
+
+    assert.equal(result.continue, true);
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
+    assert.doesNotMatch(result.hookSpecificOutput.additionalContext, /Skill: plan\b/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

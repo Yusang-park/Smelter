@@ -65,7 +65,7 @@ function extractPrompt(input) {
 function extractExplicitHarnessCommand(prompt) {
   if (!prompt) return null;
   const trimmed = prompt.trim();
-  const match = trimmed.match(/^\/(plan|build|fix|cancel|queue)\b(?:[:\s-]*(.*))?$/i);
+  const match = trimmed.match(/^\/(plan|build|fix|simple-fix|investigate|implement|verify|cancel|queue)\b(?:[:\s-]*(.*))?$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase(),
@@ -83,7 +83,7 @@ const FIX_PATTERNS = [
   /버그|고쳐|수정|해결해|오류|에러/,
 ];
 
-const PLAN_PATTERNS = [
+const INVESTIGATE_PATTERNS = [
   /\bcheck\b/i,
   /\binvestigate\b/i,
   /\binspect\b/i,
@@ -100,13 +100,13 @@ export function detectNaturalLanguageCommand(prompt) {
   const text = String(prompt || '').trim();
   if (!text) return null;
   const hasFix = FIX_PATTERNS.some((pattern) => pattern.test(text));
-  const hasPlan = PLAN_PATTERNS.some((pattern) => pattern.test(text));
+  const hasInvestigate = INVESTIGATE_PATTERNS.some((pattern) => pattern.test(text));
 
   if (hasFix) {
     return { name: 'fix', args: '', hint: 'bug', matched: 'local:fix', source: 'magic' };
   }
-  if (hasPlan) {
-    return { name: 'plan', args: '', hint: null, matched: 'local:plan', source: 'magic' };
+  if (hasInvestigate) {
+    return { name: 'investigate', args: '', hint: null, matched: 'local:investigate', source: 'magic' };
   }
   return null;
 }
@@ -323,7 +323,7 @@ async function main() {
     if (!detected) {
       const classification = classifyPrompt(prompt, { cwd: directory, sessionId });
       if (classification.intent === 'command' && classification.command) {
-        const validCommands = ['plan', 'build', 'fix', 'cancel', 'queue'];
+        const validCommands = ['plan', 'build', 'fix', 'simple-fix', 'investigate', 'implement', 'verify', 'cancel', 'queue'];
         const cmd = classification.command.toLowerCase().replace(/^\//, '');
         if (validCommands.includes(cmd)) {
           printTag(`Magic Keyword: Haiku classified command`);
@@ -413,7 +413,15 @@ async function main() {
     }
 
     // MODE banner (once per session per command)
-    const MODE_LABELS = { plan: 'PLAN MODE', build: 'BUILD MODE', fix: 'FIX MODE' };
+    const MODE_LABELS = {
+      plan: 'PLAN MODE',
+      build: 'BUILD MODE',
+      fix: 'FIX MODE',
+      'simple-fix': 'SIMPLE-FIX MODE',
+      investigate: 'INVESTIGATE MODE',
+      implement: 'IMPLEMENT MODE',
+      verify: 'VERIFY MODE',
+    };
     const modeLabel = MODE_LABELS[detected.name];
     if (modeLabel) {
       const bannerFile = join(directory, '.smt', 'state', `mode-emitted-${sessionId || 'default'}.json`);

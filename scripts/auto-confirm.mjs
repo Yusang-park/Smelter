@@ -42,6 +42,38 @@ const RISK_KEYWORDS = [
   '이상하지만', '임시로', '일단',
 ];
 
+// Patterns where the assistant is explicitly asking permission to proceed.
+// When these match, the Stop hook auto-confirms ("yes, proceed") instead of
+// halting. When they DO NOT match in the fallback branch, the hook halts to
+// avoid the infinite "no explicit signal, prompting to proceed" loop.
+const PROCEED_PROMPT_PATTERNS = [
+  // Korean
+  /진행\s*할까요/, /계속\s*할까요/, /진행해도\s*(될까요|괜찮을까요)/,
+  /다음\s*(단계|스텝)로\s*(갈까요|넘어갈까요|진행할까요)/,
+  /시작\s*할까요/, /(이대로|그대로)\s*진행/,
+  // English
+  /shall\s+i\s+(proceed|continue|go\s+ahead|move\s+on)/i,
+  /should\s+i\s+(proceed|continue|go\s+ahead|move\s+on)/i,
+  /ready\s+to\s+(proceed|continue|move\s+on)/i,
+  /ok\s+to\s+(proceed|continue)/i,
+  /may\s+i\s+(proceed|continue|go\s+ahead)/i,
+  /\bproceed\?\s*$/i, /\bcontinue\?\s*$/i,
+];
+
+export function detectProceedPrompt(text) {
+  if (!text || typeof text !== 'string') return false;
+  return PROCEED_PROMPT_PATTERNS.some(p => p.test(text));
+}
+
+// Pick the model the next-turn agent should use when spawning a sub-agent.
+// Default = sonnet. Codex CLI environments use the smaller mini.
+export function pickSubAgentModel() {
+  if (process.env.CODEX_MODE === '1') return 'haiku';
+  const cfg = readJson(join(homedir(), '.smt', 'config.json'));
+  if (cfg && cfg.codexMode === true) return 'haiku';
+  return 'sonnet';
+}
+
 function readJson(path) {
   try { return JSON.parse(readFileSync(path, 'utf-8')); } catch { return null; }
 }
@@ -207,7 +239,11 @@ export function decide({ state, lastAssistantText, statePath }) {
     return { action: 'enter_skill', reason: 'RED cycle ready, enter workflow-coding', payload: { skill: 'workflow-coding' } };
   }
 
-  return { action: 'continue', reason: 'no explicit signal, prompting to proceed' };
+  if (detectProceedPrompt(lastAssistantText)) {
+    return { action: 'continue', reason: 'assistant asked permission to proceed — auto-confirming' };
+  }
+
+  return { action: 'halt', reason: 'no explicit signal and no proceed prompt — halting to avoid loop' };
 }
 
 export function detectRiskKeyword(text) {
@@ -215,7 +251,7 @@ export function detectRiskKeyword(text) {
   return RISK_KEYWORDS.some(k => text.includes(k));
 }
 
-export function buildPromptInjection(decision, state) {
+export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet' } = {}) {
   const lines = [];
   lines.push(`[auto-confirm] ${decision.reason}`);
 
@@ -223,15 +259,19 @@ export function buildPromptInjection(decision, state) {
     case 'enter_skill':
       lines.push(`Enter next workflow skill: ${decision.payload.skill}`);
       if (decision.payload.feedback_id) lines.push(`Resolve feedback: ${decision.payload.feedback_id}`);
+      lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
       break;
     case 'advance':
       lines.push('Previous skill passed. Advance to the next skill per current mode.');
+      lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
       break;
     case 'chain_advance':
       lines.push(buildChainedTransitionPrompt(decision.payload.nextMode, decision.payload.remaining));
+      lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
       break;
     case 'spawn_sub_tasker':
       lines.push('Risk language detected. Spawn sub-tasker to extract TODO into new task.');
+      lines.push(`Sub-tasker model='${subAgentModel}'.`);
       break;
     case 'request_mode_upgrade':
       lines.push(`Mode upgrade required: ${decision.payload.suggested_upgrade_target}`);
@@ -239,6 +279,10 @@ export function buildPromptInjection(decision, state) {
       break;
     case 'session_wrap':
       lines.push('Task complete. Write session/YYYY-MM-DD.md log and terminate.');
+      break;
+    case 'continue':
+      lines.push('Assistant asked permission to proceed. Auto-confirmed: yes, continue.');
+      lines.push(`Spawn the next step via a sub-agent using model='${subAgentModel}'.`);
       break;
     case 'halt':
     case 'no_state':
@@ -282,19 +326,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const state = statePath ? readState(statePath) : null;
   const lastAssistantText = input.last_assistant_text || '';
   const decision = decide({ state, lastAssistantText, statePath });
-  const injection = buildPromptInjection(decision, state);
+  const subAgentModel = pickSubAgentModel();
+  const injection = buildPromptInjection(decision, state, { subAgentModel });
 
   if (decision.action === 'halt' || decision.action === 'no_state') {
     process.exit(0);
   }
 
-  // Drop the injection payload into the queue so auto-confirm-consumer.mjs
-  // can pick it up on the next UserPromptSubmit.
   try {
     dropQueue(cwd, {
       reason: decision.reason,
       action: decision.action,
       additionalContext: injection,
+      sub_agent_model: subAgentModel,
       state_path: statePath,
     });
   } catch {
@@ -304,7 +348,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const output = {
     decision: 'block',
     reason: decision.reason,
-    meta: { queued: true, state_path: statePath },
+    meta: { queued: true, state_path: statePath, sub_agent_model: subAgentModel },
   };
   console.log(JSON.stringify(output));
   process.exit(2);
