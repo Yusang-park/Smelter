@@ -1,0 +1,26 @@
+{
+  "mode": "plan",
+  "description": "New features and refactoring planning first. Start with brainstorm-deep.",
+  "entry_skill": "workflow-brainstorm",
+  "entry_params": { "workflow-brainstorm": { "depth": "deep" } },
+  "allowed_skills": [
+    "workflow-brainstorm", "workflow-brainstorm-review",
+    "workflow-investigate", "workflow-investigate-review",
+    "workflow-tasker", "workflow-tasker-review"
+  ],
+  "default_team_overrides": {
+    "workflow-brainstorm":         { "pattern": "D", "lead": "planner", "sub_agents": ["product-persona", "engineer-persona", "design-persona"] },
+    "workflow-brainstorm-review":  { "pattern": "B", "default_agent": "critic" },
+    "workflow-investigate":        { "pattern": "C", "default_agent": "explore-medium", "aggregator": "architect" },
+    "workflow-investigate-review": { "pattern": "A", "default_agent": "explore-high" },
+    "workflow-tasker":             { "pattern": "D", "lead": "architect", "sub_agents": ["researcher", "executor"] },
+    "workflow-tasker-review":      { "pattern": "B", "default_agents": ["advocate", "critic", "arbitrator"] }
+  },
+  "default_exempt": { "tdd": true, "e2e": true },
+  "magic_keywords": {},
+  "terminal_actions": ["mode_transition_to_implement"],
+  "transitions": {
+    "upgrade_to":   ["implement"],
+    "downgrade_to": ["fix", "simple_fix"]
+  }
+}

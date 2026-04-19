@@ -1,42 +1,43 @@
-# Smelter: /fix — Execution-First Repair Command
+# Smelter: /fix — Bug & Logic Repair
 
-Run steps 4–8 + 10 on $ARGUMENTS. Covers bug fixes, regressions, and style/text/dialogue edits.
+Run the `fix` mode on $ARGUMENTS. Use for bug fixes, regressions, and logic-flow changes that require investigation before the repair.
 
-Internally drives `workflows/qa.yaml` via the step engine. Per-step prompts live in `steps/step-*.md`.
+Backed by `modes/fix.json`. Allowed workflow skills: investigate, tasker, write-test, coding, agent-review, e2e, review skills, human-check.
 
 ## Task
 $ARGUMENTS
 
 ## Protocol
 
-1. The step engine seeds `.smt/features/<slug>/state/workflow.json` at `step: step-4` on first run (fix skips steps 1–3).
-2. If no task file exists for this change, create one under `features/<slug>/task/` BEFORE the engine advances. (`/fix` does not do Steps 1–3 — deep planning belongs to `/plan`.)
-3. Follow the injected step prompt.
-4. Continue autonomously when the likely next step is clear. Ask only when ambiguity is truly blocking.
+1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: fix`.
+2. Entry skill is `workflow-investigate`. No shortcut to coding.
+3. Flow: investigate → investigate-review → tasker → tasker-review → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check.
+4. Review skills run **Multi-Pass Verification** (3 rounds: omission / contradiction / edge_case, per spec §9-3).
+5. `workflow-agent-review` uses Pattern B (code-reviewer + security-reviewer) by default — set by `modes/fix.json`.
 
 ## Surface-based exemption
 
 | Surface | E2E | TDD |
 |---------|-----|-----|
-| CSS / style / typography | no | exempt |
-| i18n / copy-only | no | exempt |
-| Typo in comments/docs | no | exempt |
-| Pure dialogue (no code) | no | exempt |
 | Bug fix with testable logic | yes if interface | required |
 | Existing-feature behavior change | yes if user-visible | required |
 | New logic | yes if interface | required |
 
-When exempt, record `TDD: exempt (<reason>)` in `features/<slug>/decisions.md`.
+Trivial text/CSS changes should use `/simple-fix` instead. If the classifier routed here but the change is trivial, `workflow-investigate-review` may propose **downgrade to `simple_fix`**.
 
 ## Magic-keyword branches
 
-- `fix` / `bug` / `버그` → E2E forced on for interface surface
-- `style` / `typo` / `텍스트` / `i18n` → TDD exemption auto-applied
+- `fix` / `bug` / `버그` / `문제` → E2E forced on for interface surface
+- Magic keywords `css` / `style` / `텍스트` / `i18n` in `/fix` context do NOT auto-exempt TDD (logic change implied). Author may explicitly mark surface.
 
-## Iron law
+## Iron Law
 
-- No completion claim without fresh evidence
-- Validation is scoped to the selected task / changed surface first; run only the tests and type/build checks relevant to that scope
-- Repo-wide `tsc --noEmit` / full-suite runs are forbidden unless the user explicitly asks or a later step explicitly requires them
-- Do NOT delete failing tests to pass
-- Do NOT silently widen scope (extras → new task via /plan)
+- No completion claim without fresh evidence (Iron Law #5)
+- No retry; failures route via producer chain (Iron Law #4)
+- Do NOT delete failing tests to pass (watchdog rule #1)
+- Do NOT silently widen scope (watchdog rule #7) — new scope → `workflow-human-check` mode upgrade to `/implement` or new task via `/plan`
+- Scoped testing only (spec §14-3) — no repo-wide `pnpm test` before `workflow-human-check`
+
+## Auto-routing note
+
+Mode classifier patterns that trigger `/fix`: "fix the bug", "broken", "error", "not working", "regression", Korean equivalents. Explicit `/fix` overrides.

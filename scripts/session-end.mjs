@@ -3,13 +3,13 @@
  * session-end.mjs — SessionEnd hook.
  *
  * Runs the legacy dist-based processor (if present) AND enforces the
- * smelter documentation sync contract:
+ * smelter v2 documentation-sync contract:
  *
- *   1. Command set across tracked md files matches {plan, build, fix}
- *   2. Preset JSON filenames match the command names
- *   3. Step number references stay within 1..10
- *   4. Magic keyword table in keyword-detector.mjs stays in sync with command set
- *   5. Forbidden legacy references (/blueprint, /todo, /simple) → 0 hits
+ *   1. Command set across tracked md files matches the canonical five-command set
+ *      {plan, simple-fix, fix, investigate, implement}.
+ *   2. Magic keyword table in keyword-detector.mjs stays in sync with the
+ *      command set.
+ *   3. Forbidden legacy references (retired commands and retired terminology) → 0 hits.
  *
  * On mismatch: stderr report + exit code 2 so the session surfaces a sync warning.
  * On pass: continue normally.
@@ -31,18 +31,18 @@ export const TRACKED_MD_FILES = [
   'CLAUDE.md',
   'AGENTS.md',
   'README.md',
-  'doc/index.md',
-  'doc/workflow.md',
-  'doc/spec.md',
-  'doc/implementation.md',
-  'doc/Introduce.md',
-  'doc/reference.md',
+  'document/index.md',
+  'document/workflow.md',
+  'document/implementation.md',
+  'document/Introduce.md',
 ];
 
 export const TRACKED_COMMAND_FILES = [
   'commands/plan.md',
-  'commands/build.md',
+  'commands/simple-fix.md',
   'commands/fix.md',
+  'commands/investigate.md',
+  'commands/implement.md',
 ];
 
 export const TRACKED_CROSS_FILES = [
@@ -56,20 +56,19 @@ export const TRACKED_LEGACY_SCAN = [
   'settings.json',
   'scripts/session-start-smt.mjs',
   'scripts/cancel-propagator.mjs',
-  'scripts/test-queue-session-isolation.mjs',
-  'scripts/test-max-attempts.ts',
   'scripts/auto-confirm.mjs',
   'scripts/auto-confirm-consumer.mjs',
   'rules/common/testing.md',
 ];
 
-export const EXPECTED_COMMANDS = ['plan', 'build', 'fix'];
-export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'simple'];
+// Canonical five-command set.
+export const EXPECTED_COMMANDS = ['plan', 'simple-fix', 'fix', 'investigate', 'implement'];
+// Retired command names and other legacy terms that must not appear as commands.
+// NOTE: `simple` is intentionally NOT listed because `/simple-fix` is canonical;
+// the doc-sync regex must not collide with it.
+export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'build', 'tasker', 'feat', 'qa'];
 export const FORBIDDEN_LEGACY_PATTERN = /persistent-mode(?:\.cjs|\.mjs|\.sh)?/i;
 export const FORBIDDEN_TASKER_NATIVE_PLAN_PATTERN = /EnterPlanMode|ExitPlanMode|Native Plan File|\[Plan Mode: Enter\]|\[Plan Mode: Exit\]/i;
-// Extra-preset guard: only these 4 preset JSONs are allowed.
-export const ALLOWED_PRESETS = ['plan', 'build', 'fix'];
-export const FORBIDDEN_EXTRA_PRESETS = ['full', 'narrow', 'planning', 'autopilot', 'e2e-force', 'tdd'];
 
 function readFileSafe(path) {
   try { return existsSync(path) ? readFileSync(path, 'utf-8') : null; } catch { return null; }
@@ -366,54 +365,32 @@ export function checkDocSync(projectRoot) {
     }
   }
 
-  // --- 2d. Forbidden extra presets — enforce exactly {plan,build,fix} ---
-  // Case-insensitive: normalize filename to lowercase and strip any .json/.JSON
-  // suffix before comparing. This catches case-variant filenames like
-  // `Full.JSON` on case-insensitive filesystems (macOS default, Windows).
-  const presetsDirForExtra = join(projectRoot, 'presets');
-  const presetFilesAll = listDir(presetsDirForExtra)
-    .filter(f => /\.json$/i.test(f))
-    .map(f => f.toLowerCase().replace(/\.json$/i, ''));
-  for (const extra of presetFilesAll) {
-    if (!ALLOWED_PRESETS.includes(extra)) {
+  // --- 2d. Retired step-engine directories must not reappear ---
+  // `workflows/`, `steps/`, `presets/` belonged to the retired step-engine.
+  // Skill-composition eliminates these entirely. Any presence is a sync violation.
+  for (const legacyDir of ['workflows', 'steps', 'presets']) {
+    if (existsSync(join(projectRoot, legacyDir))) {
       issues.push({
         severity: 'error',
-        file: 'presets/',
-        message: `Forbidden extra preset: presets/${extra}.json (only ${ALLOWED_PRESETS.join(', ')} allowed)`,
-      });
-    }
-  }
-  for (const forbidden of FORBIDDEN_EXTRA_PRESETS) {
-    if (presetFilesAll.includes(forbidden)) {
-      // Already flagged above, but emit a clearer specific message too.
-      issues.push({
-        severity: 'error',
-        file: 'presets/',
-        message: `Legacy preset still present: presets/${forbidden}.json`,
+        file: `${legacyDir}/`,
+        message: `Retired step-engine directory reappeared: ${legacyDir}/ — remove it`,
       });
     }
   }
 
-  // --- 3. Preset name consistency ---
-  const presetsDir = join(projectRoot, 'presets');
-  const presetFiles = listDir(presetsDir)
+  // --- 3. Mode definition files must exist for every expected command ---
+  const modesDir = join(projectRoot, 'modes');
+  const modeFiles = listDir(modesDir)
     .filter(f => /\.json$/i.test(f))
     .map(f => f.toLowerCase().replace(/\.json$/i, ''));
-  for (const cmd of EXPECTED_COMMANDS) {
-    if (!presetFiles.includes(cmd)) {
+  // `simple-fix` command maps to `simple_fix` mode (hyphen vs underscore).
+  const expectedModes = EXPECTED_COMMANDS.map(c => c.replace(/-/g, '_'));
+  for (const mode of expectedModes) {
+    if (!modeFiles.includes(mode)) {
       issues.push({
         severity: 'error',
-        file: 'presets/',
-        message: `Missing preset: presets/${cmd}.json (expected for /${cmd})`,
-      });
-    }
-  }
-  for (const name of ['narrow', 'planning']) {
-    if (presetFiles.includes(name)) {
-      issues.push({
-        severity: 'error',
-        file: 'presets/',
-        message: `Legacy preset still present: presets/${name}.json (should be removed)`,
+        file: 'modes/',
+        message: `Missing mode: modes/${mode}.json (expected for v2 mode set)`,
       });
     }
   }

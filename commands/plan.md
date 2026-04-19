@@ -1,8 +1,8 @@
 # Smelter: /plan — Deep Planning Command
 
-Run Steps 1–3 + deep interview on $ARGUMENTS. Creates or refines `.smt/features/<slug>/` planning state.
+Run the `plan` mode on $ARGUMENTS. Use for new features, large refactors, and architectural work where planning must precede code.
 
-Internally drives `workflows/tasker.yaml` via the step engine. Execution happens later via `/build` or `/fix`.
+Backed by `modes/plan.json`. Allowed workflow skills: `workflow-brainstorm`, `workflow-brainstorm-review`, `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`.
 
 **Core rule: agents do not memorize — agents read files.**
 
@@ -11,44 +11,52 @@ $ARGUMENTS
 
 ## Protocol
 
-### Planning protocol
+1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: plan`.
+2. Entry skill is `workflow-brainstorm` with `depth: deep` — full requirement discovery interview.
+3. Flow: brainstorm → brainstorm-review → investigate → investigate-review → tasker → tasker-review → **mode transition to `/implement`**.
+4. `workflow-brainstorm-review` and `workflow-investigate-review` support the **reshape edge** — either can route back to `workflow-brainstorm` if discovery reshapes the scope.
+5. All three review skills (brainstorm-review, investigate-review, tasker-review) run **Multi-Pass Verification** (3 rounds: omission / contradiction / edge_case, per spec §9-3).
 
-1. Propose and refine planning text directly in `.smt/features/<slug>/task/` files.
-2. Keep `.smt/` as the source of truth for planning state.
-3. Use deep interview when the request is vague, high-risk, or requires requirement discovery.
-4. Continue autonomously when the likely next step is clear. Ask only for truly blocking ambiguity.
+## Deep interview behavior
 
-### Engine protocol
-
-1. Engine seeds `.smt/features/<slug>/state/workflow.json` at `step: step-1` on first run.
-2. Follow the injected step prompt — step-1 (Problem Recognition), step-2 (Learning), step-3 (Planning), step-3-interview (planning summary / routing).
-3. Workflow ends at step-3-interview; downstream execution is `/build` or `/fix`.
-
-### Interview vs. direct mode
-
-| Mode | Trigger | Behavior |
-|------|---------|----------|
-| Deep interview | Default for vague or strategic work | One question at a time, assumption-seeking |
-| Direct planning | Detailed request | Compress discovery and move to step-3 |
-
-**Adaptive context gathering:** spawn `explore` for codebase facts, reserve questions for user preferences and unresolved product intent.
-
-Never ask multiple questions in one message.
+- One question at a time; assumption-seeking.
+- Spawn `explore` agent for codebase facts; reserve questions for user preferences and unresolved product intent (adaptive context gathering).
+- Never ask multiple questions in one message.
 
 ## Output structure
 
 ```
 {PROJECT_ROOT}/.smt/features/<slug>/
 ├── task/
-│   ├── plan.md  ← goal, scope, acceptance criteria
-│   └── <task-name>.md ← individual task (atomic, agent-readable)
-└── decisions.md
+│   ├── plan.md                   ← Queue, Approaches, target_type
+│   ├── <task-name>.md            ← individual task (atomic, agent-readable)
+│   └── <task-name>.state.json    ← machine state (v2.3.0 schema)
+├── decisions.md
+└── artifacts/
 ```
+
+## Brainstorm depth
+
+`workflow-brainstorm` runs with `depth: deep` in `/plan`:
+- 5+ clarifying questions minimum
+- Stakeholder perspectives enumerated (Pattern D: moderator + product/engineering/design personas)
+- Acceptance criteria made explicit
+- Out-of-scope items listed
 
 ## Scope — what /plan does NOT do
 
-- No TDD, implementation, review, or E2E. Those belong to `/build` and `/fix`.
+- No TDD, implementation, agent-review, e2e, team-code-review, human-check. Those belong to `/implement` or `/fix`.
 - No code edits outside `.smt/`.
+
+## Exit
+
+After `workflow-tasker-review` passes, present:
+
+```
+[1] /implement  — proceed to lightweight implementation (default)
+[2] /fix        — plan was for a bug repair (unusual)
+[3] hold        — archive the plan, implement later
+```
 
 ## Quality criteria
 
@@ -56,3 +64,13 @@ Never ask multiple questions in one message.
 - 90%+ acceptance criteria are testable
 - No vague terms without metrics
 - No `{{...}}` placeholders
+
+## Iron Law
+
+- Iron Law #6 (workflow whitelist): `plan` mode cannot invoke coding/e2e/review skills. Attempts route to user for mode upgrade.
+- Iron Law #3 (no self-failure): brainstorm cannot declare "I don't have enough info to plan" — must ask user.
+- Brainstorm and Investigate are bidirectional (reshape); both are discovery steps and may iterate until tasker has a stable basis.
+
+## Auto-routing note
+
+Mode classifier patterns that trigger `/plan`: "design X", "plan Y", "refactor Z", "new feature", "architecture for", Korean equivalents. Explicit `/plan` overrides.

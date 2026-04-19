@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "serena": {
+      "type": "stdio",
+      "command": "serena",
+      "args": [
+        "start-mcp-server",
+        "--context",
+        "claude-code",
+        "--project",
+        "/Users/yusang/Smelter"
+      ],
+      "env": {}
+    }
+  }
+}

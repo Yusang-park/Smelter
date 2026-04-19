@@ -1,0 +1,20 @@
+{
+  "mode": "investigate",
+  "description": "Investigation only. Switch modes after completion (user confirmation required).",
+  "entry_skill": "workflow-investigate",
+  "allowed_skills": [
+    "workflow-investigate",
+    "workflow-investigate-review"
+  ],
+  "default_team_overrides": {
+    "workflow-investigate":        { "pattern": "C", "default_agent": "explore-medium", "aggregator": "architect" },
+    "workflow-investigate-review": { "pattern": "A", "default_agent": "explore-high" }
+  },
+  "default_exempt": { "tdd": true, "e2e": true },
+  "magic_keywords": {},
+  "terminal_actions": ["mode_transition_to_fix", "mode_transition_to_plan", "free_chat"],
+  "transitions": {
+    "upgrade_to":   ["fix", "plan", "implement"],
+    "downgrade_to": []
+  }
+}

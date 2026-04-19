@@ -1,18 +1,26 @@
 {
-  "env": {},
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "permissions": {
     "allow": [
       "mcp__pencil",
+      "mcp__serena",
       "Read",
       "Glob",
       "Grep",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(pnpm:*)",
+      "Edit",
+      "Write"
     ],
     "defaultMode": "auto"
   },
-  "model": "sonnet",
   "statusLine": {
     "type": "command",
     "command": "node /Users/yusang/smelter/vendor/claude-dashboard/dist/index.js"

@@ -19,11 +19,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/skill-injector.mjs\"",
             "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/step-injector.mjs\"",
-            "timeout": 5
           }
         ]
       }
@@ -102,11 +97,16 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/tool-retry.mjs\"",
             "timeout": 3
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/step-tracker.mjs\"",
-            "timeout": 3
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/critic-watchdog.mjs\"",
+            "timeout": 5
           }
         ]
       }

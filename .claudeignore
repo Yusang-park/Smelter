@@ -1,0 +1,29 @@
+# Build artifacts
+node_modules/
+dist/
+*.log
+
+# OS / editor
+.DS_Store
+.env
+.env.*
+
+# Smelter runtime state (read on demand via explicit Read)
+.smt/session/
+.smt/state/
+
+# Serena project auto-config (regenerated on session start)
+.serena/
+
+# Backup / archived docs
+document-backup/
+document/reference-topics/
+document/나중에 구현할것.md
+
+# Vendored sub-projects (separate codebases)
+codex-for-claude-code/
+vendor/
+
+# Compiled TypeScript
+*.d.ts
+*.js.map

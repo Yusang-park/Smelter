@@ -1,45 +1,60 @@
 #!/usr/bin/env node
-/**
- * auto-confirm-consumer.mjs — UserPromptSubmit hook.
- *
- * If a same-session queue signal exists, consume it immediately and inject the
- * queued intent back into the model context so work continues without waiting
- * for another stop cycle.
- */
+// auto-confirm-consumer.mjs — UserPromptSubmit hook that consumes queued
+// auto-confirm payloads.
+//
+// Partner of auto-confirm.mjs. When auto-confirm.mjs drops a payload on Stop,
+// the next UserPromptSubmit picks it up here and injects it as additionalContext
+// so the main agent continues from where it left off.
+//
+// Behavior:
+//   1. Look for `.smt/state/auto-confirm-queue.json`. If absent → exit 0.
+//   2. If older than QUEUE_MAX_AGE_MS → delete (stale) and exit 0.
+//   3. Otherwise emit `{ additionalContext: <payload>, decision: 'continue' }`
+//      and delete the queue so it fires only once.
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { printTag } from './lib/yellow-tag.mjs';
-import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { queuePath, QUEUE_MAX_AGE_MS } from './auto-confirm.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-
-function readStdinSync() {
-  try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
+function readStdinJson() {
+  try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
 }
 
-async function main() {
-  printTag('Auto-Confirm Consumer');
-  const input = readStdinSync();
-  let data = {};
-  try { data = JSON.parse(input); } catch {}
-  const directory = data.cwd || data.directory || process.cwd();
-  const sessionId = data.session_id || data.sessionId || '';
-  const signal = readCancel(directory, sessionId);
-  if (signal?.type === 'queue' && signal.queued_intent) {
-    clearCancel(directory);
-    console.log(JSON.stringify({
-      continue: true,
-      hookSpecificOutput: {
-        hookEventName: 'UserPromptSubmit',
-        additionalContext: signal.queued_intent,
-      },
-    }));
-    return;
+export function consume(cwd, { now = Date.now() } = {}) {
+  const path = queuePath(cwd);
+  if (!existsSync(path)) return null;
+
+  let entry;
+  try {
+    entry = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    try { unlinkSync(path); } catch {}
+    return null;
   }
-  console.log(JSON.stringify({ continue: true }));
+
+  const age = entry.t ? now - new Date(entry.t).getTime() : Infinity;
+  if (age > QUEUE_MAX_AGE_MS) {
+    try { unlinkSync(path); } catch {}
+    return null;
+  }
+
+  try { unlinkSync(path); } catch {}
+  return entry;
 }
 
-if (process.argv[1] && process.argv[1] === __filename) {
-  main();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const input = readStdinJson();
+  const cwd = input.cwd || process.cwd();
+  const entry = consume(cwd);
+
+  if (!entry || !entry.additionalContext) {
+    process.exit(0);
+  }
+
+  const output = {
+    decision: 'continue',
+    additionalContext: entry.additionalContext,
+    meta: { from: 'auto-confirm-queue', reason: entry.reason, action: entry.action },
+  };
+  console.log(JSON.stringify(output));
+  process.exit(0);
 }

@@ -1,404 +1,311 @@
 #!/usr/bin/env node
-/**
- * auto-confirm.mjs — Stop hook (command-agnostic).
- *
- * Behavior: when the main agent ends a turn while the project still has pending
- * work, drop the main agent's last assistant message + pending-task list into
- * `.smt/state/auto-confirm-queue.json` and block the stop with a
- * static "continue working" reason. The queue file is consumed on the next
- * UserPromptSubmit by `auto-confirm-consumer.mjs`, which injects the forwarded
- * payload as additionalContext. We do NOT spawn `claude` from the Stop hook —
- * Stop hooks run under a 15s cap and a full sub-agent roundtrip never fits.
- *
- * Gates:
- *   - `~/.smt/config.json` → `{ "autoConfirm": true }`. Defaults to ON.
- *   - Never blocks context-limit or user-abort stops.
- *
- * Works across /tasker, /feat, /qa.
- */
+// auto-confirm.mjs — Smelter Stop hook (queue-drop pattern).
+//
+// See document/workflow.md section 11. Enforces Iron Law #1 (never halt).
+//
+// Architecture:
+//   Stop event          → this script reads state.json, runs decide(),
+//                         drops a payload into .smt/state/auto-confirm-queue.json,
+//                         and emits a `block` decision so Claude Code keeps the
+//                         session alive for the next UserPromptSubmit.
+//   UserPromptSubmit    → auto-confirm-consumer.mjs picks up the queued payload
+//                         and injects it as additionalContext on the next turn.
+//
+// The split exists because Stop hooks run under a strict time cap and cannot
+// spawn sub-agents; we stash state on disk and let the UserPromptSubmit hook
+// (which has access to additionalContext) do the injection.
+//
+// Halt (no block, no queue) allowed only in the 4 cases of section 11-4:
+//   - explicit user stop / abort
+//   - workflow-human-check awaiting user input
+//   - mode upgrade awaiting user decision
+//   - no active state.json
+//
+// Chained-intent auto-transition (mode-classifier + section 4-3 transition gate)
+// is handled here: when state.chained_modes has at least 2 entries and the last
+// assistant message signals a mode transition, advance the chain and queue a
+// continuation prompt without asking the user.
 
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { printTag } from './lib/yellow-tag.mjs';
-import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
-import { classifyAutoConfirm } from './lib/subagent-classifier.mjs';
+import { readState, writeState, MODES } from './state-schema.mjs';
+import { route } from './route-on-fail.mjs';
 
-const AUTO_CONFIRM_RESUME_FILENAME = 'auto-confirm-resume.json';
-const AUTO_CONFIRM_RESUME_MAX_AGE_MS = 5 * 60 * 1000;
+export const QUEUE_FILENAME = 'auto-confirm-queue.json';
+export const QUEUE_MAX_AGE_MS = 5 * 60 * 1000;
 
-const __filename = fileURLToPath(import.meta.url);
+const RISK_KEYWORDS = [
+  '리스크', '위험', '주의해야', '잠재적',
+  'TODO', '나중에', '추후',
+  '고려 필요', '검토 필요',
+  '이상하지만', '임시로', '일단',
+];
 
-function readStdinSync() {
-  try { return readFileSync('/dev/stdin', 'utf-8'); } catch { return '{}'; }
+function readJson(path) {
+  try { return JSON.parse(readFileSync(path, 'utf-8')); } catch { return null; }
 }
 
-function readJsonFile(path) {
-  try {
-    if (!existsSync(path)) return null;
-    return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch { return null; }
+export function isEnabled() {
+  const cfg = readJson(join(homedir(), '.smt', 'config.json'));
+  return !cfg || cfg.autoConfirm !== false;
 }
 
-export function isAutoConfirmEnabled() {
-  const cfgPath = join(homedir(), '.smt', 'config.json');
-  const cfg = readJsonFile(cfgPath);
-  if (!cfg) return true; // default on
-  return cfg.autoConfirm !== false;
+export function isSubTaskerOnRisk() {
+  const cfg = readJson(join(homedir(), '.smt', 'config.json'));
+  return !cfg || cfg.subTaskerOnRisk !== false;
 }
 
-export function isContextLimitStop(data) {
-  const reason = (data.stop_reason || data.stopReason || '').toLowerCase();
+// Find the state.json for the active task. Prefer .smt/active_task pointer,
+// else the most recently updated *.state.json under .smt/features/*/task/.
+export function findActiveTaskState(cwd) {
+  const active = join(cwd, '.smt', 'active_task');
+  if (existsSync(active)) {
+    try {
+      const target = readFileSync(active, 'utf-8').trim();
+      if (existsSync(target)) return target;
+    } catch {}
+  }
+  const featuresRoot = join(cwd, '.smt', 'features');
+  if (!existsSync(featuresRoot)) return null;
+  let latest = null;
+  let latestMtime = 0;
+  for (const slug of readdirSync(featuresRoot)) {
+    const taskDir = join(featuresRoot, slug, 'task');
+    if (!existsSync(taskDir)) continue;
+    for (const f of readdirSync(taskDir)) {
+      if (!f.endsWith('.state.json')) continue;
+      const full = join(taskDir, f);
+      try {
+        const mtime = statSync(full).mtimeMs;
+        if (mtime > latestMtime) { latestMtime = mtime; latest = full; }
+      } catch {}
+    }
+  }
+  return latest;
+}
+
+// Detect a mode-transition signal in the assistant's last message.
+// Returns one of: exact mode name, '*' for a generic gate signal, '' when none.
+export function detectModeTransitionSignal(message) {
+  if (!message || typeof message !== 'string') return '';
   const patterns = [
-    'context_limit', 'context_window', 'context_exceeded', 'context_full',
-    'max_context', 'token_limit', 'max_tokens',
-    'conversation_too_long', 'input_too_long',
+    /mode_transition_to_(simple_fix|fix|investigate|plan|implement)\b/i,
+    /transition(?:ing)?\s+to\s+(simple_fix|fix|investigate|plan|implement)\s+mode/i,
+    /switching\s+to\s+(simple_fix|fix|investigate|plan|implement)\s+mode/i,
+    /(simple_fix|fix|investigate|plan|implement)\s+모드로\s*(?:전환|넘어)/i,
   ];
-  if (patterns.some(p => reason.includes(p))) return true;
-  const endTurn = (data.end_turn_reason || data.endTurnReason || '').toLowerCase();
-  return endTurn && patterns.some(p => endTurn.includes(p));
-}
-
-export function isUserAbort(data) {
-  if (data.user_requested || data.userRequested) return true;
-  const reason = (data.stop_reason || data.stopReason || '').toLowerCase();
-  const exact = ['aborted', 'abort', 'cancel', 'interrupt'];
-  const substr = ['user_cancel', 'user_interrupt', 'user_aborted', 'ctrl_c', 'manual_stop'];
-  return exact.some(p => reason === p) || substr.some(p => reason.includes(p));
-}
-
-/**
- * Heuristic: does this message look like a confirmation / approval question
- * that would benefit from auto-continuation? We look at the last ~300 chars
- * since that's where agents typically place "shall I proceed?" type questions.
- */
-export function looksLikeConfirmationQuestion(message) {
-  if (!message || typeof message !== 'string') return false;
-  const tail = message.slice(-400).toLowerCase();
-  const patterns = [
-    /shall i (?:proceed|continue|go ahead|do|start|create|update)/,
-    /should i (?:proceed|continue|go ahead|do|start|create|update)/,
-    /do you want me to /,
-    /would you like me to /,
-    /let me know (?:if|when|whether)/,
-    /ready to (?:proceed|continue|push|commit|deploy)\?/,
-    /which approach do you prefer/,
-    /what do you prefer/,
-    /which option do you want/,
-    /원하면 다음 중 하나로 이어가겠다/,
-    /i can continue with one of/,
-    /진행할까요?\?|계속할까요?\?|할까요?\?|맞나요?\?/,
-    /proceed\?\s*$|continue\?\s*$|ok\?\s*$/,
-  ];
-  return patterns.some(p => p.test(tail));
-}
-
-export function looksLikeOfferedNextSteps(message) {
-  if (!message || typeof message !== 'string') return false;
-  const tail = message.slice(-500).toLowerCase();
-  const patterns = [
-    /원하면 다음 중 하나로 이어가겠다/,
-    /다음 중 하나로 이어가겠다/,
-    /i can continue with one of/,
-    /one of the following next steps/,
-  ];
-  return patterns.some(pattern => pattern.test(tail));
-}
-
-export function buildOfferedNextStepsPrompt(lastMessage) {
-  return `[AUTO-CONFIRM] The last response offered concrete next steps. Execute the most direct next step now based on this message: ${lastMessage}`;
-}
-
-export function looksLikeSelfCommitment(message) {
-  if (!message || typeof message !== 'string') return false;
-  const tail = message.slice(-500).toLowerCase();
-  const patterns = [
-    /next i (?:will|ll) /,
-    /i (?:will|ll) (?:now )?(?:update|fix|change|edit|implement|run|finish|continue|handle|refactor)/,
-    /i(?:'|’)m going to /,
-    /다음(?:으로)? .*?(?:하겠습니다|할게요|진행하겠습니다|수정하겠습니다|고치겠습니다)/,
-    /(?:이제|바로|계속) .*?(?:하겠습니다|진행하겠습니다|수정하겠습니다|고치겠습니다)/,
-  ];
-  return patterns.some(p => p.test(tail));
-}
-
-/**
- * Extract last assistant message text from the Stop hook payload.
- * Transcripts may appear under `transcript` or `messages`.
- */
-export function extractMessageText(msg) {
-  if (!msg) return '';
-  if (typeof msg.content === 'string') return msg.content.trim();
-  if (Array.isArray(msg.content)) {
-    return msg.content
-      .filter(b => b && b.type === 'text')
-      .map(b => b.text || '')
-      .join('\n')
-      .trim();
+  for (const p of patterns) {
+    const m = message.match(p);
+    if (m && MODES.includes(m[1].toLowerCase())) return m[1].toLowerCase();
+  }
+  if (/ready\s+to\s+transition|mode\s+transition\s+gate|전환\s*가능/i.test(message)) {
+    return '*';
   }
   return '';
 }
 
-export function extractLastAssistantMessage(data) {
-  const transcript = data.transcript || data.messages;
-  if (!Array.isArray(transcript)) return '';
-  for (let i = transcript.length - 1; i >= 0; i--) {
-    const msg = transcript[i];
-    if (msg.role !== 'assistant') continue;
-    return extractMessageText(msg);
+// Consume the head of chained_modes and return the next mode to transition to.
+// Returns '' when the chain is empty or has only one element.
+// Mutates + persists the state atomically via writeState.
+export function consumeNextChainedMode(path, state, requestedMode = '') {
+  if (!state || !Array.isArray(state.chained_modes) || state.chained_modes.length <= 1) {
+    return '';
   }
-  return '';
+  const [, ...rest] = state.chained_modes;
+  if (rest.length === 0) return '';
+  let nextMode = rest[0];
+  if (requestedMode && requestedMode !== '*') {
+    if (!rest.includes(requestedMode)) return '';
+    nextMode = requestedMode;
+    const idx = rest.indexOf(requestedMode);
+    state.chained_modes = rest.slice(idx);
+  } else {
+    state.chained_modes = rest;
+  }
+  state.mode = nextMode;
+  try { writeState(path, state); } catch { return ''; }
+  return nextMode;
 }
 
-export function extractClaudeHistory(data) {
-  const transcript = data.transcript || data.messages;
-  if (!Array.isArray(transcript)) return [];
-  return transcript
-    .filter(msg => msg && msg.role === 'assistant')
-    .map(extractMessageText)
-    .filter(Boolean)
-    .slice(-3);
+export function buildChainedTransitionPrompt(nextMode, remaining) {
+  const tail = remaining.length > 1 ? ` (remaining chain: ${remaining.slice(1).join(' -> ')})` : '';
+  return `[AUTO-CONFIRM] Chained intent detected. Auto-transitioning to '${nextMode}' mode${tail}. Continue with the ${nextMode} workflow now.`;
 }
 
-export function buildAutoConfirmMessages(lastMessage, claudeHistory) {
-  const history = Array.isArray(claudeHistory) ? claudeHistory.filter(Boolean) : [];
-  const normalizedLast = typeof lastMessage === 'string' ? lastMessage.trim() : '';
-  if (!normalizedLast && history.length === 0) return [];
-  if (!normalizedLast) return history;
-  if (history[history.length - 1] === normalizedLast) return history;
-  return [...history, normalizedLast].filter(Boolean).slice(-3);
-}
+// Decision tree per section 11-2. Returns { action, reason, payload }.
+export function decide({ state, lastAssistantText, statePath }) {
+  if (!state) return { action: 'no_state', reason: 'no active task state.json found' };
 
-export function looksLikeWrapUpMessage(message) {
-  if (!message || typeof message !== 'string') return false;
-  const text = message.toLowerCase();
-  const patterns = [
-    /\bsummary\b/,
-    /no further concrete action remains/,
-    /wrapped up the (?:investigation|work|task)/,
-    /documented the result/,
-    /정리(?:했습니다|했어요|함)/,
-    /마무리(?:했습니다|했어요|함)/,
-  ];
-  return patterns.some(pattern => pattern.test(text));
-}
+  // Chained-intent auto-transition must fire before human-check halt so a
+  // compound request does not block on user prompting.
+  const transitionSignal = detectModeTransitionSignal(lastAssistantText || '');
+  if (transitionSignal && Array.isArray(state.chained_modes) && state.chained_modes.length > 1 && statePath) {
+    const nextMode = consumeNextChainedMode(statePath, state, transitionSignal);
+    if (nextMode) {
+      return {
+        action: 'chain_advance',
+        reason: `chained intent → auto-transition to ${nextMode}`,
+        payload: { nextMode, remaining: state.chained_modes },
+      };
+    }
+  }
 
-export function shouldStopForRepeatedWrapUps(history) {
-  if (!Array.isArray(history) || history.length < 3) return false;
-  const recent = history.slice(-3);
-  return recent.every(looksLikeWrapUpMessage);
-}
+  // Halt conditions (section 11-4)
+  if (state.current_stage === 'workflow-human-check') {
+    const lastEvent = state.events[state.events.length - 1];
+    if (!lastEvent || lastEvent.result !== 'pass') {
+      return { action: 'halt', reason: 'awaiting user decision in workflow-human-check' };
+    }
+  }
+  if (state._awaiting_mode_upgrade) {
+    return { action: 'halt', reason: 'awaiting user mode upgrade decision' };
+  }
 
-export function shouldAutoContinueWithHistory(lastMessage, pendingTasks, claudeHistory) {
-  if (looksLikeNoMoreWork(lastMessage)) return false;
-  if (Array.isArray(pendingTasks) && pendingTasks.length > 0) return true;
-  if (looksLikeConfirmationQuestion(lastMessage)) return true;
-  if (looksLikeSelfCommitment(lastMessage)) return true;
-  if (shouldStopForRepeatedWrapUps(claudeHistory)) return false;
-  if (looksLikeWrapUpMessage(lastMessage)) return null;
-  return false;
-}
+  const events = state.events || [];
+  const last = events[events.length - 1];
 
-export function buildPendingTasksPrompt(pendingTasks) {
-  const taskSummary = formatPendingTaskSummary(pendingTasks);
-  return `[AUTO-CONFIRM] Session tasks: ${taskSummary}. Execute these tasks now.`;
-}
+  if (state.current_stage === 'done') {
+    return { action: 'session_wrap', reason: 'task complete, writing session log' };
+  }
 
-export function buildRiskReviewPrompt() {
-  return '[AUTO-CONFIRM] 남은 리스크 해결 및 테스트 및 검토 하라';
-}
-
-export function buildAutoConfirmPrompt(classification) {
-  if (!classification || classification.action === 'stop') return '';
-  if (classification.action === 'risk_review') return buildRiskReviewPrompt();
-  return `[AUTO-CONFIRM] ${classification.prompt}`;
-}
-
-export function shouldAutoContinue(lastMessage, pendingTasks, claudeHistory = []) {
-  return shouldAutoContinueWithHistory(lastMessage, pendingTasks, claudeHistory);
-}
-
-export function classifyAutoConfirmFallback(lastMessage, claudeHistory, directory, sessionId) {
-  const messages = buildAutoConfirmMessages(lastMessage, claudeHistory);
-  if (messages.length === 0) {
+  if (isSubTaskerOnRisk() && lastAssistantText && detectRiskKeyword(lastAssistantText)) {
     return {
-      action: 'risk_review',
-      reason: 'no assistant history',
-      prompt: buildRiskReviewPrompt(),
+      action: 'spawn_sub_tasker',
+      reason: 'risk keyword detected in assistant response',
+      payload: { text: lastAssistantText },
     };
   }
+
+  const unresolved = (state.active_feedback || []).find(f => !f.resolved);
+  if (unresolved) {
+    return {
+      action: 'enter_skill',
+      reason: 'unresolved active_feedback',
+      payload: { skill: unresolved.target_skill, feedback_id: unresolved.id },
+    };
+  }
+
+  if (last && last.result === 'fail') {
+    const r = route({ event: last, state });
+    if (r.reason === 'whitelist_violation') {
+      return { action: 'request_mode_upgrade', reason: r.info, payload: r };
+    }
+    if (r.target) {
+      return { action: 'enter_skill', reason: `producer chain: ${r.reason}`, payload: { skill: r.target } };
+    }
+  }
+
+  if (last && last.result === 'pass') {
+    return { action: 'advance', reason: 'last event pass, advance to next workflow skill', payload: {} };
+  }
+
+  const hasRed = (state.test_cycles || []).some(c =>
+    c.run_result === 'fail' && ['added_case', 'modified_case'].includes(c.action)
+  );
+  if (hasRed && state.current_stage !== 'workflow-coding' && state.allowed_skills.includes('workflow-coding')) {
+    return { action: 'enter_skill', reason: 'RED cycle ready, enter workflow-coding', payload: { skill: 'workflow-coding' } };
+  }
+
+  return { action: 'continue', reason: 'no explicit signal, prompting to proceed' };
+}
+
+export function detectRiskKeyword(text) {
+  if (!text) return false;
+  return RISK_KEYWORDS.some(k => text.includes(k));
+}
+
+export function buildPromptInjection(decision, state) {
+  const lines = [];
+  lines.push(`[auto-confirm] ${decision.reason}`);
+
+  switch (decision.action) {
+    case 'enter_skill':
+      lines.push(`Enter next workflow skill: ${decision.payload.skill}`);
+      if (decision.payload.feedback_id) lines.push(`Resolve feedback: ${decision.payload.feedback_id}`);
+      break;
+    case 'advance':
+      lines.push('Previous skill passed. Advance to the next skill per current mode.');
+      break;
+    case 'chain_advance':
+      lines.push(buildChainedTransitionPrompt(decision.payload.nextMode, decision.payload.remaining));
+      break;
+    case 'spawn_sub_tasker':
+      lines.push('Risk language detected. Spawn sub-tasker to extract TODO into new task.');
+      break;
+    case 'request_mode_upgrade':
+      lines.push(`Mode upgrade required: ${decision.payload.suggested_upgrade_target}`);
+      lines.push('Present user with upgrade options.');
+      break;
+    case 'session_wrap':
+      lines.push('Task complete. Write session/YYYY-MM-DD.md log and terminate.');
+      break;
+    case 'halt':
+    case 'no_state':
+      return null;
+    default:
+      lines.push('Continue the current workflow. Do not stop until user intervenes.');
+  }
+
+  if (state) {
+    lines.push(`state: mode=${state.mode}, current=${state.current_stage || 'null'}, completed=${(state.completed_stages || []).length}`);
+  }
+  return lines.join('\n');
+}
+
+// Queue-drop helpers. The queue file is a single JSON object — one entry at a
+// time; a stale file older than QUEUE_MAX_AGE_MS is ignored/overwritten.
+
+export function queuePath(cwd) {
+  return join(cwd, '.smt', 'state', QUEUE_FILENAME);
+}
+
+export function dropQueue(cwd, payload) {
+  const path = queuePath(cwd);
+  mkdirSync(dirname(path), { recursive: true });
+  const entry = {
+    t: new Date().toISOString(),
+    ...payload,
+  };
+  writeFileSync(path, JSON.stringify(entry, null, 2) + '\n', 'utf-8');
+  return path;
+}
+
+// CLI entry (Stop hook): reads stdin JSON from Claude Code.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  if (!isEnabled()) { process.exit(0); }
+  const stdin = readFileSync('/dev/stdin', 'utf-8');
+  let input = {};
+  try { input = JSON.parse(stdin); } catch {}
+  const cwd = input.cwd || process.cwd();
+  const statePath = findActiveTaskState(cwd);
+  const state = statePath ? readState(statePath) : null;
+  const lastAssistantText = input.last_assistant_text || '';
+  const decision = decide({ state, lastAssistantText, statePath });
+  const injection = buildPromptInjection(decision, state);
+
+  if (decision.action === 'halt' || decision.action === 'no_state') {
+    process.exit(0);
+  }
+
+  // Drop the injection payload into the queue so auto-confirm-consumer.mjs
+  // can pick it up on the next UserPromptSubmit.
   try {
-    return classifyAutoConfirm(messages, { cwd: directory, sessionId });
+    dropQueue(cwd, {
+      reason: decision.reason,
+      action: decision.action,
+      additionalContext: injection,
+      state_path: statePath,
+    });
   } catch {
-    return {
-      action: 'risk_review',
-      reason: 'classifier failed',
-      prompt: buildRiskReviewPrompt(),
-    };
+    // Never fail the Stop hook just because disk write failed.
   }
-}
 
-// Resolve the active feature slug for this session via the session-scoped pointer
-// (same logic as step-injector.mjs). Falls back to features with active workflows.
-function resolveActiveSlugs(projectDir, sessionId) {
-  if (!sessionId) return [];
-  const stateDir = join(projectDir, '.smt', 'state');
-  const pointerPath = join(stateDir, `active-feature-${sessionId}.json`);
-  try {
-    if (!existsSync(pointerPath)) return [];
-    const pointer = JSON.parse(readFileSync(pointerPath, 'utf-8'));
-    if (pointer?.slug) return [pointer.slug];
-  } catch {}
-  return [];
-}
-
-function formatPendingTaskSummary(pendingTasks) {
-  if (!Array.isArray(pendingTasks) || pendingTasks.length === 0) return '';
-  return pendingTasks
-    .map((task, index) => `${index + 1}. ${task.title}`)
-    .join(' | ');
-}
-
-function looksLikeNoMoreWork(message) {
-  if (!message || typeof message !== 'string') return false;
-  const tail = message.slice(-500).toLowerCase();
-  const patterns = [
-    /no further concrete action remains/,
-    /no more work remains/,
-    /nothing left to do/,
-    /nothing else to do/,
-    /there(?: is|'s) nothing left/,
-    /더 이상 진행할게 없/,
-    /더 진행할 작업 없/,
-    /더 할 일 없/,
-    /진행할게 없/,
-    /없다\.?\s*더 진행할게 없/,
-  ];
-  return patterns.some(pattern => pattern.test(tail));
-}
-
-// Read pending task titles from the current session's active feature only.
-export function readPendingTasks(projectDir, sessionId = '') {
-  if (process.env.SMELTER_DISABLE_PENDING_TASKS_FOR_TEST === '1') return [];
-  const tasks = [];
-  const featuresDir = join(projectDir, '.smt', 'features');
-  if (!existsSync(featuresDir)) return tasks;
-
-  const slugs = resolveActiveSlugs(projectDir, sessionId);
-  if (slugs.length === 0) return tasks;
-
-  for (const slug of slugs) {
-    const taskDirPath = join(featuresDir, slug, 'task');
-    if (!existsSync(taskDirPath)) continue;
-    let files = [];
-    try { files = readdirSync(taskDirPath).filter(f => f.endsWith('.md') && f !== 'plan.md').sort(); } catch {}
-    for (const f of files) {
-      try {
-        const content = readFileSync(join(taskDirPath, f), 'utf-8');
-        for (const line of content.split('\n')) {
-          const m = line.match(/^[-*]\s*\[\s\]\s*(.+)$/);
-          if (m) tasks.push({ status: 'pending', title: m[1].trim() });
-        }
-      } catch {}
-    }
-  }
-  return tasks;
-}
-
-async function main() {
-  printTag('Auto-Confirm');
-  try {
-    const input = readStdinSync();
-    let data = {};
-    try { data = JSON.parse(input); } catch {}
-
-    const directory = data.cwd || data.directory || process.cwd();
-    const sessionId = data.session_id || data.sessionId || '';
-
-    // Never block context-limit stops
-    if (isContextLimitStop(data)) {
-      console.log(JSON.stringify({ continue: true }));
-      return;
-    }
-    // Respect explicit user abort
-    if (isUserAbort(data)) {
-      try {
-        const stateDir = join(directory, '.smt', 'state');
-        if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
-        writeFileSync(
-          join(stateDir, 'last-interrupt.json'),
-          JSON.stringify({ timestamp: Date.now(), reason: data.stop_reason || 'user_abort' }),
-        );
-      } catch {}
-      console.log(JSON.stringify({ continue: true }));
-      return;
-    }
-
-    // Global autoConfirm gate — checked BEFORE cancel-signal handling so a
-    // disabled autoConfirm truly no-ops the hook.
-    if (!isAutoConfirmEnabled()) {
-      console.log(JSON.stringify({ continue: true }));
-      return;
-    }
-
-    // Cancel signal — respect hard/queue
-    const cancelSignal = readCancel(directory, sessionId);
-    if (cancelSignal) {
-      if (cancelSignal.type === 'hard') {
-        clearCancel(directory);
-        console.log(JSON.stringify({ continue: true }));
-        return;
-      }
-      if (cancelSignal.type === 'queue' && cancelSignal.queued_intent) {
-        clearCancel(directory);
-        printTag('Auto-Confirm: Queued Redirect');
-        console.log(JSON.stringify({
-          decision: 'block',
-          reason: `[QUEUED REDIRECT] Previous work complete. Now execute the queued intent: ${cancelSignal.queued_intent}`,
-        }));
-        return;
-      }
-    }
-
-    const pending = readPendingTasks(directory, sessionId);
-    const lastMessage = extractLastAssistantMessage(data);
-    const claudeHistory = extractClaudeHistory(data);
-    const pendingDecision = shouldAutoContinue(lastMessage, pending, claudeHistory);
-
-    if (pendingDecision === false) {
-      console.log(JSON.stringify({ continue: true }));
-      return;
-    }
-
-    if (pendingDecision === true) {
-      printTag('Auto-Confirm: tasks');
-      console.log(JSON.stringify({ decision: 'block', reason: buildPendingTasksPrompt(pending) }));
-      return;
-    }
-
-    if (looksLikeOfferedNextSteps(lastMessage)) {
-      printTag('Auto-Confirm: offered-next-steps');
-      console.log(JSON.stringify({ decision: 'block', reason: buildOfferedNextStepsPrompt(lastMessage) }));
-      return;
-    }
-
-    const classification = classifyAutoConfirmFallback(lastMessage, claudeHistory, directory, sessionId);
-    if (classification.action === 'stop') {
-      console.log(JSON.stringify({ continue: true }));
-      return;
-    }
-
-    printTag('Auto-Confirm: classifier');
-    console.log(JSON.stringify({ decision: 'block', reason: buildAutoConfirmPrompt(classification) }));
-  } catch (err) {
-    // Never deadlock on errors
-    try { printTag('Auto-Confirm: Error (continue)'); } catch {}
-    console.log(JSON.stringify({ continue: true }));
-  }
-}
-
-// Only run main when invoked as a script (not when imported for tests).
-if (process.argv[1] && process.argv[1] === __filename) {
-  main();
+  const output = {
+    decision: 'block',
+    reason: decision.reason,
+    meta: { queued: true, state_path: statePath },
+  };
+  console.log(JSON.stringify(output));
+  process.exit(2);
 }

@@ -28,6 +28,7 @@ import { clearCancel } from './lib/cancel-signal.mjs';
 import { propagateHardCancel, propagateQueueCancel } from './cancel-propagator.mjs';
 import { classifyPrompt } from './lib/subagent-classifier.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
+import { writeFeatureSummary } from './lib/feature-summary.mjs';
 
 // Read stdin synchronously
 function readStdinSync() {
@@ -220,6 +221,19 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '')
       };
       writeAtomic(workflowPath, JSON.stringify(state, null, 2));
     }
+
+    writeFeatureSummary(directory, slug, {
+      status: 'in_progress',
+      current_step: initialStep,
+      e2e_required: commandName === 'build' || commandName === 'fix',
+      e2e_done: false,
+      tests_required: commandName === 'build' || commandName === 'fix',
+      tests_pass: false,
+      review_required: commandName === 'build' || commandName === 'fix',
+      review_done: false,
+      surface: [],
+      updated_at: new Date().toISOString(),
+    });
 
     // active-feature pointer (atomic)
     writeAtomic(pointerPath, JSON.stringify({ slug, session_id: sessionId || '', updated_at: Date.now() }, null, 2));

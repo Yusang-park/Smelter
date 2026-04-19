@@ -10,6 +10,23 @@ import { join } from 'path';
 import { createHash } from 'crypto';
 import { printTag } from './lib/yellow-tag.mjs';
 
+function readJsonFile(path) {
+  try {
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function getActiveFeatureSummary(projectDir) {
+  const pointer = readJsonFile(join(projectDir, '.smt', 'state', 'active-feature.json'));
+  if (!pointer?.slug) return null;
+  const summary = readJsonFile(join(projectDir, '.smt', 'features', pointer.slug, 'state', 'summary.json'));
+  if (!summary) return null;
+  return { slug: pointer.slug, ...summary };
+}
+
 printTag('Run E2E');
 
 const cwd = process.cwd();
@@ -18,10 +35,8 @@ const SKIP = () => {
   process.exit(0);
 };
 
-// --- Read session-tracked files (written by post-tool-verifier.mjs) ---
 const projectHash = createHash('md5').update(cwd).digest('hex').slice(0, 8);
 const trackingFile = `/tmp/smelter-session-files-${projectHash}.json`;
-
 if (!existsSync(trackingFile)) SKIP();
 
 let sessionFiles;
@@ -30,33 +45,29 @@ try {
 } catch {
   SKIP();
 }
-
 if (!Array.isArray(sessionFiles) || sessionFiles.length === 0) SKIP();
 
-// --- Filter: only source files (not tests, docs, config) ---
 const TEST_PATTERNS = [
-  /\.test\./,  /\.spec\./,  /^test_/,  /_test\./,
-  /\/tests?\//,  /\/spec\//,  /\/e2e\//,  /\/integration\//,
+  /\.test\./, /\.spec\./, /^test_/, /_test\./,
+  /\/tests?\//, /\/spec\//, /\/e2e\//, /\/integration\//,
 ];
 const DOC_CONFIG_PATTERNS = [
   /\.(md|json|yaml|yml|toml|lock|env)$/,
-  /^\.github\//i,  /^\.vscode\//i,  /^docs?\//i,
+  /^\.github\//i, /^\.vscode\//i, /^docs?\//i,
 ];
 
 function isSourceFile(f) {
   const base = f.split('/').pop();
-  const isTest = TEST_PATTERNS.some(p => p.test(base) || p.test(f));
-  const isDoc = DOC_CONFIG_PATTERNS.some(p => p.test(f));
+  const isTest = TEST_PATTERNS.some((p) => p.test(base) || p.test(f));
+  const isDoc = DOC_CONFIG_PATTERNS.some((p) => p.test(f));
   return !isTest && !isDoc;
 }
 
 const sourceFiles = sessionFiles.filter(isSourceFile);
 if (sourceFiles.length === 0) SKIP();
 
-// --- Once-per-session: clear tracking after reporting ---
-try { unlinkSync(trackingFile); } catch { /* best-effort */ }
+try { unlinkSync(trackingFile); } catch {}
 
-// --- Detect component types (minimal) ---
 function detectTypes(files) {
   const types = new Set();
   for (const f of files) {
@@ -72,21 +83,12 @@ function detectTypes(files) {
 const types = detectTypes(sourceFiles);
 const typeStr = types.length > 0 ? types.join(', ') : 'source';
 
-// --- Check if workflow is active (tasks.md with pending items) ---
-const tasksFile = join(cwd, '.smt', 'tasks.md');
-let workflowActive = false;
-try {
-  if (existsSync(tasksFile)) {
-    const content = readFileSync(tasksFile, 'utf-8');
-    workflowActive = /^- \[ \]/m.test(content);
-  }
-} catch { /* not active */ }
+const summary = getActiveFeatureSummary(cwd);
+if (!summary) SKIP();
+if (!summary.e2e_required || summary.e2e_done) SKIP();
+if (summary.status === 'complete') SKIP();
 
-// If no active workflow, skip entirely — E2E is Step 8 of the workflow
-if (!workflowActive) SKIP();
-
-// --- Minimal output ---
-const prompt = `[E2E] ${sourceFiles.length} file(s) changed [${typeStr}]. Step 8 E2E required.`;
+const prompt = `[E2E] ${sourceFiles.length} file(s) changed [${typeStr}] on feature ${summary.slug}. Step 8 E2E required.`;
 
 console.error('\x1b[33m[smelter] Stop · Step 8: E2E Validation\x1b[0m');
 console.log(JSON.stringify({ decision: 'block', reason: prompt }));
