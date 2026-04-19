@@ -51,17 +51,26 @@ node scripts/session-end.mjs --dry              # forbidden-reference scan
 Record: typecheck errors, lint violations, state-schema drift, doc-sync issues.
 
 ### Phase 3 — E2E interface verification
-Exercise the real interface per the 5-Surface Mapping (`workflow-e2e` skill reference):
 
-| Surface | Runner |
-|---------|--------|
-| UI / Frontend | Playwright |
-| CLI / Script | subprocess (stdin, argv, exit code) |
-| HTTP API | real server + curl/fetch |
-| Database | real or in-process test DB |
-| Hook script | `cat payload | node hook.mjs` |
+> **Phase 3 is NOT a test-runner phase.** Phase 1 already ran test code.
+> Phase 3 exercises the **real interface** per `workflow-e2e` (§8 of `document/workflow.md`).
 
-Scope by the changed surface; full regression only on explicit user request.
+Drive the actual interface that users / callers / clients touch. Every exercised surface must produce an artifact file under `.smt/features/<slug>/artifacts/`. Zero-artifact runs fail this phase.
+
+| Surface | Real interface | Required artifact |
+|---------|----------------|-------------------|
+| UI / Frontend | Real browser, Playwright launched | video (.webm) + screenshots (.png) |
+| CLI / Script | Real subprocess (stdin, argv, exit code) | command transcript (argv + stdin + stdout + stderr + exit) |
+| HTTP API | Real server on a real port + real fetch/curl | request/response log (method, path, status, body, timing) |
+| Database | Real DB engine | query log + before/after state samples |
+| Hook script | Real `cat payload \| node hook.mjs` | input/output JSON samples + exit code |
+
+Disallowed in Phase 3:
+- Calling an internal handler function directly instead of through the interface.
+- Mocking the interface under test (MSW for the HTTP surface, stubs for the DB driver, etc.).
+- Running only `pnpm test` / `vitest run` — that's Phase 1.
+
+Scope by the changed surface; full regression only on explicit user request (`workflow-human-check`).
 
 ## Output — `verify_report.md`
 

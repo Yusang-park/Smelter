@@ -38,6 +38,8 @@ export const CAUSE_ENUM = Object.freeze([
   'scope_mismatch', 'side_effect', 'security', 'insufficient_scenario',
   'stall_cascade', 'conflict_merge_failed',
   'verification_failed', // Multi-Pass Verification round fail (workflow-v2.md §9-3)
+  'artifact_missing',    // E2E pass claim with no real-interface artifact (§8)
+  'mocked_interface',    // E2E run mocked the interface under test (§8)
 ]);
 
 export const VERIFICATION_FOCUS_ENUM = Object.freeze([

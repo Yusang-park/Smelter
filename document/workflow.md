@@ -278,7 +278,7 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 | 7 | `workflow-write-test` | `plan.md` | `*.test.*` files (RED), `test_cycles` 엔트리 | surface-based 면제 적용 |
 | 8 | `workflow-coding` | `*.test.*` (RED) OR `active_feedback` | `src/**` 파일 변경 | 실제 코드 구현 |
 | 9 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` 갱신 | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" 시 A로 격하. |
-| 10 | `workflow-e2e` | `src/**` built | `artifacts/` (비디오·스크린샷·로그) | surface 기반: UI/CLI/API/DB/Hook |
+| 10 | `workflow-e2e` | `src/**` built | `artifacts/` (비디오·스크린샷·로그·transcript·io-samples) | **실제 인터페이스** 구동 강제 (UI=브라우저, CLI=subprocess, API=실 서버·네트워크, DB=실 엔진, Hook=실제 파이프). 테스트 러너 출력만으론 pass 불가. |
 | 11 | `workflow-e2e-review` | `artifacts/` | `e2e_review.md` | 시나리오 충분성 검토 |
 | 12 | `workflow-team-code-review` | 전체 변경 | `team_review.md` (severity 분류) | **다중 에이전트 95% 합의** |
 | 13 | `workflow-verify` | 현 코드베이스 (no RED 요구) | `verify_report.md` (Phase 1 tests + Phase 2 static inspection + Phase 3 E2E) | `/verify` 모드 진입 스킬. 수정 없음. Multi-Pass 미사용 (리뷰 스킬 아님). |

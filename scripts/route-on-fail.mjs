@@ -39,7 +39,20 @@ const PRODUCER_CHAIN = Object.freeze({
     },
     onFailDefault: 'workflow-coding',
   },
-  'workflow-e2e':                 { onFail: 'workflow-coding' },
+  'workflow-e2e': {
+    onFailByCase: {
+      // §8 real-interface violations: re-run e2e with the correct runner
+      // and NO mocks on the interface under test.
+      artifact_missing:  'workflow-e2e',
+      mocked_interface:  'workflow-e2e',
+      // Code failures route to coding as before.
+      assertion:         'workflow-coding',
+      typecheck:         'workflow-coding',
+      build:             'workflow-coding',
+      test_run:          'workflow-coding',
+    },
+    onFailDefault: 'workflow-coding',
+  },
   'workflow-e2e-review': {
     // branch by cause: missing artifacts re-run e2e; thin scenarios go to coding
     onFailByCase: {

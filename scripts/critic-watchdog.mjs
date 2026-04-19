@@ -169,6 +169,67 @@ function rule10_sessionLogMissing(input, state, cwd) {
   return null;
 }
 
+// R11 — E2E pass claim without real-interface artifacts.
+// Triggers when the agent tries to record a pass event for workflow-e2e OR
+// workflow-verify (Phase 3) while no artifacts/ files exist for the exercised
+// surface. This enforces the §8 "real interface" rule: test-runner output alone
+// is not a valid E2E pass (see skills/workflow-e2e/SKILL.md).
+function rule11_e2ePassWithoutArtifacts(input, state, cwd) {
+  if (!state) return null;
+  // Fire only when the current stage is an E2E-producing skill.
+  const stage = state.current_stage;
+  if (stage !== 'workflow-e2e' && stage !== 'workflow-verify') return null;
+
+  // We care about edits that would finalize the stage: writes to a
+  // verify_report.md / e2e_review evidence file, or Bash commands that append
+  // a pass-shaped event.
+  const target = input.tool_input?.file_path || '';
+  const content = input.tool_input?.new_string || input.tool_input?.content || '';
+  const cmd = input.tool_input?.command || '';
+  const looksLikePassClaim =
+    /result:\s*['"]?pass['"]?/i.test(content) ||
+    /"result"\s*:\s*"pass"/.test(content) ||
+    /"current_stage"\s*:\s*"done"/.test(content) ||
+    /e2e.*pass(?:ed)?/i.test(cmd);
+  const finalizingTool = (input.tool_name === 'Edit' || input.tool_name === 'Write' || input.tool_name === 'Bash');
+  if (!finalizingTool || !looksLikePassClaim) return null;
+
+  // Resolve the artifacts directory for the active feature.
+  const featuresRoot = join(cwd, '.smt', 'features');
+  if (!existsSync(featuresRoot)) {
+    return { rule: 'R11', severity: 'CRITICAL', reason: 'E2E pass claim without .smt/features/<slug>/artifacts/ directory' };
+  }
+  let hasAnyArtifact = false;
+  try {
+    for (const slug of readdirSync(featuresRoot)) {
+      const dir = join(featuresRoot, slug, 'artifacts');
+      if (!existsSync(dir)) continue;
+      // Count at least one non-empty file (.webm / .png / .log / .transcript / .json / .sql.log / .exit).
+      const walk = (d) => {
+        for (const f of readdirSync(d, { withFileTypes: true })) {
+          const p = join(d, f.name);
+          if (f.isDirectory()) { walk(p); continue; }
+          if (/\.(webm|mp4|png|jpg|jpeg|log|transcript|json|sql|exit)$/i.test(f.name)) {
+            hasAnyArtifact = true;
+            return;
+          }
+        }
+      };
+      try { walk(dir); } catch {}
+      if (hasAnyArtifact) break;
+    }
+  } catch {}
+
+  if (!hasAnyArtifact) {
+    return {
+      rule: 'R11',
+      severity: 'CRITICAL',
+      reason: `E2E / verify stage ${stage} tried to record pass without any real-interface artifact — §8 violation (test-runner output is not E2E evidence)`,
+    };
+  }
+  return null;
+}
+
 // ===== Helpers =====
 
 function guessPlanPath(featuresRoot, state) {
@@ -201,6 +262,7 @@ export const RULES = [
   rule04_unresolvedFeedbackComplete, rule05_tddCycleBeforeCoding,
   rule06_whitelistViolation, rule07_scopeLeak, rule08_evasionPatterns,
   rule09_parallelFileConflict, rule10_sessionLogMissing,
+  rule11_e2ePassWithoutArtifacts,
 ];
 
 export function runAll(input, state, cwd) {
