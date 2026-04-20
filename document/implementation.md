@@ -192,6 +192,21 @@ Fixes (atomic):
 
 Final totals after Phase 4: auto-confirm 99, stop-stage-enforcer 21, critic-watchdog 16, skill-stage-transition 16, workflow-scenarios 111, test-keyword-detector 6, pre-tool-enforcer 13, transcript-reader 13 (**295 total**).
 
+**Phase 5 — Implement/verify/fail/replan cycle validation (same release).** Per queued follow-up: add explicit scenario coverage for the full failure-recovery loop (구현 → 검증 → 실패 시 원인 확인 → 필요한 만큼만 계획 보정 → 다시 구현 → 다시 검증) so the workflow is proved not to deadlock under common failure patterns.
+
+- [x] K1. `scripts/workflow-scenarios.test.mjs` SCENARIO 16 (7 cases):
+  - 16-A coding typecheck fail → self-rerun, then pass → advance to agent-review
+  - 16-B coding scope_mismatch → route back to tasker → re-plan → advance
+  - 16-C verify mode fail(test_run) → producer chain to workflow-coding
+  - 16-D e2e fail(assertion) → coding → re-coding pass → re-e2e pass → advance to e2e-review
+  - 16-E multi-cycle: typecheck fail → lint fail → pass → advance (no deadlock)
+  - 16-F tasker-review fail → tasker → pass → advance
+  - 16-G agent-review security fail → coding → pass → advance (whitelist preserved)
+  - Every step asserts `direction` tag (`back` on producer chain, `advance` on forward).
+- [x] K2. SCENARIO 15 `validActions` allowlist now includes `stage_complete` / `stage_incomplete` (Phase 2 additions).
+
+Final totals after Phase 5: auto-confirm 99, stop-stage-enforcer 21, critic-watchdog 16, skill-stage-transition 16, workflow-scenarios 118, test-keyword-detector 6, pre-tool-enforcer 13, transcript-reader 13 (**302 total**).
+
 Totals after Phase 15: `stop-stage-enforcer.test.mjs` 19, `skill-stage-transition.test.mjs` 16, `critic-watchdog.test.mjs` 13, `auto-confirm.test.mjs` 89, `workflow-scenarios.test.mjs` 111, `test-keyword-detector.mjs` 6, `pre-tool-enforcer.test.mjs` 13.
 
 ## Phase 14 — stop-stage-enforcer recovery + entry-stage seed + broadened guard (v2.4.6)

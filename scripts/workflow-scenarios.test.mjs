@@ -713,12 +713,126 @@ section('SCENARIO 15 — Integrity: agent always moves forward (no deadlock patt
   for (const p of pathologies) {
     test(`pathology: ${p.label} → never silent stop`, () => {
       const d = decide({ state: p.state(), lastAssistantText: '' });
-      const validActions = ['halt', 'advance', 'enter_skill', 'spawn_sub_tasker', 'session_wrap', 'chain_advance', 'continue', 'request_mode_upgrade', 'no_state', 'classify_needed'];
+      const validActions = ['halt', 'advance', 'enter_skill', 'spawn_sub_tasker', 'session_wrap', 'chain_advance', 'continue', 'request_mode_upgrade', 'no_state', 'classify_needed', 'stage_complete', 'stage_incomplete'];
       assert.ok(validActions.includes(d.action), `decide returned unknown action: ${d.action}`);
       // The only "stop" decisions allowed are halt + no_state + session_wrap.
       // Everything else is forward motion. Agent never idles without reason.
     });
   }
+}
+
+// ============================================================================
+section('SCENARIO 16 — Implement/verify/fail/replan/re-implement/re-verify cycle');
+// ============================================================================
+// Validates the recovery loop: a failure at coding or verify routes via
+// producer chain back to the right upstream skill, the agent re-does the
+// work, and eventually passes. Explicit multi-cycle simulation ensures the
+// decision engine does not deadlock over repeated fail-then-pass transitions.
+{
+  test('16-A coding typecheck fail → route to coding (self) → re-coding pass → agent-review', () => {
+    const s = fixModeState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'] });
+    s.events = [failEvent('workflow-coding', 'typecheck')];
+    const r1 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r1.action, 'enter_skill', 'fail at coding must enter_skill (producer chain)');
+    assert.equal(r1.payload.skill, 'workflow-coding', 'self-rerun for typecheck');
+    assert.equal(r1.payload.direction, 'back', 'producer chain direction=back');
+
+    // After fixing, agent records pass.
+    s.events = [failEvent('workflow-coding', 'typecheck'), passEvent('workflow-coding')];
+    const r2 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r2.action, 'advance');
+    assert.equal(r2.payload.skill, 'workflow-agent-review');
+  });
+
+  test('16-B coding scope_mismatch → route back to tasker → re-plan → re-coding', () => {
+    const s = fixModeState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'] });
+    s.events = [failEvent('workflow-coding', 'scope_mismatch')];
+    const r1 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r1.action, 'enter_skill');
+    assert.equal(r1.payload.skill, 'workflow-tasker', 'scope_mismatch routes back to tasker for re-plan');
+    assert.equal(r1.payload.direction, 'back');
+
+    // Tasker re-plans + passes.
+    s.events.push(passEvent('workflow-tasker'));
+    const r2 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r2.action, 'advance');
+  });
+
+  test('16-C verify mode fail(test_run) → workflow-coding (via producer)', () => {
+    const s = createInitialState({ taskId: 'v', mode: 'verify' });
+    s.allowed_skills = ['workflow-verify', 'workflow-coding', 'workflow-human-check'];
+    s.current_stage = 'workflow-verify';
+    s.events = [failEvent('workflow-verify', 'test_run')];
+    const d = decide({ state: s, lastAssistantText: '' });
+    assert.equal(d.action, 'enter_skill');
+    assert.equal(d.payload.skill, 'workflow-coding');
+    assert.equal(d.payload.direction, 'back');
+  });
+
+  test('16-D E2E fail(assertion) → coding → re-coding → re-E2E pass chain', () => {
+    const s = fixModeState({ current_stage: 'workflow-e2e', completed_stages: [
+      'workflow-investigate', 'workflow-tasker', 'workflow-write-test', 'workflow-coding',
+      'workflow-agent-review',
+    ]});
+    s.events = [failEvent('workflow-e2e', 'assertion')];
+    const r1 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r1.payload.skill, 'workflow-coding');
+    assert.equal(r1.payload.direction, 'back');
+
+    // After fix + re-coding pass, E2E re-runs and passes.
+    s.events.push(passEvent('workflow-coding'));
+    s.events.push(passEvent('workflow-e2e'));
+    const r2 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r2.action, 'advance');
+    assert.equal(r2.payload.skill, 'workflow-e2e-review');
+  });
+
+  test('16-E multi-cycle: coding fail → fix → fail → fix → pass, never deadlocks', () => {
+    const s = fixModeState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'] });
+    // Cycle 1: fail typecheck
+    s.events = [failEvent('workflow-coding', 'typecheck')];
+    let d = decide({ state: s, lastAssistantText: '' });
+    assert.equal(d.action, 'enter_skill');
+    assert.equal(d.payload.skill, 'workflow-coding');
+
+    // Cycle 2: fail lint after first fix
+    s.events.push(failEvent('workflow-coding', 'lint'));
+    d = decide({ state: s, lastAssistantText: '' });
+    assert.equal(d.action, 'enter_skill');
+    assert.equal(d.payload.skill, 'workflow-coding');
+
+    // Finally pass
+    s.events.push(passEvent('workflow-coding'));
+    d = decide({ state: s, lastAssistantText: '' });
+    assert.equal(d.action, 'advance');
+    assert.equal(d.payload.direction, 'advance');
+  });
+
+  test('16-F tasker-review fail → tasker → pass → continue, no deadlock', () => {
+    const s = fixModeState({ current_stage: 'workflow-tasker-review', completed_stages: ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker'] });
+    s.events = [failEvent('workflow-tasker-review', 'scope_mismatch')];
+    const r1 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r1.payload.skill, 'workflow-tasker');
+    assert.equal(r1.payload.direction, 'back');
+
+    s.events.push(passEvent('workflow-tasker-review'));
+    const r2 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r2.action, 'advance');
+  });
+
+  test('16-G agent-review security fail → coding → pass → continue, never routes outside whitelist', () => {
+    const s = fixModeState({ current_stage: 'workflow-agent-review', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test', 'workflow-coding'] });
+    s.events = [failEvent('workflow-agent-review', 'security')];
+    const r1 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r1.payload.skill, 'workflow-coding');
+    assert.equal(r1.payload.direction, 'back');
+
+    s.events.push(passEvent('workflow-coding'));
+    s.events.push(passEvent('workflow-agent-review'));
+    const r2 = decide({ state: s, lastAssistantText: '' });
+    assert.equal(r2.action, 'advance');
+    assert.equal(r2.payload.skill, 'workflow-e2e');
+  });
 }
 
 // ----------------------------------------------------------------------------
