@@ -460,15 +460,57 @@ test('C15 state change between Stops resets loop counter', () => {
   } finally { tearDown(dir, sessionId); }
 });
 
+console.log('\n[entry_not_started vs advance wording]');
+
+test('E1 fresh seed (no events, no completed) → entry_not_started wording', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const dir = setupProject({ state });
+  try {
+    const res = runHook({ cwd: dir }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /entry_not_started/, 'must use entry_not_started when nothing is done');
+    assert.match(out.reason, /Skill\(skill: 'workflow-investigate'\)/, 'must mention current stage as the one to invoke');
+    assert.doesNotMatch(out.reason, /advance to/, 'must NOT say "advance to" when the stage is unstarted');
+  } finally { tearDown(dir); }
+});
+
+test('E2 mid-chain (completed_stages has prior) → advance wording', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-coding',
+    completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const dir = setupProject({ state });
+  try {
+    const res = runHook({ cwd: dir }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /advance to/i, 'mid-chain must keep "advance to" wording');
+  } finally { tearDown(dir); }
+});
+
 console.log('\n[broadened workflow-mode coverage]');
 
-test('C16 investigate mode at workflow-investigate (non-terminal) → block + advance', () => {
+test('C16 investigate mode at workflow-investigate (post-pass, non-terminal) → block + advance', () => {
   const state = makeState({
     mode: 'investigate',
     current_stage: 'workflow-investigate',
-    completed_stages: [],
+    completed_stages: ['workflow-investigate'],
     allowed_skills: ['workflow-investigate', 'workflow-investigate-review'],
   });
+  // Provide a pass event so entry_not_started does not fire and the
+  // reason falls through to the classic "advance to <next>" wording.
+  state.events = [{
+    t: new Date().toISOString(), skill: 'workflow-investigate', result: 'pass', declarer: 'hook',
+    evidence: { type: 'file_present', path: 'investigation.md' },
+  }];
   const dir = setupProject({ state });
   try {
     const res = runHook({ cwd: dir }, dir);

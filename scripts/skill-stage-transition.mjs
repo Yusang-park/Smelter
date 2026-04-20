@@ -24,7 +24,35 @@
 
 import { readFileSync, existsSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname, basename, resolve, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { writeState, appendEvent, markComplete } from './state-schema.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PLUGIN_ROOT = dirname(__dirname);
+
+// Entry-command skills (UserPromptSubmit routes `/fix`, `/investigate`, etc.
+// as `Skill(skill: '<command>')`). When the agent invokes one of these, the
+// hook seeds `current_stage` from the mode's `entry_skill` so the Stop hook
+// does not loop on a stale null/seeded stage, while `completed_stages` is
+// kept empty (Iron Law #5 — no forged completion).
+const COMMAND_TO_MODE_ENTRY = Object.freeze({
+  fix: 'fix',
+  investigate: 'investigate',
+  plan: 'plan',
+  implement: 'implement',
+  verify: 'verify',
+  'simple-fix': 'simple_fix',
+});
+
+function loadModeEntrySkill(mode) {
+  try {
+    const path = join(PLUGIN_ROOT, 'modes', `${mode}.json`);
+    if (!existsSync(path)) return null;
+    const cfg = JSON.parse(readFileSync(path, 'utf-8'));
+    return typeof cfg?.entry_skill === 'string' ? cfg.entry_skill : null;
+  } catch { return null; }
+}
 
 function readStdinJson() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
@@ -131,7 +159,9 @@ function main() {
     }
 
     const skill = input.tool_input?.skill || '';
-    if (!skill.startsWith('workflow-')) {
+    const isWorkflowSkill = skill.startsWith('workflow-');
+    const isEntryCommand = Object.prototype.hasOwnProperty.call(COMMAND_TO_MODE_ENTRY, skill);
+    if (!isWorkflowSkill && !isEntryCommand) {
       process.stdout.write(JSON.stringify({ continue: true }));
       return;
     }
@@ -145,6 +175,41 @@ function main() {
     }
 
     const { path: statePath, state } = active;
+
+    // Entry-command branch: seed current_stage from mode entry_skill and exit.
+    // completed_stages is NOT touched — Iron Law #5 requires artifact-backed
+    // completion which entry seeding cannot provide.
+    if (isEntryCommand) {
+      const expectedMode = COMMAND_TO_MODE_ENTRY[skill];
+      if (state.mode !== expectedMode) {
+        printTag(`entry-command ${skill} does not match state.mode=${state.mode} — no-op`);
+        process.stdout.write(JSON.stringify({ continue: true }));
+        return;
+      }
+      const entrySkill = loadModeEntrySkill(expectedMode);
+      if (!entrySkill || !Array.isArray(state.allowed_skills) || !state.allowed_skills.includes(entrySkill)) {
+        printTag(`entry_skill ${entrySkill} unavailable for mode ${expectedMode} — no-op`);
+        process.stdout.write(JSON.stringify({ continue: true }));
+        return;
+      }
+      if (state.current_stage === entrySkill) {
+        // Idempotent — already at entry stage.
+        process.stdout.write(JSON.stringify({ continue: true }));
+        return;
+      }
+      state.current_stage = entrySkill;
+      const prevFlag = process.env.SMT_HOOK_WRITE;
+      process.env.SMT_HOOK_WRITE = '1';
+      try {
+        writeState(statePath, state);
+      } finally {
+        if (prevFlag === undefined) delete process.env.SMT_HOOK_WRITE;
+        else process.env.SMT_HOOK_WRITE = prevFlag;
+      }
+      printTag(`entry-command ${skill} → current_stage=${entrySkill}`);
+      process.stdout.write(JSON.stringify({ continue: true }));
+      return;
+    }
 
     if (!Array.isArray(state.allowed_skills) || !state.allowed_skills.includes(skill)) {
       printTag(`skill ${skill} not in allowed_skills of mode ${state.mode} — warn only`);

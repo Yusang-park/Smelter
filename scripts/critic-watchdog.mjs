@@ -412,6 +412,56 @@ function rule14_e2ePassWithoutEffectEvidence(input, state) {
   return null;
 }
 
+// R15 — Stage-skipping code edit. When the agent edits source code but
+// current_stage != 'workflow-coding' AND the mode allows 'workflow-coding',
+// block with guidance so the agent invokes the proper Skill first. This is
+// the "watchdog prevents stage skipping" enforcement (see workflow-chain
+// enforcement plan §D4). Distinct from R12 (null-stage bypass) and R05
+// (coding stage entered without RED cycle).
+export function rule15_stageSkipOnCodeEdit(input, state) {
+  if (!state) return null;
+  if (input.tool_name !== 'Edit' && input.tool_name !== 'Write') return null;
+  const target = input.tool_input?.file_path || '';
+  if (!target) return null;
+
+  // Normalize relative path, strip cwd prefix if present.
+  const rel = target;
+  const base = (rel.split('/').pop() || '').toLowerCase();
+
+  // Exempt test / spec files — TDD-first writes must pass.
+  const isTest = /\.test\.|\.spec\./.test(base)
+    || /^test[-_]/.test(base)
+    || /[-_]test\./.test(base)
+    || /\/tests?\//.test(rel)
+    || /\/spec\//.test(rel)
+    || /\/__tests__\//.test(rel);
+  if (isTest) return null;
+
+  // Only trigger on recognizable source-code paths.
+  const isCode =
+    /(?:^|\/)(?:src|scripts|bin|lib|hooks)\//.test(rel) ||
+    // Smelter self-edits count as code.
+    (/(?:skills|scripts|document)\//.test(rel) && (input.cwd || '').includes('/Smelter'));
+  if (!isCode) return null;
+
+  // Skip if mode does not allow workflow-coding (e.g., plan mode terminates
+  // before any coding skill). In that case R12 / R06 govern.
+  const allowed = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+  if (!allowed.includes('workflow-coding')) return null;
+
+  // Stage must be in workflow-coding OR the preparatory workflow-write-test.
+  // write-test may edit test files but NOT source code — test-file exemption
+  // above already covers that. Source-code edits during write-test still
+  // violate.
+  if (state.current_stage === 'workflow-coding') return null;
+
+  return {
+    rule: 'R15',
+    severity: 'CRITICAL',
+    reason: `code edit at ${rel} but current_stage='${state.current_stage}' — invoke Skill(skill: 'workflow-coding') first to enter the coding stage (stage-skip forbidden)`,
+  };
+}
+
 // ===== Helpers =====
 
 function guessPlanPath(featuresRoot, state) {
@@ -455,6 +505,7 @@ export const RULES = [
   rule12_workflowStageRequired,
   rule13_bashStateJsonWrite,
   rule14_e2ePassWithoutEffectEvidence,
+  rule15_stageSkipOnCodeEdit,
 ];
 
 export function runAll(input, state, cwd) {

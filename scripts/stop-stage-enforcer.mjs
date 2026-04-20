@@ -233,6 +233,10 @@ export function isTerminalStage(state) {
 // summary.e2e_required is set, format like the legacy E2E reminder so
 // surface-aware UX is preserved. Otherwise emit a generic [Stage] reason
 // with optional mid-flow enrichment.
+//
+// When `current_stage` is a seeded entry that has NO pass event yet, the
+// message should read as "enter the stage" rather than "advance to next".
+// Otherwise the agent is told to move past a stage it never actually ran.
 export function buildBlockReason({ state, nextStage, summary, sourceFiles }) {
   const slug = summary?.slug || state?.task_id || 'active';
   const surfaceLabel = sourceFiles && sourceFiles.length > 0
@@ -253,9 +257,23 @@ export function buildBlockReason({ state, nextStage, summary, sourceFiles }) {
   }
 
   const midFlow = sourceFiles && sourceFiles.length > 0;
-  const tag = midFlow ? '[Stage] mid-flow' : '[Stage] non-terminal';
   const stageInfo = `mode=${state?.mode || '?'}, stage=${state?.current_stage || 'null'}`;
   const trackedInfo = midFlow ? ` (${trackedNote})` : '';
+
+  // Entry-not-started detection: fresh seed with nothing done yet
+  // (no completed_stages, no events). Tell the agent to ENTER the current
+  // stage — not to advance past it. This avoids the misleading "advance to
+  // workflow-investigate-review" when workflow-investigate itself has not
+  // been invoked yet.
+  const currentStage = state?.current_stage;
+  const completedEmpty = !Array.isArray(state?.completed_stages) || state.completed_stages.length === 0;
+  const eventsEmpty = !Array.isArray(state?.events) || state.events.length === 0;
+  if (currentStage && completedEmpty && eventsEmpty) {
+    const tag = midFlow ? '[Stage] mid-flow' : '[Stage] entry_not_started';
+    return `${tag}: invoke Skill(skill: '${currentStage}') to execute the current stage — ${stageInfo}${trackedInfo}`;
+  }
+
+  const tag = midFlow ? '[Stage] mid-flow' : '[Stage] non-terminal';
   return `${tag}: advance to ${nextStage} — ${stageInfo}${trackedInfo}`;
 }
 

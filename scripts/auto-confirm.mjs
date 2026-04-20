@@ -308,7 +308,9 @@ export function decide({ state, lastAssistantText, statePath }) {
       return { action: 'request_mode_upgrade', reason: r.info, payload: r };
     }
     if (r.target) {
-      return { action: 'enter_skill', reason: `producer chain: ${r.reason}`, payload: { skill: r.target } };
+      // Producer-chain → direction 'back' because the chain routes to the
+      // upstream skill that owns the defect.
+      return { action: 'enter_skill', reason: `producer chain: ${r.reason}`, payload: { skill: r.target, direction: 'back' } };
     }
   }
 
@@ -321,7 +323,7 @@ export function decide({ state, lastAssistantText, statePath }) {
     return {
       action: 'advance',
       reason: `last event pass, advance to ${skill}`,
-      payload: { skill },
+      payload: { skill, direction: 'advance' },
     };
   }
 
@@ -346,54 +348,115 @@ export function detectRiskKeyword(text) {
   return RISK_KEYWORDS.some(k => text.includes(k));
 }
 
-export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet' } = {}) {
+// Format the MANDATORY workflow-step injection block. Called when the next
+// action is a concrete skill invocation (enter_skill / advance / continue).
+// The block is designed so the main agent cannot skip it as prose: it reads
+// as an imperative with the exact Skill tool call required.
+export function formatMandatoryInjection({ skill, direction, subAgentModel, state, lastAssistantText }) {
   const lines = [];
-  lines.push(`[auto-confirm] ${decision.reason}`);
+  const dir = direction || 'advance';
+  const directionLabel = dir === 'back' ? 'go BACK to'
+    : dir === 'enter' ? 'ENTER'
+    : 'ADVANCE to';
+  lines.push('[MANDATORY WORKFLOW STEP]');
+  if (state) {
+    lines.push(`mode=${state.mode}, current_stage=${state.current_stage || 'null'}, ${directionLabel} ${skill} (direction=${dir})`);
+  } else {
+    lines.push(`${directionLabel} ${skill} (direction=${dir})`);
+  }
+  lines.push('');
+  lines.push(`You MUST invoke Skill(skill: '${skill}') as the FIRST tool call of your reply.`);
+  lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
+  lines.push('The PostToolUse:Skill hook only advances state when the Skill tool is actually invoked.');
+  if (subAgentModel) {
+    lines.push(`Delegate the actual work to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') when a specialist is needed.`);
+  }
+  if (lastAssistantText && typeof lastAssistantText === 'string') {
+    const truncated = lastAssistantText.slice(0, 400).replace(/\s+/g, ' ').trim();
+    if (truncated.length > 0) {
+      lines.push('');
+      lines.push('Your last message (truncated):');
+      lines.push(`"""`);
+      lines.push(truncated);
+      lines.push(`"""`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet', lastAssistantText = '' } = {}) {
+  const header = `[auto-confirm] ${decision.reason}`;
 
   switch (decision.action) {
-    case 'enter_skill':
-      lines.push(`Enter next workflow skill: ${decision.payload.skill}`);
-      if (decision.payload.feedback_id) lines.push(`Resolve feedback: ${decision.payload.feedback_id}`);
-      lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
-      break;
-    case 'advance':
-      if (decision.payload?.skill) {
-        lines.push(`Previous skill passed. Enter next workflow skill: ${decision.payload.skill}`);
-      } else {
-        lines.push('Previous skill passed. Advance to the next skill per current mode.');
+    case 'enter_skill': {
+      const direction = decision.payload?.direction || 'enter';
+      const block = formatMandatoryInjection({
+        skill: decision.payload.skill,
+        direction,
+        subAgentModel,
+        state,
+        lastAssistantText,
+      });
+      const tail = decision.payload.feedback_id
+        ? `\nResolve feedback: ${decision.payload.feedback_id}`
+        : '';
+      return `${header}\n${block}${tail}`;
+    }
+    case 'advance': {
+      if (!decision.payload?.skill) {
+        const lines = [
+          header,
+          'Previous skill passed. Advance to the next skill per current mode.',
+          `Spawn the work via a sub-agent using model='${subAgentModel}'.`,
+        ];
+        if (state) lines.push(`state: mode=${state.mode}, current=${state.current_stage || 'null'}, completed=${(state.completed_stages || []).length}`);
+        return lines.join('\n');
       }
-      lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
-      break;
-    case 'chain_advance':
+      const direction = decision.payload.direction || 'advance';
+      const block = formatMandatoryInjection({
+        skill: decision.payload.skill,
+        direction,
+        subAgentModel,
+        state,
+        lastAssistantText,
+      });
+      return `${header}\n${block}`;
+    }
+    case 'chain_advance': {
+      const lines = [header];
       lines.push(buildChainedTransitionPrompt(decision.payload.nextMode, decision.payload.remaining));
       lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
-      break;
+      return lines.join('\n');
+    }
     case 'spawn_sub_tasker':
-      lines.push('Risk language detected. Spawn sub-tasker to extract TODO into new task.');
-      lines.push(`Sub-tasker model='${subAgentModel}'.`);
-      break;
+      return `${header}\nRisk language detected. Spawn sub-tasker to extract TODO into new task.\nSub-tasker model='${subAgentModel}'.`;
     case 'request_mode_upgrade':
-      lines.push(`Mode upgrade required: ${decision.payload.suggested_upgrade_target}`);
-      lines.push('Present user with upgrade options.');
-      break;
+      return `${header}\nMode upgrade required: ${decision.payload.suggested_upgrade_target}\nPresent user with upgrade options.`;
     case 'session_wrap':
-      lines.push('Task complete. Write session/YYYY-MM-DD.md log and terminate.');
-      break;
-    case 'continue':
-      lines.push('Assistant asked permission to proceed. Auto-confirmed: yes, continue.');
-      lines.push(`Spawn the next step via a sub-agent using model='${subAgentModel}'.`);
-      break;
+      return `${header}\nTask complete. Write session/YYYY-MM-DD.md log and terminate.`;
+    case 'continue': {
+      const next = state ? pickNextStage(state) : null;
+      if (next) {
+        const block = formatMandatoryInjection({
+          skill: next,
+          direction: 'enter',
+          subAgentModel,
+          state,
+          lastAssistantText,
+        });
+        return `${header}\nAssistant asked permission to proceed. Auto-confirmed.\n${block}`;
+      }
+      return `${header}\nAssistant asked permission to proceed. Auto-confirmed: yes, continue.\nSpawn the next step via a sub-agent using model='${subAgentModel}'.`;
+    }
     case 'halt':
     case 'no_state':
       return null;
-    default:
-      lines.push('Continue the current workflow. Do not stop until user intervenes.');
+    default: {
+      const lines = [header, 'Continue the current workflow. Do not stop until user intervenes.'];
+      if (state) lines.push(`state: mode=${state.mode}, current=${state.current_stage || 'null'}, completed=${(state.completed_stages || []).length}`);
+      return lines.join('\n');
+    }
   }
-
-  if (state) {
-    lines.push(`state: mode=${state.mode}, current=${state.current_stage || 'null'}, completed=${(state.completed_stages || []).length}`);
-  }
-  return lines.join('\n');
 }
 
 // H3 — stuck-loop guard helpers. Mirrors stop-stage-enforcer's counter but
@@ -530,7 +593,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   }
 
-  const injection = buildPromptInjection(decision, state, { subAgentModel });
+  const injection = buildPromptInjection(decision, state, { subAgentModel, lastAssistantText });
 
   // 'session_wrap' is terminal — current_stage is already 'done'. Re-injecting
   // "write session log" on every Stop creates an infinite loop because the

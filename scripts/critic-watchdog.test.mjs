@@ -181,6 +181,75 @@ test('R14: block E2E pass claim when effect_evidence is ack_only', () => {
   }
 });
 
+test('R15: block src edit when current_stage != workflow-coding but mode allows it', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-investigate' });
+    const input = {
+      tool_name: 'Edit',
+      tool_input: { file_path: join(cwd, 'src/foo.ts'), old_string: 'a', new_string: 'b' },
+    };
+    const hits = runAll(input, state, cwd);
+    const r15 = hits.find(h => h.rule === 'R15');
+    assert.ok(r15, 'R15 must fire when stage-skipping code edit detected');
+    assert.match(r15.reason, /workflow-coding/, 'reason must point to workflow-coding');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R15: allow src edit when already in workflow-coding stage', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Edit',
+      tool_input: { file_path: join(cwd, 'src/foo.ts'), old_string: 'a', new_string: 'b' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R15'), undefined, 'R15 must not fire in workflow-coding');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R15: allow test-file edit regardless of stage', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-investigate' });
+    const input = {
+      tool_name: 'Write',
+      tool_input: { file_path: join(cwd, 'scripts/foo.test.mjs'), content: 'x' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R15'), undefined, 'R15 must not fire on test files');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R15: skip when mode disallows workflow-coding (e.g., plan mode)', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({
+      current_stage: 'workflow-investigate',
+      allowed_skills: ['workflow-brainstorm', 'workflow-investigate', 'workflow-tasker'],
+    });
+    const input = {
+      tool_name: 'Edit',
+      tool_input: { file_path: join(cwd, 'src/foo.ts'), old_string: 'a', new_string: 'b' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R15'), undefined, 'R15 must not fire when mode disallows workflow-coding');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('R14: allow E2E pass claim when effect_evidence is populated', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
   try {

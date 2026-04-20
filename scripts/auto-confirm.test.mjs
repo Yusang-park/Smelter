@@ -545,6 +545,46 @@ test('enter_skill action embeds sub-agent model hint', () => {
   const text = buildPromptInjection({ action: 'enter_skill', reason: 'r', payload: { skill: 'workflow-coding' } }, s, { subAgentModel: 'sonnet' });
   assert.match(text, /sonnet/);
 });
+test('MANDATORY: advance with payload.skill emits MANDATORY WORKFLOW STEP + Skill invocation', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-write-test' });
+  const text = buildPromptInjection(
+    { action: 'advance', reason: 'r', payload: { skill: 'workflow-coding', direction: 'advance' } },
+    s,
+    { subAgentModel: 'sonnet', lastAssistantText: 'I finished writing tests for the new feature.' },
+  );
+  assert.match(text, /\[MANDATORY WORKFLOW STEP\]/);
+  assert.match(text, /Skill\(skill: 'workflow-coding'\)/);
+  assert.match(text, /direction=advance/);
+  assert.match(text, /Your last message \(truncated\)/);
+  assert.match(text, /I finished writing tests/);
+});
+
+test('MANDATORY: enter_skill with producer-chain direction=back emits "go BACK to"', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection(
+    { action: 'enter_skill', reason: 'r', payload: { skill: 'workflow-tasker', direction: 'back' } },
+    s,
+    { subAgentModel: 'haiku' },
+  );
+  assert.match(text, /\[MANDATORY WORKFLOW STEP\]/);
+  assert.match(text, /go BACK to workflow-tasker/);
+  assert.match(text, /direction=back/);
+  assert.match(text, /haiku/);
+});
+
+test('MANDATORY: injection truncates lastAssistantText to 400 chars', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const long = 'a'.repeat(1000);
+  const text = buildPromptInjection(
+    { action: 'advance', reason: 'r', payload: { skill: 'workflow-agent-review', direction: 'advance' } },
+    s,
+    { subAgentModel: 'sonnet', lastAssistantText: long },
+  );
+  const quoted = text.match(/"""\n([\s\S]*?)\n"""/);
+  assert.ok(quoted, 'must include triple-quoted section');
+  assert.ok(quoted[1].length <= 400, `truncation must be <=400, got ${quoted[1].length}`);
+});
+
 test('buildChainedTransitionPrompt handles single remaining mode', () => {
   const text = buildChainedTransitionPrompt('fix', ['fix']);
   assert.match(text, /Chained intent/);

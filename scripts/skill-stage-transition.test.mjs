@@ -223,6 +223,59 @@ test('T3-S1: per-session pointer with traversal slug escaping cwd is rejected', 
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+// ── Entry-command stage seeding (workflow chain enforcement) ───────────────
+// When the main agent invokes an entry command skill (fix / investigate /
+// plan / implement / verify / simple-fix) the hook must set current_stage
+// to the mode's entry_skill WITHOUT writing to completed_stages, so Iron
+// Law #5 is not violated but Stop hook no longer loops on a seeded entry.
+test('ST-E1: Skill(skill="fix") in fix-mode state sets current_stage=workflow-investigate', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e1-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const r = runTransition({ cwd, skill: 'fix' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const state = readState(sp);
+    assert.equal(state.current_stage, 'workflow-investigate', 'entry_skill must be seeded into current_stage');
+    assert.deepEqual(state.completed_stages, [], 'completed_stages must remain empty (Iron Law #5)');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E2: repeated entry-command invocation is idempotent', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e2-'));
+  try {
+    const sp = seedState(cwd, { mode: 'investigate' });
+    runTransition({ cwd, skill: 'investigate' });
+    runTransition({ cwd, skill: 'investigate' });
+    const state = readState(sp);
+    assert.equal(state.current_stage, 'workflow-investigate');
+    assert.deepEqual(state.completed_stages, []);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E3: unknown skill (non-workflow, non-entry) is ignored', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e3-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const before = readState(sp);
+    const r = runTransition({ cwd, skill: 'hello' });
+    assert.equal(r.status, 0);
+    const after = readState(sp);
+    assert.equal(after.current_stage, before.current_stage, 'non-matching skill must not mutate state');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E4: entry command "simple-fix" maps to simple_fix mode entry_skill', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e4-'));
+  try {
+    const sp = seedState(cwd, { mode: 'simple_fix' });
+    const r = runTransition({ cwd, skill: 'simple-fix' });
+    assert.equal(r.status, 0);
+    const state = readState(sp);
+    // modes/simple_fix.json entry_skill is workflow-coding
+    assert.equal(state.current_stage, 'workflow-coding');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
 test('T3-S2: per-session pointer with slug producing non-canonical path is rejected', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-s2-'));
   try {

@@ -140,6 +140,31 @@ Closes the defect where concurrent Claude Code sessions sharing a project would 
 
 Artifacts: `.smt/features/왜-또-휴먼-체크-안하지/task/{migration-investigation.md,tasks.md,tasker_review.md}`.
 
+## Phase 15 — Workflow chain enforcement (B안 Phase 1, v2.4.7)
+
+Closes the Stop-loop observed after v2.4.6: seeded `current_stage=entry_skill` was never advanced because the PostToolUse:Skill hook only accepted `workflow-*` skills and the main agent usually answered in prose without actually invoking `workflow-investigate`. The Stop hook kept blocking with the same reason; `STUCK_LOOP_THRESHOLD` was the only exit. User spec: "메인이 완료하지 않은 stage는 올리지 말고, 완료한 stage는 올라가도록".
+
+- [x] F1. **skill-stage-transition extended to entry commands** — `scripts/skill-stage-transition.mjs` now recognises `Skill(skill: 'fix'|'investigate'|'plan'|'implement'|'verify'|'simple-fix')`. When the invoked command matches `state.mode`, the hook seeds `current_stage = <mode>.entry_skill` (read from `modes/<mode>.json`) and writes state via `writeState` (idempotent). `completed_stages` stays empty so `state-validator.validateEvidenceIntegrity` (Iron Law #5) is not violated. Tests: `scripts/skill-stage-transition.test.mjs` ST-E1..ST-E4 (new; 16 cases total).
+- [x] F2. **stop-stage-enforcer entry_not_started wording** — `scripts/stop-stage-enforcer.mjs:buildBlockReason` now emits `[Stage] entry_not_started: invoke Skill(skill: '<stage>') ...` when `completed_stages.length === 0 && events.length === 0`. Previous "advance to <next>" was misleading because it pointed past a stage that had never actually run. Mid-chain still uses "advance to" wording. Tests: `scripts/stop-stage-enforcer.test.mjs` E1/E2 + C16 updated (19 cases total).
+- [x] F3. **Watchdog R15 — stage-skipping code edit** — `scripts/critic-watchdog.mjs:rule15_stageSkipOnCodeEdit`. Fires on `Edit/Write` of source files (`src/`, `scripts/`, `bin/`, `lib/`, `hooks/`) when `current_stage !== 'workflow-coding'` and the mode allows `workflow-coding`. Test files exempt. Block reason instructs `Skill(skill: 'workflow-coding')`. Distinct from R05 (coding stage + no RED) and R12 (null stage). Tests: `scripts/critic-watchdog.test.mjs` (4 new R15 cases, 13 total).
+- [x] F4. **auto-confirm MANDATORY injection + direction + lastAssistantText** — `scripts/auto-confirm.mjs`:
+  - `decide()` now tags `payload.direction ∈ { 'enter', 'advance', 'back' }` on `enter_skill` / `advance` results. Producer-chain routing via `route-on-fail` uses `'back'`.
+  - New `formatMandatoryInjection({ skill, direction, subAgentModel, state, lastAssistantText })` emits `[MANDATORY WORKFLOW STEP]` block with `You MUST invoke Skill(skill: '<next>') as the FIRST tool call of your reply.` and embeds main's previous message (400-char truncated) so the sub-agent classifier pattern carries forward context (condition 1 requirement).
+  - `buildPromptInjection` now accepts `{ lastAssistantText }` and CLI entry plumbs `input.last_assistant_text` through. Tests: `scripts/auto-confirm.test.mjs` (3 new MANDATORY cases, 89 total).
+
+**User conditions satisfied (Phase 1):**
+| Requirement | Mapping |
+|---|---|
+| 1. 경량 서브에이전트로 last message + workflow 지시 텍스트 | `formatMandatoryInjection` embeds last message; consumer injects on next turn; `Task(subagent_type=...)` reference kept |
+| 2. 메인이 workflow 불이행 시 지시 | R15 block-with-guidance + MANDATORY injection |
+| 3. stop hook이 미완료 stage를 상승시키면 안됨 | stop-stage-enforcer is read-only; wording changed to `entry_not_started` so agent sees "enter" not "advance" |
+| 4. 이전 단계로 회귀 지시 | `direction='back'` tag + `go BACK to <skill>` wording in injection |
+| 5. watchdog로 단계 전환 유도 | R15 blocks stage-skipping edits; guides toward proper `Skill(skill: 'workflow-coding')` |
+
+**Phase 2 (deferred):** Stage-completion classifier. When main's last message implies stage done, a haiku sub-agent judges completion + (optionally) auto-writes canonical artifact so state advances legitimately. Requires: new `classifyStageCompletionViaSubAgent` + careful prompt + artifact-template design. Out of this commit.
+
+Totals after Phase 15: `stop-stage-enforcer.test.mjs` 19, `skill-stage-transition.test.mjs` 16, `critic-watchdog.test.mjs` 13, `auto-confirm.test.mjs` 89, `workflow-scenarios.test.mjs` 111, `test-keyword-detector.mjs` 6, `pre-tool-enforcer.test.mjs` 13.
+
 ## Phase 14 — stop-stage-enforcer recovery + entry-stage seed + broadened guard (v2.4.6)
 
 Closes three defects observed 2026-04-20 that caused `/fix`/`/investigate`/`/plan` to stall in a "same state" Stop loop:
@@ -150,3 +175,17 @@ Closes three defects observed 2026-04-20 that caused `/fix`/`/investigate`/`/pla
 - [x] F4. **Session-aware summary** — `stop-stage-enforcer.main()` now calls `getActiveFeatureSummary(cwd, stdinJson.session_id)` so a concurrent session's non-scoped pointer can no longer supply the wrong E2E surface. Tests: `scripts/stop-stage-enforcer.test.mjs` C17 (two features, session selects the right summary).
 
 Totals: `stop-stage-enforcer.test.mjs` 17/17, `test-keyword-detector.mjs` 6/6, `workflow-scenarios.test.mjs` 111/111, `auto-confirm.test.mjs` 86/86, `critic-watchdog.test.mjs` 9/9.
+
+## Phase 15 — Slug preamble pruning (v2.4.7)
+
+Closes the defect observed 2026-04-20 where `.smt/features/you-are-a-command-classifier-for-a-cli-tool-called/` was created when the Haiku classifier's system prompt ("You are a command classifier for a CLI tool called 'smelter'…") reached `keyword-detector.mjs::deriveSlug` as user input. The existing `SMELTER_CLASSIFIER_SUBPROCESS` env guard (Phase 2-3 §2-3) still prevents the primary leak vector, but stale `.smt/features/<you-are-a-…>/` directories from pre-guard runs kept being resurrected via active-feature pointers across sessions.
+
+- [x] S1. **`deriveSlug` hardened** — `scripts/keyword-detector.mjs:209` replaces the naive `slice(0, 80)` truncation with a two-stage pipeline: `stripSystemPreamble` (regex removes `You are (a|an|the)? …`, Korean 당신은/너는, `Skill:/Role:/Context:` labels, echoed `successfully loaded skill:` banners, `[MAGIC KEYWORD: …]` tags) → tokenize → drop leading filler tokens (a/an/the/for/to/of/is/are/and/or/…) → re-join (`-`) → slice to 50. Source window widened from 80 → 120 chars so the stripped remainder still carries enough domain words.
+- [x] S2. **Unit coverage** — `scripts/keyword-detector.test.mjs` adds 4 tests: SLUG1 "You are a …" preamble stripped + domain word surfaces, SLUG2 leading "the" dropped, SLUG3 "Skill: … successfully loaded skill:" banner stripped, SLUG4 Korean 당신은 preamble stripped. All via `spawnSync` integration against the real hook entry point.
+
+Example transformation (defense-in-depth layer):
+- Input: `"You are a command classifier for a CLI tool called \"smelter\". Classify the user's prompt…"`
+- Old slug: `you-are-a-command-classifier-for-a-cli-tool-called` (50 chars, all preamble)
+- New slug: `command-classifier-for-a-cli-tool-called-smelter-c` (50 chars, leads with domain noun)
+
+Totals: `keyword-detector.test.mjs` SLUG1–4 pass (4/4 new). Pre-existing CSS1/CSS3 failures in the same suite are unrelated feature-reuse pointer issues, not affected by this change (Korean-only prompts tokenize identically under the new and old logic).
