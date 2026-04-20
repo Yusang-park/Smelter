@@ -5,7 +5,7 @@
  * Rule-based detection only; run with `node scripts/mode-classifier.test.mjs`.
  */
 
-import { classify, classifyChain } from './mode-classifier.mjs';
+import { classify, classifyChain, firstSentence } from './mode-classifier.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -105,6 +105,81 @@ assert(
   classifyChain('hello world'),
   null,
 );
+
+// ---------------------------------------------------------------------------
+section('T1: Korean declarative 한다 suffix (feature: harness-integrity-4-fixes)');
+// ---------------------------------------------------------------------------
+assert('파악한다 -> investigate', classify('무엇이 문제인지 파악한다').mode, 'investigate');
+assert('분석한다 -> investigate', classify('이 모듈을 분석한다').mode, 'investigate');
+assert('조사한다 -> investigate', classify('코드를 조사한다').mode, 'investigate');
+assert('파악했다 -> investigate', classify('이미 파악했다').mode, 'investigate');
+assert('분석한다면 -> investigate', classify('그걸 분석한다면').mode, 'investigate');
+
+// ---------------------------------------------------------------------------
+section('T1-bis: bare-stem robustness');
+// ---------------------------------------------------------------------------
+assert('검증한답니다 -> investigate', classify('검증한답니다').mode, 'investigate');
+assert('분석하세요 -> investigate', classify('분석하세요').mode, 'investigate');
+assert('파악하시겠습니까 -> investigate', classify('파악하시겠습니까').mode, 'investigate');
+
+// ---------------------------------------------------------------------------
+section('T1: paste-pollution resistance (first-sentence extraction)');
+// ---------------------------------------------------------------------------
+assert(
+  'paste-polluted 수정 block -> investigate',
+  classify('파악한다.\n\n이전 대화 붙여넣기: 텍스트 수정 문구 수정 스타일 수정').mode,
+  'investigate',
+);
+assert(
+  'paste with ⏺ marker -> investigate',
+  classify('파악해줘\n\n⏺ 수정 진행했습니다 텍스트 수정').mode,
+  'investigate',
+);
+assert(
+  'long multi-line with prior convo -> investigate',
+  classify([
+    '무엇이 문제인지 파악한다.',
+    '',
+    '⏺ 수정 진행했습니다. 텍스트 수정 / 스타일 수정.',
+    '❯ 왜 안되지? 수정 필요.',
+  ].join('\n')).mode,
+  'investigate',
+);
+
+// ---------------------------------------------------------------------------
+section('H1: simple_fix — doc/comment/guide add patterns');
+// ---------------------------------------------------------------------------
+// Pure documentation or comment-addition requests must route to simple_fix,
+// not fall through to DEFAULT_MODE='fix' which triggers the full repair chain.
+assert('가이드를 넣어줘 -> simple_fix', classify('Read 툴을 쓰도록 가이드를 넣어줘').mode, 'simple_fix');
+assert('가이드 추가해 -> simple_fix', classify('사용 가이드 추가해').mode, 'simple_fix');
+assert('주석 달아줘 -> simple_fix', classify('이 함수에 주석 달아줘').mode, 'simple_fix');
+assert('주석 넣어 -> simple_fix', classify('주석 넣어').mode, 'simple_fix');
+assert('문서 보강 -> simple_fix', classify('문서 보강').mode, 'simple_fix');
+assert('문서화해 -> simple_fix', classify('이 모듈 문서화해').mode, 'simple_fix');
+assert('docstring 추가 -> simple_fix', classify('add a docstring here').mode, 'simple_fix');
+assert('add a comment -> simple_fix', classify('add a comment for this branch').mode, 'simple_fix');
+// Negatives — prevent over-reach into fix/implement/plan.
+assert('주석까지 해결해 -> fix', classify('주석까지 해결해').mode, 'fix');
+assert('설명 넣어서 로직 추가해줘 -> implement (not simple_fix)',
+  classify('이 함수에 설명 넣어서 로직 추가해줘').mode, 'implement');
+assert('API 문서화 리팩토링해줘 -> plan (not simple_fix)',
+  classify('API 문서화 리팩토링해줘').mode, 'plan');
+assert('문서화 설계해 -> plan (not simple_fix)',
+  classify('문서화 체계 설계해').mode, 'plan');
+// Compound doc + implement — the noun+add should NOT absorb the implement verb.
+assert('주석 추가하고 로직 구현해줘 -> implement (not simple_fix)',
+  classify('주석 추가하고 로직 구현해줘').mode, 'implement');
+assert('가이드 추가하고 기능 만들어줘 -> implement (not simple_fix)',
+  classify('가이드 추가하고 기능 만들어줘').mode, 'implement');
+
+// ---------------------------------------------------------------------------
+section('T1: firstSentence helper');
+// ---------------------------------------------------------------------------
+assert('cuts at first blank line', firstSentence('파악한다.\n\n[paste]'), '파악한다.');
+assert('cuts at chevron marker', firstSentence('파악한다 ⏺ 수정'), '파악한다');
+assert('empty input -> empty', firstSentence(''), '');
+assert('non-string -> empty', firstSentence(null), '');
 
 // ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);

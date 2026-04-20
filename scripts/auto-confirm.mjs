@@ -26,13 +26,24 @@
 // assistant message signals a mode transition, advance the chain and queue a
 // continuation prompt without asking the user.
 
-import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, lstatSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readState, writeState, MODES } from './state-schema.mjs';
 import { route } from './route-on-fail.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
+import { pickNextStage } from './stop-stage-enforcer.mjs';
+
+// H3 — stuck-loop guard threshold. When decide() returns the same
+// signature (slug:mode:stage:action) this many consecutive times, the CLI
+// entry halts instead of queueing another identical continuation. Prevents
+// auto-confirm from churning in lockstep with a non-advancing state.
+export const AUTO_CONFIRM_STUCK_THRESHOLD = 3;
+// Loop counter entries older than this are considered stale and reset on
+// next bump, regardless of signature.
+export const AUTO_CONFIRM_STUCK_MAX_AGE_MS = 30 * 60 * 1000;
 
 export const QUEUE_FILENAME = 'auto-confirm-queue.json';
 export const QUEUE_MAX_AGE_MS = 5 * 60 * 1000;
@@ -148,14 +159,24 @@ export function isSubTaskerOnRisk() {
   return !cfg || cfg.subTaskerOnRisk !== false;
 }
 
-// Find the state.json for the active task. Prefer .smt/active_task pointer,
-// else the most recently updated *.state.json under .smt/features/*/task/.
-export function findActiveTaskState(cwd) {
-  const active = join(cwd, '.smt', 'active_task');
-  if (existsSync(active)) {
+// Find the state.json for the active task. Session-isolated: per-session
+// pointer (`.smt/state/active-feature-<sessionId>.json`) is primary; non-scoped
+// pointer (`.smt/state/active-feature.json`) is the session-less fallback
+// (legacy CLI / sim). Global `.smt/active_task` was deprecated in the
+// session-isolation migration — concurrent sessions would overwrite it. As a
+// final resort, the most recently updated *.state.json under
+// `.smt/features/*/task/` is returned (test-fixture convenience).
+export function findActiveTaskState(cwd, sessionId) {
+  const pointerPath = sessionId
+    ? join(cwd, '.smt', 'state', `active-feature-${sessionId}.json`)
+    : join(cwd, '.smt', 'state', 'active-feature.json');
+  if (existsSync(pointerPath)) {
     try {
-      const target = readFileSync(active, 'utf-8').trim();
-      if (existsSync(target)) return target;
+      const ptr = JSON.parse(readFileSync(pointerPath, 'utf-8'));
+      if (ptr?.slug) {
+        const candidate = join(cwd, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`);
+        if (existsSync(candidate)) return candidate;
+      }
     } catch {}
   }
   const featuresRoot = join(cwd, '.smt', 'features');
@@ -289,7 +310,16 @@ export function decide({ state, lastAssistantText, statePath }) {
   }
 
   if (last && last.result === 'pass') {
-    return { action: 'advance', reason: 'last event pass, advance to next workflow skill', payload: {} };
+    // H2 — name the next skill explicitly instead of a vague "advance".
+    // pickNextStage honors allowed_skills order + completed_stages so the
+    // agent receives an unambiguous target instead of guessing from
+    // conversation context.
+    const skill = pickNextStage(state);
+    return {
+      action: 'advance',
+      reason: `last event pass, advance to ${skill}`,
+      payload: { skill },
+    };
   }
 
   const hasRed = (state.test_cycles || []).some(c =>
@@ -324,7 +354,11 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
       lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
       break;
     case 'advance':
-      lines.push('Previous skill passed. Advance to the next skill per current mode.');
+      if (decision.payload?.skill) {
+        lines.push(`Previous skill passed. Enter next workflow skill: ${decision.payload.skill}`);
+      } else {
+        lines.push('Previous skill passed. Advance to the next skill per current mode.');
+      }
       lines.push(`Spawn the work via a sub-agent using model='${subAgentModel}'.`);
       break;
     case 'chain_advance':
@@ -357,6 +391,59 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
     lines.push(`state: mode=${state.mode}, current=${state.current_stage || 'null'}, completed=${(state.completed_stages || []).length}`);
   }
   return lines.join('\n');
+}
+
+// H3 — stuck-loop guard helpers. Mirrors stop-stage-enforcer's counter but
+// keyed on auto-confirm decisions (action-aware) so churn at this layer is
+// detectable before Stop runs. Per-project + per-session to avoid collisions
+// across concurrent sessions.
+
+export function autoConfirmSignature(state, action) {
+  if (!state) return `no-state:${action || 'null'}`;
+  const slug = state.task_id || '?';
+  const stage = state.current_stage || 'null';
+  const mode = state.mode || '?';
+  const act = action || 'null';
+  return `${slug}:${mode}:${stage}:${act}`;
+}
+
+export function autoConfirmLoopCounterPath(cwd, sessionId = '') {
+  const projectHash = createHash('md5').update(cwd).digest('hex').slice(0, 8);
+  const sessHash = sessionId
+    ? createHash('md5').update(String(sessionId)).digest('hex').slice(0, 8)
+    : 'no-session';
+  return `/tmp/smelter-auto-confirm-loop-${projectHash}-${sessHash}.json`;
+}
+
+export function bumpAutoConfirmLoop(cwd, sessionId, signature) {
+  const path = autoConfirmLoopCounterPath(cwd, sessionId);
+  // Symlink rejection — on a shared /tmp an adversary could pre-plant a
+  // symlink at a predictable path to redirect writes. Session UUIDs make
+  // pre-placement impractical, but lstat() keeps this defense-in-depth cheap.
+  let prior = null;
+  try {
+    if (existsSync(path)) {
+      // lstat first — statSync follows symlinks; we want to reject the link
+      // itself, not its target.
+      const lst = lstatSync(path);
+      if (lst.isSymbolicLink() || !lst.isFile()) return 1;
+      prior = JSON.parse(readFileSync(path, 'utf-8'));
+    }
+  } catch {}
+  const now = Date.now();
+  const stale = prior && now - (prior.last_seen || 0) > AUTO_CONFIRM_STUCK_MAX_AGE_MS;
+  if (!prior || stale || prior.signature !== signature) {
+    const fresh = { signature, count: 1, first_seen: now, last_seen: now };
+    try { writeFileSync(path, JSON.stringify(fresh), { mode: 0o600 }); } catch {}
+    return 1;
+  }
+  const next = { ...prior, count: prior.count + 1, last_seen: now };
+  try { writeFileSync(path, JSON.stringify(next), { mode: 0o600 }); } catch {}
+  return next.count;
+}
+
+export function clearAutoConfirmLoop(cwd, sessionId = '') {
+  try { unlinkSync(autoConfirmLoopCounterPath(cwd, sessionId)); } catch {}
 }
 
 // Queue-drop helpers. The queue file is a single JSON object — one entry at a
@@ -396,7 +483,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try { input = JSON.parse(stdin); } catch {}
   const cwd = input.cwd || process.cwd();
   const sessionId = input.session_id || '';
-  const statePath = findActiveTaskState(cwd);
+  const statePath = findActiveTaskState(cwd, sessionId);
   const state = statePath ? readState(statePath) : null;
   const lastAssistantText = input.last_assistant_text || '';
   const subAgentModel = pickSubAgentModel();
@@ -446,6 +533,22 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // "write session log" on every Stop creates an infinite loop because the
   // state never changes again. Treat it as a halt so the session ends cleanly.
   if (decision.action === 'halt' || decision.action === 'no_state' || decision.action === 'session_wrap') {
+    clearAutoConfirmLoop(cwd, sessionId);
+    process.exit(0);
+  }
+
+  // H3 — stuck-loop guard. If decide() keeps returning an identical signature
+  // with no state progression, halt with a stderr warning so the agent and
+  // user can escape. Stop-enforcer has its own guard; this one fires earlier
+  // and covers action-specific churn (e.g., same enter_skill queued repeatedly).
+  const signature = autoConfirmSignature(state, decision.action);
+  const loopCount = bumpAutoConfirmLoop(cwd, sessionId, signature);
+  if (loopCount >= AUTO_CONFIRM_STUCK_THRESHOLD) {
+    clearAutoConfirmLoop(cwd, sessionId);
+    process.stderr.write(
+      `\x1b[33m[smelter] auto-confirm · stuck-loop escape ` +
+      `(signature=${signature}, fired ${loopCount}x)\x1b[0m\n`,
+    );
     process.exit(0);
   }
 

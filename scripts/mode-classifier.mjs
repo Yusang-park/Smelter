@@ -43,6 +43,25 @@ const RULES = [
       /오타/,
       /번역(?:\s*수정|\s*변경)?/,
       /문구\s*(?:수정|변경)/,
+      // Doc/comment/guide-add patterns. Pure text insertions that don't touch
+      // logic — classifier previously fell through to default fix and forced
+      // the full repair chain for one-paragraph doc edits.
+      //
+      // Deliberately narrow: omit the bare word 설명 (too ambiguous — also
+      // means "explain", which overlaps /implement "이 함수에 설명 넣어서 로직 추가"
+      // patterns). Doc-add intent is already fully covered by 주석/가이드/문서/docstring.
+      // `문서화` is gated by a negative lookahead so plan/refactor phrasings
+      // ("API 문서화 리팩토링해줘") do not downgrade.
+      // Negative lookahead guards against compound intents like
+      // "주석 추가하고 로직 구현해줘" where the user wants code + doc. The guard
+      // rejects the simple_fix match when plan/implement verbs appear later in
+      // the same sentence, letting priority 8 rules pick up the compound.
+      /가이드(?:를|)\s*(?:넣어|추가)(?!.*(?:구현|로직|리팩토링|설계|기획|만들어|새\s*기능))/,
+      /주석(?:을|)\s*(?:넣어|추가|달아)(?!.*(?:구현|로직|리팩토링|설계|기획|만들어|새\s*기능))/,
+      /문서화(?:해|한|할)?(?!.*(?:구현|로직|리팩토링|설계|기획|만들어|추가해줘))/,
+      /문서(?:을|를|)\s*(?:넣어|추가|보강)(?!.*(?:구현|로직|리팩토링|설계|기획|만들어))/,
+      /\bdocstring\b/i,
+      /\b(?:add|insert|append)\s+(?:a\s+|the\s+)?(?:comment|doc|docs|docstring|guide|note)\b/i,
     ],
   },
   {
@@ -100,22 +119,16 @@ const RULES = [
     mode: 'investigate',
     priority: 9,
     patterns: [
-      /파악해/,
-      /파악한/,
-      /파악했/,
-      /분석해/,
-      /분석한/,
-      /분석했/,
-      /조사해/,
-      /조사한/,
-      /조사했/,
+      /파악/,
+      /분석/,
+      /조사/,
       /알아봐/,
       /어떻게\s*되어\s*(?:있어|있나)/,
       /어떤\s*구조/,
       // Static-read verbs (Korean). 점검 is moved to /verify (dynamic).
-      /검증(?:해|하고|한|할|좀)?/,
-      /확인(?:해|하고|한|할|좀)?/,
-      /체크(?:해|하고|한|할|좀)?/,
+      /검증/,
+      /확인/,
+      /체크/,
       // English static-read verbs — word-boundary aware
       /\bverify\b/i,
       /\bvalidate\b/i,

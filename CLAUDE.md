@@ -42,7 +42,7 @@ The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language
 
 Mode state lives in `.smt/features/<slug>/task/<task>.state.json`. Mode / skill contracts defined in `document/workflow.md`.
 
-**Auto-Confirm:** `scripts/auto-confirm.mjs` runs on every Stop event; it drops the main agent's last message + pending tasks into `.smt/state/auto-confirm-queue.json`, which `scripts/auto-confirm-consumer.mjs` injects on the next UserPromptSubmit. Gate: `~/.smt/config.json → { "autoConfirm": true }` (default on). Disable: set `autoConfirm: false`. To cancel: `/cancel [hard]`. To redirect after current work finishes without interrupting: `/queue <intent>` (utility skill at `skills/queue/SKILL.md`).
+**Auto-Confirm:** `scripts/auto-confirm.mjs` runs on every Stop event; it drops the main agent's last message + pending tasks into `.smt/state/auto-confirm-queue.json`, which `scripts/auto-confirm-consumer.mjs` injects on the next UserPromptSubmit. Gate: `~/.smt/config.json → { "autoConfirm": true }` (default on). Disable: set `autoConfirm: false`. To cancel: `/cancel [hard]`. To redirect after current work finishes without interrupting: `/queue <intent>` (utility command at `commands/queue.md`).
 
 **Transient-Error Auto-Retry:** `scripts/tool-retry.mjs` auto-retries ripgrep timeout, file-modified, rg flag-parse errors. Retry cap: 3.
 
@@ -121,6 +121,14 @@ Smelter ships a Serena MCP server (`.mcp.json`, project scope) for AST/LSP-based
 Rationale: symbol-level reads cut per-call tokens 70–95 % versus whole-file `Read`, and LSP-grade resolution gives accurate cross-file references (impossible via Grep).
 
 Runtime: requires `uv` and `serena-agent` installed. Setup: `brew install uv && uv tool install -p 3.13 serena-agent@latest --prerelease=allow && serena init`. Registered via `claude mcp add serena -s project -- serena start-mcp-server --context claude-code --project "$(pwd)"`.
+
+## Screenshots & Images
+
+When the user provides a path to a screenshot or image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.pdf`) — including ad-hoc paths like `/tmp/...` or `~/Downloads/...` — **always use the `Read` tool on that exact path**. The `Read` tool renders image and PDF contents visually for the multimodal model.
+
+- Do **not** treat the path as a literal string to grep or describe blindly.
+- Do **not** delegate to the `vision` agent unless `Read` cannot interpret the file or the user explicitly asks for analysis beyond inspection.
+- If the path does not exist, surface that fact instead of guessing the contents.
 
 ## Security / Coding Style / Testing
 

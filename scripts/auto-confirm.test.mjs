@@ -30,6 +30,11 @@ import {
   buildPromptInjection,
   buildClassifierPrompt,
   classifyProceedPromptViaSubAgent,
+  autoConfirmSignature,
+  bumpAutoConfirmLoop,
+  clearAutoConfirmLoop,
+  autoConfirmLoopCounterPath,
+  AUTO_CONFIRM_STUCK_THRESHOLD,
 } from './auto-confirm.mjs';
 
 import { createInitialState, writeState } from './state-schema.mjs';
@@ -373,6 +378,41 @@ test('last event pass → advance', () => {
   const d = decide({ state: s, lastAssistantText: 'clean' });
   assert.equal(d.action, 'advance');
 });
+test('H2: advance payload names the next skill via pickNextStage', () => {
+  const s = baseState({
+    current_stage: 'workflow-write-test',
+    events: [passEvent('workflow-write-test')],
+  });
+  const d = decide({ state: s, lastAssistantText: 'clean' });
+  assert.equal(d.action, 'advance');
+  // workflow-write-test → workflow-coding is the canonical next stage in fix mode.
+  assert.equal(d.payload.skill, 'workflow-coding');
+});
+test('H2: advance from workflow-investigate → workflow-investigate-review', () => {
+  const s = baseState({
+    current_stage: 'workflow-investigate',
+    events: [passEvent('workflow-investigate')],
+  });
+  const d = decide({ state: s, lastAssistantText: 'clean' });
+  assert.equal(d.action, 'advance');
+  assert.equal(d.payload.skill, 'workflow-investigate-review');
+});
+test('H2: advance at terminal stage falls back to workflow-human-check', () => {
+  // No explicit next after workflow-team-code-review except human-check.
+  const s = baseState({
+    current_stage: 'workflow-team-code-review',
+    events: [passEvent('workflow-team-code-review')],
+    completed_stages: [
+      'workflow-investigate', 'workflow-investigate-review',
+      'workflow-tasker', 'workflow-tasker-review',
+      'workflow-write-test', 'workflow-coding',
+      'workflow-agent-review', 'workflow-e2e', 'workflow-e2e-review',
+    ],
+  });
+  const d = decide({ state: s, lastAssistantText: 'clean' });
+  assert.equal(d.action, 'advance');
+  assert.equal(d.payload.skill, 'workflow-human-check');
+});
 test('test_cycles RED without coding entry → enter_skill workflow-coding', () => {
   const s = baseState({
     current_stage: 'workflow-write-test',
@@ -451,6 +491,11 @@ test('advance injection includes state summary', () => {
   const text = buildPromptInjection({ action: 'advance', reason: 'r', payload: {} }, s);
   assert.match(text, /mode=fix/);
 });
+test('H2: advance injection names the skill when payload.skill is set', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-write-test' });
+  const text = buildPromptInjection({ action: 'advance', reason: 'r', payload: { skill: 'workflow-coding' } }, s);
+  assert.match(text, /workflow-coding/);
+});
 test('chain_advance includes target + remaining chain tail', () => {
   const s = baseState({ mode: 'plan' });
   const text = buildPromptInjection({ action: 'chain_advance', reason: 'r', payload: { nextMode: 'implement', remaining: ['plan', 'implement', 'fix'] } }, s);
@@ -505,16 +550,57 @@ test('returns null when .smt absent', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
-test('explicit .smt/active_task pointer wins', () => {
+test('non-scoped active-feature.json pointer used when sessionId absent', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
   try {
     const featDir = join(dir, '.smt', 'features', 'a', 'task');
     mkdirSync(featDir, { recursive: true });
     const statePath = join(featDir, 'a.state.json');
     writeFileSync(statePath, '{}');
-    mkdirSync(join(dir, '.smt'), { recursive: true });
-    writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+    const stateRoot = join(dir, '.smt', 'state');
+    mkdirSync(stateRoot, { recursive: true });
+    writeFileSync(
+      join(stateRoot, 'active-feature.json'),
+      JSON.stringify({ slug: 'a', updated_at: Date.now() }),
+    );
     assert.equal(findActiveTaskState(dir), statePath);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('per-session pointer resolves independently of non-scoped pointer', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    // Non-scoped pointer → feature A
+    const featADir = join(dir, '.smt', 'features', 'feat-a', 'task');
+    mkdirSync(featADir, { recursive: true });
+    const statePathA = join(featADir, 'feat-a.state.json');
+    writeFileSync(statePathA, '{}');
+    const stateRoot = join(dir, '.smt', 'state');
+    mkdirSync(stateRoot, { recursive: true });
+    writeFileSync(
+      join(stateRoot, 'active-feature.json'),
+      JSON.stringify({ slug: 'feat-a', updated_at: Date.now() }),
+    );
+
+    // Per-session pointer → feature B (this session's actual work)
+    const featBDir = join(dir, '.smt', 'features', 'feat-b', 'task');
+    mkdirSync(featBDir, { recursive: true });
+    const statePathB = join(featBDir, 'feat-b.state.json');
+    writeFileSync(statePathB, '{}');
+    const sessionId = 'sess-iso';
+    writeFileSync(
+      join(stateRoot, `active-feature-${sessionId}.json`),
+      JSON.stringify({ slug: 'feat-b', session_id: sessionId, updated_at: Date.now() }),
+    );
+
+    assert.equal(
+      findActiveTaskState(dir, sessionId),
+      statePathB,
+      'per-session pointer drives the current session — concurrent session safety',
+    );
+    // Without sessionId, falls back to the non-scoped pointer
+    assert.equal(findActiveTaskState(dir), statePathA);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -534,6 +620,74 @@ test('fallback picks most-recently-modified state.json', () => {
     const past = new Date(Date.now() - 60_000);
     utimesSync(aStat, past, past);
     assert.equal(findActiveTaskState(dir), bStat);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ----------------------------------------------------------------------------
+section('H3: stuck-loop guard (signature counter + threshold escape)');
+// ----------------------------------------------------------------------------
+test('H3: threshold constant is 3', () => {
+  assert.equal(AUTO_CONFIRM_STUCK_THRESHOLD, 3);
+});
+test('H3: autoConfirmSignature composes slug/mode/stage/action', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  s.task_id = 'feat-x';
+  const sig = autoConfirmSignature(s, 'enter_skill');
+  assert.equal(sig, 'feat-x:fix:workflow-investigate:enter_skill');
+});
+test('H3: autoConfirmSignature with null state + null action', () => {
+  assert.equal(autoConfirmSignature(null, null), 'no-state:null');
+});
+test('H3: bumpAutoConfirmLoop returns 1 on first call, increments after', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'h3-'));
+  try {
+    const c1 = bumpAutoConfirmLoop(dir, 'sess-1', 'sig-a');
+    const c2 = bumpAutoConfirmLoop(dir, 'sess-1', 'sig-a');
+    const c3 = bumpAutoConfirmLoop(dir, 'sess-1', 'sig-a');
+    assert.equal(c1, 1);
+    assert.equal(c2, 2);
+    assert.equal(c3, 3);
+  } finally {
+    try { rmSync(autoConfirmLoopCounterPath(dir, 'sess-1'), { force: true }); } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('H3: bumpAutoConfirmLoop resets counter when signature changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'h3-'));
+  try {
+    bumpAutoConfirmLoop(dir, 'sess-2', 'sig-a');
+    bumpAutoConfirmLoop(dir, 'sess-2', 'sig-a');
+    const fresh = bumpAutoConfirmLoop(dir, 'sess-2', 'sig-b');
+    assert.equal(fresh, 1);
+  } finally {
+    try { rmSync(autoConfirmLoopCounterPath(dir, 'sess-2'), { force: true }); } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('H3: per-session counter does not collide across sessions', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'h3-'));
+  try {
+    bumpAutoConfirmLoop(dir, 'sess-A', 'shared-sig');
+    bumpAutoConfirmLoop(dir, 'sess-A', 'shared-sig');
+    const other = bumpAutoConfirmLoop(dir, 'sess-B', 'shared-sig');
+    assert.equal(other, 1, 'each session has its own counter');
+  } finally {
+    try {
+      rmSync(autoConfirmLoopCounterPath(dir, 'sess-A'), { force: true });
+      rmSync(autoConfirmLoopCounterPath(dir, 'sess-B'), { force: true });
+    } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('H3: clearAutoConfirmLoop removes the counter file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'h3-'));
+  try {
+    bumpAutoConfirmLoop(dir, 'sess-3', 'sig-x');
+    clearAutoConfirmLoop(dir, 'sess-3');
+    const path = autoConfirmLoopCounterPath(dir, 'sess-3');
+    assert.equal(existsSync(path), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
