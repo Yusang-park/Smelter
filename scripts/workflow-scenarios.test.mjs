@@ -580,8 +580,8 @@ section('SCENARIO 12 — State-schema consistency with spec');
   test('CAUSE_ENUM includes stall_cascade (§11-7)', () => {
     assert.ok(CAUSE_ENUM.includes('stall_cascade'));
   });
-  test('VERIFICATION_FOCUS_ENUM matches spec §9-3', () => {
-    assert.deepEqual([...VERIFICATION_FOCUS_ENUM].sort(), ['contradiction', 'edge_case', 'omission']);
+  test('VERIFICATION_FOCUS_ENUM matches current schema', () => {
+    assert.deepEqual([...VERIFICATION_FOCUS_ENUM].sort(), ['contradiction', 'edge_case', 'effect_verification', 'omission']);
   });
   test('TARGET_TYPE_ENUM matches tasker §3 output spec', () => {
     assert.deepEqual(
@@ -672,9 +672,14 @@ section('SCENARIO 14 — CLI integration end-to-end (Stop hook spawn + decision)
       const statePath = join(featDir, 'f.state.json');
       const state = fixModeState({ current_stage: 'workflow-tasker', events: [passEvent('workflow-tasker')] });
       writeState(statePath, state);
-      mkdirSync(join(dir, '.smt'), { recursive: true });
-      writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+      const stateRoot = join(dir, '.smt', 'state');
+      mkdirSync(stateRoot, { recursive: true });
       const sessionId = 'sess-scn-cli-1';
+      // Session-isolated pointer (post-migration). `.smt/active_task` deprecated.
+      writeFileSync(
+        join(stateRoot, `active-feature-${sessionId}.json`),
+        JSON.stringify({ slug: 'f', session_id: sessionId, updated_at: Date.now() }),
+      );
       const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'stage complete' });
       const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
       assert.equal(res.status, 2, `expected exit 2 (block), got ${res.status}. stderr: ${res.stderr}`);

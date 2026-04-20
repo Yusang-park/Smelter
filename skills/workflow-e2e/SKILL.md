@@ -13,9 +13,10 @@ gate:
     - artifacts_exist: true
     - build_clean: true
     - scoped_tests_pass: true
-    - real_interface_invoked: true       # new: runtime evidence required per surface
-    - no_interface_mocks: true           # new: interfaces must not be stubbed/mocked
-    - per_surface_artifact_present: true # new: each exercised surface has its own artifact
+    - real_interface_invoked: true       # runtime evidence required per surface
+    - no_interface_mocks: true           # interfaces must not be stubbed/mocked
+    - per_surface_artifact_present: true # each exercised surface has its own artifact
+    - effect_observed: true              # ack signal alone is NOT sufficient — target effect must be asserted (see §Effect-vs-Ack)
 surface_mapping:
   UI: "Playwright (real browser)"
   CLI: "subprocess stdin/argv/exit_code"
@@ -54,6 +55,7 @@ Every E2E run MUST exercise the real interface for the affected surface(s). A ru
 - Stubbing the database driver when the DB layer IS the subject.
 - Asserting on return values of functions without observing the externally visible side effect (rendered DOM, HTTP response body, CLI exit code, DB row change, hook stdout).
 - "Dry run" mode of Playwright (`--list`) or skipping browser launch.
+- **Ack-only assertion** — observing ONLY an acknowledgement signal (toast, banner, success-text regex, spinner-resolved → idle, modal-closed, HTTP 2xx status, "no error thrown") WITHOUT also asserting that the target state the operation was supposed to produce actually materialized. Banner text "You are impersonating X" is an ack; X's data actually rendering in the DOM is the effect. An ack without an effect assertion is **not a valid E2E pass** (gate `effect_observed` fails).
 
 ### What DOES count
 
@@ -62,6 +64,54 @@ Every E2E run MUST exercise the real interface for the affected surface(s). A ru
 - HTTP: a real server bound a real port (even a random one); the request was issued over the network loopback; request+response are logged with status code and body length.
 - DB: queries ran against a real engine (Postgres/SQLite/whatever prod uses or a compatible in-process version — NOT a stub); before/after state was captured or verified.
 - Hook: payload was actually piped via `cat | node hook.mjs`; both the input payload and the captured output/exit were written to disk as artifacts.
+
+## Effect-vs-Ack — per-surface observation rubric
+
+Every scenario that claims an operation succeeded MUST assert on BOTH:
+1. The **ack** (operation was accepted), and
+2. The **effect** (the new externally-visible state the operation was supposed to produce).
+
+If the operation has no durable effect beyond the ack itself (e.g., "Cancel closes the modal" — the closed-modal IS the effect), the scenario must explicitly declare `effect_type: local_ui_toggle` in `state.json.scenarios[].effect_evidence.type` and the gate accepts the absence of separate effect evidence. Every other scenario MUST populate `effect_evidence` with one of the types below.
+
+| Surface | Ack (not sufficient alone) | Effect (MUST be asserted) | `effect_evidence.type` |
+|---------|----------------------------|---------------------------|------------------------|
+| UI | Toast / banner text / modal closed / spinner → idle / success-route reached | New DOM content that reflects the target state change. Before/after screenshot diff, or assertion on a `data-testid` value/count that encodes the new state. Example: after "Impersonate X" → assert X's sheet titles (or empty-state message if X has none) render in the sheet list, NOT just the banner. | `dom_diff` or `dom_state_query` |
+| HTTP API | 2xx status code | Follow-up GET or list query returning the new resource state, or DB SELECT confirming the row. | `http_get_after` or `db_select` |
+| CLI | Exit code 0 / stdout contains "done" | Subsequent command (or filesystem scan) reflects the change. | `fs_diff` or `followup_cmd` |
+| DB | INSERT/UPDATE rowcount > 0 | SELECT that reads back the new row/value and asserts on its content. | `db_select` |
+| Hook | Exit code 0 | Captured `stdout` JSON parsed and matched against expected shape/fields. | `stdout_parse` |
+| Local UI toggle (exemption) | Modal closed, input cleared, dropdown collapsed — no external effect | The UI absence/presence IS the effect — document as such. | `local_ui_toggle` |
+
+### Why this matters (concrete case, 2026-04-20)
+
+`admin-impersonate-menu-item` E2E was declared pass because:
+- Screenshot `07-impersonation-active-banner.png` contained the banner text "You are impersonating dfhilder@gmail.com.".
+- Banner-text regex matched → `bannerVisible = true` → gate checks passed.
+
+But the target effect — dfhilder's sheets/folders/plan rendering in the dashboard — was never asserted. The screenshot happened to show "Loading..." and an empty sidebar. No follow-up assertion read the sheet list after load. A broken impersonation flow that only fires the banner but never swaps the data would pass the old gate. This is exactly the failure the `effect_observed` postcondition now blocks.
+
+### Recording the evidence
+
+For each scenario in `state.json.scenarios[]`:
+
+```jsonc
+{
+  "name": "admin-impersonates-dfhilder",
+  "surface": "ui",
+  "ack_evidence": {
+    "type": "dom_state_query",
+    "reference": "artifacts/screenshots/07-impersonation-active-banner.png",
+    "note": "banner text visible"
+  },
+  "effect_evidence": {
+    "type": "dom_diff",
+    "reference": "artifacts/screenshots/07a-impersonation-dashboard-loaded.png",
+    "assertion": "dfhilderSheetTitles !== adminSheetTitles && planBoxText includes 'Lite'"
+  }
+}
+```
+
+If `effect_evidence` is `null`, `{}`, or its `type` is missing, the gate `effect_observed` check fails with `cause: effect_unverified`. Reviewers and the R14 watchdog use this field.
 
 ## Artifacts directory (required)
 
@@ -94,8 +144,9 @@ The E2E gate verifies (rejects on any miss):
 3. `real_interface_invoked` — `state.json.events` entry for this skill includes `evidence.type: exit_code | parse | diff` referencing an artifact path (not `file_present` pointing to a test file)
 4. `no_interface_mocks` — code paths exercised during E2E do not go through stub/mock modules for the surface under test (static check on imports during run logs)
 5. `per_surface_artifact_present` — if the tasker declared `surface: [ui, api]`, both `ui/*` and `api/*` artifacts must exist
+6. `effect_observed` — every `state.json.scenarios[]` entry has a populated `effect_evidence` object with a valid `type` (one of: `dom_diff`, `dom_state_query`, `http_get_after`, `fs_diff`, `followup_cmd`, `db_select`, `stdout_parse`, `local_ui_toggle`) and a non-empty `reference`. `local_ui_toggle` is accepted only when the operation has no durable external effect. An entry with `effect_evidence: null` or `effect_evidence.type: ack_only` fails the gate with `cause: effect_unverified`.
 
-If a run reports "all tests passed" but produces no artifacts, the gate flips the event to `result: fail`, `cause: artifact_missing` or `cause: mocked_interface`, and routes via the producer chain.
+If a run reports "all tests passed" but produces no artifacts, the gate flips the event to `result: fail`, `cause: artifact_missing` or `cause: mocked_interface` or `cause: effect_unverified`, and routes via the producer chain.
 
 ## Iron Law compliance
 

@@ -107,3 +107,59 @@ test('plan+implement chain (설계하고 구현해) seeds plan → implement', a
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// ── Slug stability (feature: harness-integrity-phase-11 C) ─────────────────
+
+test('CSS1: natural-language follow-up REUSES active feature (no new slug)', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse1-'));
+  try {
+    runDetector({ cwd, prompt: '사이드바 폭 파악해줘', sessionId: 's1' });
+    const before = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(before.length, 1, 'first prompt creates 1 feature');
+
+    runDetector({ cwd, prompt: '이거 더 자세히 분석해줘', sessionId: 's1' });
+    const after = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(after.length, 1, `natural-language follow-up must NOT create new feature; got ${after.length}: ${after.join(', ')}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('CSS2: slash command always creates new feature', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse2-'));
+  try {
+    runDetector({ cwd, prompt: '사이드바 폭 파악해줘', sessionId: 's1' });
+    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    const dirs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(dirs.length, 2, 'slash command creates distinct feature');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('CSS3: after slash command, next natural-language follow-up REUSES the slash feature', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse3-'));
+  try {
+    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    runDetector({ cwd, prompt: 'OAuth 부분 추가로 확인', sessionId: 's1' });
+    const dirs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(dirs.length, 1, `post-slash follow-up must reuse; got ${dirs.length}: ${dirs.join(', ')}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('CSS4: explicit "새 feature" phrase creates new feature', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse4-'));
+  try {
+    runDetector({ cwd, prompt: '사이드바 폭 파악해줘', sessionId: 's1' });
+    runDetector({ cwd, prompt: '새 feature 만들자 — 결제 모듈', sessionId: 's1' });
+    const dirs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(dirs.length, 2, 'explicit new-feature phrase creates distinct');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('CSS5: different session_id on same cwd gets its own active pointer', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse5-'));
+  try {
+    runDetector({ cwd, prompt: '사이드바 분석', sessionId: 'sess-A' });
+    runDetector({ cwd, prompt: '로그인 분석', sessionId: 'sess-B' });
+    runDetector({ cwd, prompt: '이거 이어서', sessionId: 'sess-A' }); // should reuse A's feature
+    const dirs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(dirs.length, 2, `each session has its own feature; sess-A follow-up must reuse. got ${dirs.length}: ${dirs.join(', ')}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});

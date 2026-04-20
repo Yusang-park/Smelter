@@ -3,7 +3,7 @@
  * critic-watchdog.mjs — Hook Layer 1 of Pattern E Adversarial Watchdog.
  *
  * workflow-v2.md §12-8. Triggers on PostToolUse (Edit/Write/Bash).
- * Checks 10 formal rules and blocks CRITICAL violations via exit 2.
+ * Checks 13 formal rules and blocks CRITICAL violations via exit 2.
  *
  * Input (stdin JSON from Claude Code hook):
  *   { tool_name, tool_input, cwd, session_id, ... }
@@ -260,6 +260,7 @@ function rule12_workflowStageRequired(input, state, cwd) {
   if (!target) return null;
   const rel = cwd ? target.replace(cwd + '/', '') : target;
   const base = rel.split('/').pop() || '';
+  const smelterSelfEdit = /(^|\/)(skills|scripts|document)\//.test(rel) && cwd.includes('/Smelter');
   // Smelter test files use two naming conventions:
   //   foo.test.mjs / foo.spec.mjs  (suffix form — most scripts + frontend)
   //   test-foo.mjs / foo-test.mjs  (prefix/infix form — hook test scaffolds)
@@ -271,7 +272,7 @@ function rule12_workflowStageRequired(input, state, cwd) {
     || /\/spec\//.test(rel)
     || /\/__tests__\//.test(rel);
   if (isTest) return null;
-  const isCode = /^(?:src|scripts|bin|lib)\//.test(rel) || /\/(?:src|scripts|bin|lib)\//.test(rel);
+  const isCode = /^(?:src|scripts|bin|lib)\//.test(rel) || /\/(?:src|scripts|bin|lib)\//.test(rel) || smelterSelfEdit;
   if (!isCode) return null;
 
   if (state) {
@@ -286,17 +287,129 @@ function rule12_workflowStageRequired(input, state, cwd) {
   }
 
   // state === null: still block if the user IS inside a workflow command, i.e.
-  // active-feature.json was seeded by keyword-detector. Without this guard the
-  // agent can bypass the entire workflow by writing code before any workflow
-  // skill runs.
+  // an active-feature pointer was seeded by keyword-detector. Without this
+  // guard the agent can bypass the entire workflow by writing code before any
+  // workflow skill runs. Session-aware: prefer per-session pointer so a
+  // concurrent session's workflow state doesn't trigger R12 here.
   if (!cwd) return null;
-  const activePointer = join(cwd, '.smt', 'state', 'active-feature.json');
+  const sessionId = input.session_id;
+  const activePointer = sessionId
+    ? join(cwd, '.smt', 'state', `active-feature-${sessionId}.json`)
+    : join(cwd, '.smt', 'state', 'active-feature.json');
   if (!existsSync(activePointer)) return null;
   return {
     rule: 'R12',
     severity: 'CRITICAL',
-    reason: `workflow command active (see .smt/state/active-feature.json) but no .state.json — invoke workflow-investigate first; editing ${rel} is a workflow bypass`,
+    reason: `workflow command active (see ${activePointer.replace(cwd + '/', '')}) but no .state.json — invoke workflow-investigate first; editing ${rel} is a workflow bypass`,
   };
+}
+
+// R13 — Bash-based state.json write bypass (defense-in-depth).
+//
+// pre-tool-enforcer blocks agent Write/Edit on .state.json, but Bash commands
+// like `node -e "fs.writeFileSync('.smt/.../x.state.json', ...)"` reach
+// PostToolUse without being caught there. R13 scans Bash commands for this
+// pattern. Skipped when SMT_HOOK_WRITE=1 is set (hook-owned writes).
+function rule13_bashStateJsonWrite(input) {
+  if (input.tool_name !== 'Bash') return null;
+  const cmd = input.tool_input?.command || '';
+  if (!cmd) return null;
+
+  // Protected paths: .state.json and active_task pointer family.
+  const mentionsProtected =
+    /\.state\.json\b/i.test(cmd) ||
+    /\.smt[\/\\]active_task\b/.test(cmd) ||
+    /\.smt[\/\\]state[\/\\]active-feature/.test(cmd);
+  if (!mentionsProtected) return null;
+
+  // Pure-read commands on protected paths are allowed.
+  const isPureRead =
+    /^\s*(?:cat|head|tail|less|more|wc|file|stat|ls|grep|rg|jq|sort|uniq|diff|md5sum|sha256sum)\b[^|;&]*$/i.test(cmd.trim());
+  if (isPureRead) return null;
+
+  // Mutating primitives (language-agnostic). Path-mention + mutating-verb
+  // beats per-language verb enumeration.
+  //
+  // Interpreter flags that evaluate arbitrary code: -e / -c / -m / -i.
+  // `python -c`, `perl -e`, `ruby -e`, `node -e`, `bash -c`, etc.
+  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|bash|sh|zsh|awk)\s+-(?:[iIecm]|-eval|-exec)\b/.test(cmd);
+  const shellMutators = /\b(?:cp|mv|install|rsync|ln|touch|truncate|dd|tee|shred|rm|sed)\b/.test(cmd);
+  const apiWriters = /\bwriteFile(?:Sync)?\b/.test(cmd) || /\bcreateWriteStream\b/.test(cmd);
+  const openForWrite = /\bopen\s*\(\s*['"][^'"]+['"]\s*,\s*['"][wa]/.test(cmd);
+  // Redirects: the protected path must be the actual redirect target token
+  // (ends with .state.json or active_task AND lies immediately after >/>>).
+  const redirectTarget = />>?\s*['"]?[^|&;\s"']*(?:\.state\.json|\.smt[\/\\]active_task)['"]?(?:\s|$|&|;|\|)/.test(cmd);
+  const heredocToTarget = /<<[-~]?\s*['"]?\w+['"]?[\s\S]*?>\s*['"]?[^|&;\s"']*(?:\.state\.json|\.smt[\/\\]active_task)/.test(cmd);
+  const mutates = interpreterExec || shellMutators || apiWriters || openForWrite || redirectTarget || heredocToTarget;
+  if (!mutates) return null;
+
+  // False-positive shield: benign `echo "...state.json..." > not-protected-path`
+  // — if the command has NO interpreter-exec, NO shell-mutator, NO api-writer,
+  // NO open-for-write, and the only trigger was a redirect, require the
+  // redirect target itself to reference the protected path.
+  if (!interpreterExec && !shellMutators && !apiWriters && !openForWrite && !redirectTarget && !heredocToTarget) return null;
+
+  return {
+    rule: 'R13',
+    severity: 'CRITICAL',
+    reason: `Bash command mentions a protected workflow state/pointer path with a mutating primitive — bypasses the skill-driven gate. Invoke the appropriate workflow-* skill instead. (cmd head: ${cmd.slice(0, 120)})`,
+  };
+}
+
+// R14 — E2E pass claim without verified effect evidence.
+//
+// Artifacts alone are insufficient. If workflow-e2e / workflow-verify claims
+// pass, state.scenarios[] must exist and every scenario must carry populated
+// effect_evidence with a valid non-ack-only type and a reference.
+function rule14_e2ePassWithoutEffectEvidence(input, state) {
+  if (!state) return null;
+  const stage = state.current_stage;
+  if (stage !== 'workflow-e2e' && stage !== 'workflow-verify') return null;
+
+  const content = input.tool_input?.new_string || input.tool_input?.content || '';
+  const cmd = input.tool_input?.command || '';
+  const finalizingTool = input.tool_name === 'Edit' || input.tool_name === 'Write' || input.tool_name === 'Bash';
+  const looksLikePassClaim =
+    /result:\s*['"]?pass['"]?/i.test(content) ||
+    /"result"\s*:\s*"pass"/.test(content) ||
+    /"current_stage"\s*:\s*"done"/.test(content) ||
+    /e2e.*pass(?:ed)?/i.test(cmd);
+  if (!finalizingTool || !looksLikePassClaim) return null;
+
+  const scenarios = Array.isArray(state.scenarios) ? state.scenarios : [];
+  if (scenarios.length === 0) {
+    return {
+      rule: 'R14',
+      severity: 'CRITICAL',
+      reason: `E2E / verify stage ${stage} tried to record pass without state.scenarios[] effect evidence — cause: effect_unverified`,
+    };
+  }
+
+  for (const scenario of scenarios) {
+    const effect = scenario?.effect_evidence;
+    if (!effect || typeof effect !== 'object') {
+      return {
+        rule: 'R14',
+        severity: 'CRITICAL',
+        reason: `scenario '${scenario?.name ?? '(unnamed)'}' is missing effect_evidence — cause: effect_unverified`,
+      };
+    }
+    if (effect.type === 'ack_only' || !effect.type) {
+      return {
+        rule: 'R14',
+        severity: 'CRITICAL',
+        reason: `scenario '${scenario?.name ?? '(unnamed)'}' has invalid effect_evidence.type='${effect.type ?? ''}' — cause: effect_unverified`,
+      };
+    }
+    if (!effect.reference) {
+      return {
+        rule: 'R14',
+        severity: 'CRITICAL',
+        reason: `scenario '${scenario?.name ?? '(unnamed)'}' has empty effect_evidence.reference — cause: effect_unverified`,
+      };
+    }
+  }
+  return null;
 }
 
 // ===== Helpers =====
@@ -313,14 +426,21 @@ function guessPlanPath(featuresRoot, state) {
   return null;
 }
 
-function readActiveState(cwd) {
-  const active = join(cwd, '.smt', 'active_task');
-  if (existsSync(active)) {
-    try {
-      const target = readFileSync(active, 'utf-8').trim();
-      if (existsSync(target)) return JSON.parse(readFileSync(target, 'utf-8'));
-    } catch {}
-  }
+function readActiveState(cwd, sessionId) {
+  // Session-isolated: per-session pointer primary, non-scoped pointer as
+  // session-less fallback (legacy CLI / sim only). Global `.smt/active_task`
+  // was deprecated in the session-isolation migration — concurrent sessions
+  // would overwrite it.
+  const pointerPath = sessionId
+    ? join(cwd, '.smt', 'state', `active-feature-${sessionId}.json`)
+    : join(cwd, '.smt', 'state', 'active-feature.json');
+  if (!existsSync(pointerPath)) return null;
+  try {
+    const ptr = JSON.parse(readFileSync(pointerPath, 'utf-8'));
+    if (!ptr?.slug) return null;
+    const candidate = join(cwd, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`);
+    if (existsSync(candidate)) return JSON.parse(readFileSync(candidate, 'utf-8'));
+  } catch {}
   return null;
 }
 
@@ -333,6 +453,8 @@ export const RULES = [
   rule09_parallelFileConflict, rule10_sessionLogMissing,
   rule11_e2ePassWithoutArtifacts,
   rule12_workflowStageRequired,
+  rule13_bashStateJsonWrite,
+  rule14_e2ePassWithoutEffectEvidence,
 ];
 
 export function runAll(input, state, cwd) {
@@ -353,7 +475,7 @@ export function runAll(input, state, cwd) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const input = readStdinJson();
   const cwd = input.cwd || process.cwd();
-  const state = readActiveState(cwd);
+  const state = readActiveState(cwd, input.session_id);
   const hits = runAll(input, state, cwd);
 
   const critical = hits.find(h => h.severity === 'CRITICAL');

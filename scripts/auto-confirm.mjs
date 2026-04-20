@@ -277,6 +277,9 @@ export function decide({ state, lastAssistantText, statePath }) {
 
   const events = state.events || [];
   const last = events[events.length - 1];
+  if (state.mode === 'investigate' && state.current_stage === 'workflow-investigate-review' && last?.result === 'pass') {
+    return { action: 'halt', reason: 'investigate mode user decision required after workflow-investigate-review pass' };
+  }
 
   if (state.current_stage === 'done') {
     return { action: 'session_wrap', reason: 'task complete, writing session log' };

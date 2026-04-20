@@ -117,6 +117,42 @@ function main() {
       }
     }
 
+    // --- Block direct agent edits to workflow state + pointer files ---
+    // Closes redirect attacks (security review C2): forging active_task pointer
+    // or any .state.json anywhere is equivalent to editing the canonical state.
+    // Matches both POSIX `/` and Windows `\` path separators.
+    // Escape hatch: SMT_HOOK_WRITE=1 env var (reserved for hook scripts invoking
+    // the agent's Write tool — real hook scripts use fs.writeFileSync and bypass
+    // PreToolUse entirely).
+    if (process.env.SMT_HOOK_WRITE !== '1' && (toolName === 'Write' || toolName === 'Edit')) {
+      const toolInputData = data.tool_input || data.toolInput || {};
+      const filePath = String(toolInputData.file_path || toolInputData.filePath || '');
+      // Patterns that must never be agent-writable:
+      //   .smt/features/<slug>/task/<task>.state.json   (canonical state)
+      //   .smt/active_task                              (pointer → canonical state)
+      //   .smt/state/active-feature.json                (session pointer)
+      //   .smt/state/active-feature-<sid>.json          (per-session pointer)
+      //   any *.state.json anywhere                     (forged-state redirect)
+      // Scope all protected patterns under .smt/ so we never block third-party
+      // files that happen to end in .state.json (e.g. terraform.state.json).
+      const PROTECTED_RE = [
+        /[\/\\]\.smt[\/\\]features[\/\\][^\/\\]+[\/\\]task[\/\\][^\/\\]+\.state\.json$/,
+        /[\/\\]\.smt[\/\\]active_task$/,
+        /[\/\\]\.smt[\/\\]state[\/\\]active-feature(?:-[^\/\\]+)?\.json$/,
+        /[\/\\]\.smt[\/\\].*\.state\.json$/i,
+      ];
+      if (PROTECTED_RE.some(re => re.test(filePath))) {
+        printTag(`Block: protected state path write (${filePath})`);
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: `[SMELTER] Direct agent ${toolName} of workflow state/pointer file is forbidden: ${filePath}\n` +
+            `State transitions must come from skill invocation (the skill-stage-transition hook writes state) ` +
+            `or hook scripts using fs.writeFileSync directly. Invoke the appropriate workflow-* skill instead.`,
+        }));
+        return;
+      }
+    }
+
     // --- Cancel signal check ---
     const cancelSignal = readCancel(directory, sessionId);
     if (cancelSignal) {

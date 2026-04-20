@@ -257,7 +257,7 @@ Every hook prints a short ANSI-yellow bracketed tag to stderr so you can see wha
 | `[Post Verify]` | post-tool-verifier |
 | `[Auto-Retry: <reason>]` | tool-retry |
 | `[Auto-Confirm]` | auto-confirm |
-| `[Run E2E]` | stop-e2e |
+| `[Stage Enforcer]` / `[Run E2E]` (fallback) | stop-stage-enforcer |
 | `[Doc Sync Check]` | session-end |
 | `[Session Start]` | session-start-smt |
 | `[Permission]` | permission-handler |

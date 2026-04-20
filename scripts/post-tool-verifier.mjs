@@ -148,7 +148,7 @@ function trackModifiedFile(filePath, directory) {
 }
 
 // Untrack files whose tests just ran successfully — removes the corresponding
-// source file from the session-files tracking list so stop-e2e doesn't keep
+// source file from the session-files tracking list so stop-stage-enforcer doesn't keep
 // firing the "Step 8 E2E required" reminder after the user has already
 // validated the change via tests. Marker = E2E completion for hook/script
 // surfaces (where unit-test == real-interface invocation).
@@ -297,7 +297,7 @@ function main() {
       const command = typeof toolInput === 'string' ? toolInput : (toolInput.command || '');
       appendToBashHistory(command);
       // When a test command runs successfully, untrack the tested source files
-      // so stop-e2e's "Step 8 E2E required" reminder doesn't keep firing for
+      // so stop-stage-enforcer's "Step 8 E2E required" reminder doesn't keep firing for
       // surfaces that have already been validated through their real interface.
       untrackTestedFiles(command, toolOutput, directory);
     }

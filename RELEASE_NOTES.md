@@ -205,11 +205,10 @@ See `document/workflow.md` §0.
 - `scripts/integration-workflow.test.mjs`, `step-engine.test.mjs`, `workflow-seeder.test.mjs`
 - `scripts/lib/yaml-parser.mjs`
 - `scripts/test-max-attempts.ts`, `test-queue-session-isolation.mjs`
-- `commands/build.md` (replaced by `/implement`)
 - `document-backup/` (legacy snapshot)
 
 **Command surface changes:**
-- `/build` → retired. Use `/implement` (lightweight) or `/plan` (new feature / refactor).
+- `build` command (historically invoked as the v1 slash-form) → retired. Use `/implement` (lightweight) or `/plan` (new feature / refactor).
 - Natural-language input now auto-routes; the classifier is rule-based (Iron Law #2 — no LLM inference for routing).
 
 **State schema:**
@@ -224,7 +223,7 @@ See `document/workflow.md` §0.
 ### Migrations
 
 - Feature dirs with only a `state/workflow.json` are flagged as `orphan` by `feature-version-check.mjs`. To migrate: move to a v2 `<task>.state.json` via `scripts/state-schema.mjs` `createInitialState(...)`.
-- `/build` invocations should be replaced with `/implement` (lightweight build on existing code) or `/plan` (greenfield / refactor that needs planning).
+- Invocations of the retired `build` command should be replaced with `/implement` (lightweight build on existing code) or `/plan` (greenfield / refactor that needs planning).
 - Any `max_retry` behavior: replaced by producer-chain routing. Remove the field; upstream failure routes to the producer skill automatically.
 
 ---

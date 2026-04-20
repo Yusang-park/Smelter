@@ -124,3 +124,27 @@ test('natural-language "investigate" routes to /investigate, not /plan', async (
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test('explicit /investigate reseeds mode instead of reusing in-flight fix state', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
+
+  try {
+    runDetector({ cwd, prompt: '/fix login validation bug' });
+    const firstSlug = readdirSyncSafe(join(cwd, '.smt', 'features'))[0];
+    const firstStatePath = join(cwd, '.smt', 'features', firstSlug, 'task', `${firstSlug}.state.json`);
+    const firstState = readJson(firstStatePath);
+    assert.equal(firstState.mode, 'fix');
+
+    const result = runDetector({ cwd, prompt: '/investigate why auto-confirm advances incorrectly' });
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
+
+    const taskDirs = readdirSyncSafe(join(cwd, '.smt', 'features'));
+    assert.ok(taskDirs.length >= 2, 'expected investigate to create a fresh feature state');
+    const investigateSlug = taskDirs.find((slug) => slug !== firstSlug);
+    assert.ok(investigateSlug, 'expected a distinct investigate slug');
+    const investigateState = readJson(join(cwd, '.smt', 'features', investigateSlug, 'task', `${investigateSlug}.state.json`));
+    assert.equal(investigateState.mode, 'investigate');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

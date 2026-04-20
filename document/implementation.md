@@ -135,7 +135,7 @@ Closes the defect where concurrent Claude Code sessions sharing a project would 
 - `scripts/stop-stage-enforcer.test.mjs` — `setupProject({ sessionId })` writes per-session pointer when given a session; C12/C13 rewritten; 15/15 pass.
 - `scripts/skill-stage-transition.test.mjs` — `seedState` writes per-session pointer; S1/S2 attack-vector updated; 12/12 pass.
 - `scripts/auto-confirm.test.mjs` — `findActiveTaskState` test names updated to reflect new resolution order; 85/85 pass.
-- `scripts/workflow-scenarios.test.mjs` — CLI smoke test writes per-session pointer; 111/111 pass.
+- `scripts/workflow-scenarios.test.mjs` — CLI smoke test writes per-session pointer; 111/111 pass after aligning schema assertions with the current `state-schema.mjs` enums.
 - `scripts/pre-tool-enforcer.test.mjs` — unchanged; `.smt/active_task` write-block is still tested and still holds (defense-in-depth).
 
 Artifacts: `.smt/features/왜-또-휴먼-체크-안하지/task/{migration-investigation.md,tasks.md,tasker_review.md}`.

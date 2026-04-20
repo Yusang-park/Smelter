@@ -135,3 +135,72 @@ test('R12: do not fire outside a Smelter project (no .smt/ dir)', () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('R14: block E2E pass claim when scenarios are missing', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    mkdirSync(join(cwd, '.smt', 'features', 'demo', 'artifacts'), { recursive: true });
+    writeFileSync(join(cwd, '.smt', 'features', 'demo', 'artifacts', 'e2e.log'), 'ok');
+    const state = stateWith({ current_stage: 'workflow-e2e' });
+    const input = {
+      tool_name: 'Write',
+      tool_input: { file_path: join(cwd, 'verify_report.md'), content: 'result: pass' },
+    };
+    const hits = runAll(input, state, cwd);
+    const r14 = hits.find(h => h.rule === 'R14');
+    assert.ok(r14, 'R14 must fire when state.scenarios is empty');
+    assert.equal(r14.severity, 'CRITICAL');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R14: block E2E pass claim when effect_evidence is ack_only', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    mkdirSync(join(cwd, '.smt', 'features', 'demo', 'artifacts'), { recursive: true });
+    writeFileSync(join(cwd, '.smt', 'features', 'demo', 'artifacts', 'e2e.log'), 'ok');
+    const state = stateWith({ current_stage: 'workflow-e2e' });
+    state.scenarios = [{
+      name: 'admin-impersonates-user',
+      surface: 'ui',
+      ack_evidence: { type: 'dom_state_query', reference: 'artifacts/ui/banner.png' },
+      effect_evidence: { type: 'ack_only', reference: 'artifacts/ui/banner.png' },
+    }];
+    const input = {
+      tool_name: 'Write',
+      tool_input: { file_path: join(cwd, 'verify_report.md'), content: 'result: pass' },
+    };
+    const hits = runAll(input, state, cwd);
+    const r14 = hits.find(h => h.rule === 'R14');
+    assert.ok(r14, 'R14 must fire for ack_only effect evidence');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R14: allow E2E pass claim when effect_evidence is populated', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    mkdirSync(join(cwd, '.smt', 'features', 'demo', 'artifacts'), { recursive: true });
+    writeFileSync(join(cwd, '.smt', 'features', 'demo', 'artifacts', 'e2e.log'), 'ok');
+    const state = stateWith({ current_stage: 'workflow-e2e' });
+    state.scenarios = [{
+      name: 'admin-impersonates-user',
+      surface: 'ui',
+      ack_evidence: { type: 'dom_state_query', reference: 'artifacts/ui/banner.png' },
+      effect_evidence: { type: 'dom_diff', reference: 'artifacts/ui/dashboard.png' },
+    }];
+    const input = {
+      tool_name: 'Write',
+      tool_input: { file_path: join(cwd, 'verify_report.md'), content: 'result: pass' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R14'), undefined, 'R14 must not fire when effect evidence is valid');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

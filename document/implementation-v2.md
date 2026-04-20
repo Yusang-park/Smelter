@@ -89,7 +89,7 @@ All 6 review skills (rows 2, 4, 6, 9, 11, 12) enforce **Multi-Pass Verification*
 
 Mode-unrestricted (Iron Law #6). Two shipped:
 - `skills/deep-interview/SKILL.md` — planning-first requirement discovery
-- `skills/queue/SKILL.md` — `/queue <intent>` soft redirect
+- `commands/queue.md` — `/queue <intent>` soft redirect
 
 ---
 
@@ -115,7 +115,7 @@ Mode-unrestricted (Iron Law #6). Two shipped:
 | `SubagentStop`       | `subagent-tracker.mjs stop`          | Sub-agent lifecycle tracking                                        |
 | `PreCompact`         | `pre-compact.mjs`                    | Pre-compaction bookkeeping                                          |
 | `Stop`               | `auto-confirm.mjs`                   | §11 decision tree → queue-drop + emit block                         |
-| `Stop`               | `stop-e2e.mjs`                       | E2E reminder                                                        |
+| `Stop`               | `stop-stage-enforcer.mjs`            | Workflow stage-progression guard (terminal-stage requirement); E2E reminder is now a fallback |
 | `SessionEnd`         | `session-end.mjs`                    | Doc-sync check + forbidden-reference scan                           |
 
 ### 2-2. Library scripts (imported, not hooked)

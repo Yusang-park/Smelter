@@ -226,9 +226,63 @@ function writeAtomic(path, content) {
   renameSync(tmp, path);
 }
 
-function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null) {
+// Phase 11 C — decide whether this prompt should create a NEW feature directory
+// or reuse the currently-active one for this session.
+//
+// Rules:
+//   - Explicit slash command (source === 'slash')           → new feature
+//   - Prompt mentions "새 feature" / "새 기능" / "다른 작업"  → new feature
+//   - Otherwise, if per-session pointer exists AND its state
+//     is not yet done                                       → REUSE existing
+//   - No active pointer / state.done                        → new feature
+//
+// Per-session scoping is intentional: one Claude Code invocation may span
+// multiple concurrent sessions sharing .smt/; key off session_id so one
+// session does not drag another session's active feature around.
+function shouldCreateNewFeature(directory, sessionId, prompt, source, commandName = '') {
+  if (source === 'slash') return { create: true, reason: 'slash-command' };
+  if (commandName === 'investigate') return { create: true, reason: 'investigate-command-reseed' };
+  const text = String(prompt || '');
+  if (/새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작/i.test(text)) {
+    return { create: true, reason: 'explicit-new-intent' };
+  }
+  if (!sessionId) return { create: true, reason: 'no-session' };
+  const sessionPointer = join(directory, '.smt', 'state', `active-feature-${sessionId}.json`);
+  if (!existsSync(sessionPointer)) return { create: true, reason: 'no-active-pointer' };
+  try {
+    const ptr = JSON.parse(readFileSync(sessionPointer, 'utf-8'));
+    if (!ptr?.slug) return { create: true, reason: 'pointer-missing-slug' };
+    const statePath = join(directory, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`);
+    if (!existsSync(statePath)) return { create: true, reason: 'state-missing' };
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    if (state.current_stage === 'done') return { create: true, reason: 'prior-done' };
+    return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath };
+  } catch { return { create: true, reason: 'pointer-parse-error' }; }
+}
+
+function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic') {
   const mode = COMMAND_TO_MODE[commandName];
-  if (!mode) return; // cancel/queue/build — not a v2 workflow command
+  if (!mode) return; // cancel, queue — utility commands, not v2 workflow modes
+
+  // Phase 11 C: reuse active feature for natural-language follow-ups.
+  const decision = shouldCreateNewFeature(directory, sessionId, prompt, source, commandName);
+  if (!decision.create) {
+    const smtStateDir = join(directory, '.smt', 'state');
+    try {
+      if (!existsSync(smtStateDir)) mkdirSync(smtStateDir, { recursive: true });
+      // Session-scoped pointer is the primary. Non-scoped `active-feature.json`
+      // is only written when session_id is absent (legacy CLI / test sim).
+      // Global `.smt/active_task` is no longer written — concurrent sessions
+      // would overwrite each other. See migration-investigation.md.
+      if (sessionId) {
+        writeAtomic(join(smtStateDir, `active-feature-${sessionId}.json`), JSON.stringify({ slug: decision.reuseSlug, session_id: sessionId, updated_at: Date.now() }, null, 2));
+      } else {
+        writeAtomic(join(smtStateDir, 'active-feature.json'), JSON.stringify({ slug: decision.reuseSlug, session_id: '', updated_at: Date.now() }, null, 2));
+      }
+      printTag(`Reuse active feature: ${decision.reuseSlug} (session=${sessionId || 'none'})`);
+    } catch {}
+    return;
+  }
 
   // Prefer slash-args for slug derivation (ignore the leading slash-command literal).
   // For natural-language magic-keyword invocations, args is empty so we fall back
@@ -314,8 +368,8 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
           machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
         }
         writeState(stateJsonPath, machineState);
-        // active_task pointer consumed by critic-watchdog.readActiveState.
-        writeAtomic(join(directory, '.smt', 'active_task'), stateJsonPath);
+        // Global `.smt/active_task` is no longer written — per-session pointer
+        // below (line near activeFeaturePointer write) is authoritative.
       } catch (err) {
         // Never block command detection on state seeding — log-and-continue.
         printTag(`State seed failed: ${err.message}`);
@@ -335,27 +389,36 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
       updated_at: new Date().toISOString(),
     });
 
-    // active-feature pointer (atomic)
-    writeAtomic(pointerPath, JSON.stringify({ slug, session_id: sessionId || '', updated_at: Date.now() }, null, 2));
+    // Session-scoped active-feature pointer is primary. Non-scoped pointer
+    // is written only when session_id is absent (legacy CLI / sim path).
     if (sessionId) {
       writeAtomic(join(smtStateDir, `active-feature-${sessionId}.json`), JSON.stringify({ slug, session_id: sessionId, updated_at: Date.now() }, null, 2));
+    } else {
+      writeAtomic(pointerPath, JSON.stringify({ slug, session_id: '', updated_at: Date.now() }, null, 2));
     }
   } catch {}
 }
 
-// Clear active-feature pointer — called on /cancel and /queue so the next
-// UserPromptSubmit does not silently resume a cancelled/redirected feature.
-function clearActiveFeature(directory) {
-  try {
-    const p = join(directory, '.smt', 'state', 'active-feature.json');
-    if (existsSync(p)) unlinkSync(p);
-  } catch {}
+// Clear active-feature pointer(s) — called on /cancel so the next
+// UserPromptSubmit does not silently resume a cancelled feature. Covers:
+//   - per-session pointer `.smt/state/active-feature-<sessionId>.json`
+//   - non-scoped pointer `.smt/state/active-feature.json` (legacy / sim)
+//   - legacy `.smt/active_task` pointer (transitional cleanup)
+// Without unlinking per-session, a cancelled chain is silently resurrected
+// by the next prompt since session-aware consumers still read it.
+function clearActiveFeature(directory, sessionId) {
+  const tryUnlink = (p) => { try { if (existsSync(p)) unlinkSync(p); } catch {} };
+  tryUnlink(join(directory, '.smt', 'state', 'active-feature.json'));
+  if (sessionId) {
+    tryUnlink(join(directory, '.smt', 'state', `active-feature-${sessionId}.json`));
+  }
+  tryUnlink(join(directory, '.smt', 'active_task'));
 }
 
-function activateHarnessState(directory, commandName, prompt, sessionId, args = '', chainedModes = null) {
+function activateHarnessState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic') {
   const config = COMMAND_CONFIG[commandName];
   if (!config) return;
-  seedWorkflowState(directory, commandName, prompt, sessionId, args, chainedModes);
+  seedWorkflowState(directory, commandName, prompt, sessionId, args, chainedModes, source);
 }
 
 function createSkillInvocation(skillName, originalPrompt, args = '', hint = null) {
@@ -486,7 +549,7 @@ async function main() {
     if (detected.name === 'cancel') {
       printTag('Command: /cancel');
       const result = propagateHardCancel(directory, 'user /cancel command');
-      clearActiveFeature(directory);
+      clearActiveFeature(directory, sessionId);
       const killedMsg = result.killed.length > 0 ? `\nKilled: ${result.killed.join(', ')}` : '';
       const clearedMsg = result.cleared.length > 0 ? `\nCleared: ${result.cleared.join(', ')}` : '';
       console.log(JSON.stringify(createHookOutput(
@@ -513,7 +576,7 @@ async function main() {
     }
 
     // Harness commands — activate state
-    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '', detected.chained_modes || null);
+    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '', detected.chained_modes || null, detected.source || 'magic');
     if (tracer) {
       try { tracer.recordModeChange(directory, sessionId, 'none', detected.name); } catch {}
     }

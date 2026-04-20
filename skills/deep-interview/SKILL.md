@@ -1,6 +1,6 @@
 ---
 name: deep-interview
-description: Smelter deep interview for planning-first requirement discovery before /build or /fix execution
+description: Smelter deep interview for planning-first requirement discovery before /plan, /implement, or /fix execution
 argument-hint: "[--quick|--standard|--deep] <idea or vague description>"
 ---
 
@@ -41,9 +41,9 @@ By the end of the interview, produce or refine:
 - scope / non-goals
 - acceptance criteria
 - major risks
-- candidate execution lane: `/build` or `/fix`
+- candidate execution lane: `/plan`, `/implement`, or `/fix`
 
 ## Handoff
 - If deep planning is complete, route back into Smelter planning state and continue toward execution.
 - If the user wants planning only, stop after `.smt` planning artifacts are updated.
-- If the user wants execution, route to `/build` or `/fix` based on the clarified scope.
+- If the user wants execution, route to `/plan`, `/implement`, or `/fix` based on the clarified scope.

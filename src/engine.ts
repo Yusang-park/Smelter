@@ -62,7 +62,7 @@ function buildMemoryContext(memory: ProjectMemory): string {
  *
  * Context injection (TDD + caveman) is handled by the SessionStart hook.
  * E2E interface (UI/CLI/API/Query/Hook) is surface-based, enforced by
- * Stop hook chain (stop-e2e.mjs). runWithHarness stops at model call.
+ * Stop hook chain (stop-stage-enforcer.mjs). runWithHarness stops at model call.
  */
 export async function runWithHarness(
   prompt: string,
@@ -126,7 +126,7 @@ export async function runWithTask(
     : prompt;
   const result = await runWithHarness(enrichedPrompt, cwd, options);
 
-  // Step 3: Move to review (E2E artifacts are saved by stop-e2e.mjs hook)
+  // Step 3: Move to review (E2E artifacts are saved by stop-stage-enforcer.mjs hook)
   if (result.status === 'completed' || result.status === 'failed') {
     updateTask(cwd, task.id, { column: 'review' });
     console.log(`[harness] Task ${task.id} → Review (awaiting approval)`);

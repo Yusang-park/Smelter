@@ -17,8 +17,8 @@ verification_rounds:
     focus: contradiction
     prompt_template: templates/verification/round-2-contradiction.md
   - n: 3
-    focus: edge_case
-    prompt_template: templates/verification/round-3-edge-case.md
+    focus: effect_verification
+    prompt_template: templates/verification/round-3-effect-verification.md
 gate:
   postcondition:
     - file_exists: "e2e_review.md"
@@ -35,6 +35,7 @@ Reviews E2E artifacts (video, screenshots, logs). Evaluates scenario coverage an
 - `## Scenario Coverage` — list of covered scenarios
 - `## Missing Cases` — missing cases (if any)
 - `## Artifacts Quality` — video/log quality assessment
+- `## Effect Verification` — per-scenario ack vs effect classification and any ack-only failures
 - `## Verdict` — `pass` / `fail`
 
 ## Fail conditions
@@ -55,7 +56,7 @@ This skill runs **3 mandatory rounds** before declaring `pass`. Each round has a
 |-------|-------|----------|
 | 1 | Omission | Are any required artifacts (video, screenshot, log) or scenarios missing? |
 | 2 | Contradiction | Do artifacts conflict with each other or with the implementation diff/plan? |
-| 3 | Edge case | Are artifact-coverage scenarios for errors, retries, slow networks, and boundary inputs present? |
+| 3 | Effect verification | Does each claimed success scenario distinguish ack from effect, and does the evidence prove the target effect actually materialized instead of only the acknowledgement signal? |
 
 ### Agent assignment per round
 

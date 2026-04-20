@@ -148,11 +148,10 @@ Smelter v2.3.0은 고정 Step 1..10 파이프라인을 스킬 조합 모델로 �
 - `scripts/integration-workflow.test.mjs`, `step-engine.test.mjs`, `workflow-seeder.test.mjs`
 - `scripts/lib/yaml-parser.mjs`
 - `scripts/test-max-attempts.ts`, `test-queue-session-isolation.mjs`
-- `commands/build.md` (→ `/implement`로 대체)
 - `document-backup/` (legacy 스냅샷)
 
 **커맨드 surface 변경**:
-- `/build` → 퇴장. `/implement` (경량) 또는 `/plan` (신규 기능 / 리팩토링 기획 필요) 사용.
+- `build` 커맨드 (v1에서 슬래시 형태로 호출됨) → 퇴장. `/implement` (경량) 또는 `/plan` (신규 기능 / 리팩토링 기획 필요) 사용.
 - 자연어 입력이 이제 자동 라우팅됨; classifier는 규칙 기반 (Iron Law #2 — 라우팅에 LLM 추론 금지).
 
 **State 스키마**:
@@ -165,7 +164,7 @@ Smelter v2.3.0은 고정 Step 1..10 파이프라인을 스킬 조합 모델로 �
 ### 마이그레이션
 
 - `state/workflow.json`만 있는 feature 디렉터리는 `feature-version-check.mjs`가 `orphan` 표시. 이관: `scripts/state-schema.mjs`의 `createInitialState(...)`로 v2 `<task>.state.json` 생성.
-- `/build` 호출은 `/implement` (기존 코드 기반 경량 빌드) 또는 `/plan` (greenfield / 기획 필요한 리팩토링)로 교체.
+- 퇴장한 `build` 커맨드 호출은 `/implement` (기존 코드 기반 경량 빌드) 또는 `/plan` (greenfield / 기획 필요한 리팩토링)로 교체.
 - 기존 `max_retry` 동작: producer chain 라우팅으로 대체. 필드 제거; 상류 실패는 자동으로 producer 스킬로 라우팅됨.
 
 ### 도구 & 감사

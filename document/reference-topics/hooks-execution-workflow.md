@@ -136,8 +136,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - `data.prompt`, `data.message.content`, 또는 `data.parts[].text` 에서 추출
 
 2. **명시적 커맨드 매칭** (`extractExplicitHarnessCommand`)
-   - 허용 커맨드: `/plan`, `/build`, `/fix`, `/cancel`, `/queue`
-   - 정규식: `^/(plan|build|fix|cancel|queue)\\b`
+   - 허용 커맨드: `/plan`, `/simple-fix`, `/fix`, `/investigate`, `/implement`, `/verify`, `/cancel`, `/queue`
+   - 정규식: `^/(plan|simple-fix|fix|investigate|implement|verify|cancel|queue)\\b` (은퇴된 `build` 토큰은 과거 호환을 위해 정규식에만 잔존하지만 `COMMAND_TO_MODE`에 매핑이 없어 워크플로우 모드로 라우팅되지 않음)
    - 자연어 질문이나 메타 대화는 감지하지 않음
 
 3. **상태 파일 생성** (`activateHarnessState`)
@@ -402,7 +402,9 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 
 ---
 
-### 8-B. `stop-e2e.mjs` (timeout: 120s)
+### 8-B. `stop-stage-enforcer.mjs` (timeout: 120s)
+
+> **Renamed from `stop-stage-enforcer.mjs` (v2.4.x).** Primary role: workflow stage-progression guard — block Stop when fix/implement/plan modes haven't reached a terminal stage (`workflow-human-check`, `done`, or chain end). Active-state resolution is **session-aware**: `findActiveStatePath(cwd, sessionId)` prefers `.smt/state/active-feature-<sessionId>.json` over the global `.smt/active_task` pointer to prevent concurrent-session pointer races. The legacy E2E-reminder behavior described below is preserved as a fallback.
 
 프론트엔드 변경 사전 필터링 + AI 판단 기반 E2E 위임. 스크립트 단계에서 백엔드/테스트/스크립트 파일을 제외하고, 프론트엔드 변경 + 키워드 매칭된 E2E 테스트만 최소한으로 Claude에 위임한다. 토큰 절약을 위해 관련 없는 변경은 Claude에 전달하지 않는다.
 
@@ -524,7 +526,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
   │                          │  [Claude: 다시 응답 완료]     │
   │                          │──⑧ Stop─────────────────────→│
   │                          │   persistent-mode.cjs         │ 미완료 작업 있음 → BLOCK!
-  │                          │   stop-e2e.mjs                │ 변경 파일 + E2E 목록 프롬프트 출력
+  │                          │   stop-stage-enforcer.mjs                │ 변경 파일 + E2E 목록 프롬프트 출력
   │                          │←──{ decision: "block" }───────│ Claude가 관련 E2E만 선택 실행
   │                          │                               │
   │                          │──(수정 반복)                   │
@@ -532,7 +534,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
   │                          │  [/cancel 호출로 모드 종료]   │
   │                          │──⑧ Stop─────────────────────→│
   │                          │   persistent-mode.cjs         │ 상태 파일 없음 → continue
-  │                          │   stop-e2e.mjs                │ 변경 없음 → exit 0 (skip)
+  │                          │   stop-stage-enforcer.mjs                │ 변경 없음 → exit 0 (skip)
   │                          │←──{ continue: true }──────────│
   │                          │                               │
   │                          │──⑨ SessionEnd────────────────→│
@@ -593,7 +595,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 | subagent-tracker.mjs | `~/.claude/scripts/` | SubagentStart/Stop | 3s/5s |
 | pre-compact.mjs | `~/.claude/scripts/` | PreCompact | 10s |
 | persistent-mode.cjs | `~/.claude/scripts/` | Stop | 10s |
-| stop-e2e.mjs | `~/.claude/scripts/` | Stop | 120s |
+| stop-stage-enforcer.mjs | `~/.claude/scripts/` | Stop | 120s |
 | session-end.mjs | `~/.claude/scripts/` | SessionEnd | 10s |
 
 ---

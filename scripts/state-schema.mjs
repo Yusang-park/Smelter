@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { validateEvidenceIntegrity } from './state-validator.mjs';
 
 export const SCHEMA_VERSION = '2.4.1';
 
@@ -40,14 +41,19 @@ export const CAUSE_ENUM = Object.freeze([
   'verification_failed', // Multi-Pass Verification round fail (workflow-v2.md §9-3)
   'artifact_missing',    // E2E pass claim with no real-interface artifact (§8)
   'mocked_interface',    // E2E run mocked the interface under test (§8)
+  'effect_unverified',   // E2E run asserted only ack, not the target effect (§8)
 ]);
 
 export const VERIFICATION_FOCUS_ENUM = Object.freeze([
-  'omission', 'contradiction', 'edge_case',
+  'omission', 'contradiction', 'edge_case', 'effect_verification',
 ]);
 
 export const EVIDENCE_TYPE_ENUM = Object.freeze([
   'exit_code', 'file_absent', 'parse', 'user_input', 'diff', 'file_present',
+]);
+
+export const EFFECT_EVIDENCE_TYPE_ENUM = Object.freeze([
+  'dom_diff', 'dom_state_query', 'http_get_after', 'fs_diff', 'followup_cmd', 'db_select', 'stdout_parse', 'local_ui_toggle',
 ]);
 
 export const TARGET_TYPE_ENUM = Object.freeze([
@@ -82,6 +88,7 @@ export function createInitialState({ taskId, mode, chainedModes = [] }) {
     exempt: { tdd: false, e2e: false },
     team_runtime: {},
     events: [],
+    scenarios: [],
     test_cycles: [],
     active_feedback: [],
     sub_tasks: [],
@@ -175,6 +182,42 @@ export function validate(state) {
     if (e.evidence && !EVIDENCE_TYPE_ENUM.includes(e.evidence.type)) push(`events[${i}].evidence.type`, `invalid: ${e.evidence.type}`);
   }
 
+  if (state.scenarios !== undefined) {
+    if (!Array.isArray(state.scenarios)) push('scenarios', 'must be array');
+    else for (let i = 0; i < state.scenarios.length; i++) {
+      const s = state.scenarios[i];
+      if (!s || typeof s !== 'object') { push(`scenarios[${i}]`, 'must be object'); continue; }
+      if (typeof s.name !== 'string' || !s.name) push(`scenarios[${i}].name`, 'required string');
+      if (typeof s.surface !== 'string' || !s.surface) push(`scenarios[${i}].surface`, 'required string');
+      if (!s.ack_evidence || typeof s.ack_evidence !== 'object') {
+        push(`scenarios[${i}].ack_evidence`, 'required object');
+      } else {
+        if (typeof s.ack_evidence.reference !== 'string' || !s.ack_evidence.reference) {
+          push(`scenarios[${i}].ack_evidence.reference`, 'required string');
+        }
+      }
+      if (!s.effect_evidence || typeof s.effect_evidence !== 'object') {
+        push(`scenarios[${i}].effect_evidence`, 'required object');
+      } else {
+        if (!EFFECT_EVIDENCE_TYPE_ENUM.includes(s.effect_evidence.type)) {
+          push(`scenarios[${i}].effect_evidence.type`, `invalid: ${s.effect_evidence.type}`);
+        }
+        if (typeof s.effect_evidence.reference !== 'string' || !s.effect_evidence.reference) {
+          push(`scenarios[${i}].effect_evidence.reference`, 'required string');
+        }
+      }
+    }
+  }
+
+  if (state.scenarios === undefined && Array.isArray(state.events)) {
+    const hasE2ePass = state.events.some(e =>
+      e && typeof e === 'object' &&
+      ['workflow-e2e', 'workflow-verify'].includes(e.skill) &&
+      e.result === 'pass'
+    );
+    if (hasE2ePass) push('scenarios', 'required for workflow-e2e/workflow-verify pass events');
+  }
+
   if (!Array.isArray(state.test_cycles)) push('test_cycles', 'must be array');
   if (!Array.isArray(state.active_feedback)) push('active_feedback', 'must be array');
   else for (let i = 0; i < state.active_feedback.length; i++) {
@@ -199,6 +242,8 @@ export function writeState(path, state) {
   state.updated_at = new Date().toISOString();
   const errs = validate(state);
   if (errs.length) throw new Error(`state validation failed:\n  ${errs.join('\n  ')}`);
+  const evidenceErrs = validateEvidenceIntegrity(state, path);
+  if (evidenceErrs.length) throw new Error(`state validation failed:\n  ${evidenceErrs.join('\n  ')}`);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(state, null, 2) + '\n', 'utf-8');
 }

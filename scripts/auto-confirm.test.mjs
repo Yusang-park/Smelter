@@ -397,6 +397,19 @@ test('H2: advance from workflow-investigate → workflow-investigate-review', ()
   assert.equal(d.action, 'advance');
   assert.equal(d.payload.skill, 'workflow-investigate-review');
 });
+
+test('investigate-review pass halts for user mode decision in investigate mode', () => {
+  const s = baseState({
+    mode: 'investigate',
+    allowed_skills: ['workflow-investigate', 'workflow-investigate-review'],
+    current_stage: 'workflow-investigate-review',
+    completed_stages: ['workflow-investigate'],
+    events: [passEvent('workflow-investigate-review')],
+  });
+  const d = decide({ state: s, lastAssistantText: 'mode_transition gate' });
+  assert.equal(d.action, 'halt');
+  assert.match(d.reason, /investigate mode user decision/);
+});
 test('H2: advance at terminal stage falls back to workflow-human-check', () => {
   // No explicit next after workflow-team-code-review except human-check.
   const s = baseState({

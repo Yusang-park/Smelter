@@ -69,6 +69,9 @@ Disallowed in Phase 3:
 - Calling an internal handler function directly instead of through the interface.
 - Mocking the interface under test (MSW for the HTTP surface, stubs for the DB driver, etc.).
 - Running only `pnpm test` / `vitest run` — that's Phase 1.
+- Recording only an acknowledgement signal (toast, banner, modal close, spinner idle, HTTP 2xx, exit code 0) without separately asserting the target effect that was supposed to materialize.
+
+Phase 3 inherits the full `workflow-e2e` real-interface contract, including the Effect-vs-Ack rule and `state.json.scenarios[].effect_evidence` requirement. A run with artifacts but no effect evidence still fails Phase 3.
 
 Scope by the changed surface; full regression only on explicit user request (`workflow-human-check`).
 

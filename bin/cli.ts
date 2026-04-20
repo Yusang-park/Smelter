@@ -2,7 +2,7 @@
 import { runWithTask } from '../src/engine.js';
 import { loadTasks, findTask, updateTask, createTask, getTasksByColumn } from '../src/store.js';
 import { runPlaywright } from '../src/runners/playwright.js';
-// artifacts are saved by stop-e2e.mjs hook, not by the CLI directly
+// artifacts are saved by stop-stage-enforcer.mjs hook, not by the CLI directly
 import { loadProjectMemory, autoDetectAndSave, addNote, addDirective } from '../src/project-memory.js';
 import { listSkills, loadSkill } from '../src/skill-loader.js';
 import { listAgents, loadAgent } from '../src/agent-loader.js';
@@ -71,7 +71,7 @@ async function main() {
 
       console.log(`\n[Task] ${task.id} — ${task.column}`);
       console.log(`[Result] ${result.status}`);
-      // E2E interface results are reported by the Stop hook chain (stop-e2e.mjs),
+      // E2E interface results are reported by the Stop hook chain (stop-stage-enforcer.mjs),
       // not by the engine. See doc/workflow.md Step 8.
       console.log(`\nRun 'smelter review approve ${task.id}' to approve`);
       process.exit(result.status === 'completed' ? 0 : 1);
