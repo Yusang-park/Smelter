@@ -4,11 +4,11 @@
 //
 // Replaces the previous stop-e2e.mjs (E2E-only reminder) with a unified
 // stage-enforcement layer:
-//   1. Workflow modes (fix / implement / plan) cannot halt before reaching
-//      a terminal stage (workflow-human-check, done, or the mode's last
-//      allowed_skill). When current_stage is non-terminal we emit
-//      `decision: block` with a "advance to <next>" reason so the agent
-//      resumes via the next workflow skill.
+//   1. Workflow modes cannot halt before reaching a terminal stage
+//      (workflow-human-check, done, or the mode's last allowed_skill).
+//      When current_stage is non-terminal we emit `decision: block` with a
+//      "advance to <next>" reason so the agent resumes via the next workflow
+//      skill.
 //   2. Mid-flow stall detection: when session-tracked source files exist
 //      AND the stage is non-terminal, the block reason is enriched with a
 //      "mid-flow" hint so the agent knows to resume rather than report
@@ -17,7 +17,7 @@
 //      when the next stage is workflow-e2e and summary.json marks
 //      e2e_required, the reason includes the changed-file count and type
 //      so the prior UX is intact.
-//   4. Non-Smelter project (no .smt) or non-workflow modes → SKIP.
+//   4. Non-Smelter project (no .smt) → SKIP.
 //
 // Source of truth: state.json.allowed_skills + state.json.completed_stages.
 // summary.json is read only for surface-aware reminder enhancement.
@@ -37,8 +37,13 @@ export const STUCK_LOOP_THRESHOLD = 3;
 
 const __filename = fileURLToPath(import.meta.url);
 
-// Modes whose Stop must reach a terminal stage before halting.
-export const WORKFLOW_MODES_FOR_STAGE_GUARD = new Set(['fix', 'implement', 'plan']);
+// Modes whose Stop must reach a terminal stage before halting. All Smelter
+// workflow modes are included so each mode's workflow chain is properly
+// enforced. Single-stage modes (simple_fix / verify) pass via
+// isTerminalStage() because their only allowed_skill is the last.
+export const WORKFLOW_MODES_FOR_STAGE_GUARD = new Set([
+  'fix', 'implement', 'plan', 'investigate', 'verify', 'simple_fix',
+]);
 
 // Always-terminal stages — any mode reaching these may halt.
 export const ALWAYS_TERMINAL_STAGES = new Set(['workflow-human-check', 'done']);
@@ -76,12 +81,22 @@ export function findActiveStatePath(cwd, sessionId) {
   return null;
 }
 
-export function getActiveFeatureSummary(projectDir) {
-  const pointer = readJsonFile(join(projectDir, '.smt', 'state', 'active-feature.json'));
-  if (!pointer?.slug) return null;
-  const summary = readJsonFile(join(projectDir, '.smt', 'features', pointer.slug, 'state', 'summary.json'));
-  if (!summary) return null;
-  return { slug: pointer.slug, ...summary };
+export function getActiveFeatureSummary(projectDir, sessionId) {
+  const candidates = [];
+  if (sessionId) {
+    candidates.push(join(projectDir, '.smt', 'state', `active-feature-${sessionId}.json`));
+  }
+  candidates.push(join(projectDir, '.smt', 'state', 'active-feature.json'));
+
+  for (const pointerPath of candidates) {
+    const pointer = readJsonFile(pointerPath);
+    if (!pointer?.slug) continue;
+    const summary = readJsonFile(join(projectDir, '.smt', 'features', pointer.slug, 'state', 'summary.json'));
+    if (!summary) continue;
+    return { slug: pointer.slug, ...summary };
+  }
+
+  return null;
 }
 
 export function trackingPathFor(cwd) {
@@ -261,8 +276,8 @@ export function evaluate({ state, summary, sourceFiles, cwd }) {
     return { action: 'continue' };
   }
 
-  // Non-workflow modes (verify / simple_fix / investigate) → don't enforce
-  // stage progression; defer to legacy E2E reminder if applicable.
+  // Modes outside the workflow set (none currently, but guards against future
+  // additions) → don't enforce stage progression; defer to legacy E2E reminder.
   if (!WORKFLOW_MODES_FOR_STAGE_GUARD.has(state.mode)) {
     if (summary?.e2e_required && !summary?.e2e_done && summary?.status !== 'complete'
         && sourceFiles && sourceFiles.length > 0) {
@@ -305,7 +320,7 @@ function main() {
 
   const statePath = findActiveStatePath(cwd, stdinJson.session_id);
   const state = statePath ? readJsonFile(statePath) : null;
-  const summary = getActiveFeatureSummary(cwd);
+  const summary = getActiveFeatureSummary(cwd, stdinJson.session_id);
   const trackedRaw = readTrackedFiles(cwd) || [];
   const sourceFiles = trackedRaw.filter(isSourceFile);
 

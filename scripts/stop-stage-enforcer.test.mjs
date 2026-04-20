@@ -460,6 +460,71 @@ test('C15 state change between Stops resets loop counter', () => {
   } finally { tearDown(dir, sessionId); }
 });
 
+console.log('\n[broadened workflow-mode coverage]');
+
+test('C16 investigate mode at workflow-investigate (non-terminal) → block + advance', () => {
+  const state = makeState({
+    mode: 'investigate',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: ['workflow-investigate', 'workflow-investigate-review'],
+  });
+  const dir = setupProject({ state });
+  try {
+    const res = runHook({ cwd: dir }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block', 'investigate non-terminal stage must block');
+    assert.match(out.reason, /workflow-investigate-review/, 'must advance to review stage');
+  } finally { tearDown(dir); }
+});
+
+test('C17 summary is resolved via per-session pointer when sessionId provided', () => {
+  // Two features: feature-A (non-scoped) has e2e_required=true; feature-B
+  // (per-session) has e2e_required=false. The hook must use feature-B's
+  // summary when sessionId is provided, NOT accidentally hit feature-A's.
+  const dir = mkdtempSync(join(tmpdir(), 'sse-'));
+  const sessionId = 'sess-summary-iso';
+  try {
+    const stateRoot = join(dir, '.smt', 'state');
+    mkdirSync(stateRoot, { recursive: true });
+
+    // Non-scoped → feature-A with e2e_required summary
+    const slugA = 'feat-a-nonscope';
+    mkdirSync(join(dir, '.smt', 'features', slugA, 'task'), { recursive: true });
+    mkdirSync(join(dir, '.smt', 'features', slugA, 'state'), { recursive: true });
+    const stateA = makeState({
+      mode: 'implement', current_stage: 'workflow-coding',
+      completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'],
+      allowed_skills: FIX_ALLOWED,
+    });
+    writeFileSync(join(dir, '.smt', 'features', slugA, 'task', `${slugA}.state.json`), JSON.stringify(stateA));
+    writeFileSync(join(dir, '.smt', 'features', slugA, 'state', 'summary.json'), JSON.stringify({ e2e_required: true, e2e_done: false, status: 'in_progress' }));
+    writeFileSync(join(stateRoot, 'active-feature.json'), JSON.stringify({ slug: slugA }));
+
+    // Per-session → feature-B with no e2e_required
+    const slugB = 'feat-b-session';
+    mkdirSync(join(dir, '.smt', 'features', slugB, 'task'), { recursive: true });
+    mkdirSync(join(dir, '.smt', 'features', slugB, 'state'), { recursive: true });
+    const stateB = makeState({
+      mode: 'fix', current_stage: 'workflow-coding',
+      completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'],
+      allowed_skills: FIX_ALLOWED,
+    });
+    writeFileSync(join(dir, '.smt', 'features', slugB, 'task', `${slugB}.state.json`), JSON.stringify(stateB));
+    writeFileSync(join(dir, '.smt', 'features', slugB, 'state', 'summary.json'), JSON.stringify({ e2e_required: false, status: 'in_progress' }));
+    writeFileSync(join(stateRoot, `active-feature-${sessionId}.json`), JSON.stringify({ slug: slugB }));
+
+    writeFileSync(trackingPathFor(dir), JSON.stringify(['scripts/foo.mjs']));
+    const res = runHook({ cwd: dir, session_id: sessionId }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block', 'B is non-terminal → must block');
+    assert.doesNotMatch(out.reason, /\[E2E\]/, 'must NOT use feature-A summary (no [E2E] tag)');
+  } finally {
+    try { unlinkSync(trackingPathFor(dir)); } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log('');
 console.log(`stop-stage-enforcer: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

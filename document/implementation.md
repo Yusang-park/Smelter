@@ -139,3 +139,14 @@ Closes the defect where concurrent Claude Code sessions sharing a project would 
 - `scripts/pre-tool-enforcer.test.mjs` — unchanged; `.smt/active_task` write-block is still tested and still holds (defense-in-depth).
 
 Artifacts: `.smt/features/왜-또-휴먼-체크-안하지/task/{migration-investigation.md,tasks.md,tasker_review.md}`.
+
+## Phase 14 — stop-stage-enforcer recovery + entry-stage seed + broadened guard (v2.4.6)
+
+Closes three defects observed 2026-04-20 that caused `/fix`/`/investigate`/`/plan` to stall in a "same state" Stop loop:
+
+- [x] F1. **File corruption repaired** — `scripts/stop-stage-enforcer.mjs` previously contained a pasted diff artifact at line 5786 plus scattered non-ASCII glyphs (lines 212/492/805/940/1095/1244/1374/1510/1626–5790) that Node ESM rejected with `SyntaxError`. File reauthored cleanly (≈330 lines) preserving all prior exports.
+- [x] F2. **Entry stage seeded** — `scripts/keyword-detector.mjs:seedWorkflowState` now sets `state.current_stage = modeCfg.entry_skill` when the entry skill is in `allowed_skills`. Prevents Stop from blocking on `current_stage=null` every round; the first `workflow-*` skill invocation now advances from a known entry stage instead of guessing. Tests: `scripts/test-keyword-detector.mjs` (expects `workflow-investigate` for `/fix`).
+- [x] F3. **Guard set broadened** — `WORKFLOW_MODES_FOR_STAGE_GUARD` extended from `{fix, implement, plan}` to include `{investigate, verify, simple_fix}`. All Smelter modes now enforce terminal-stage exit. Single-stage modes (`verify`, `simple_fix`) pass via `isTerminalStage()` since their only allowed_skill is the last. Tests: `scripts/stop-stage-enforcer.test.mjs` C16 (investigate non-terminal → block + advance).
+- [x] F4. **Session-aware summary** — `stop-stage-enforcer.main()` now calls `getActiveFeatureSummary(cwd, stdinJson.session_id)` so a concurrent session's non-scoped pointer can no longer supply the wrong E2E surface. Tests: `scripts/stop-stage-enforcer.test.mjs` C17 (two features, session selects the right summary).
+
+Totals: `stop-stage-enforcer.test.mjs` 17/17, `test-keyword-detector.mjs` 6/6, `workflow-scenarios.test.mjs` 111/111, `auto-confirm.test.mjs` 86/86, `critic-watchdog.test.mjs` 9/9.

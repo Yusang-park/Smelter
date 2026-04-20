@@ -98,7 +98,7 @@ test('/fix seeds .state.json with mode=fix and allowed_skills from modes/fix.jso
 
     const state = readJson(join(taskDir, stateFiles[0]));
     assert.equal(state.mode, 'fix');
-    assert.equal(state.current_stage, null);
+    assert.equal(state.current_stage, 'workflow-investigate');
     assert.ok(state.allowed_skills.includes('workflow-investigate'),
       'allowed_skills must include workflow-investigate (the /fix entry skill)');
     assert.ok(state.allowed_skills.includes('workflow-human-check'),

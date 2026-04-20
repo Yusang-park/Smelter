@@ -404,7 +404,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 
 ### 8-B. `stop-stage-enforcer.mjs` (timeout: 120s)
 
-> **Renamed from `stop-stage-enforcer.mjs` (v2.4.x).** Primary role: workflow stage-progression guard — block Stop when fix/implement/plan modes haven't reached a terminal stage (`workflow-human-check`, `done`, or chain end). Active-state resolution is **session-aware**: `findActiveStatePath(cwd, sessionId)` prefers `.smt/state/active-feature-<sessionId>.json` over the global `.smt/active_task` pointer to prevent concurrent-session pointer races. The legacy E2E-reminder behavior described below is preserved as a fallback.
+> **Renamed from `stop-e2e.mjs` (v2.4.x).** Primary role: workflow stage-progression guard — block Stop when any workflow mode (`simple_fix` / `fix` / `investigate` / `verify` / `implement` / `plan`) has not reached a terminal stage (`workflow-human-check`, `done`, or the mode's last `allowed_skill`). Active-state resolution and summary resolution are **session-aware** (`findActiveStatePath(cwd, sessionId)` / `getActiveFeatureSummary(cwd, sessionId)`), preferring `.smt/state/active-feature-<sessionId>.json` over the non-scoped pointer to prevent concurrent-session races. The legacy E2E-reminder behavior described below is preserved as a fallback.
 
 프론트엔드 변경 사전 필터링 + AI 판단 기반 E2E 위임. 스크립트 단계에서 백엔드/테스트/스크립트 파일을 제외하고, 프론트엔드 변경 + 키워드 매칭된 E2E 테스트만 최소한으로 Claude에 위임한다. 토큰 절약을 위해 관련 없는 변경은 Claude에 전달하지 않는다.
 

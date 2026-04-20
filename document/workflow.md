@@ -977,7 +977,7 @@ skills/
 └── (utility skills, no prefix)
     ├── ui-ux-pro-max/SKILL.md
     ├── copywriting/SKILL.md
-    ├── queue/SKILL.md
+    ├── ../commands/queue.md
     ├── deep-interview/SKILL.md
     └── ...
 

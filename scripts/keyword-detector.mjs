@@ -364,6 +364,9 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
         if (modeCfg?.allowed_skills?.length) {
           machineState.allowed_skills = modeCfg.allowed_skills;
         }
+        if (typeof modeCfg?.entry_skill === 'string' && machineState.allowed_skills.includes(modeCfg.entry_skill)) {
+          machineState.current_stage = modeCfg.entry_skill;
+        }
         if (modeCfg?.default_exempt) {
           machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
         }
