@@ -34,7 +34,6 @@ import { spawnSync } from 'node:child_process';
 import { readState, writeState, MODES } from './state-schema.mjs';
 import { route } from './route-on-fail.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
-import { pickNextStage } from './stop-stage-enforcer.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { readLastAssistantText, lastAssistantQuestionShape, classifyQuestionShape } from './lib/transcript-reader.mjs';
 
@@ -387,11 +386,30 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
   }
 
   // Halt conditions (section 11-4)
+  // Fix B: scope the halt clearance to a pass event actually produced by
+  // workflow-human-check itself. A pass event from any prior skill (e.g.
+  // workflow-tasker-review) used to satisfy the lastEvent check and cause
+  // the Stop-hook loop advance-to-workflow-write-test (see investigation
+  // 2026-04-21). `Array.isArray` guards normalize undefined/malformed
+  // state files, and `legacyCompleted` preserves progression for pre-Fix-B
+  // states whose completed_stages already records workflow-human-check.
+  //
+  // On terminal approval (humanCheckPassed || legacyCompleted), short-circuit
+  // to session_wrap so a genuine human-check approval does not fall through
+  // to the generic `last.result === 'pass'` advance branch below. Without
+  // this, pickNextStage() would re-enter the chain at the first uncompleted
+  // skill after a completed approval.
   if (state.current_stage === 'workflow-human-check') {
-    const lastEvent = state.events[state.events.length - 1];
-    if (!lastEvent || lastEvent.result !== 'pass') {
+    const events = Array.isArray(state.events) ? state.events : [];
+    const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
+    const humanCheckPassed = events.some(
+      e => e && e.skill === 'workflow-human-check' && e.result === 'pass'
+    );
+    const legacyCompleted = completed.includes('workflow-human-check');
+    if (!humanCheckPassed && !legacyCompleted) {
       return { action: 'halt', reason: 'awaiting user decision in workflow-human-check' };
     }
+    return { action: 'session_wrap', reason: 'workflow-human-check approved, writing session log' };
   }
   if (state._awaiting_mode_upgrade) {
     return { action: 'halt', reason: 'awaiting user mode upgrade decision' };
@@ -442,6 +460,12 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     // pickNextStage honors allowed_skills order + completed_stages so the
     // agent receives an unambiguous target instead of guessing from
     // conversation context.
+    //
+    // Fresh-snapshot note: `state` here is the pre-transition snapshot read
+    // at Stop entry (main() loads it once before calling decide). That is
+    // the intended semantics — PostToolUse:Skill for this very turn has
+    // already persisted the pass event and bumped completed_stages, so
+    // pickNextStage sees the correct post-pass view of the chain.
     const skill = pickNextStage(state);
     return {
       action: 'advance',
@@ -470,6 +494,10 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     });
     if (verdict && verdict.verdict === 'complete') {
       const artifact = statePath ? canonicalArtifactPath(statePath, state.current_stage) : null;
+      // Fresh-snapshot note: same pre-transition snapshot read at Stop entry.
+      // The classifier just verified the current_stage is complete in prose;
+      // pickNextStage selects the next allowed skill based on that snapshot,
+      // which is exactly the post-pass view the injected directive needs.
       const nextSkill = pickNextStage(state);
       return {
         action: 'stage_complete',
@@ -598,10 +626,12 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
       lines.push('[MANDATORY WORKFLOW STEP]');
       lines.push(`mode=${state?.mode || '?'}, current_stage=${stage} → classifier verdict: complete (${summary})`);
       if (artifact) {
-        lines.push(`Canonical artifact auto-written at ${artifact.basename} — verify its content matches your actual findings before advancing.`);
+        lines.push(`Canonical artifact ${artifact.basename} is missing at ${artifact.absPath}. Write it using the Write tool now — it must contain your actual findings (not a placeholder).`);
+        lines.push(`After writing ${artifact.basename}, invoke Skill(skill: '${nextSkill}') as the next tool call.`);
+      } else {
+        lines.push(`No canonical artifact is required for this stage (evidenced by test_cycles[] or git diff).`);
+        lines.push(`You MUST invoke Skill(skill: '${nextSkill}') as the FIRST tool call of your reply.`);
       }
-      lines.push('');
-      lines.push(`You MUST invoke Skill(skill: '${nextSkill}') as the FIRST tool call of your reply.`);
       lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
       if (subAgentModel) {
         lines.push(`Delegate the actual work to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') when a specialist is needed.`);
@@ -656,13 +686,18 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
 // detectable before Stop runs. Per-project + per-session to avoid collisions
 // across concurrent sessions.
 
-export function autoConfirmSignature(state, action) {
-  if (!state) return `no-state:${action || 'null'}`;
+export function autoConfirmSignature(state, _actionUnused) {
+  // Post-fold (Fix #3): signature encodes completed_stages.length instead of
+  // the decision action. The count is monotonically increasing on genuine
+  // advance, so the counter resets precisely when the state moves forward —
+  // no reliance on action-string stability. This matches the semantics the
+  // folded stop-stage-enforcer used and closes the dual-counter gap.
+  if (!state) return `no-state:0`;
   const slug = state.task_id || '?';
   const stage = state.current_stage || 'null';
   const mode = state.mode || '?';
-  const act = action || 'null';
-  return `${slug}:${mode}:${stage}:${act}`;
+  const completed = Array.isArray(state.completed_stages) ? state.completed_stages.length : 0;
+  return `${slug}:${mode}:${stage}:${completed}`;
 }
 
 export function autoConfirmLoopCounterPath(cwd, sessionId = '') {
@@ -702,6 +737,47 @@ export function bumpAutoConfirmLoop(cwd, sessionId, signature) {
 
 export function clearAutoConfirmLoop(cwd, sessionId = '') {
   try { unlinkSync(autoConfirmLoopCounterPath(cwd, sessionId)); } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Stage-chain helpers (Fix #3 fold — ported from the former
+// scripts/stop-stage-enforcer.mjs). Kept as local exports so auto-confirm is
+// self-contained as the single Stop hook after the fold.
+// ---------------------------------------------------------------------------
+
+// Always-terminal stages — any mode reaching these may halt.
+export const ALWAYS_TERMINAL_STAGES = new Set(['workflow-human-check', 'done']);
+
+// Decide what next stage the agent should enter, based on the mode's
+// allowed_skills minus completed_stages and the current_stage. Order-aware:
+// when current_stage is in allowed_skills, prefer the next uncompleted stage
+// AFTER it in chain order; otherwise fall back to the first uncompleted-and-
+// not-current allowed skill, or 'workflow-human-check' if none remain.
+export function pickNextStage(state) {
+  const allowed = state?.allowed_skills || [];
+  const completed = new Set(state?.completed_stages || []);
+  const current = state?.current_stage || '';
+  const currentIdx = allowed.indexOf(current);
+  if (currentIdx >= 0) {
+    for (let i = currentIdx + 1; i < allowed.length; i++) {
+      if (!completed.has(allowed[i])) return allowed[i];
+    }
+  }
+  const remaining = allowed.filter(s => !completed.has(s) && s !== current);
+  return remaining[0] || 'workflow-human-check';
+}
+
+// Check whether current_stage is terminal for the active mode.
+// A stage is terminal when:
+//   - it is in ALWAYS_TERMINAL_STAGES, or
+//   - it is the last entry of state.allowed_skills (mode's chain end)
+export function isTerminalStage(state) {
+  const stage = state?.current_stage;
+  if (!stage) return false;
+  if (ALWAYS_TERMINAL_STAGES.has(stage)) return true;
+  const allowed = state?.allowed_skills || [];
+  if (allowed.length > 0 && allowed[allowed.length - 1] === stage) return true;
+  return false;
 }
 
 // Queue-drop helpers. The queue file is a single JSON object — one entry at a
@@ -777,40 +853,35 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(2);
   }
 
-  const stageClassifier = (ctx) => classifyStageCompletionViaSubAgent({ ...ctx, model: subAgentModel });
+  // Fix #3 fold — the folded Stop hook runs a single classifier subprocess
+  // under Stop's own 120s timeout. Cap the inner classifier call at 10s so a
+  // hung sub-agent cannot starve the Stop hook of its remaining wall-clock
+  // budget (mandatoryDirective still queues cleanly even if the classifier
+  // verdict is unknown). spawnSync enforces the wall-clock cap internally;
+  // any caller-side AbortController would be advisory-only since spawnSync
+  // is synchronous. On timeout or throw we fall through to verdict='unknown'.
+  const STAGE_CLASSIFIER_TIMEOUT_MS = 10000;
+  const stageClassifier = (ctx) => {
+    try {
+      return classifyStageCompletionViaSubAgent({
+        ...ctx,
+        model: subAgentModel,
+        timeoutMs: STAGE_CLASSIFIER_TIMEOUT_MS,
+      });
+    } catch {
+      return { verdict: 'unknown', summary: 'classifier timeout' };
+    }
+  };
   // Shape of the assistant's last message — gates spawn_sub_tasker on
   // interactive Q&A. Pure text classifier; reuses the lastAssistantText
   // we already read above.
   const questionShape = classifyQuestionShape(lastAssistantText);
   let decision = decide({ state, lastAssistantText, statePath, stageClassifier, questionShape });
 
-  // Auto-write canonical artifact on stage_complete verdict when missing.
-  // Iron Law #5 safety: we DO NOT flip completed_stages here — that happens
-  // only when the main agent actually invokes the workflow skill and
-  // skill-stage-transition sees a real artifact on disk. We simply make the
-  // artifact exist so the subsequent legitimate flow can complete.
-  if (decision.action === 'stage_complete' && decision.payload?.artifact) {
-    const { basename: artifactBasename, absPath } = decision.payload.artifact;
-    try {
-      if (!existsSync(absPath)) {
-        const sessionTag = sanitizeSessionId(sessionId) || 'no-session';
-        const header = `# ${decision.payload.stage} — auto-generated artifact\n` +
-          `<!-- Generated by auto-confirm stage-completion classifier.\n` +
-          `     Session: ${sessionTag}\n` +
-          `     Timestamp: ${new Date().toISOString()}\n` +
-          `     Mode: ${state?.mode || '?'}\n` +
-          `     Classifier verdict: complete\n` +
-          `     Summary: ${decision.payload.summary || '(none)'} -->\n\n` +
-          `## Classifier summary\n${decision.payload.summary || '(none)'}\n\n` +
-          `## Main agent's last message (excerpt)\n\n` +
-          '```\n' +
-          (decision.payload.lastMessage || '').slice(0, 2000).replace(/```/g, '\u200b``\u200b`') +
-          '\n```\n';
-        mkdirSync(dirname(absPath), { recursive: true });
-        writeFileSync(absPath, header, { mode: 0o644 });
-      }
-    } catch { /* never fail Stop hook on disk write */ }
-  }
+  // Iron Law #5: artifacts are written by the skill producer, never by this hook.
+  // The stage_complete injection (see buildPromptInjection) tells the agent to
+  // write the canonical artifact via the Write tool before invoking the next
+  // skill. No auto-synthesis here.
 
   // 'classify_needed' resolves via the lightweight LLM classifier sub-agent.
   // Per spec there is no regex fallback — sub-agent decision is final, and a

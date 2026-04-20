@@ -610,8 +610,16 @@ section('SCENARIO 12 — State-schema consistency with spec');
 section('SCENARIO 13 — Mode classifier verdict coherence with spec §1-2');
 // ============================================================================
 {
-  // Import mode-classifier dynamically to avoid top-level ESM timing weirdness.
-  const mc = await import('./mode-classifier.mjs');
+  // The v2.4.9 classifier delegates NL routing to the LLM. This scenario
+  // verifies Layer 3 wire-up + Layer 1/2/4 deterministic paths against the
+  // spec, using the test-fixture stub so the assertions remain stable across
+  // LLM provider drift. LLM quality is measured manually per feature spec
+  // Stage 6, not asserted here.
+  process.env.SMELTER_MODE_CLASSIFIER_MODULE = new URL(
+    './lib/__fixtures__/mode-classifier-stub.mjs', import.meta.url,
+  ).pathname;
+  // Dynamic import so the env var is observed by the freshly-loaded module.
+  const mc = await import('./mode-classifier.mjs?' + Date.now());
 
   const cases = [
     // simple_fix (text/CSS/constant)
@@ -641,7 +649,7 @@ section('SCENARIO 13 — Mode classifier verdict coherence with spec §1-2');
   ];
   for (const [input, expected] of cases) {
     test(`classify("${input}") → ${expected}`, () => {
-      const r = mc.classify(input);
+      const r = mc.classify(input, { cwd: process.cwd(), sessionId: `sc13-${expected}` });
       assert.equal(r.mode, expected);
     });
   }

@@ -164,11 +164,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/auto-confirm.mjs\"",
-            "timeout": 45
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-stage-enforcer.mjs\"",
             "timeout": 120
           }
         ]

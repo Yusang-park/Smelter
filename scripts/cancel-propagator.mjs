@@ -18,8 +18,27 @@
 
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
+import { createHash } from 'crypto';
 import { join } from 'path';
 import { writeCancel, clearCancel } from './lib/cancel-signal.mjs';
+
+/**
+ * Derive the shared /tmp path for the auto-confirm and legacy stop-loop
+ * counters. Mirrors scripts/auto-confirm.mjs:autoConfirmLoopCounterPath and
+ * the former scripts/stop-stage-enforcer.mjs:loopCounterPathFor. The stop-loop
+ * path is legacy post-Fix #3 (the folded auto-confirm no longer writes it)
+ * but pre-existing files on long-running machines must still be cleaned.
+ */
+function loopCounterPaths(directory, sessionId) {
+  const projectHash = createHash('md5').update(directory).digest('hex').slice(0, 8);
+  const sessHash = sessionId
+    ? createHash('md5').update(String(sessionId)).digest('hex').slice(0, 8)
+    : 'no-session';
+  return [
+    `/tmp/smelter-auto-confirm-loop-${projectHash}-${sessHash}.json`,
+    `/tmp/smelter-stop-loop-${projectHash}-${sessHash}.json`,
+  ];
+}
 
 /**
  * Kill tracked subagent processes and background tasks.
@@ -66,8 +85,11 @@ function killTrackedProcesses(directory) {
 
 /**
  * Clear legacy auto-confirm / persistent state files (best-effort cleanup).
+ * Also cleans the per-session Stop-hook loop counters in /tmp so a fresh
+ * session does not inherit stale stuck-loop state. Try/catch wraps each
+ * unlink so a missing file never breaks cancel propagation.
  */
-function clearLegacyState(directory) {
+function clearLegacyState(directory, sessionId = '') {
   const cleared = [];
   const omcStateDir = join(directory, '.omc', 'state');
   const legacyFiles = ['persistent-state.json'];
@@ -77,15 +99,27 @@ function clearLegacyState(directory) {
       try { unlinkSync(path); cleared.push(`.omc/state/${file}`); } catch { /* skip */ }
     }
   }
+  // Stop-hook loop counters — same hash derivation as auto-confirm.mjs. Both
+  // the current auto-confirm path and the legacy stop-stage-enforcer path are
+  // attempted; the latter will usually be absent post-Fix-#3 but must still
+  // be cleaned on machines with pre-existing files.
+  for (const counterPath of loopCounterPaths(directory, sessionId)) {
+    try {
+      if (existsSync(counterPath)) {
+        unlinkSync(counterPath);
+        cleared.push(counterPath);
+      }
+    } catch { /* skip */ }
+  }
   return cleared;
 }
 
 /**
  * Hard cancel: kill processes, clear state, write signal to block further execution.
  */
-export function propagateHardCancel(directory, reason = 'user request') {
+export function propagateHardCancel(directory, reason = 'user request', sessionId = '') {
   const killed = killTrackedProcesses(directory);
-  const cleared = clearLegacyState(directory);
+  const cleared = clearLegacyState(directory, sessionId);
   writeCancel(directory, 'hard', { reason, source: 'propagator' });
 
   return {
@@ -131,7 +165,7 @@ async function main() {
   if (type === 'queue' && queuedIntent) {
     result = propagateQueueCancel(directory, queuedIntent, reason, sessionId);
   } else {
-    result = propagateHardCancel(directory, reason);
+    result = propagateHardCancel(directory, reason, sessionId);
   }
 
   console.log(JSON.stringify(result, null, 2));

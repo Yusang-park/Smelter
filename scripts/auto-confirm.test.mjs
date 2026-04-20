@@ -308,11 +308,51 @@ test('workflow-human-check awaiting → halt', () => {
   const d = decide({ state: s, lastAssistantText: 'awaiting your decision' });
   assert.equal(d.action, 'halt');
 });
-test('workflow-human-check with pass event does NOT halt (pass path continues)', () => {
+test('workflow-human-check with pass event → session_wrap (terminal approval)', () => {
+  // When a workflow-human-check pass event is recorded, the user has approved.
+  // Fix B short-circuits this to session_wrap rather than falling through to
+  // the generic `last.result === 'pass'` advance branch, which would otherwise
+  // pick the next uncompleted skill and re-enter the chain after a terminal
+  // approval.
   const s = baseState({ current_stage: 'workflow-human-check', events: [passEvent('workflow-human-check')] });
   const d = decide({ state: s, lastAssistantText: '' });
-  // Passed human-check should advance, not halt
-  assert.notEqual(d.action, 'halt');
+  assert.equal(d.action, 'session_wrap');
+});
+test('workflow-human-check with prior-skill pass event → halt (Fix B)', () => {
+  // Regression guard for the loop described in investigation.md:
+  // current_stage='workflow-human-check' with a last event that PASSED but is
+  // for a *prior* skill must NOT be treated as human-check approval.
+  const s = baseState({
+    current_stage: 'workflow-human-check',
+    completed_stages: ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker', 'workflow-tasker-review'],
+    events: [
+      passEvent('workflow-investigate'),
+      passEvent('workflow-investigate-review'),
+      passEvent('workflow-tasker'),
+      passEvent('workflow-tasker-review'),
+    ],
+  });
+  const d = decide({ state: s, lastAssistantText: '' });
+  assert.equal(d.action, 'halt');
+  assert.equal(/awaiting user decision in workflow-human-check/.test(d.reason), true);
+});
+test('workflow-human-check with legacy completed_stages → session_wrap (Fix B fallback)', () => {
+  // Legacy state where workflow-human-check is in completed_stages without a
+  // matching pass event (pre-Fix B migration). Must route to session_wrap via
+  // the same terminal-approval short-circuit as a fresh pass event.
+  const s = baseState({
+    current_stage: 'workflow-human-check',
+    completed_stages: ['workflow-human-check'],
+    events: [],
+  });
+  const d = decide({ state: s, lastAssistantText: '' });
+  assert.equal(d.action, 'session_wrap');
+});
+test('workflow-human-check with empty events → halt (Fix B defensive)', () => {
+  // Empty events + no legacy completed marker → halt.
+  const s = baseState({ current_stage: 'workflow-human-check', events: [], completed_stages: [] });
+  const d = decide({ state: s, lastAssistantText: '' });
+  assert.equal(d.action, 'halt');
 });
 test('_awaiting_mode_upgrade flag → halt', () => {
   const s = baseState();
@@ -981,14 +1021,18 @@ section('H3: stuck-loop guard (signature counter + threshold escape)');
 test('H3: threshold constant is 3', () => {
   assert.equal(AUTO_CONFIRM_STUCK_THRESHOLD, 3);
 });
-test('H3: autoConfirmSignature composes slug/mode/stage/action', () => {
+test('H3: autoConfirmSignature composes slug/mode/stage/completedCount', () => {
+  // Post-fold (Fix #3): signature is now completedCount-based, not action-based.
+  // Matches the folded stop-stage-enforcer semantics and resets precisely
+  // when state advances forward.
   const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
   s.task_id = 'feat-x';
   const sig = autoConfirmSignature(s, 'enter_skill');
-  assert.equal(sig, 'feat-x:fix:workflow-investigate:enter_skill');
+  assert.equal(sig, 'feat-x:fix:workflow-investigate:0');
 });
-test('H3: autoConfirmSignature with null state + null action', () => {
-  assert.equal(autoConfirmSignature(null, null), 'no-state:null');
+test('H3: autoConfirmSignature with null state returns no-state:0', () => {
+  // Post-fold: null state → 'no-state:0' (completedCount defaults to 0).
+  assert.equal(autoConfirmSignature(null, null), 'no-state:0');
 });
 test('H3: bumpAutoConfirmLoop returns 1 on first call, increments after', () => {
   const dir = mkdtempSync(join(tmpdir(), 'h3-'));
@@ -1267,6 +1311,191 @@ test('parallel sessions do not cross-pollinate: A writes, B reads nothing', () =
     assert.equal(existsSync(aPath), false, 'A queue consumed once');
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Fix #1–#3 RED tests (Tasks 1-2a, 2-1, 2-2, 3-1)
+// Each test is RED against current source. Annotated with the Fix task that
+// makes it GREEN.
+// ----------------------------------------------------------------------------
+section('Fix #2 RED — stage_complete CLI does NOT write artifact after fix');
+
+// @transitional — after Fix #2 Task 2-3 lands, this test's assertion flips:
+// the spawned process must NOT create the artifact file on disk.
+// Current behavior (lines 811-832): it DOES write the file → test is RED.
+test('Fix #2 post-condition: stage_complete CLI path does NOT write canonical artifact', () => {
+  // Post-Fix-#2 invariant: the Stop hook never synthesizes workflow artifacts.
+  // Source must not contain the auto-generated-artifact header nor the
+  // writeFileSync(absPath, ...) pattern unique to the removed block.
+  const src = readFileSync(HOOK, 'utf-8');
+  const hasGeneratedHeader = src.includes('auto-generated artifact');
+  const hasAbsPathWrite = /writeFileSync\s*\(\s*absPath\s*,/.test(src);
+  assert.equal(hasGeneratedHeader, false,
+    'auto-confirm.mjs must not contain the "auto-generated artifact" header (Iron Law #5)');
+  assert.equal(hasAbsPathWrite, false,
+    'auto-confirm.mjs must not writeFileSync(absPath, ...) the canonical artifact (Iron Law #5)');
+});
+
+// ----------------------------------------------------------------------------
+section('Fix #2 RED — buildPromptInjection stage_complete Write-tool directive');
+
+// Task 2-2: future behavior. Will be GREEN after Fix #2 Task 2-3 rewrites
+// the stage_complete case in buildPromptInjection (lines 614-629).
+test('stage_complete injection contains Write-tool directive when artifact non-null', () => {
+  // RED: current injection says "auto-written at" not "Write it using the Write tool".
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  const text = buildPromptInjection(
+    {
+      action: 'stage_complete',
+      reason: 'r',
+      payload: {
+        stage: 'workflow-investigate',
+        nextSkill: 'workflow-investigate-review',
+        summary: 'three root causes',
+        artifact: { basename: 'investigation.md', absPath: '/tmp/t/investigation.md' },
+        lastMessage: 'details',
+      },
+    },
+    s,
+  );
+  // After Fix #2: injection must instruct the agent to Write the artifact itself.
+  assert.match(text, /Write/,
+    'injection must contain "Write" tool directive when artifact is non-null');
+  assert.match(text, /investigation\.md/,
+    'injection must name the canonical artifact basename');
+  // The directive must not say "auto-written" (that's the bug being fixed).
+  assert.doesNotMatch(text, /auto-written/,
+    'injection must NOT claim the artifact was auto-written (removed by Fix #2)');
+});
+
+// Task 2-2 null-artifact variant: when artifact is null, injection must contain an
+// explicit "no artifact" acknowledgement line (not just silently omit the line).
+// RED: current code just omits the artifact line with no replacement text.
+// GREEN after Fix #2 Task 2-3 adds an explicit null-artifact clause.
+test('stage_complete injection omits Write-tool directive when artifact is null', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection(
+    {
+      action: 'stage_complete',
+      reason: 'r',
+      payload: {
+        stage: 'workflow-coding',
+        nextSkill: 'workflow-agent-review',
+        summary: 'coding complete',
+        artifact: null,
+        lastMessage: 'done',
+      },
+    },
+    s,
+  );
+  // After Fix #2: no Write-tool directive, and no auto-written claim either.
+  assert.doesNotMatch(text, /auto-written/,
+    'injection must not claim artifact was auto-written when artifact is null');
+  // After Fix #2: must NOT contain a "Write" tool directive for the artifact
+  // (the Write directive is only for non-null artifacts).
+  // Currently injection contains neither directive for null artifact, but also
+  // contains no explicit "no artifact for this stage" note — Fix #2 must add one.
+  assert.match(text, /no.*artifact|artifact.*not required|no canonical artifact/i,
+    'injection must explicitly state no artifact is required when artifact is null (Fix #2 clause)');
+  // Must still have the mandatory block and next-skill invocation.
+  assert.match(text, /\[MANDATORY WORKFLOW STEP\]/);
+  assert.match(text, /workflow-agent-review/);
+});
+
+// ----------------------------------------------------------------------------
+section('Fix #3 RED — stuck-loop escape + terminal stage behavior');
+
+// Task 3-1a: @post-fold — expected behavior after Fix #3.
+// Verifies autoConfirmSignature embeds completedCount (monotone integer), NOT
+// the action string. Current code produces slug:mode:stage:action.
+// After Fix #3 Task 3-2 it must produce slug:mode:stage:completedCount.
+// RED: current autoConfirmSignature returns "feat-x:fix:workflow-investigate:enter_skill"
+//      new format must be "feat-x:fix:workflow-investigate:0" (completedCount=0).
+// @post-fold — assertion valid after Fix #3 Task 3-2.
+test('Stop hook stuck-loop escape uses completedCount-based signature (post-fold assertion)', () => {
+  // Build a state with known completedCount.
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate', completed_stages: [] });
+  s.task_id = 'feat-x';
+  // After Fix #3: signature must encode completedCount (0) not action string.
+  const sig = autoConfirmSignature(s, 'enter_skill');
+  // Current (buggy): 'feat-x:fix:workflow-investigate:enter_skill'
+  // Expected (fixed): 'feat-x:fix:workflow-investigate:0'
+  assert.match(sig, /^feat-x:fix:workflow-investigate:\d+$/,
+    `signature must encode completedCount as a digit, not action string. Got: "${sig}"`);
+  assert.doesNotMatch(sig, /enter_skill/,
+    `signature must NOT embed the action string. Got: "${sig}"`);
+});
+
+// Task 3-1b: @post-fold — after Fix #3, stop-stage-enforcer is deleted.
+// The folded auto-confirm must be the ONLY Stop hook, meaning no
+// /tmp/smelter-stop-loop-*.json file (the stop-stage-enforcer counter pattern)
+// is ever created — only the auto-confirm per-session counter file exists.
+// RED: currently stop-stage-enforcer.mjs is still registered and writes its
+//      own /tmp/smelter-stop-loop-*.json on every non-terminal Stop.
+//      This test verifies the post-fold world where that file never appears.
+// @post-fold — assertion valid after Fix #3 Task 3-6 deletes stop-stage-enforcer.
+test('Stop hook on terminal stage (workflow-human-check) emits halt not block', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-fix3-terminal-'));
+  const stubDir = mkdtempSync(join(tmpdir(), 'cls-fix3-terminal-'));
+  const stub = join(stubDir, 'cls.sh');
+  writeFileSync(stub, '#!/bin/sh\nprintf "halt"\n', { mode: 0o755 });
+  try {
+    const slug = 'termtest';
+    const featDir = join(dir, '.smt', 'features', slug, 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, `${slug}.state.json`);
+    const state = baseState({
+      mode: 'fix',
+      current_stage: 'workflow-human-check',
+      completed_stages: [
+        'workflow-investigate', 'workflow-investigate-review',
+        'workflow-write-test', 'workflow-coding',
+        'workflow-agent-review', 'workflow-e2e', 'workflow-e2e-review',
+        'workflow-team-code-review',
+      ],
+      events: [
+        passEvent('workflow-investigate'),
+        passEvent('workflow-investigate-review'),
+        passEvent('workflow-write-test'),
+        passEvent('workflow-coding'),
+        passEvent('workflow-agent-review'),
+        passEvent('workflow-e2e'),
+        passEvent('workflow-e2e-review'),
+        passEvent('workflow-team-code-review'),
+      ],
+    });
+    writeFileSync(statePath, JSON.stringify(state));
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
+    const sessionId = 'fix3-term-sess';
+    writeFileSync(
+      join(dir, '.smt', 'state', `active-feature-${sessionId}.json`),
+      JSON.stringify({ slug, session_id: sessionId }),
+    );
+    const payload = JSON.stringify({
+      cwd: dir,
+      session_id: sessionId,
+      last_assistant_text: 'Awaiting your approval before proceeding.',
+    });
+    const res = spawnSync('node', [HOOK], {
+      input: payload,
+      encoding: 'utf-8',
+      env: { ...process.env, SMT_CLASSIFIER_CMD: stub },
+    });
+    // Halt behavior (already passes pre-fold).
+    assert.equal(res.status, 0,
+      `expected exit 0 (halt) on terminal stage, got ${res.status}\nstderr: ${res.stderr}\nstdout: ${res.stdout}`);
+    assert.equal(res.stdout.trim(), '', 'terminal halt must emit no block decision');
+
+    // @post-fold RED assertion: stop-stage-enforcer.mjs must be deleted.
+    // Currently the file exists (Fix #3 Task 3-6 deletes it).
+    // After the fold this assertion flips GREEN.
+    const enforcerAbs = join(__dirname, 'stop-stage-enforcer.mjs');
+    assert.equal(existsSync(enforcerAbs), false,
+      'stop-stage-enforcer.mjs must be deleted after Fix #3 fold (post-fold assertion)');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(stubDir, { recursive: true, force: true });
   }
 });
 
