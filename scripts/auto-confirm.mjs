@@ -35,6 +35,7 @@ import { readState, writeState, MODES } from './state-schema.mjs';
 import { route } from './route-on-fail.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
 import { pickNextStage } from './stop-stage-enforcer.mjs';
+import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 
 // H3 — stuck-loop guard threshold. When decide() returns the same
 // signature (slug:mode:stage:action) this many consecutive times, the CLI
@@ -145,6 +146,75 @@ export function classifyProceedPromptViaSubAgent(lastMessage, {
   return 'halt';
 }
 
+// Build the stage-completion classifier prompt. The classifier judges whether
+// the main agent's last assistant message indicates that the current workflow
+// stage is finished. Output is a JSON line with verdict + one-line summary.
+export function buildStageCompletionPrompt({ lastMessage, currentStage, mode }) {
+  return `You are a workflow stage completion judge for the Smelter engine.\n\n` +
+    `Context:\n- mode: ${mode}\n- current_stage: ${currentStage}\n\n` +
+    `Read the assistant's final message below and decide whether the work for the CURRENT stage is finished.\n\n` +
+    `"Finished" means the stage's canonical output (findings for workflow-investigate, task list for workflow-tasker, etc.) is substantively present in the message. Conversational acknowledgements ("OK I will investigate") do NOT count as finished.\n\n` +
+    `Output EXACTLY one line of JSON, no prose around it:\n` +
+    `{"verdict":"complete","summary":"<one-line summary of what the stage produced>"}\n` +
+    `OR\n` +
+    `{"verdict":"incomplete","summary":"<one-line reason the stage is not yet done>"}\n\n` +
+    `Message:\n"""\n${lastMessage}\n"""`;
+}
+
+// Spawn the stage-completion classifier sub-agent. Distinct from the
+// proceed/halt classifier so the two judgements can run independently.
+// Returns { verdict: 'complete'|'incomplete'|'unknown', summary: string }.
+// Tests inject a stub via `cmd` option.
+export function classifyStageCompletionViaSubAgent({
+  lastMessage, currentStage, mode,
+  model = 'sonnet',
+  timeoutMs = 40000,
+  cmd = process.env.SMT_STAGE_CLASSIFIER_CMD,
+} = {}) {
+  if (!lastMessage || typeof lastMessage !== 'string') return { verdict: 'unknown', summary: '' };
+  if (!currentStage || typeof currentStage !== 'string') return { verdict: 'unknown', summary: '' };
+
+  const binary = cmd || resolveClaudeBinary();
+  if (!binary) return { verdict: 'unknown', summary: '' };
+
+  const prompt = buildStageCompletionPrompt({ lastMessage, currentStage, mode });
+  const args = ['-p', prompt, '--model', model];
+
+  let result;
+  try {
+    result = spawnSync(binary, args, {
+      timeout: timeoutMs,
+      encoding: 'utf-8',
+      env: { ...process.env, SMT_CLASSIFIER: '1' },
+    });
+  } catch {
+    return { verdict: 'unknown', summary: '' };
+  }
+
+  if (!result || result.status !== 0) return { verdict: 'unknown', summary: '' };
+
+  const raw = (result.stdout || '').trim();
+  if (!raw) return { verdict: 'unknown', summary: '' };
+
+  // Scan stdout for the first JSON line containing `verdict`.
+  const lines = raw.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      const verdict = parsed?.verdict;
+      if (verdict === 'complete' || verdict === 'incomplete') {
+        return {
+          verdict,
+          summary: typeof parsed?.summary === 'string' ? parsed.summary : '',
+        };
+      }
+    } catch { /* keep scanning */ }
+  }
+  return { verdict: 'unknown', summary: '' };
+}
+
 function readJson(path) {
   try { return JSON.parse(readFileSync(path, 'utf-8')); } catch { return null; }
 }
@@ -246,8 +316,36 @@ export function buildChainedTransitionPrompt(nextMode, remaining) {
   return `[AUTO-CONFIRM] Chained intent detected. Auto-transitioning to '${nextMode}' mode${tail}. Continue with the ${nextMode} workflow now.`;
 }
 
+// Canonical artifact path for a given stage (per state-validator rules).
+// Returns { basename, absPath } when the stage has an expected artifact;
+// null when the stage has no canonical artifact (coding, write-test, e2e,
+// reviews, human-check — completion is gated on other signals).
+export function canonicalArtifactPath(statePath, stage) {
+  const basename = SKILL_ARTIFACT_BASENAME[stage];
+  if (!basename) return null;
+  const absPath = join(dirname(statePath), basename);
+  return { basename, absPath };
+}
+
+// Stage-completion detection gate: run the classifier only when
+//   - current_stage is set,
+//   - a lastAssistantText is available,
+//   - no pass event exists for the current_stage yet (otherwise the state
+//     machine has already observed completion).
+// Returning false here short-circuits decide() to its legacy paths.
+export function shouldRunStageCompletionClassifier(state, lastAssistantText) {
+  if (!state) return false;
+  if (!lastAssistantText || typeof lastAssistantText !== 'string') return false;
+  if (lastAssistantText.length < 20) return false;
+  const stage = state.current_stage;
+  if (!stage || typeof stage !== 'string') return false;
+  const events = Array.isArray(state.events) ? state.events : [];
+  const alreadyPassed = events.some(e => e && e.skill === stage && e.result === 'pass');
+  return !alreadyPassed;
+}
+
 // Decision tree per section 11-2. Returns { action, reason, payload }.
-export function decide({ state, lastAssistantText, statePath }) {
+export function decide({ state, lastAssistantText, statePath, stageClassifier }) {
   if (!state) return { action: 'no_state', reason: 'no active task state.json found' };
 
   // Chained-intent auto-transition must fire before human-check halt so a
@@ -332,6 +430,45 @@ export function decide({ state, lastAssistantText, statePath }) {
   );
   if (hasRed && state.current_stage !== 'workflow-coding' && state.allowed_skills.includes('workflow-coding')) {
     return { action: 'enter_skill', reason: 'RED cycle ready, enter workflow-coding', payload: { skill: 'workflow-coding' } };
+  }
+
+  // Stage-completion gate: when current_stage is set, no pass event has
+  // been recorded for it yet, and the main agent has produced a substantive
+  // last message, consult the stage-completion classifier. This covers the
+  // common case where the agent finished investigating in prose without
+  // saving the canonical artifact.
+  if (stageClassifier && shouldRunStageCompletionClassifier(state, lastAssistantText)) {
+    const verdict = stageClassifier({
+      lastMessage: lastAssistantText,
+      currentStage: state.current_stage,
+      mode: state.mode,
+    });
+    if (verdict && verdict.verdict === 'complete') {
+      const artifact = statePath ? canonicalArtifactPath(statePath, state.current_stage) : null;
+      const nextSkill = pickNextStage(state);
+      return {
+        action: 'stage_complete',
+        reason: `stage-completion classifier → ${state.current_stage} complete`,
+        payload: {
+          stage: state.current_stage,
+          nextSkill,
+          summary: verdict.summary || '',
+          artifact, // null when stage has no canonical artifact
+          lastMessage: lastAssistantText,
+        },
+      };
+    }
+    if (verdict && verdict.verdict === 'incomplete') {
+      return {
+        action: 'stage_incomplete',
+        reason: `stage-completion classifier → ${state.current_stage} incomplete`,
+        payload: {
+          stage: state.current_stage,
+          summary: verdict.summary || '',
+        },
+      };
+    }
+    // verdict === 'unknown' — fall through to the proceed/halt classifier.
   }
 
   // No state-machine signal matched. Hand the proceed-vs-halt decision to the
@@ -430,6 +567,36 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
     }
     case 'spawn_sub_tasker':
       return `${header}\nRisk language detected. Spawn sub-tasker to extract TODO into new task.\nSub-tasker model='${subAgentModel}'.`;
+    case 'stage_complete': {
+      const { stage, nextSkill, summary, artifact } = decision.payload;
+      const lines = [header];
+      lines.push('[MANDATORY WORKFLOW STEP]');
+      lines.push(`mode=${state?.mode || '?'}, current_stage=${stage} → classifier verdict: complete (${summary})`);
+      if (artifact) {
+        lines.push(`Canonical artifact auto-written at ${artifact.basename} — verify its content matches your actual findings before advancing.`);
+      }
+      lines.push('');
+      lines.push(`You MUST invoke Skill(skill: '${nextSkill}') as the FIRST tool call of your reply.`);
+      lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
+      if (subAgentModel) {
+        lines.push(`Delegate the actual work to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') when a specialist is needed.`);
+      }
+      return lines.join('\n');
+    }
+    case 'stage_incomplete': {
+      const { stage, summary } = decision.payload;
+      const lines = [header];
+      lines.push('[MANDATORY WORKFLOW STEP]');
+      lines.push(`mode=${state?.mode || '?'}, current_stage=${stage} → classifier verdict: INCOMPLETE`);
+      lines.push(`Reason: ${summary}`);
+      lines.push('');
+      lines.push(`You MUST invoke Skill(skill: '${stage}') and continue the work — do not try to advance yet.`);
+      lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
+      if (subAgentModel) {
+        lines.push(`Delegate to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') if a specialist is needed.`);
+      }
+      return lines.join('\n');
+    }
     case 'request_mode_upgrade':
       return `${header}\nMode upgrade required: ${decision.payload.suggested_upgrade_target}\nPresent user with upgrade options.`;
     case 'session_wrap':
@@ -579,7 +746,36 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(2);
   }
 
-  let decision = decide({ state, lastAssistantText, statePath });
+  const stageClassifier = (ctx) => classifyStageCompletionViaSubAgent({ ...ctx, model: subAgentModel });
+  let decision = decide({ state, lastAssistantText, statePath, stageClassifier });
+
+  // Auto-write canonical artifact on stage_complete verdict when missing.
+  // Iron Law #5 safety: we DO NOT flip completed_stages here — that happens
+  // only when the main agent actually invokes the workflow skill and
+  // skill-stage-transition sees a real artifact on disk. We simply make the
+  // artifact exist so the subsequent legitimate flow can complete.
+  if (decision.action === 'stage_complete' && decision.payload?.artifact) {
+    const { basename: artifactBasename, absPath } = decision.payload.artifact;
+    try {
+      if (!existsSync(absPath)) {
+        const sessionTag = sanitizeSessionId(sessionId) || 'no-session';
+        const header = `# ${decision.payload.stage} — auto-generated artifact\n` +
+          `<!-- Generated by auto-confirm stage-completion classifier.\n` +
+          `     Session: ${sessionTag}\n` +
+          `     Timestamp: ${new Date().toISOString()}\n` +
+          `     Mode: ${state?.mode || '?'}\n` +
+          `     Classifier verdict: complete\n` +
+          `     Summary: ${decision.payload.summary || '(none)'} -->\n\n` +
+          `## Classifier summary\n${decision.payload.summary || '(none)'}\n\n` +
+          `## Main agent's last message (excerpt)\n\n` +
+          '```\n' +
+          (decision.payload.lastMessage || '').slice(0, 2000).replace(/```/g, '\u200b``\u200b`') +
+          '\n```\n';
+        mkdirSync(dirname(absPath), { recursive: true });
+        writeFileSync(absPath, header, { mode: 0o644 });
+      }
+    } catch { /* never fail Stop hook on disk write */ }
+  }
 
   // 'classify_needed' resolves via the lightweight LLM classifier sub-agent.
   // Per spec there is no regex fallback — sub-agent decision is final, and a

@@ -35,6 +35,9 @@ import {
   clearAutoConfirmLoop,
   autoConfirmLoopCounterPath,
   AUTO_CONFIRM_STUCK_THRESHOLD,
+  buildStageCompletionPrompt,
+  canonicalArtifactPath,
+  shouldRunStageCompletionClassifier,
 } from './auto-confirm.mjs';
 
 import { createInitialState, writeState } from './state-schema.mjs';
@@ -585,6 +588,123 @@ test('MANDATORY: injection truncates lastAssistantText to 400 chars', () => {
   assert.ok(quoted[1].length <= 400, `truncation must be <=400, got ${quoted[1].length}`);
 });
 
+// ----------------------------------------------------------------------------
+section('Phase 2 — stage completion classifier');
+
+test('buildStageCompletionPrompt includes mode, stage, message', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'I have found three root causes and documented evidence.',
+    currentStage: 'workflow-investigate',
+    mode: 'investigate',
+  });
+  assert.match(p, /workflow-investigate/);
+  assert.match(p, /mode:\s*investigate/i);
+  assert.match(p, /I have found three root causes/);
+  assert.match(p, /verdict/);
+});
+
+test('canonicalArtifactPath maps workflow-investigate → investigation.md', () => {
+  const r = canonicalArtifactPath('/some/dir/task/feat.state.json', 'workflow-investigate');
+  assert.ok(r);
+  assert.equal(r.basename, 'investigation.md');
+  assert.ok(r.absPath.endsWith('/investigation.md'));
+});
+
+test('canonicalArtifactPath returns null for stages without canonical artifact', () => {
+  assert.equal(canonicalArtifactPath('/x/task/f.state.json', 'workflow-coding'), null);
+  assert.equal(canonicalArtifactPath('/x/task/f.state.json', 'workflow-human-check'), null);
+});
+
+test('shouldRunStageCompletionClassifier gates correctly', () => {
+  assert.equal(shouldRunStageCompletionClassifier(null, 'hi'), false, 'null state');
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  assert.equal(shouldRunStageCompletionClassifier(s, ''), false, 'empty text');
+  assert.equal(shouldRunStageCompletionClassifier(s, 'x'), false, 'too-short text');
+  assert.equal(shouldRunStageCompletionClassifier(s, 'a'.repeat(50)), true, 'runs when long text + stage');
+  s.events = [passEvent('workflow-investigate')];
+  assert.equal(shouldRunStageCompletionClassifier(s, 'a'.repeat(50)), false, 'skips when current stage already passed');
+});
+
+test('decide(): stage_complete when classifier returns complete', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  const stub = () => ({ verdict: 'complete', summary: 'three root causes' });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'I investigated and found three root causes with file evidence.',
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: stub,
+  });
+  assert.equal(d.action, 'stage_complete');
+  assert.equal(d.payload.stage, 'workflow-investigate');
+  assert.equal(d.payload.nextSkill, 'workflow-investigate-review');
+  assert.ok(d.payload.artifact, 'artifact path must be included for investigate');
+  assert.equal(d.payload.artifact.basename, 'investigation.md');
+});
+
+test('decide(): stage_incomplete when classifier returns incomplete', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  const stub = () => ({ verdict: 'incomplete', summary: 'no evidence collected yet' });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'I will start investigating shortly, stand by for results.',
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: stub,
+  });
+  assert.equal(d.action, 'stage_incomplete');
+  assert.equal(d.payload.stage, 'workflow-investigate');
+  assert.match(d.payload.summary, /no evidence/);
+});
+
+test('decide(): unknown verdict falls back to classify_needed', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  const stub = () => ({ verdict: 'unknown', summary: '' });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'I investigated something long enough to trigger the gate.',
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: stub,
+  });
+  assert.equal(d.action, 'classify_needed');
+});
+
+test('buildPromptInjection stage_complete includes MANDATORY + next skill', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  const text = buildPromptInjection(
+    {
+      action: 'stage_complete',
+      reason: 'r',
+      payload: {
+        stage: 'workflow-investigate',
+        nextSkill: 'workflow-investigate-review',
+        summary: 'three root causes',
+        artifact: { basename: 'investigation.md', absPath: '/x/investigation.md' },
+        lastMessage: 'details',
+      },
+    },
+    s,
+  );
+  assert.match(text, /\[MANDATORY WORKFLOW STEP\]/);
+  assert.match(text, /verdict: complete/);
+  assert.match(text, /Skill\(skill: 'workflow-investigate-review'\)/);
+  assert.match(text, /investigation\.md/);
+});
+
+test('buildPromptInjection stage_incomplete re-invokes current stage', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  const text = buildPromptInjection(
+    {
+      action: 'stage_incomplete',
+      reason: 'r',
+      payload: { stage: 'workflow-investigate', summary: 'no evidence yet' },
+    },
+    s,
+  );
+  assert.match(text, /INCOMPLETE/);
+  assert.match(text, /Skill\(skill: 'workflow-investigate'\)/);
+  assert.match(text, /no evidence yet/);
+});
+
+// ----------------------------------------------------------------------------
 test('buildChainedTransitionPrompt handles single remaining mode', () => {
   const text = buildChainedTransitionPrompt('fix', ['fix']);
   assert.match(text, /Chained intent/);

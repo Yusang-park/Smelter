@@ -161,7 +161,15 @@ Closes the Stop-loop observed after v2.4.6: seeded `current_stage=entry_skill` w
 | 4. 이전 단계로 회귀 지시 | `direction='back'` tag + `go BACK to <skill>` wording in injection |
 | 5. watchdog로 단계 전환 유도 | R15 blocks stage-skipping edits; guides toward proper `Skill(skill: 'workflow-coding')` |
 
-**Phase 2 (deferred):** Stage-completion classifier. When main's last message implies stage done, a haiku sub-agent judges completion + (optionally) auto-writes canonical artifact so state advances legitimately. Requires: new `classifyStageCompletionViaSubAgent` + careful prompt + artifact-template design. Out of this commit.
+**Phase 2 (added same release):** Stage-completion classifier satisfies both user conditions — stage must NOT advance until the work is done, and stage MUST advance once the work IS done.
+
+- [x] G1. **`classifyStageCompletionViaSubAgent`** — new in `scripts/auto-confirm.mjs`. Spawns the lightweight model (sonnet/haiku) with `buildStageCompletionPrompt({ lastMessage, currentStage, mode })`. Returns `{ verdict: 'complete'|'incomplete'|'unknown', summary }`. Tests inject stubs via `SMT_STAGE_CLASSIFIER_CMD` env var.
+- [x] G2. **`shouldRunStageCompletionClassifier`** — gate that fires only when `current_stage` is set, `lastAssistantText` has substance, and no pass event exists for the current stage yet. Avoids per-Stop sub-agent churn.
+- [x] G3. **`decide()` stage-complete / stage-incomplete branches** — invoked before the legacy `classify_needed` fallback. `stage_complete` payload carries `{ stage, nextSkill, summary, artifact, lastMessage }`. `stage_incomplete` carries `{ stage, summary }`.
+- [x] G4. **Auto-artifact write on `stage_complete`** — CLI entry writes a canonical artifact (`investigation.md`, `tasks.md`, …) with classifier summary + main's last message excerpt when the artifact is missing. **Iron Law #5 safe**: we do NOT flip `completed_stages` here. The artifact only enables the next legitimate `skill-stage-transition` run (after the main invokes the workflow-* skill) to record pass legitimately.
+- [x] G5. **Injection templates** — `buildPromptInjection` handles `stage_complete` (MANDATORY: invoke `Skill(skill: '<nextSkill>')`, with artifact-verification reminder) and `stage_incomplete` (MANDATORY: re-invoke `Skill(skill: '<stage>')`, reason from classifier summary).
+
+Tests: 9 new in `scripts/auto-confirm.test.mjs` (prompt shape, gate, decide branches, injection shape). Totals: auto-confirm 98, stop-stage-enforcer 19, critic-watchdog 13, skill-stage-transition 16, workflow-scenarios 111, test-keyword-detector 6, pre-tool-enforcer 13.
 
 Totals after Phase 15: `stop-stage-enforcer.test.mjs` 19, `skill-stage-transition.test.mjs` 16, `critic-watchdog.test.mjs` 13, `auto-confirm.test.mjs` 89, `workflow-scenarios.test.mjs` 111, `test-keyword-detector.mjs` 6, `pre-tool-enforcer.test.mjs` 13.
 
