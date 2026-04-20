@@ -36,6 +36,7 @@ import { route } from './route-on-fail.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
 import { pickNextStage } from './stop-stage-enforcer.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
+import { readLastAssistantText } from './lib/transcript-reader.mjs';
 
 // H3 — stuck-loop guard threshold. When decide() returns the same
 // signature (slug:mode:stage:action) this many consecutive times, the CLI
@@ -718,7 +719,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const sessionId = input.session_id || '';
   const statePath = findActiveTaskState(cwd, sessionId);
   const state = statePath ? readState(statePath) : null;
-  const lastAssistantText = input.last_assistant_text || '';
+  // Resolve the agent's last assistant text. Test fixtures inject
+  // `last_assistant_text` directly; production Claude Code Stop stdin
+  // only carries `transcript_path`, so derive the text by parsing the
+  // transcript JSONL when the explicit field is missing.
+  const lastAssistantText = input.last_assistant_text
+    || readLastAssistantText(input.transcript_path || '')
+    || '';
   const subAgentModel = pickSubAgentModel();
 
   // Queue-signal check (highest priority): if /queue dropped a cancel-signal.json

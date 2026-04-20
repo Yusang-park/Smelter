@@ -310,36 +310,66 @@ function rule12_workflowStageRequired(input, state, cwd) {
 // like `node -e "fs.writeFileSync('.smt/.../x.state.json', ...)"` reach
 // PostToolUse without being caught there. R13 scans Bash commands for this
 // pattern. Skipped when SMT_HOOK_WRITE=1 is set (hook-owned writes).
+// Unwrap `bash -c '<body>'` / `sh -c "<body>"` etc. Returns the body when
+// the whole command is a single quoted `-c '<body>'` invocation; otherwise
+// returns the original command unchanged. Used by R13 so a read-only
+// `ls`/`cat` wrapped in `bash -c` is not misread as interpreter-exec.
+export function unwrapShellCExec(cmd) {
+  if (typeof cmd !== 'string') return cmd;
+  const trimmed = cmd.trim();
+  const m = trimmed.match(/^(?:bash|sh|zsh)\s+-c\s+(['"])([\s\S]*)\1\s*$/);
+  if (!m) return cmd;
+  return m[2];
+}
+
+function isPureReadCmd(src) {
+  // A pure-read body may still contain `;` or `&&`/`||` between read-only
+  // commands. Split on statement separators and require every sub-command
+  // to start with an allowed read tool.
+  const READ_TOOLS = /^\s*(?:cat|head|tail|less|more|wc|file|stat|ls|grep|rg|jq|sort|uniq|diff|md5sum|sha256sum|echo|printf|true|:)\b/i;
+  const statements = String(src || '').split(/(?:\|\||&&|[;|])/).map(s => s.trim()).filter(Boolean);
+  if (statements.length === 0) return false;
+  return statements.every(s => READ_TOOLS.test(s));
+}
+
 function rule13_bashStateJsonWrite(input) {
   if (input.tool_name !== 'Bash') return null;
-  const cmd = input.tool_input?.command || '';
-  if (!cmd) return null;
+  const cmdRaw = input.tool_input?.command || '';
+  if (!cmdRaw) return null;
+
+  // Analyze both the raw command and the unwrapped body (for `bash -c '…'`).
+  // Protection + read-only checks use the effective body so a read-only
+  // wrapper isn't misread as interpreter-exec.
+  const cmd = cmdRaw;
+  const body = unwrapShellCExec(cmdRaw);
 
   // Protected paths: .state.json and active_task pointer family.
   const mentionsProtected =
-    /\.state\.json\b/i.test(cmd) ||
-    /\.smt[\/\\]active_task\b/.test(cmd) ||
-    /\.smt[\/\\]state[\/\\]active-feature/.test(cmd);
+    /\.state\.json\b/i.test(body) ||
+    /\.smt[\/\\]active_task\b/.test(body) ||
+    /\.smt[\/\\]state[\/\\]active-feature/.test(body);
   if (!mentionsProtected) return null;
 
-  // Pure-read commands on protected paths are allowed.
-  const isPureRead =
-    /^\s*(?:cat|head|tail|less|more|wc|file|stat|ls|grep|rg|jq|sort|uniq|diff|md5sum|sha256sum)\b[^|;&]*$/i.test(cmd.trim());
-  if (isPureRead) return null;
+  // Pure-read commands on protected paths are allowed. Check the unwrapped
+  // body so `bash -c 'ls .smt/state/active-feature*.json'` is accepted.
+  if (isPureReadCmd(body)) return null;
 
   // Mutating primitives (language-agnostic). Path-mention + mutating-verb
   // beats per-language verb enumeration.
   //
   // Interpreter flags that evaluate arbitrary code: -e / -c / -m / -i.
-  // `python -c`, `perl -e`, `ruby -e`, `node -e`, `bash -c`, etc.
-  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|bash|sh|zsh|awk)\s+-(?:[iIecm]|-eval|-exec)\b/.test(cmd);
-  const shellMutators = /\b(?:cp|mv|install|rsync|ln|touch|truncate|dd|tee|shred|rm|sed)\b/.test(cmd);
-  const apiWriters = /\bwriteFile(?:Sync)?\b/.test(cmd) || /\bcreateWriteStream\b/.test(cmd);
-  const openForWrite = /\bopen\s*\(\s*['"][^'"]+['"]\s*,\s*['"][wa]/.test(cmd);
+  // `python -c`, `perl -e`, `ruby -e`, `node -e`, `bash -c`, etc. Checked
+  // on the unwrapped body so `bash -c 'ls'` does NOT look like interpreter
+  // exec of a mutating script.
+  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|awk)\s+-(?:[iIem]|-eval|-exec)\b/.test(body)
+    || /\b(?:bash|sh|zsh)\s+-(?:[iIem]|-eval|-exec)\b/.test(body);
+  const shellMutators = /\b(?:cp|mv|install|rsync|ln|touch|truncate|dd|tee|shred|rm|sed)\b/.test(body);
+  const apiWriters = /\bwriteFile(?:Sync)?\b/.test(body) || /\bcreateWriteStream\b/.test(body);
+  const openForWrite = /\bopen\s*\(\s*['"][^'"]+['"]\s*,\s*['"][wa]/.test(body);
   // Redirects: the protected path must be the actual redirect target token
   // (ends with .state.json or active_task AND lies immediately after >/>>).
-  const redirectTarget = />>?\s*['"]?[^|&;\s"']*(?:\.state\.json|\.smt[\/\\]active_task)['"]?(?:\s|$|&|;|\|)/.test(cmd);
-  const heredocToTarget = /<<[-~]?\s*['"]?\w+['"]?[\s\S]*?>\s*['"]?[^|&;\s"']*(?:\.state\.json|\.smt[\/\\]active_task)/.test(cmd);
+  const redirectTarget = />>?\s*['"]?[^|&;\s"']*(?:\.state\.json|\.smt[\/\\]active_task)['"]?(?:\s|$|&|;|\|)/.test(body);
+  const heredocToTarget = /<<[-~]?\s*['"]?\w+['"]?[\s\S]*?>\s*['"]?[^|&;\s"']*(?:\.state\.json|\.smt[\/\\]active_task)/.test(body);
   const mutates = interpreterExec || shellMutators || apiWriters || openForWrite || redirectTarget || heredocToTarget;
   if (!mutates) return null;
 

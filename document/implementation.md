@@ -179,6 +179,19 @@ Tests: 9 new in `scripts/auto-confirm.test.mjs` (prompt shape, gate, decide bran
 
 Result: when Stop blocks, the agent's resumption input contains the full Skill invocation directive, not just a reminder — closing the "agent idles after Stop" gap in auto mode. Final totals after Phase 3: auto-confirm 98, stop-stage-enforcer 21, critic-watchdog 13, skill-stage-transition 16, workflow-scenarios 111, test-keyword-detector 6, pre-tool-enforcer 13 (**278 total**).
 
+**Phase 4 — transcript_path plumbing + R13 bash-c unwrap (same release).** Observed two silent defects in production:
+
+1. **Phase 2 classifier never fired in real sessions**: Claude Code Stop hook stdin carries `transcript_path` but NOT `last_assistant_text`. `scripts/auto-confirm.mjs:721` read `input.last_assistant_text || ''` and always got empty string, so `shouldRunStageCompletionClassifier` returned false and the stage-completion path was skipped. The field had been a test-only convention in `scripts/auto-confirm.test.mjs` and `scripts/session-sim.mjs`.
+2. **R13 false-positive on `bash -c 'ls …'`**: read-only commands wrapped in `bash -c '…'` matched the `interpreterExec` regex (`bash \s+ -c`) and were blocked even though the body was `ls`/`cat`/etc.
+
+Fixes (atomic):
+
+- [x] J1. **`scripts/lib/transcript-reader.mjs` (new)** — `readLastAssistantText(transcriptPath)` parses the JSONL transcript, scans from the bottom, and returns the last assistant message's concatenated text parts. Handles both flat (`{ role, content }`) and nested (`{ type: 'message', message: { role, content } }`) envelopes. Oversize guard `TRANSCRIPT_MAX_BYTES = 8 MiB`. Never throws (hook-safe). Tests: `scripts/lib/transcript-reader.test.mjs` (13 cases).
+- [x] J2. **`scripts/auto-confirm.mjs` fallback** — CLI entry now prefers `input.last_assistant_text` (test fixtures + legacy) but falls back to `readLastAssistantText(input.transcript_path)` when the explicit field is missing. Production Stop hook stdin now drives the classifier correctly. Regression test: Phase 4 section in `auto-confirm.test.mjs` (JSONL transcript + stubbed classifier → exit 2 with queue; previously would have halted with empty message).
+- [x] J3. **`scripts/critic-watchdog.mjs` R13 unwrap** — new `unwrapShellCExec(cmd)` helper strips `bash -c '…'` / `sh -c "…"` / `zsh -c '…'` wrappers. `isPureReadCmd(body)` now checks each `;`/`&&`/`||`-separated statement against an expanded read-tool list (`cat|head|tail|ls|grep|rg|jq|echo|printf|true|:|…`). `interpreterExec`, `shellMutators`, `apiWriters`, `openForWrite`, `redirectTarget`, `heredocToTarget` all re-check against the unwrapped body. `bash -c` itself is no longer treated as an interpreter-exec trigger. Tests: `critic-watchdog.test.mjs` (3 new R13 cases — wrapped read allowed, pipeline of reads allowed, wrapped `node -e` writing state still blocked; 16 total).
+
+Final totals after Phase 4: auto-confirm 99, stop-stage-enforcer 21, critic-watchdog 16, skill-stage-transition 16, workflow-scenarios 111, test-keyword-detector 6, pre-tool-enforcer 13, transcript-reader 13 (**295 total**).
+
 Totals after Phase 15: `stop-stage-enforcer.test.mjs` 19, `skill-stage-transition.test.mjs` 16, `critic-watchdog.test.mjs` 13, `auto-confirm.test.mjs` 89, `workflow-scenarios.test.mjs` 111, `test-keyword-detector.mjs` 6, `pre-tool-enforcer.test.mjs` 13.
 
 ## Phase 14 — stop-stage-enforcer recovery + entry-stage seed + broadened guard (v2.4.6)

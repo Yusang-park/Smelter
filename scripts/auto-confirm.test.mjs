@@ -589,6 +589,55 @@ test('MANDATORY: injection truncates lastAssistantText to 400 chars', () => {
 });
 
 // ----------------------------------------------------------------------------
+section('Phase 4 — transcript_path fallback for lastAssistantText');
+
+test('CLI reads transcript_path when last_assistant_text is absent', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-tp-'));
+  try {
+    // Seed active state with classifier stub that says "continue".
+    const slug = 'feat';
+    const stateDir = join(dir, '.smt', 'features', slug, 'task');
+    mkdirSync(stateDir, { recursive: true });
+    const state = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+    writeFileSync(join(stateDir, `${slug}.state.json`), JSON.stringify(state));
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
+    const sessionId = '11111111-1111-1111-1111-111111111111';
+    writeFileSync(join(dir, '.smt', 'state', `active-feature-${sessionId}.json`), JSON.stringify({ slug }));
+
+    // Write a JSONL transcript with an assistant message.
+    const tp = join(dir, 'transcript.jsonl');
+    writeFileSync(tp, [
+      JSON.stringify({ role: 'user', content: 'go' }),
+      JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: '진행할까요?' }] }),
+    ].join('\n') + '\n');
+
+    // Stub classifier that echoes "continue".
+    const stub = join(dir, 'claude-stub.sh');
+    writeFileSync(stub, '#!/bin/sh\necho continue\n', { mode: 0o755 });
+
+    const payload = JSON.stringify({
+      cwd: dir,
+      session_id: sessionId,
+      transcript_path: tp,
+      // last_assistant_text intentionally omitted
+    });
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: payload,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        SMT_CLASSIFIER_CMD: stub,
+        HOME: dir,
+      },
+    });
+    // Without transcript fallback the classifier input would be empty and
+    // auto-confirm would halt. With fallback, the transcript's "진행할까요?"
+    // reaches the classifier, which returns continue → exit 2 (block + queue).
+    assert.equal(r.status, 2, `expected exit 2 (block+queue), got ${r.status}. stderr=${r.stderr}`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ----------------------------------------------------------------------------
 section('Phase 2 — stage completion classifier');
 
 test('buildStageCompletionPrompt includes mode, stage, message', () => {

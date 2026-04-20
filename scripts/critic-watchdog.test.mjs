@@ -181,6 +181,45 @@ test('R14: block E2E pass claim when effect_evidence is ack_only', () => {
   }
 });
 
+test('R13: bash -c "ls .smt/state/active-feature-*.json" is NOT blocked (pure read, unwrapped)', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: "bash -c 'ls -la .smt/state/active-feature-*.json'" },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R13'), undefined, 'R13 must not fire on bash-wrapped pure read');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('R13: bash -c with cat + grep chain on protected path allowed', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'bash -c \'cat .smt/state/active-feature-abc.json | jq .slug\'' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R13'), undefined, 'R13 must not fire on pipeline of reads');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('R13: bash -c with node -e writing to state still blocked', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'bash -c \'node -e "require(\\\'fs\\\').writeFileSync(\\\'.smt/features/x/task/x.state.json\\\', \\\'\\\')"\'' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.ok(hits.find(h => h.rule === 'R13'), 'R13 must still fire on real state write inside bash -c');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('R15: block src edit when current_stage != workflow-coding but mode allows it', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
   try {
