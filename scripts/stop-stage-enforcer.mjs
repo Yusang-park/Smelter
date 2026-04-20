@@ -229,6 +229,26 @@ export function isTerminalStage(state) {
   return false;
 }
 
+// Construct the MANDATORY workflow directive text embedded in the Stop hook
+// reason. Ensures the agent, when re-invoked after a `decision: block`,
+// sees an explicit Skill invocation requirement rather than a passive
+// description. This closes the "agent idles after Stop" gap observed in
+// auto mode — the reason is the primary signal the agent receives on turn
+// resumption (queue injection only fires on the next UserPromptSubmit).
+export function mandatoryDirective({ skill, direction, state }) {
+  const mode = state?.mode || '?';
+  const current = state?.current_stage || 'null';
+  const dir = direction || 'advance';
+  const label = dir === 'back' ? 'go BACK to'
+    : dir === 'enter' ? 'ENTER'
+    : 'ADVANCE to';
+  return (
+    `[MANDATORY WORKFLOW STEP] mode=${mode}, current_stage=${current}, ${label} ${skill} (direction=${dir}). ` +
+    `You MUST invoke Skill(skill: '${skill}') as the FIRST tool call of your reply. ` +
+    `Do not answer in prose before the Skill call — the Skill invocation IS the reply.`
+  );
+}
+
 // Build the block reason. When the next stage is workflow-e2e AND
 // summary.e2e_required is set, format like the legacy E2E reminder so
 // surface-aware UX is preserved. Otherwise emit a generic [Stage] reason
@@ -270,11 +290,13 @@ export function buildBlockReason({ state, nextStage, summary, sourceFiles }) {
   const eventsEmpty = !Array.isArray(state?.events) || state.events.length === 0;
   if (currentStage && completedEmpty && eventsEmpty) {
     const tag = midFlow ? '[Stage] mid-flow' : '[Stage] entry_not_started';
-    return `${tag}: invoke Skill(skill: '${currentStage}') to execute the current stage — ${stageInfo}${trackedInfo}`;
+    const directive = mandatoryDirective({ skill: currentStage, direction: 'enter', state });
+    return `${tag}${trackedInfo}\n${directive}`;
   }
 
   const tag = midFlow ? '[Stage] mid-flow' : '[Stage] non-terminal';
-  return `${tag}: advance to ${nextStage} — ${stageInfo}${trackedInfo}`;
+  const directive = mandatoryDirective({ skill: nextStage, direction: 'advance', state });
+  return `${tag}${trackedInfo}\n${directive}`;
 }
 
 export function evaluate({ state, summary, sourceFiles, cwd }) {

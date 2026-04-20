@@ -171,6 +171,14 @@ Closes the Stop-loop observed after v2.4.6: seeded `current_stage=entry_skill` w
 
 Tests: 9 new in `scripts/auto-confirm.test.mjs` (prompt shape, gate, decide branches, injection shape). Totals: auto-confirm 98, stop-stage-enforcer 19, critic-watchdog 13, skill-stage-transition 16, workflow-scenarios 111, test-keyword-detector 6, pre-tool-enforcer 13.
 
+**Phase 3 — MANDATORY directive embedded in Stop reason (same release).** Observation: the auto-confirm queue-drop injection only triggers on the next `UserPromptSubmit`, but when Claude Code re-invokes the main agent after a `Stop` `decision: block`, the only signal the agent receives is the Stop `reason` string. Without MANDATORY text in the reason, the agent often reads a passive description and idles. Phase 3 closes this by making the reason itself actionable.
+
+- [x] H1. **`mandatoryDirective({ skill, direction, state })`** — new in `scripts/stop-stage-enforcer.mjs`. Produces `[MANDATORY WORKFLOW STEP] mode=<m>, current_stage=<s>, <ENTER|ADVANCE to|go BACK to> <skill> (direction=<dir>). You MUST invoke Skill(skill: '<skill>') as the FIRST tool call of your reply. Do not answer in prose before the Skill call — the Skill invocation IS the reply.`
+- [x] H2. **`buildBlockReason` now emits MANDATORY directive** — both entry_not_started (direction=enter, skill=current_stage) and non-terminal (direction=advance, skill=nextStage) branches append the directive after the `[Stage]` prefix. Legacy E2E reminder pathway unchanged.
+- [x] H3. Tests: `stop-stage-enforcer.test.mjs` P3-M1 / P3-M2 (MANDATORY text, direction tag, correct skill embedded). 21 cases total.
+
+Result: when Stop blocks, the agent's resumption input contains the full Skill invocation directive, not just a reminder — closing the "agent idles after Stop" gap in auto mode. Final totals after Phase 3: auto-confirm 98, stop-stage-enforcer 21, critic-watchdog 13, skill-stage-transition 16, workflow-scenarios 111, test-keyword-detector 6, pre-tool-enforcer 13 (**278 total**).
+
 Totals after Phase 15: `stop-stage-enforcer.test.mjs` 19, `skill-stage-transition.test.mjs` 16, `critic-watchdog.test.mjs` 13, `auto-confirm.test.mjs` 89, `workflow-scenarios.test.mjs` 111, `test-keyword-detector.mjs` 6, `pre-tool-enforcer.test.mjs` 13.
 
 ## Phase 14 — stop-stage-enforcer recovery + entry-stage seed + broadened guard (v2.4.6)

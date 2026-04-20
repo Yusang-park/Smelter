@@ -496,6 +496,44 @@ test('E2 mid-chain (completed_stages has prior) → advance wording', () => {
   } finally { tearDown(dir); }
 });
 
+console.log('\n[Phase 3 — MANDATORY directive in Stop reason]');
+
+test('P3-M1 entry_not_started reason embeds MANDATORY Skill invocation', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const dir = setupProject({ state });
+  try {
+    const res = runHook({ cwd: dir }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /\[MANDATORY WORKFLOW STEP\]/);
+    assert.match(out.reason, /Skill\(skill: 'workflow-investigate'\)/);
+    assert.match(out.reason, /direction=enter/);
+  } finally { tearDown(dir); }
+});
+
+test('P3-M2 advance reason embeds MANDATORY directive for next stage', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-coding',
+    completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const dir = setupProject({ state });
+  try {
+    const res = runHook({ cwd: dir }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /\[MANDATORY WORKFLOW STEP\]/);
+    assert.match(out.reason, /direction=advance/);
+    assert.match(out.reason, /workflow-agent-review/);
+  } finally { tearDown(dir); }
+});
+
 console.log('\n[broadened workflow-mode coverage]');
 
 test('C16 investigate mode at workflow-investigate (post-pass, non-terminal) → block + advance', () => {
