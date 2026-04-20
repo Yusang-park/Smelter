@@ -25,8 +25,19 @@ function readStdinJson() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
 }
 
-function emit(decision, severity, ruleId, reason) {
-  console.log(JSON.stringify({ decision, severity, rule_id: ruleId, reason, source: 'critic-watchdog' }));
+// Emit a Claude Code hook response. The Claude Code hook schema only allows a
+// fixed set of root-level keys (`continue`, `decision`, `reason`, `systemMessage`,
+// `suppressOutput`, `additionalContext`, `hookSpecificOutput`); extra fields
+// trigger "(root): Invalid input" validation errors. Internal metadata
+// (severity, rule id, source) is logged to stderr instead.
+function emitBlock(ruleId, severity, reason) {
+  process.stderr.write(`[critic-watchdog ${severity}] ${ruleId}: ${reason}\n`);
+  console.log(JSON.stringify({ decision: 'block', reason }));
+}
+
+function emitWarn(ruleIds, severity, reason) {
+  process.stderr.write(`[critic-watchdog ${severity}] ${ruleIds}: ${reason}\n`);
+  console.log(JSON.stringify({ continue: true, systemMessage: `[critic-watchdog ${severity}] ${reason}` }));
 }
 
 // ===== 10 Rules =====
@@ -230,6 +241,64 @@ function rule11_e2ePassWithoutArtifacts(input, state, cwd) {
   return null;
 }
 
+// R12 — block src/scripts edits when a workflow command is active but the
+// agent hasn't entered a workflow skill yet. Plugs the bypass where /fix (or
+// any mode command) seeds an active-feature pointer but the agent jumps
+// straight to Edit/Write without invoking workflow-investigate.
+//
+// Fires when ALL of the following hold:
+//   - tool is Edit or Write
+//   - target is under src/ or scripts/ (project code), NOT a *.test.* file
+//   - a workflow command is active (state exists with current_stage=null, OR
+//     active-feature.json pointer exists without a .state.json)
+//
+// Deliberately does NOT fire when .smt/ does not exist (non-Smelter project)
+// or when the edit targets a test file (tests-first is the intended escape).
+function rule12_workflowStageRequired(input, state, cwd) {
+  if (input.tool_name !== 'Edit' && input.tool_name !== 'Write') return null;
+  const target = input.tool_input?.file_path || '';
+  if (!target) return null;
+  const rel = cwd ? target.replace(cwd + '/', '') : target;
+  const base = rel.split('/').pop() || '';
+  // Smelter test files use two naming conventions:
+  //   foo.test.mjs / foo.spec.mjs  (suffix form — most scripts + frontend)
+  //   test-foo.mjs / foo-test.mjs  (prefix/infix form — hook test scaffolds)
+  // Both must be exempt so TDD-first edits are never blocked by R12.
+  const isTest = /\.test\.|\.spec\./.test(base)
+    || /^test[-_]/.test(base)
+    || /[-_]test\./.test(base)
+    || /\/tests?\//.test(rel)
+    || /\/spec\//.test(rel)
+    || /\/__tests__\//.test(rel);
+  if (isTest) return null;
+  const isCode = /^(?:src|scripts|bin|lib)\//.test(rel) || /\/(?:src|scripts|bin|lib)\//.test(rel);
+  if (!isCode) return null;
+
+  if (state) {
+    if (state.current_stage === null || state.current_stage === undefined) {
+      return {
+        rule: 'R12',
+        severity: 'CRITICAL',
+        reason: `workflow active (mode=${state.mode}) but current_stage is null — invoke workflow-investigate before editing ${rel}`,
+      };
+    }
+    return null;
+  }
+
+  // state === null: still block if the user IS inside a workflow command, i.e.
+  // active-feature.json was seeded by keyword-detector. Without this guard the
+  // agent can bypass the entire workflow by writing code before any workflow
+  // skill runs.
+  if (!cwd) return null;
+  const activePointer = join(cwd, '.smt', 'state', 'active-feature.json');
+  if (!existsSync(activePointer)) return null;
+  return {
+    rule: 'R12',
+    severity: 'CRITICAL',
+    reason: `workflow command active (see .smt/state/active-feature.json) but no .state.json — invoke workflow-investigate first; editing ${rel} is a workflow bypass`,
+  };
+}
+
 // ===== Helpers =====
 
 function guessPlanPath(featuresRoot, state) {
@@ -263,6 +332,7 @@ export const RULES = [
   rule06_whitelistViolation, rule07_scopeLeak, rule08_evasionPatterns,
   rule09_parallelFileConflict, rule10_sessionLogMissing,
   rule11_e2ePassWithoutArtifacts,
+  rule12_workflowStageRequired,
 ];
 
 export function runAll(input, state, cwd) {
@@ -288,19 +358,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   const critical = hits.find(h => h.severity === 'CRITICAL');
   if (critical) {
-    emit('block', 'CRITICAL', critical.rule, critical.reason);
+    emitBlock(critical.rule, 'CRITICAL', critical.reason);
     process.exit(2);
   }
 
   const high = hits.filter(h => h.severity === 'HIGH');
   if (high.length) {
-    emit('warn', 'HIGH', high.map(h => h.rule).join(','), high.map(h => h.reason).join('; '));
+    emitWarn(high.map(h => h.rule).join(','), 'HIGH', high.map(h => h.reason).join('; '));
     process.exit(0);
   }
 
   const med = hits.filter(h => h.severity === 'MEDIUM');
   if (med.length) {
-    emit('warn', 'MEDIUM', med.map(h => h.rule).join(','), med.map(h => h.reason).join('; '));
+    emitWarn(med.map(h => h.rule).join(','), 'MEDIUM', med.map(h => h.reason).join('; '));
   }
   process.exit(0);
 }

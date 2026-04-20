@@ -26,9 +26,10 @@ import {
   buildChainedTransitionPrompt,
   decide,
   detectRiskKeyword,
-  detectProceedPrompt,
   pickSubAgentModel,
   buildPromptInjection,
+  buildClassifierPrompt,
+  classifyProceedPromptViaSubAgent,
 } from './auto-confirm.mjs';
 
 import { createInitialState, writeState } from './state-schema.mjs';
@@ -146,34 +147,73 @@ test('Empty string returns false', () => {
 });
 
 // ----------------------------------------------------------------------------
-section('detectProceedPrompt (Korean + English ask-permission patterns)');
+section('buildClassifierPrompt (LLM sub-agent prompt shape)');
 // ----------------------------------------------------------------------------
-test('Korean 진행할까요 detected', () => {
-  assert.equal(detectProceedPrompt('이대로 진행할까요?'), true);
+test('prompt embeds the assistant message verbatim', () => {
+  const p = buildClassifierPrompt('Shall I proceed?');
+  assert.match(p, /Shall I proceed\?/);
 });
-test('Korean 계속할까요 detected', () => {
-  assert.equal(detectProceedPrompt('계속할까요?'), true);
+test('prompt instructs binary continue/halt output', () => {
+  const p = buildClassifierPrompt('hello');
+  assert.match(p, /continue/);
+  assert.match(p, /halt/);
 });
-test('Korean 다음 단계로 진행할까요 detected', () => {
-  assert.equal(detectProceedPrompt('다음 단계로 진행할까요?'), true);
+test('prompt is language-agnostic (mentions "any language")', () => {
+  const p = buildClassifierPrompt('hello');
+  assert.match(p, /any language/i);
 });
-test('English shall I proceed detected', () => {
-  assert.equal(detectProceedPrompt('Shall I proceed?'), true);
+
+// ----------------------------------------------------------------------------
+section('classifyProceedPromptViaSubAgent (stub-injected sub-agent)');
+// ----------------------------------------------------------------------------
+function makeStub(stdout, exitCode = 0) {
+  const dir = mkdtempSync(join(tmpdir(), 'classifier-stub-'));
+  const stub = join(dir, 'stub.sh');
+  writeFileSync(stub, `#!/bin/sh\nprintf '%s' '${stdout}'\nexit ${exitCode}\n`, { mode: 0o755 });
+  return { dir, stub };
+}
+test('stub returning "continue" → continue', () => {
+  const { dir, stub } = makeStub('continue');
+  try {
+    const v = classifyProceedPromptViaSubAgent('next?', { cmd: stub });
+    assert.equal(v, 'continue');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('English should I continue detected', () => {
-  assert.equal(detectProceedPrompt('Should I continue with the implementation?'), true);
+test('stub returning "halt" → halt', () => {
+  const { dir, stub } = makeStub('halt');
+  try {
+    const v = classifyProceedPromptViaSubAgent('done.', { cmd: stub });
+    assert.equal(v, 'halt');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('English ready to proceed detected', () => {
-  assert.equal(detectProceedPrompt('Ready to proceed.'), true);
+test('stub returning garbage → halt (safe default, no fallback)', () => {
+  const { dir, stub } = makeStub('maybe?');
+  try {
+    const v = classifyProceedPromptViaSubAgent('?', { cmd: stub });
+    assert.equal(v, 'halt');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('Clean completion message NOT detected', () => {
-  assert.equal(detectProceedPrompt('All tests pass. Implementation complete.'), false);
+test('stub exit non-zero → halt', () => {
+  const { dir, stub } = makeStub('continue', 1);
+  try {
+    const v = classifyProceedPromptViaSubAgent('?', { cmd: stub });
+    assert.equal(v, 'halt');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('Empty string NOT detected', () => {
-  assert.equal(detectProceedPrompt(''), false);
+test('empty input → halt without spawning', () => {
+  assert.equal(classifyProceedPromptViaSubAgent('', { cmd: '/bin/false' }), 'halt');
+  assert.equal(classifyProceedPromptViaSubAgent(null, { cmd: '/bin/false' }), 'halt');
 });
-test('Null input NOT detected', () => {
-  assert.equal(detectProceedPrompt(null), false);
+test('missing binary → halt (no fallback)', () => {
+  const v = classifyProceedPromptViaSubAgent('proceed?', { cmd: '/nonexistent/path/xyz' });
+  assert.equal(v, 'halt');
+});
+test('stub trimmed whitespace + trailing newline accepted', () => {
+  const { dir, stub } = makeStub('continue\\n');
+  try {
+    const v = classifyProceedPromptViaSubAgent('?', { cmd: stub });
+    assert.equal(v, 'continue');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ----------------------------------------------------------------------------
@@ -350,20 +390,17 @@ test('test_cycles RED without coding entry → enter_skill workflow-coding', () 
   assert.equal(d.action, 'enter_skill');
   assert.equal(d.payload.skill, 'workflow-coding');
 });
-test('no signal + neutral message → halt (no infinite loop)', () => {
+test('no signal → classify_needed (delegates to LLM sub-agent)', () => {
   const s = baseState({ current_stage: 'workflow-tasker', events: [] });
   const d = decide({ state: s, lastAssistantText: 'Implementation complete.' });
-  assert.equal(d.action, 'halt');
+  assert.equal(d.action, 'classify_needed');
+  assert.equal(d.payload.lastMessage, 'Implementation complete.');
 });
-test('no signal + Korean proceed prompt → continue (auto-confirm)', () => {
+test('no signal + empty message → classify_needed with empty payload', () => {
   const s = baseState({ current_stage: 'workflow-tasker', events: [] });
-  const d = decide({ state: s, lastAssistantText: '다음 단계로 진행할까요?' });
-  assert.equal(d.action, 'continue');
-});
-test('no signal + English proceed prompt → continue (auto-confirm)', () => {
-  const s = baseState({ current_stage: 'workflow-tasker', events: [] });
-  const d = decide({ state: s, lastAssistantText: 'Shall I proceed with the next step?' });
-  assert.equal(d.action, 'continue');
+  const d = decide({ state: s, lastAssistantText: '' });
+  assert.equal(d.action, 'classify_needed');
+  assert.equal(d.payload.lastMessage, '');
 });
 
 // ----------------------------------------------------------------------------
@@ -516,8 +553,11 @@ test('no active state → exit 0 (no_state), no decision emitted', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
-test('active state + neutral message → exit 0, no queue (halt path)', () => {
+test('active state + classifier stub → halt → exit 0, no queue', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  const stubDir = mkdtempSync(join(tmpdir(), 'cls-stub-'));
+  const stub = join(stubDir, 'cls.sh');
+  writeFileSync(stub, `#!/bin/sh\nprintf 'halt'\n`, { mode: 0o755 });
   try {
     const featDir = join(dir, '.smt', 'features', 'h', 'task');
     mkdirSync(featDir, { recursive: true });
@@ -526,18 +566,25 @@ test('active state + neutral message → exit 0, no queue (halt path)', () => {
     writeState(statePath, state);
     mkdirSync(join(dir, '.smt'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
-    const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'Implementation complete.' });
-    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
+    const sessionId = 'sess-halt-1';
+    const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'Implementation complete.' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER_CMD: stub } });
     assert.equal(res.status, 0, `expected halt exit 0, got ${res.status}\nstderr: ${res.stderr}`);
     assert.equal(res.stdout.trim(), '');
-    const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
-    assert.equal(existsSync(queuePath), false, 'no queue file should be dropped on halt');
+    const sessQueue = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
+    const legacyQueue = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    assert.equal(existsSync(sessQueue), false, 'no session-scoped queue should be dropped on halt');
+    assert.equal(existsSync(legacyQueue), false, 'no legacy queue should be dropped on halt');
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    rmSync(stubDir, { recursive: true, force: true });
   }
 });
-test('active state + proceed prompt → exit 2, queue-drop with sub_agent_model', () => {
+test('active state + classifier stub → continue → exit 2 + queue with sub_agent_model', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  const stubDir = mkdtempSync(join(tmpdir(), 'cls-stub-'));
+  const stub = join(stubDir, 'cls.sh');
+  writeFileSync(stub, `#!/bin/sh\nprintf 'continue'\n`, { mode: 0o755 });
   try {
     const featDir = join(dir, '.smt', 'features', 'p', 'task');
     mkdirSync(featDir, { recursive: true });
@@ -546,21 +593,99 @@ test('active state + proceed prompt → exit 2, queue-drop with sub_agent_model'
     writeState(statePath, state);
     mkdirSync(join(dir, '.smt'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
-    const payload = JSON.stringify({ cwd: dir, last_assistant_text: '진행할까요?' });
-    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
+    const sessionId = 'sess-continue-1';
+    const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: '진행할까요?' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER_CMD: stub } });
     assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
     const out = JSON.parse(res.stdout);
     assert.equal(out.decision, 'block');
     assert.equal(out.meta.sub_agent_model, 'sonnet');
-    const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    const queuePath = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
     const queue = JSON.parse(readFileSync(queuePath, 'utf-8'));
+    assert.equal(queue.session_id, sessionId, 'queue payload must embed session_id');
     assert.equal(queue.sub_agent_model, 'sonnet');
     assert.match(queue.additionalContext, /sub-agent/i);
+    assert.match(queue.additionalContext, /classifier sub-agent/);
+    const legacyQueue = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    assert.equal(existsSync(legacyQueue), false, 'legacy shared queue must not be written when session_id present');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(stubDir, { recursive: true, force: true });
+  }
+});
+test('queue-signal present → exit 2, queue with queued_intent (skips classifier)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const featDir = join(dir, '.smt', 'features', 'q', 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, 'q.state.json');
+    writeState(statePath, baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [] }));
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
+    writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+    const sessionId = 'sess-test-1';
+    writeFileSync(join(dir, '.smt', 'state', 'cancel-signal.json'), JSON.stringify({
+      type: 'queue',
+      timestamp: Date.now(),
+      reason: 'test',
+      source: 'propagator',
+      queued_intent: 'fix the next bug X',
+      session_id: sessionId,
+    }));
+    const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'done' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
+    assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
+    const out = JSON.parse(res.stdout);
+    assert.equal(out.decision, 'block');
+    assert.equal(out.meta.source, 'cancel-signal');
+    // Queue-signal file should be consumed (deleted)
+    assert.equal(existsSync(join(dir, '.smt', 'state', 'cancel-signal.json')), false);
+    // Session-scoped auto-confirm-queue should hold the queued intent
+    const sessQueuePath = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
+    const queue = JSON.parse(readFileSync(sessQueuePath, 'utf-8'));
+    assert.equal(queue.session_id, sessionId);
+    assert.equal(queue.queued_intent, 'fix the next bug X');
+    assert.match(queue.additionalContext, /fix the next bug X/);
+    assert.equal(existsSync(join(dir, '.smt', 'state', 'auto-confirm-queue.json')), false,
+      'legacy shared queue must not be written when session_id present');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
-test('active state + pass event → exit 2, queue-drop produced', () => {
+test('current_stage=done (session_wrap) → exit 0, no queue (terminal halt)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const featDir = join(dir, '.smt', 'features', 'd', 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, 'd.state.json');
+    // Bypass writeState's schema validator (which rejects 'done' since it's not
+    // in WORKFLOW_SKILLS) — production paths set current_stage='done' via Edit.
+    const s = baseState({ mode: 'fix', events: [] });
+    s.current_stage = 'done';
+    writeFileSync(statePath, JSON.stringify(s));
+    mkdirSync(join(dir, '.smt'), { recursive: true });
+    writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+    const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'all done' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
+    assert.equal(res.status, 0, `expected halt exit 0, got ${res.status}\nstderr: ${res.stderr}`);
+    assert.equal(res.stdout.trim(), '');
+    const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    assert.equal(existsSync(queuePath), false, 'session_wrap must not drop a queue (avoid loop)');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('SMT_CLASSIFIER=1 recursion guard → exit 0, no work', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'whatever' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER: '1' } });
+    assert.equal(res.status, 0);
+    assert.equal(res.stdout.trim(), '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('active state + pass event + session_id → exit 2, session-scoped queue-drop produced', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
   try {
     const featDir = join(dir, '.smt', 'features', 'f', 'task');
@@ -571,18 +696,59 @@ test('active state + pass event → exit 2, queue-drop produced', () => {
     // Point active_task at it.
     mkdirSync(join(dir, '.smt'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
-    const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'completed step' });
+    const sessionId = 'sess-pass-1';
+    const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'completed step' });
     const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
     assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
     const out = JSON.parse(res.stdout);
     assert.equal(out.decision, 'block');
     assert.equal(out.meta.queued, true, 'meta.queued should be true');
-    // Queue file must exist and carry the injection.
-    const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
+    const queuePath = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
     const queueRaw = readFileSync(queuePath, 'utf-8');
     const queue = JSON.parse(queueRaw);
+    assert.equal(queue.session_id, sessionId);
     assert.ok(queue.additionalContext, 'queue payload should include additionalContext');
     assert.equal(queue.state_path, statePath);
+    assert.equal(existsSync(join(dir, '.smt', 'state', 'auto-confirm-queue.json')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('parallel sessions do not cross-pollinate: A writes, B reads nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const featDir = join(dir, '.smt', 'features', 'px', 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, 'px.state.json');
+    writeState(statePath, baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [passEvent('workflow-tasker')] }));
+    mkdirSync(join(dir, '.smt'), { recursive: true });
+    writeFileSync(join(dir, '.smt', 'active_task'), statePath);
+
+    // Session A writes.
+    const aId = 'sess-A';
+    const aPayload = JSON.stringify({ cwd: dir, session_id: aId, last_assistant_text: 'A done' });
+    const aRes = spawnSync('node', [HOOK], { input: aPayload, encoding: 'utf-8' });
+    assert.equal(aRes.status, 2);
+    const aPath = join(dir, '.smt', 'state', `auto-confirm-queue-${aId}.json`);
+    assert.ok(existsSync(aPath));
+
+    // Session B must not see A's queue when it runs the consumer.
+    const consumerPath = join(__dirname, 'auto-confirm-consumer.mjs');
+    const bId = 'sess-B';
+    const bPayload = JSON.stringify({ cwd: dir, session_id: bId });
+    const bRes = spawnSync('node', [consumerPath], { input: bPayload, encoding: 'utf-8' });
+    assert.equal(bRes.status, 0);
+    assert.equal(bRes.stdout.trim(), '', 'session B must not consume session A queue');
+    assert.ok(existsSync(aPath), 'session A queue must remain for A to consume');
+
+    // Session A consumes its own file.
+    const aConsumePayload = JSON.stringify({ cwd: dir, session_id: aId });
+    const aConsumeRes = spawnSync('node', [consumerPath], { input: aConsumePayload, encoding: 'utf-8' });
+    assert.equal(aConsumeRes.status, 0);
+    const injected = JSON.parse(aConsumeRes.stdout);
+    assert.ok(injected.hookSpecificOutput?.additionalContext, 'session A must receive its own queued payload');
+    assert.equal(existsSync(aPath), false, 'A queue consumed once');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

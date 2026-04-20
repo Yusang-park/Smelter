@@ -6,8 +6,14 @@
 // the next UserPromptSubmit picks it up here and injects it as additionalContext
 // so the main agent continues from where it left off.
 //
+// Queue files are session-scoped: auto-confirm-queue-<sessionId>.json. A
+// session only consumes its own file so parallel Claude sessions in the same
+// project never cross-pollinate queued continuations. The legacy shared
+// filename (auto-confirm-queue.json) is consulted only as a fallback when the
+// UserPromptSubmit payload carries no session_id.
+//
 // Behavior:
-//   1. Look for `.smt/state/auto-confirm-queue.json`. If absent → exit 0.
+//   1. Resolve queue path from stdin's session_id. If file absent → exit 0.
 //   2. If older than QUEUE_MAX_AGE_MS → delete (stale) and exit 0.
 //   3. Otherwise emit `{ continue: true, hookSpecificOutput: { hookEventName,
 //      additionalContext } }` per Claude Code UserPromptSubmit schema, and
@@ -20,8 +26,8 @@ function readStdinJson() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
 }
 
-export function consume(cwd, { now = Date.now() } = {}) {
-  const path = queuePath(cwd);
+export function consume(cwd, sessionId = '', { now = Date.now() } = {}) {
+  const path = queuePath(cwd, sessionId);
   if (!existsSync(path)) return null;
 
   let entry;
@@ -45,7 +51,8 @@ export function consume(cwd, { now = Date.now() } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const input = readStdinJson();
   const cwd = input.cwd || process.cwd();
-  const entry = consume(cwd);
+  const sessionId = input.session_id || input.sessionId || '';
+  const entry = consume(cwd, sessionId);
 
   if (!entry || !entry.additionalContext) {
     process.exit(0);

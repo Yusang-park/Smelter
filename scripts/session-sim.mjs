@@ -179,9 +179,11 @@ assertEq('decision is "block"', stop1.parsed?.decision, 'block');
 assertOk('reason emitted (Stop schema)', typeof stop1.parsed?.reason === 'string' && stop1.parsed.reason.length > 0);
 assertOk('meta.queued = true', stop1.parsed?.meta?.queued === true);
 
-// Queue file dropped?
-const queuePath = join(ROOT, '.smt', 'state', 'auto-confirm-queue.json');
-assertOk('queue file created at .smt/state/auto-confirm-queue.json', existsSync(queuePath));
+// Queue file dropped? (session-scoped)
+const SESSION_ID = 'sess-sim-01';
+const queuePath = join(ROOT, '.smt', 'state', `auto-confirm-queue-${SESSION_ID}.json`);
+assertOk(`session-scoped queue file created at .smt/state/auto-confirm-queue-${SESSION_ID}.json`, existsSync(queuePath));
+assertOk('legacy shared queue file NOT created', !existsSync(join(ROOT, '.smt', 'state', 'auto-confirm-queue.json')));
 let q1 = null;
 if (existsSync(queuePath)) {
   q1 = JSON.parse(readFileSync(queuePath, 'utf-8'));

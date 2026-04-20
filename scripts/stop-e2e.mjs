@@ -3,7 +3,7 @@
 // Session-scoped E2E reminder.
 // Only checks files that Claude actually modified this session (tracked by post-tool-verifier).
 // Outputs a minimal prompt to avoid token waste.
-// E2E execution itself is Step 8 of the workflow — this hook only reminds, not enforces.
+// E2E execution itself is the workflow-e2e stage — this hook only reminds, not enforces.
 
 import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
@@ -88,8 +88,8 @@ if (!summary) SKIP();
 if (!summary.e2e_required || summary.e2e_done) SKIP();
 if (summary.status === 'complete') SKIP();
 
-const prompt = `[E2E] ${sourceFiles.length} file(s) changed [${typeStr}] on feature ${summary.slug}. Step 8 E2E required.`;
+const prompt = `[E2E] ${sourceFiles.length} file(s) changed [${typeStr}] on feature ${summary.slug}. workflow-e2e stage required.`;
 
-console.error('\x1b[33m[smelter] Stop · Step 8: E2E Validation\x1b[0m');
+console.error('\x1b[33m[smelter] Stop · workflow-e2e: E2E Validation\x1b[0m');
 console.log(JSON.stringify({ decision: 'block', reason: prompt }));
 process.exit(0);

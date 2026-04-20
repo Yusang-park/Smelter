@@ -25,7 +25,7 @@ translations: document/workflow.ko.md
 | 2 | **No evasion** | Fail cannot be papered over as "known limit" or self-declared complete. The agent keeps routing via producer chain until the problem is resolved. |
 | 3 | **No self-failure** | Skills cannot emit "I can't do it". `result ∈ { pass, fail }` only. |
 | 4 | **No retry** | The mechanical `max_retry` concept is removed. Instead, failures route to the producer to fix the upstream cause and advance — this is forward motion, not retry. |
-| 5 | **File is truth** | Skill completion is recognized only via **file-verifiable postconditions**. Self-claims are rejected. |
+| 5 | **File is truth** | Skill completion is recognized only via **file-verifiable postconditions**. Self-claims are rejected. Enforced by `scripts/state-validator.mjs::validateEvidenceIntegrity()` invoked from `writeState()`: every `completed_stages` entry must have a matching `events[].result === 'pass'` carrying `evidence.path` pointing at an existing file. Forged completions throw at write time. |
 | 6 | **Workflow whitelist is user-decision** | Only `workflow-*` skills are constrained by the mode's `allowed_skills`. If a workflow skill outside the current mode is needed, the agent does not decide — it **requests a user-gated mode upgrade**. Utility skills (`ui-ux-pro-max`, `copywriting`, `claude-api`, ...) are **freely usable** with no constraint. |
 | 7 | **Independent queues, shared sessions, specialist agents** | Each task's **Queue** is independent. Multiple tasks may share a session. Tasks may delegate to **specialist agents** (frontend, backend, security, ...). **Team Agents** (multi-agent collaboration) are supported. |
 | 8 | **Scoped testing** | Only tests related to changed files run by default. Full regression only at `workflow-human-check` with explicit request. |
@@ -75,6 +75,10 @@ Commands are **hints**; the default is **rule-based auto-routing** from natural-
 - The classifier runs **only at entry**. Mid-workflow mode changes are user-gated (upgrade).
 - Routing is **rule-based** — no LLM inference (Iron Law #2, no evasion).
 - An explicit slash command **overrides** the classifier.
+
+**Source of truth**: `scripts/mode-classifier.mjs` — pure module exporting `classify(input)`. `scripts/keyword-detector.mjs` (the UserPromptSubmit hook) imports it at step 2 of command resolution; the Haiku sub-agent classifier stays as a step-3 fallback for prompts the rule-based classifier leaves at `default:*`.
+
+**Compound intents (chained modes)**: when the classifier detects a connective-joined chain (e.g., "분석하고 구현해줘" → `[investigate, implement]`, "테스트하고 문제 있으면 고쳐" → `[verify, fix]`), it emits `chained_modes: MODES[]`. `keyword-detector` writes this into `.state.json` at entry; `auto-confirm.decide()` picks it up at the `mode_transition` signal and auto-advances via `consumeNextChainedMode` without a user prompt (`chain_advance`). Entry mode is always `chained_modes[0]`.
 
 #### Mode summary
 
@@ -186,7 +190,19 @@ Validated invariants:
 - `team_runtime[skill].rounds[i]` (when present) has `focus` ∈ `{omission, contradiction, edge_case}` and `result` ∈ `{null, pass, fail}`.
 - `active_feedback[i].target_skill` ∈ workflow skills; `resolved` boolean.
 
-### 2-3. Token optimization
+### 2-3. State initialization
+
+On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/implement`, `/verify`), `scripts/keyword-detector.mjs` writes `.smt/features/<slug>/task/<slug>.state.json` using `state-schema.createInitialState()` plus `allowed_skills` loaded from `modes/<mode>.json`, and also writes a `.smt/state/active_task` pointer. **`current_stage` is intentionally seeded as `null`** — the agent must invoke the mode's entry workflow skill to advance. Combined with R12 (critic-watchdog), this enforces the canonical skill-entry workflow. The legacy `workflow.json` in `.smt/features/<slug>/state/` is retained for backward compatibility but `.state.json` is now the enforcement source of truth.
+
+**Gate enforcement stack** (v2.4.2 harness-integrity):
+1. `scripts/pre-tool-enforcer.mjs` — PreToolUse Write/Edit guard on `.state.json` path. Agents cannot directly mutate state. Escape hatch `SMT_HOOK_WRITE=1` reserved for future hook scripts.
+2. `scripts/skill-stage-transition.mjs` — PostToolUse `Skill` matcher. Invoking an allowed workflow skill auto-writes the pass event + updates `current_stage` + (for non-deferred skills) appends `completed_stages`. Deferred skills (`workflow-e2e`, `workflow-human-check`, `workflow-agent-review`, `workflow-team-code-review`, `workflow-verify`, `workflow-e2e-review`) set `current_stage` only.
+3. `scripts/state-validator.mjs` — `validateEvidenceIntegrity()` wired into `state-schema.writeState()`. Every `completed_stages` entry must have a pass event with existing `evidence.path`. Forged stages throw.
+4. `critic-watchdog.mjs` R13 — Bash-based bypass defense-in-depth. Skipped when `SMT_HOOK_WRITE=1`.
+
+**Classifier-subprocess re-entrancy guard**: when `lib/subagent-classifier.mjs` spawns the Claude CLI to run the Haiku classifier, that subprocess inherits the parent hook chain. `keyword-detector.mjs` detects this via `process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1'` and bails out before any state-seeding side effect. Without this guard, slug derivation would use the classifier's system prompt as if it were user input, polluting the state store with spurious feature slugs over multiple sessions.
+
+### 2-4. Token optimization
 
 - Prompt injection uses only the **last 5** events.
 - `test_cycles` is filtered to files related to `current_stage`.
@@ -477,6 +493,7 @@ Record exemption at `state.json.exempt` + `decisions.md: TDD: exempt (<reason>)`
 
 - `workflow-e2e` gate postconditions include `real_interface_invoked`, `no_interface_mocks`, `per_surface_artifact_present`.
 - `critic-watchdog` rule R11 (CRITICAL) blocks any attempt to record an E2E pass while `artifacts/` holds none of the allowed file types (`.webm`, `.mp4`, `.png`, `.jpg`, `.log`, `.transcript`, `.json`, `.sql`, `.exit`).
+- `critic-watchdog` rule R12 (CRITICAL) blocks `Edit` / `Write` tool calls to `src/`, `scripts/`, `bin/`, or `lib/` paths (non-test files) when `.state.json` exists with `current_stage === null` OR `.state.json` does not exist but `.smt/state/active-feature.json` exists. Exception: outside a Smelter project (no `.smt/` directory). Rationale: enforces workflow-skill entry before code mutation; closes the "write code before invoking any workflow skill" bypass. Also exempts `test-<name>` prefix and `<name>-test` infix filenames used by Smelter's hook test scaffolds.
 - New fail causes: `artifact_missing`, `mocked_interface`. Both route to `workflow-e2e` (self-rerun with correct runner / without mocks).
 
 ---
@@ -542,24 +559,29 @@ verification_rounds:
 ### 10-1. Presented report
 
 ```
-┌────────────────────────────────────────────────┐
-│              Human Review Report              │
-├────────────────────────────────────────────────┤
-│ Feature  : <slug>                              │
-│ Task     : <title>                             │
-│ Mode     : <mode>                              │
-│ Stages   : [completed workflow skills]         │
-│ Artifacts:                                     │
-│   - Video : <path>                             │
-│   - Log   : <path>                             │
-│   - Diff  : <summary>                          │
-│ Risks    : <## Risks section>                  │
-│ TDD      : <test_cycles summary>               │
-│ E2E      : <surface + pass/fail + artifacts>   │
-└────────────────────────────────────────────────┘
+Human Review Report
+────────────────────────────────────
+Feature  : <slug>
+Task     : <title>
+Mode     : <mode>
+Stages   : <list of completed workflow skills>
+
+Artifacts:
+  - Video : <path or (none)>
+  - Log   : <path or (none)>
+  - Diff  : <summary>
+
+Risks    : <## Risks section or (none)>
+TDD      : <test_cycles summary>
+E2E      : <surface + pass/fail + artifacts>
+────────────────────────────────────
 ```
 
 ### 10-2. User options
+
+**MANDATORY:** ask via the Claude Code `AskUserQuestion` tool (native clickable prompt), never as a plain-text menu. `AskUserQuestion` is a deferred tool — load its schema first via `ToolSearch("select:AskUserQuestion")`, then invoke it. The same rule applies to `/investigate` exit options (`commands/investigate.md`).
+
+Options:
 
 ```
 [1] rework   → specify rework targets → create active_feedback → target_skill routing
@@ -588,7 +610,8 @@ On `complete`: `state.json.current_stage: done`, task md checkboxes `[x]`, appen
      ├── read state.json (current_stage, events, active_feedback, test_cycles)
      ├── analyze last assistant response
      ├── apply decision tree (§11-2)
-     └── drop payload to .smt/state/auto-confirm-queue.json
+     └── drop payload to .smt/state/auto-confirm-queue-<sessionId>.json
+         (session-scoped; legacy auto-confirm-queue.json only when session_id absent)
          + emit { decision: 'block' } (exit 2)
      │
      ▼ (on next UserPromptSubmit)
@@ -609,10 +632,19 @@ On `complete`: `state.json.current_stage: done`, task md checkboxes `[x]`, appen
 | `current_stage === workflow-human-check && result === complete` | **wrap session, write session log** |
 | `chained_modes.length > 1` + transition signal | **auto-advance the chain** |
 | `mode_upgrade` requested | user input awaited (only halt) |
-| Last assistant message asks permission ("진행할까요?", "shall I proceed?", "ready to continue?", etc.) | **auto-confirm: continue (spawn sub-agent with selected model)** |
-| No signal + no proceed prompt | **halt** (no infinite loop) |
+| No state-machine signal | **delegate to lightweight LLM classifier sub-agent** (verdict = `continue` or `halt` — no regex, no fallback) |
 
-The queued payload includes `sub_agent_model` so the next-turn agent spawns the work via a sub-agent using the selected model. Default = `sonnet`. When `~/.smt/config.json.codexMode === true` or env `CODEX_MODE=1`, the model switches to `haiku` (mini) for the Codex CLI runtime.
+The classifier sub-agent runs `claude -p <classifier-prompt> --model <model>` and outputs exactly one word. The Stop hook acts on that verdict:
+- `continue` → block + queue injection (next turn proceeds)
+- `halt` (or sub-agent failure: timeout, missing binary, malformed output) → exit 0, no queue (no infinite loop)
+
+Recursion is prevented by setting `SMT_CLASSIFIER=1` on the spawned sub-agent's env; the Stop hook bails out immediately when it sees that flag, so classifier sessions cannot recursively re-fire the hook. Hook timeout raised to 45 s to accommodate one LLM round-trip.
+
+Sub-agent model selection (`pickSubAgentModel`):
+- Default = `sonnet`.
+- `~/.smt/config.json.codexMode === true` or env `CODEX_MODE=1` → `haiku` (mini) for the Codex CLI runtime.
+
+The queued payload includes `sub_agent_model` so the next-turn agent's continuation work uses the same model.
 
 ### 11-3. Risk auto-tasking (sub-tasker)
 
@@ -630,7 +662,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 2. `workflow-human-check` awaiting user input.
 3. Mode-upgrade decision awaited.
 4. `investigate` mode terminal (user picks the next mode).
-5. **No actionable signal AND last assistant message contains no proceed prompt** — halt to prevent the previous "no explicit signal, prompting to proceed" infinite loop. The Stop hook reads the last message every time; only auto-confirms when the agent explicitly asked permission (see §11-2).
+5. **Classifier sub-agent verdict = `halt`** — when no state-machine signal matches, the lightweight LLM classifier decides; a `halt` verdict (or any sub-agent failure: timeout, missing binary, malformed output) ends the session cleanly and prevents the prior "no explicit signal, prompting to proceed" infinite loop. There is no regex fallback (see §11-2).
 
 ### 11-5. Config
 
@@ -647,6 +679,34 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 ```
 
 `codexMode: true` (or env `CODEX_MODE=1`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime.
+
+Hook timeouts and env vars:
+- `hooks/hooks.json` Stop hook timeout = 45 s (raised from 20 s to accommodate one classifier round-trip).
+- `SMT_CLASSIFIER=1` is injected into the spawned classifier sub-agent's env. The Stop hook bails out immediately when it sees this flag, preventing recursive Stop-hook fires from the classifier session.
+- `SMT_CLASSIFIER_CMD` (test-only) overrides the classifier binary path so unit tests can inject a stub.
+
+#### 11-5a. Queue-signal handling (auto-confirm CLI entry)
+
+The `/queue` skill writes `.smt/state/cancel-signal.json` with `type: "queue"` + `queued_intent`. On the next Stop event, the auto-confirm hook checks the queue signal **before** running `decide()` or invoking the classifier sub-agent:
+
+- Fresh, session-matching queue signal present → drop a continuation payload into `auto-confirm-queue-<sessionId>.json` (session-scoped so parallel Claude sessions in the same project never cross-consume each other's queued payload) carrying the `queued_intent`, clear the cancel signal, emit `decision: 'block'` (exit 2). The next `UserPromptSubmit` — matched by `session_id` in the hook's stdin — injects the queued intent so the main agent picks it up.
+- No queue signal → decision flow proceeds normally (state-machine → classifier sub-agent → halt/continue).
+
+This guarantees `/queue` items always run; without this check the classifier would (correctly) halt on a final-summary message and the queued intent would be silently dropped.
+
+#### 11-5b. E2E reminder untracking (post-tool-verifier ↔ stop-e2e)
+
+`stop-e2e.mjs` reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and prints "Step 8 E2E required" for source files in that list.
+
+To stop the reminder firing repeatedly after the user has already validated changes, `post-tool-verifier.mjs` removes a tracked source file from the list whenever a Bash command runs `<base>.test.<ext>` and the command does **not** match `detectBashFailure()`. When the list becomes empty, the tracking file is deleted, so `stop-e2e.mjs` SKIPs cleanly on the next Stop event.
+
+Untrack heuristic (matches anywhere in the command, including under `bash -c`):
+
+```
+/(?:^|[\s'"])([^\s'"]+\.test\.(mjs|js|ts|tsx|jsx|cjs))/g
+```
+
+For each match, the corresponding `<base>.<ext>` (and its basename) is removed from the tracking list. Tests that fail leave the entries in place so the reminder still fires.
 
 ### 11-6. Stall Detection & Internal Resolution Cascade
 
@@ -727,7 +787,7 @@ Each level retries up to 2 times before escalating. Level 2 onward do not reset 
 
 Two-layer architecture:
 
-- **Layer 1** — `scripts/critic-watchdog.mjs` (PostToolUse hook, **11 formal rules**, millisecond latency):
+- **Layer 1** — `scripts/critic-watchdog.mjs` (PostToolUse hook, **13 formal rules**, millisecond latency):
 
 | # | Rule | Severity |
 |---|------|----------|
@@ -741,7 +801,9 @@ Two-layer architecture:
 | R08 | Evasion patterns (`??` chain, TODO flood) | HIGH |
 | R09 | Parallel file conflict | HIGH |
 | R10 | Complete without session log | MEDIUM |
-| **R11** | **E2E pass claim without real-interface artifact** | **CRITICAL** |
+| R11 | E2E pass claim without real-interface artifact | CRITICAL |
+| **R12** | **Edit/Write to src-like path when workflow active but current_stage null** | **CRITICAL** |
+| **R13** | **Bash-based state.json write bypassing pre-tool-enforcer** | **CRITICAL** |
 
 - **Layer 2** — `agents/critic-watchdog.md` (periodic agent, ReadOnly, every 5-10 tool calls during coding): semantic checks that Layer 1 cannot do (scope drift via intent, evasion via type gap, logic evasion, half-done, Iron-Law evasion).
 
@@ -937,7 +999,7 @@ scripts/
 ├── mode-classifier.mjs           ← natural-language routing (§1-2)
 ├── route-on-fail.mjs             ← producer chain (§5-1)
 ├── stall-detector.mjs            ← §11-6 stall signals + cascade
-├── critic-watchdog.mjs           ← Pattern E Layer 1 (11 rules, §12-5)
+├── critic-watchdog.mjs           ← Pattern E Layer 1 (12 rules, §12-5)
 ├── parallel-dispatcher.mjs       ← Pattern A/B/C/D dispatch plan
 ├── feature-version-check.mjs     ← .smt/features/* state integrity
 └── rule-injector.mjs             ← rules-lib injection

@@ -51,9 +51,31 @@ function runHook(payload, cwd) {
   const out = JSON.parse(res.stdout);
   assert.equal(out.decision, 'block', 'file-modified (long form) should block');
   assert.match(out.reason, /\[Auto-Retry: File modified/);
-  assert.match(out.reason, /Re-Read/);
+  assert.match(out.reason, /Re-Read|Read\(/);
+  // NEW: retry instruction must include the actual file_path so the agent
+  // re-reads the right file without ambiguity.
+  assert.match(out.reason, /\/tmp\/x\.ts/, 'reread instruction must include file_path');
   rmSync(dir, { recursive: true, force: true });
   console.log('  case file-modified (long form) OK');
+}
+
+// NEW: file-modified instruction must include exact Read tool call snippet
+// so an autonomous agent can replay it verbatim.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's-fp',
+    tool_name: 'Write',
+    tool_input: { file_path: '/Users/me/repo/skills/foo/SKILL.md', content: 'x' },
+    tool_output: { error: 'File has been modified since read, either by the user or by a linter.', exit_code: 1 },
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /\/Users\/me\/repo\/skills\/foo\/SKILL\.md/, 'instruction must include file_path');
+  assert.match(out.reason, /Read/, 'instruction must reference Read');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-modified (write w/ file_path) OK');
 }
 
 // Fixture: file-modified (short form) → still matches

@@ -32,7 +32,7 @@ completed: 2026-04-20
 ## Phase 4 — Advanced Patterns
 
 - [x] 11. Pattern B Dual Adversarial (agent-review) → SKILL.md encodes `code-reviewer + security-reviewer`
-- [x] 12. Critic Watchdog Hook Layer 1 → `scripts/critic-watchdog.mjs` (10 rules)
+- [x] 12. Critic Watchdog Hook Layer 1 → `scripts/critic-watchdog.mjs` (12 rules)
 - [x] 13. Critic Watchdog Agent Layer 2 → `agents/critic-watchdog.md`
 - [x] 14. Pattern D Hierarchical (tasker / brainstorm) → SKILL.md templates include lead + sub-agents
 

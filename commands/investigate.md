@@ -16,15 +16,19 @@ $ARGUMENTS
 
 ## Exit options
 
-After `workflow-investigate-review` passes, present the user with:
+After `workflow-investigate-review` passes, ask the user which exit to take.
 
-```
-[1] /fix         — proceed with a fix based on the investigation
-[2] /plan        — plan a larger change or refactor
-[3] /implement   — implement a feature discovered as needed
-[4] continue     — keep exploring (stay in investigate)
-[5] done         — archive findings, end session
-```
+**MANDATORY: Use the `AskUserQuestion` tool** — render the choice as a native clickable prompt, not as plain markdown text. `AskUserQuestion` is a Claude Code deferred tool; load its schema first via `ToolSearch("select:AskUserQuestion")`, then call it with:
+
+- Question: `"Investigation complete. What's next?"`
+- Options (label → description):
+  1. `/fix` — proceed with a fix based on the investigation
+  2. `/plan` — plan a larger change or refactor
+  3. `/implement` — implement a feature discovered as needed
+  4. `continue` — keep exploring (stay in investigate)
+  5. `done` — archive findings, end session
+
+Do NOT paraphrase these options into a free-form text block; the agent must route the decision through `AskUserQuestion` so the user gets the native UI.
 
 ## Iron Law
 

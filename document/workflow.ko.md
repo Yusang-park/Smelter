@@ -79,6 +79,10 @@ Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 
 - 자동 분기는 **패턴 매칭 규칙 기반**이며, LLM 추론에 맡기지 않는다 (회피 금지 원칙).
 - 사용자가 `/fix` 등 명시 커맨드를 입력하면 자동 분기를 **오버라이드**한다.
 
+**분류기 단일 소스**: `scripts/mode-classifier.mjs` — `classify(input)`을 내보내는 순수 모듈. `scripts/keyword-detector.mjs` (UserPromptSubmit 훅)가 명령 해석 step 2에서 이를 호출한다. Haiku 서브에이전트 분류기는 규칙 분류기가 `default:*`를 반환한 프롬프트에 대한 step 3 폴백으로 남는다.
+
+**복합 의도 (chained modes)**: 연결어가 결합된 체인 (예: "분석하고 구현해줘" → `[investigate, implement]`, "테스트하고 문제 있으면 고쳐" → `[verify, fix]`) 감지 시 분류기는 `chained_modes: MODES[]`를 반환한다. `keyword-detector`는 이 값을 엔트리 시점에 `.state.json`에 기록하고, `auto-confirm.decide()`가 `mode_transition` 시그널에서 이를 읽어 `consumeNextChainedMode`로 사용자 프롬프트 없이 자동 진행한다 (`chain_advance`). 진입 모드는 항상 `chained_modes[0]`.
+
 #### 모드 요약
 
 | Mode | 진입 스킬 | 용도 |
@@ -250,14 +254,13 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 }
 ```
 
-### 2-3. 새 task 초기화 규칙 (hook 강제)
+### 2-3. State 초기화 (workflow 명령 감지 시)
 
-- 새 `<task-name>.md` 생성 시 동일 basename의 `.state.json`을 아래 초기값으로 생성:
-  - `current_stage: null`
-  - `completed_stages: []`
-  - `events: []`, `test_cycles: []`, `active_feedback: []`, `sub_tasks: []`
-  - `team_runtime: {}` (tasker가 채움)
-- 세션 내에서 여러 task를 오가도 **각 state.json만 참조**. active task는 `.smt/active_task` 심링크로 지시.
+모든 workflow 명령(`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/implement`, `/verify`)을 감지하면, `scripts/keyword-detector.mjs`가 `.smt/features/<slug>/task/<slug>.state.json`을 `state-schema.createInitialState()` + `modes/<mode>.json`의 `allowed_skills`로 작성하고, `.smt/state/active_task` 포인터도 함께 기록. **`current_stage`는 의도적으로 `null`로 초기화** — 에이전트는 모드의 entry workflow 스킬을 호출해야 진행 가능. R12(critic-watchdog)와 함께 canonical 스킬-진입 워크플로우를 강제. 하위호환성을 위해 `.smt/features/<slug>/state/` 내 기존 `workflow.json`은 유지하나, `.state.json`이 이제 시행의 단일 출처.
+
+**분류 서브프로세스 재진입 방지 가드**: `lib/subagent-classifier.mjs`가 Haiku 분류기용 Claude CLI를 spawn 하면, 그 서브프로세스는 부모 훅 체인을 상속. `keyword-detector.mjs`는 `process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1'`로 이를 감지하고 state-seeding 부수효과 이전에 즉시 bail. 이 가드가 없으면 slug 파생이 분류기의 시스템 프롬프트를 user 입력으로 취급해 여러 세션에 걸쳐 state store 를 오염.
+
+세션 내에서 여러 task를 오가도 **각 state.json만 참조**. active task는 `.smt/active_task` 심링크로 지시.
 
 ### 2-4. 토큰 최적화
 
@@ -791,28 +794,31 @@ arbitrator(중립): 종합·점수 계산
 ### 10-1. 제시 자료
 
 ```
-┌────────────────────────────────────────────────┐
-│              Human Review Report              │
-├────────────────────────────────────────────────┤
-│ Feature  : <slug>                              │
-│ Task     : <title>                             │
-│ Mode     : <mode>                              │
-│ Stages   : [완료 스킬 목록]                      │
-│                                                │
-│ Artifacts:                                     │
-│   - Video : <path>                             │
-│   - Log   : <path>                             │
-│   - Diff  : <summary>                          │
-│                                                │
-│ Risks   : <## Risks 섹션>                       │
-│ TDD     : <test_cycles 요약>                    │
-│ E2E     : <surface + pass/fail>                │
-└────────────────────────────────────────────────┘
+Human Review Report
+────────────────────────────────────
+Feature  : <slug>
+Task     : <title>
+Mode     : <mode>
+Stages   : <완료된 workflow 스킬 목록>
+
+Artifacts:
+  - Video : <경로 또는 (none)>
+  - Log   : <경로 또는 (none)>
+  - Diff  : <요약>
+
+Risks    : <## Risks 섹션 또는 (none)>
+TDD      : <test_cycles 요약>
+E2E      : <surface + pass/fail + 산출물>
+────────────────────────────────────
 ```
 
 (템플릿: `document/templates/report.md.md`)
 
 ### 10-2. 사용자 선택지
+
+**필수:** Claude Code `AskUserQuestion` 툴(네이티브 클릭형 프롬프트)로 질문한다. 텍스트 메뉴로 노출하지 않는다. `AskUserQuestion`은 deferred tool이므로 `ToolSearch("select:AskUserQuestion")`로 스키마를 먼저 로드한 뒤 호출한다. `/investigate`의 Exit options(`commands/investigate.md`)에도 동일 규칙이 적용된다.
+
+선택지:
 
 ```
 [1] rework   → 재작업 대상 명시 → active_feedback 생성 → target_skill 라우팅
@@ -1289,7 +1295,7 @@ Aggregator가 **병합 실패**를 선언하면 호출되는 전용 에이전트
 - 담당: **의미적 위반 감지** (scope 이탈, 회피 패턴, 논리적 규칙 위반)
 - 발견 시: `active_feedback` 추가 + `target_skill` 재진입 지시
 
-#### 감시 룰 (초기 10개, Hook Layer)
+#### 감시 룰 (12개, Hook Layer)
 
 | # | 룰 | 감지 방식 | 심각도 |
 |---|------|----------|--------|
@@ -1303,6 +1309,8 @@ Aggregator가 **병합 실패**를 선언하면 호출되는 전용 에이전트
 | 8 | 회피 패턴 (fallback `??` 남발, TODO로 우회) | 코드 패턴 스캔 | HIGH |
 | 9 | 병렬 agent 간 동일 파일 동시 수정 | team_runtime 상태 vs git diff | HIGH |
 | 10 | `session/YYYY-MM-DD.md` 기록 없이 complete 전환 | state → log 매칭 | MEDIUM |
+| 11 | E2E pass 선언 시 실제 인터페이스 artifact 필수 | `artifacts/` 파일 타입 검증 | CRITICAL |
+| **12** | **workflow 활성 중 workflow 스킬 미진입 상태로 src-like path Edit/Write 금지** | **state.json `current_stage===null` OR `.state.json` 부재 + `.smt/state/active-feature.json` 존재. test 파일 예외: `*.test.*`, `*.spec.*`, `test-*`, `*-test.*`, `/tests?/`, `/spec/`, `/__tests__/`** | **CRITICAL** |
 
 #### 위반 시 동작
 
@@ -1539,7 +1547,7 @@ scripts/
 ├── mode-classifier.mjs    ← 자동 분기 엔진 (섹션 1-2)
 ├── route-on-fail.mjs      ← Producer chain 라우터 (섹션 5-1)
 ├── stall-detector.mjs     ← Stall 6 신호 감지 (섹션 11-7)
-├── critic-watchdog.mjs    ← Hook Layer 1 감시 10규칙 (섹션 12-8)
+├── critic-watchdog.mjs    ← Hook Layer 1 감시 12규칙 (섹션 12-8)
 ├── parallel-dispatcher.mjs ← Pattern A/B/C/D dispatch
 ├── feature-version-check.mjs ← `.smt/features/*` 상태 무결성 점검
 └── rule-injector.mjs      ← rules-lib 주입
@@ -1725,7 +1733,7 @@ agents/
 | 9 | Aggregator (`agents/aggregator.md`) | 8 | architect 기반, 병합 1차 |
 | 10 | Conflict-Resolver (`agents/conflict-resolver.md`) | 9 | 병합 실패 안전 장치 |
 | 11 | Pattern B: Dual Adversarial for agent-review | 4 | code-reviewer + security-reviewer |
-| 12 | Critic Watchdog Hook Layer 1 (`scripts/critic-watchdog.mjs`) | 1, 6 | 10 규칙 즉각 차단 |
+| 12 | Critic Watchdog Hook Layer 1 (`scripts/critic-watchdog.mjs`) | 1, 6 | 12 규칙 즉각 차단 |
 | 13 | Critic Watchdog Agent Layer 2 | 12 | 주기 호출 (5-10 tool call) |
 | 14 | Pattern D: Hierarchical for tasker/brainstorm | 4 | architect 리드 구조 |
 | 15 | **Multi-Pass Verification 엔진** (`scripts/verification-rounds.mjs`) | 4, 6 | 3-round 강제, round별 agent 교체, completed_rounds gate |

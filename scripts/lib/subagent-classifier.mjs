@@ -132,6 +132,11 @@ function invokeClaude(prompt) {
     env: {
       ...process.env,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      // Tell inherited Smelter hooks (keyword-detector, etc.) that this Claude
+      // invocation is a classifier subprocess — they must bail out before
+      // side-effecting on the classifier's system prompt. See
+      // scripts/keyword-detector.mjs re-entrancy guard.
+      SMELTER_CLASSIFIER_SUBPROCESS: '1',
     },
   });
 }

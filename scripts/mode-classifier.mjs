@@ -22,6 +22,7 @@ const EXPLICIT_COMMANDS = {
   '/simple-fix': 'simple_fix',
   '/fix': 'fix',
   '/investigate': 'investigate',
+  '/verify': 'verify',
   '/plan': 'plan',
   '/implement': 'implement',
 };
@@ -101,10 +102,13 @@ const RULES = [
     patterns: [
       /파악해/,
       /파악한/,
+      /파악했/,
       /분석해/,
       /분석한/,
+      /분석했/,
       /조사해/,
       /조사한/,
+      /조사했/,
       /알아봐/,
       /어떻게\s*되어\s*(?:있어|있나)/,
       /어떤\s*구조/,
@@ -153,12 +157,13 @@ const CHAIN_ACTION_MAP = [
   { pattern: /\brun\s+verification\b/i, mode: 'verify' },
   { pattern: /\btest\s+it\b/i, mode: 'verify' },
   // investigate verbs (static read — 검증/확인/체크/파악/분석/조사, verify/validate/check/investigate/analyze)
-  { pattern: /검증(?:해|하고|한|할)?/, mode: 'investigate' },
-  { pattern: /확인(?:해|하고|한|할)?/, mode: 'investigate' },
-  { pattern: /체크(?:해|하고|한|할)?/, mode: 'investigate' },
-  { pattern: /파악(?:해|하고|한|할)?/, mode: 'investigate' },
-  { pattern: /분석(?:해|하고|한|할)?/, mode: 'investigate' },
-  { pattern: /조사(?:해|하고|한|할)?/, mode: 'investigate' },
+  // Korean declarative suffix 한다/했 added so "파악한다", "파악했다" route correctly (not just 파악해/파악한).
+  { pattern: /검증(?:해|하고|한다?|할|했)?/, mode: 'investigate' },
+  { pattern: /확인(?:해|하고|한다?|할|했)?/, mode: 'investigate' },
+  { pattern: /체크(?:해|하고|한다?|할|했)?/, mode: 'investigate' },
+  { pattern: /파악(?:해|하고|한다?|할|했)?/, mode: 'investigate' },
+  { pattern: /분석(?:해|하고|한다?|할|했)?/, mode: 'investigate' },
+  { pattern: /조사(?:해|하고|한다?|할|했)?/, mode: 'investigate' },
   { pattern: /\bverify\b/i, mode: 'investigate' },
   { pattern: /\bvalidate\b/i, mode: 'investigate' },
   { pattern: /\binvestigate\b/i, mode: 'investigate' },
@@ -200,6 +205,44 @@ const CHAIN_CONNECTIVES = [
   /\bthen\b/i,
   /\band\b/i,
 ];
+
+/**
+ * firstSentence — extract the opening clause from a (possibly multi-line) prompt.
+ *
+ * Rationale: when a user pastes prior conversation into a new prompt, the
+ * classifier would otherwise see pasted verbs (수정, fix, ...) and misroute.
+ * Intent almost always lives in the first sentence; paste follows.
+ *
+ * Cut points, in priority order:
+ *   1. first blank line (\n\n) — most common paste boundary
+ *   2. first chevron marker (⏺, ⎿, ❯, >) introducing quoted agent output
+ *   3. first sentence terminator (. or 。) followed by whitespace
+ *   4. first newline
+ * Returns trimmed first sentence, or the whole input if none of the above fires.
+ */
+export function firstSentence(input) {
+  if (typeof input !== 'string' || !input) return '';
+  const text = input.trim();
+
+  // 1. Blank-line paste boundary
+  const blankIdx = text.search(/\n\s*\n/);
+  if (blankIdx !== -1) return text.slice(0, blankIdx).trim();
+
+  // 2. Chevron markers that introduce pasted agent output
+  const chevronIdx = text.search(/(?:^|\s)[⏺⎿❯>]/);
+  if (chevronIdx > 0) return text.slice(0, chevronIdx).trim();
+  if (chevronIdx === 0) return ''; // entire prompt is pasted output
+
+  // 3. Sentence terminator followed by whitespace
+  const periodIdx = text.search(/[.。][\s\n]/);
+  if (periodIdx !== -1) return text.slice(0, periodIdx + 1).trim();
+
+  // 4. First newline
+  const newlineIdx = text.indexOf('\n');
+  if (newlineIdx !== -1) return text.slice(0, newlineIdx).trim();
+
+  return text;
+}
 
 /**
  * classifyChain — detect chained intents like "A하고 B해" / "A then B".
@@ -274,17 +317,19 @@ export function classify(input) {
 
   const trimmed = input.trim();
 
-  // 1. Explicit command override.
+  // 1. Explicit command override — checked on the raw input so leading slash commands win.
   for (const [cmd, mode] of Object.entries(EXPLICIT_COMMANDS)) {
     if (trimmed.startsWith(cmd)) {
       return { mode, trigger: `command:${cmd}`, overridden: true };
     }
   }
 
-  // 2. Chained-intent detection — takes precedence over single-mode pattern
-  //    matching so that "분석하고 구현해줘" resolves to investigate (entry)
-  //    with implement queued, rather than matching only the later verb.
-  const chain = classifyChain(trimmed);
+  // Intent-bearing slice — strips pasted prior-conversation blocks that would
+  // otherwise pollute matching (e.g. a 수정-heavy paste misrouting "파악한다" to fix).
+  const intent = firstSentence(trimmed) || trimmed;
+
+  // 2. Chained-intent detection.
+  const chain = classifyChain(intent);
   if (chain) {
     return {
       mode: chain.modes[0],
@@ -297,7 +342,7 @@ export function classify(input) {
   // 3. Pattern matching.
   for (const rule of RULES.sort((a, b) => a.priority - b.priority)) {
     for (const p of rule.patterns) {
-      const m = trimmed.match(p);
+      const m = intent.match(p);
       if (m) return { mode: rule.mode, trigger: `keyword:${m[0]}`, overridden: false };
     }
   }

@@ -25,12 +25,37 @@
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync, renameSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { clearCancel } from './lib/cancel-signal.mjs';
 import { propagateHardCancel, propagateQueueCancel } from './cancel-propagator.mjs';
 import { classifyPrompt } from './lib/subagent-classifier.mjs';
+import { classify as ruleClassify } from './mode-classifier.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
 import { writeFeatureSummary } from './lib/feature-summary.mjs';
+import { createInitialState, writeState } from './state-schema.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PLUGIN_ROOT = dirname(__dirname);
+
+// Command name as it appears on disk (e.g. `simple-fix`) → internal mode id
+// used by state-schema (`simple_fix`). Only differs where the slash uses `-`
+// but the mode enum uses `_`.
+const COMMAND_TO_MODE = {
+  plan: 'plan',
+  fix: 'fix',
+  'simple-fix': 'simple_fix',
+  investigate: 'investigate',
+  implement: 'implement',
+  verify: 'verify',
+};
+
+function loadModeConfig(mode) {
+  const modePath = join(PLUGIN_ROOT, 'modes', `${mode}.json`);
+  if (!existsSync(modePath)) return null;
+  try { return JSON.parse(readFileSync(modePath, 'utf-8')); } catch { return null; }
+}
 
 // Read stdin synchronously
 function readStdinSync() {
@@ -96,12 +121,26 @@ const INVESTIGATE_PATTERNS = [
   /분석|조사|확인해|살펴봐|진단/,
 ];
 
-export function detectNaturalLanguageCommand(prompt) {
+// Internal map: mode-classifier emits mode ids (enum in state-schema MODES), but
+// detector contract speaks dash-cased command names (matches file names in
+// commands/ and keys in COMMAND_CONFIG below).
+const MODE_TO_COMMAND = {
+  simple_fix: 'simple-fix',
+  fix: 'fix',
+  investigate: 'investigate',
+  verify: 'verify',
+  plan: 'plan',
+  implement: 'implement',
+};
+
+// Legacy helper retained for scripts/test-keyword-detector.mjs compatibility and
+// as a tight fallback when mode-classifier returns its `default:*` trigger. The
+// canonical classifier is now `scripts/mode-classifier.mjs` — see wireup below.
+function legacyPatternMatch(prompt) {
   const text = String(prompt || '').trim();
   if (!text) return null;
   const hasFix = FIX_PATTERNS.some((pattern) => pattern.test(text));
   const hasInvestigate = INVESTIGATE_PATTERNS.some((pattern) => pattern.test(text));
-
   if (hasFix) {
     return { name: 'fix', args: '', hint: 'bug', matched: 'local:fix', source: 'magic' };
   }
@@ -109,6 +148,35 @@ export function detectNaturalLanguageCommand(prompt) {
     return { name: 'investigate', args: '', hint: null, matched: 'local:investigate', source: 'magic' };
   }
   return null;
+}
+
+export function detectNaturalLanguageCommand(prompt) {
+  const text = String(prompt || '').trim();
+  if (!text) return null;
+
+  const classification = ruleClassify(text);
+  const trigger = classification.trigger || '';
+  const entryCommand = MODE_TO_COMMAND[classification.mode];
+
+  // Classifier's safe default fires when no rule matched. Defer to the legacy
+  // bi-pattern matcher so broad English verbs (\bcheck\b, \bdebug\b, \bresolve\b)
+  // retained by FIX_PATTERNS / INVESTIGATE_PATTERNS keep routing as they did.
+  if (trigger.startsWith('default:') || !entryCommand) {
+    return legacyPatternMatch(text);
+  }
+
+  const chain = Array.isArray(classification.chained_modes) && classification.chained_modes.length >= 2
+    ? classification.chained_modes
+    : null;
+
+  return {
+    name: entryCommand,
+    args: '',
+    hint: classification.mode === 'fix' ? 'bug' : null,
+    matched: trigger,
+    source: 'magic',
+    chained_modes: chain,
+  };
 }
 
 // Command → v2 mode mapping. The six workflow commands map to modes in
@@ -158,9 +226,9 @@ function writeAtomic(path, content) {
   renameSync(tmp, path);
 }
 
-function seedWorkflowState(directory, commandName, prompt, sessionId, args = '') {
-  const initialStep = INITIAL_STEP[commandName];
-  if (!initialStep) return; // cancel/queue — no workflow state
+function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null) {
+  const mode = COMMAND_TO_MODE[commandName];
+  if (!mode) return; // cancel/queue/build — not a v2 workflow command
 
   // Prefer slash-args for slug derivation (ignore the leading slash-command literal).
   // For natural-language magic-keyword invocations, args is empty so we fall back
@@ -210,12 +278,13 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '')
       writeAtomic(planPath, planContent);
     }
 
-    // workflow.json — seed only if absent so re-running a command doesn't reset progress
+    // workflow.json — v1 legacy, seed only if absent so re-running a command
+    // doesn't reset progress. v2 enforcement reads `.state.json` (below).
     const workflowPath = join(stateDir, 'workflow.json');
     if (!existsSync(workflowPath)) {
-      const state = {
+      const legacy = {
         command: commandName,
-        step: initialStep,
+        step: 'step-1',
         retry: 0,
         signals: {},
         version: 0,
@@ -224,17 +293,43 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '')
         prompt: String(prompt || '').slice(0, 500),
         session_id: sessionId || '',
       };
-      writeAtomic(workflowPath, JSON.stringify(state, null, 2));
+      writeAtomic(workflowPath, JSON.stringify(legacy, null, 2));
+    }
+
+    // .state.json — v2 source of truth consumed by critic-watchdog, auto-confirm,
+    // route-on-fail. Without this file, every enforcement rule that starts with
+    // `if (!state) return null` no-ops, which lets an agent bypass the entire
+    // /fix → investigate → ... → human-check pipeline by writing code directly.
+    // See critic-watchdog.mjs R12 for the companion block.
+    const stateJsonPath = join(taskDir, `${slug}.state.json`);
+    if (!existsSync(stateJsonPath)) {
+      try {
+        const modeCfg = loadModeConfig(mode);
+        const chain = Array.isArray(chainedModes) && chainedModes.length >= 2 ? chainedModes : [];
+        const machineState = createInitialState({ taskId: slug, mode, chainedModes: chain });
+        if (modeCfg?.allowed_skills?.length) {
+          machineState.allowed_skills = modeCfg.allowed_skills;
+        }
+        if (modeCfg?.default_exempt) {
+          machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
+        }
+        writeState(stateJsonPath, machineState);
+        // active_task pointer consumed by critic-watchdog.readActiveState.
+        writeAtomic(join(directory, '.smt', 'active_task'), stateJsonPath);
+      } catch (err) {
+        // Never block command detection on state seeding — log-and-continue.
+        printTag(`State seed failed: ${err.message}`);
+      }
     }
 
     writeFeatureSummary(directory, slug, {
       status: 'in_progress',
-      current_step: initialStep,
-      e2e_required: commandName === 'build' || commandName === 'fix',
+      current_step: 'step-1',
+      e2e_required: commandName === 'build' || commandName === 'fix' || commandName === 'implement',
       e2e_done: false,
-      tests_required: commandName === 'build' || commandName === 'fix',
+      tests_required: commandName === 'build' || commandName === 'fix' || commandName === 'implement',
       tests_pass: false,
-      review_required: commandName === 'build' || commandName === 'fix',
+      review_required: commandName === 'build' || commandName === 'fix' || commandName === 'implement',
       review_done: false,
       surface: [],
       updated_at: new Date().toISOString(),
@@ -257,10 +352,10 @@ function clearActiveFeature(directory) {
   } catch {}
 }
 
-function activateHarnessState(directory, commandName, prompt, sessionId, args = '') {
+function activateHarnessState(directory, commandName, prompt, sessionId, args = '', chainedModes = null) {
   const config = COMMAND_CONFIG[commandName];
   if (!config) return;
-  seedWorkflowState(directory, commandName, prompt, sessionId, args);
+  seedWorkflowState(directory, commandName, prompt, sessionId, args, chainedModes);
 }
 
 function createSkillInvocation(skillName, originalPrompt, args = '', hint = null) {
@@ -289,6 +384,17 @@ function createHookOutput(additionalContext) {
 }
 
 async function main() {
+  // Re-entrancy guard: when `lib/subagent-classifier.mjs` spawns the Claude CLI
+  // to run the Haiku classifier, that subprocess inherits our hook chain, so
+  // keyword-detector runs on the CLASSIFIER'S system prompt as if it were user
+  // input. That was seeding `.state.json` / active-feature pointers with slugs
+  // derived from "You are a command classifier for a CLI tool called..." and
+  // polluting the real session's state. The env flag is set by invokeClaude
+  // below; detect + bail before any side effect.
+  if (process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1') {
+    console.log(JSON.stringify({ continue: true }));
+    return;
+  }
   printTag('Keyword Detector');
   try {
     const input = readStdinSync();
@@ -407,7 +513,7 @@ async function main() {
     }
 
     // Harness commands — activate state
-    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '');
+    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '', detected.chained_modes || null);
     if (tracer) {
       try { tracer.recordModeChange(directory, sessionId, 'none', detected.name); } catch {}
     }

@@ -2,7 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,39 +30,18 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('natural language planning phrase does not trigger /plan', async () => {
+function readdirSyncSafe(path) {
+  try { return readdirSync(path); } catch { return []; }
+}
+
+test('natural language planning phrase routes to /plan', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
 
   try {
     const result = runDetector({ cwd, prompt: 'plan this feature for me' });
 
-    assert.deepEqual(result, { continue: true });
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
-
-test('explicit /feat command triggers skill only — no state file written', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
-
-  try {
-    const result = runDetector({ cwd, prompt: '/feat fix login validation' });
-
     assert.equal(result.continue, true);
-    assert.match(result.hookSpecificOutput.additionalContext, /Skill: feat/);
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
-
-test('explicit /qa command triggers skill only — no state file written', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
-
-  try {
-    const result = runDetector({ cwd, prompt: '/qa fix login error copy' });
-
-    assert.equal(result.continue, true);
-    assert.match(result.hookSpecificOutput.additionalContext, /Skill: qa/);
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: plan/);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -77,6 +56,53 @@ test('explicit /investigate command routes to investigate skill', async () => {
     assert.equal(result.continue, true);
     assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
     assert.match(result.hookSpecificOutput.additionalContext, /MAGIC KEYWORD: INVESTIGATE/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('keyword-detector bails out when invoked inside a classifier subprocess', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
+
+  try {
+    const classifierPrompt = 'You are a command classifier for a CLI tool called "smelter". Classify the user\'s prompt...';
+    const input = JSON.stringify({ cwd, session_id: 'test', prompt: classifierPrompt });
+    const result = spawnSync(process.execPath, [SCRIPT_PATH], {
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, SMELTER_CLASSIFIER_SUBPROCESS: '1' },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const out = JSON.parse(result.stdout);
+    assert.deepEqual(out, { continue: true }, 'classifier subprocess must not seed state or inject skill payload');
+    // And no .smt state should be written when the subprocess flag is set.
+    assert.equal(existsSync(join(cwd, '.smt', 'features')), false, '.smt/features must not be created inside classifier subprocess');
+    assert.equal(existsSync(join(cwd, '.smt', 'state', 'active-feature.json')), false, 'active-feature.json must not be written inside classifier subprocess');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('/fix seeds .state.json with mode=fix and allowed_skills from modes/fix.json', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
+
+  try {
+    runDetector({ cwd, prompt: '/fix login validation bug' });
+
+    const taskDirs = readdirSyncSafe(join(cwd, '.smt', 'features'));
+    assert.ok(taskDirs.length > 0, 'expected .smt/features/<slug>/ to be created');
+    const taskDir = join(cwd, '.smt', 'features', taskDirs[0], 'task');
+    const stateFiles = readdirSyncSafe(taskDir).filter((f) => f.endsWith('.state.json'));
+    assert.equal(stateFiles.length, 1, 'expected exactly one *.state.json to be seeded');
+
+    const state = readJson(join(taskDir, stateFiles[0]));
+    assert.equal(state.mode, 'fix');
+    assert.equal(state.current_stage, null);
+    assert.ok(state.allowed_skills.includes('workflow-investigate'),
+      'allowed_skills must include workflow-investigate (the /fix entry skill)');
+    assert.ok(state.allowed_skills.includes('workflow-human-check'),
+      'allowed_skills must include workflow-human-check (the /fix exit gate)');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

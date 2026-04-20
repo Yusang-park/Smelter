@@ -8,7 +8,9 @@
         "--context",
         "claude-code",
         "--project",
-        "/Users/yusang/Smelter"
+        "/Users/yusang/Smelter",
+        "--open-web-dashboard",
+        "False"
       ],
       "env": {}
     }

@@ -6,7 +6,7 @@
  * Cross-platform: Windows, macOS, Linux
  */
 
-import { existsSync, readFileSync, appendFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, appendFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
@@ -83,6 +83,25 @@ function detectWriteFailure(output) {
   return errorPatterns.some(pattern => pattern.test(output));
 }
 
+// Detect the file-modified-since-read race specifically. This recovery is
+// mechanical (re-Read then re-Edit/Write); generic write-failure guidance
+// would mislead the agent into thinking the path is wrong.
+//
+// Guarded against false positives: arbitrary file *content* (or a hook's own
+// guidance message) may contain the phrase "File has been modified since
+// read" without being a real tool error. We only treat it as the race when
+// the text is NOT a known success message AND looks like an error envelope
+// (starts with "Error:" or contains the read-it-again hint).
+function detectFileModifiedSinceRead(output) {
+  if (!output) return false;
+  if (/updated successfully|has been written|file written|file created/i.test(output)) return false;
+  const phrase = /File has been modified since (last )?read\b/i;
+  if (!phrase.test(output)) return false;
+  // Require an error-shaped envelope to avoid matching docs / messages that
+  // simply mention the phrase.
+  return /^Error:|read it again before|either by the user or by a linter/im.test(output);
+}
+
 // Get agent completion summary from tracking state
 function getAgentCompletionSummary(directory) {
   const trackingFile = join(directory, '.smt', 'state', 'subagent-tracking.json');
@@ -128,6 +147,62 @@ function trackModifiedFile(filePath, directory) {
   } catch { /* best-effort */ }
 }
 
+// Untrack files whose tests just ran successfully — removes the corresponding
+// source file from the session-files tracking list so stop-e2e doesn't keep
+// firing the "Step 8 E2E required" reminder after the user has already
+// validated the change via tests. Marker = E2E completion for hook/script
+// surfaces (where unit-test == real-interface invocation).
+//
+// Heuristic:
+//   - Test command pattern: `node X.test.mjs`, `node X.test.js`, `*test*.{mjs,js,ts}` invocation
+//   - Failure detection from existing detectBashFailure() suppresses the untrack
+//   - For each `<base>.test.<ext>` referenced in the command, untrack `<base>.<ext>`
+function untrackTestedFiles(command, output, directory) {
+  if (!command || typeof command !== 'string') return;
+  if (detectBashFailure(output)) return; // tests failed → keep tracking
+  // Match every `<path>.test.<ext>` token in the command (including under bash -c).
+  const re = /(?:^|[\s'"])([^\s'"]+\.test\.(mjs|js|ts|tsx|jsx|cjs))/g;
+  const tested = new Set();
+  let m;
+  while ((m = re.exec(command)) !== null) {
+    const testPath = m[1];
+    const ext = m[2];
+    const sourcePath = testPath.replace(new RegExp(`\\.test\\.${ext}$`), `.${ext}`);
+    tested.add(sourcePath);
+    // Also try matching by basename in case the source was tracked relative.
+    const base = sourcePath.split('/').pop();
+    tested.add(base);
+  }
+  if (tested.size === 0) return;
+  try {
+    const projectHash = createHash('md5').update(directory).digest('hex').slice(0, 8);
+    const trackingFile = `/tmp/smelter-session-files-${projectHash}.json`;
+    if (!existsSync(trackingFile)) return;
+    let files = [];
+    try { files = JSON.parse(readFileSync(trackingFile, 'utf-8')); } catch { return; }
+    const before = files.length;
+    files = files.filter(f => {
+      const rel = f.startsWith(directory) ? f.slice(directory.length + 1) : f;
+      const base = rel.split('/').pop();
+      // Drop if absolute, relative, or basename matches any tested source.
+      if (tested.has(rel) || tested.has(base) || tested.has(f)) return false;
+      // Also drop if the tracked path *ends with* a tested suffix (e.g.
+      // "scripts/auto-confirm.mjs" matches "auto-confirm.mjs").
+      for (const t of tested) {
+        if (rel.endsWith(t) || f.endsWith(t)) return false;
+      }
+      return true;
+    });
+    if (files.length !== before) {
+      if (files.length === 0) {
+        try { unlinkSync(trackingFile); } catch {}
+      } else {
+        writeFileSync(trackingFile, JSON.stringify(files));
+      }
+    }
+  } catch { /* best-effort */ }
+}
+
 // Generate contextual message
 function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) {
   let message = '';
@@ -157,7 +232,9 @@ function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) 
     }
 
     case 'Edit':
-      if (detectWriteFailure(toolOutput)) {
+      if (detectFileModifiedSinceRead(toolOutput)) {
+        message = 'File modified since last Read (likely by hook/linter). Re-Read the same file_path, then re-issue Edit with refreshed content. Do not stop or report this as a failure — recovery is mechanical.';
+      } else if (detectWriteFailure(toolOutput)) {
         message = 'Edit operation failed. Verify file exists and content matches exactly.';
       } else {
         message = 'Code modified. Verify changes work as expected before marking complete.';
@@ -165,7 +242,9 @@ function generateMessage(toolName, toolOutput, sessionId, toolCount, directory) 
       break;
 
     case 'Write':
-      if (detectWriteFailure(toolOutput)) {
+      if (detectFileModifiedSinceRead(toolOutput)) {
+        message = 'File modified since last Read (likely by hook/linter). Re-Read the same file_path, then re-issue Write with refreshed content. Do not stop or report this as a failure — recovery is mechanical.';
+      } else if (detectWriteFailure(toolOutput)) {
         message = 'Write operation failed. Check file permissions and directory existence.';
       } else {
         message = 'File written. Test the changes to ensure they work correctly.';
@@ -217,6 +296,10 @@ function main() {
       const toolInput = data.tool_input || data.toolInput || {};
       const command = typeof toolInput === 'string' ? toolInput : (toolInput.command || '');
       appendToBashHistory(command);
+      // When a test command runs successfully, untrack the tested source files
+      // so stop-e2e's "Step 8 E2E required" reminder doesn't keep firing for
+      // surfaces that have already been validated through their real interface.
+      untrackTestedFiles(command, toolOutput, directory);
     }
 
     // Track files modified by Claude for session-scoped E2E checks

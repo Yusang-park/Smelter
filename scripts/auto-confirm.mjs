@@ -29,11 +29,21 @@
 import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { readState, writeState, MODES } from './state-schema.mjs';
 import { route } from './route-on-fail.mjs';
+import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
 
 export const QUEUE_FILENAME = 'auto-confirm-queue.json';
 export const QUEUE_MAX_AGE_MS = 5 * 60 * 1000;
+
+// Restrict sessionId to filename-safe characters so it can be embedded in the
+// queue filename. Claude Code ships UUIDs, which pass as-is; anything weird
+// falls through to the legacy shared path to preserve best-effort behavior.
+export function sanitizeSessionId(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return '';
+  return /^[A-Za-z0-9_-]+$/.test(sessionId) ? sessionId : '';
+}
 
 const RISK_KEYWORDS = [
   '리스크', '위험', '주의해야', '잠재적',
@@ -42,36 +52,86 @@ const RISK_KEYWORDS = [
   '이상하지만', '임시로', '일단',
 ];
 
-// Patterns where the assistant is explicitly asking permission to proceed.
-// When these match, the Stop hook auto-confirms ("yes, proceed") instead of
-// halting. When they DO NOT match in the fallback branch, the hook halts to
-// avoid the infinite "no explicit signal, prompting to proceed" loop.
-const PROCEED_PROMPT_PATTERNS = [
-  // Korean
-  /진행\s*할까요/, /계속\s*할까요/, /진행해도\s*(될까요|괜찮을까요)/,
-  /다음\s*(단계|스텝)로\s*(갈까요|넘어갈까요|진행할까요)/,
-  /시작\s*할까요/, /(이대로|그대로)\s*진행/,
-  // English
-  /shall\s+i\s+(proceed|continue|go\s+ahead|move\s+on)/i,
-  /should\s+i\s+(proceed|continue|go\s+ahead|move\s+on)/i,
-  /ready\s+to\s+(proceed|continue|move\s+on)/i,
-  /ok\s+to\s+(proceed|continue)/i,
-  /may\s+i\s+(proceed|continue|go\s+ahead)/i,
-  /\bproceed\?\s*$/i, /\bcontinue\?\s*$/i,
-];
+// Lightweight LLM classifier: decides whether the assistant's last message is
+// asking permission to proceed (auto-confirm) or providing a final summary
+// (halt). 100 % of the proceed-vs-halt judgement is delegated to this sub-agent
+// — there is no regex fallback. If the sub-agent process fails (timeout, no
+// binary, malformed output) the hook halts (the only safe default; halting
+// breaks the infinite "no explicit signal, prompting to proceed" loop).
 
-export function detectProceedPrompt(text) {
-  if (!text || typeof text !== 'string') return false;
-  return PROCEED_PROMPT_PATTERNS.some(p => p.test(text));
+export function buildClassifierPrompt(lastMessage) {
+  return `You are a binary classifier. Read the assistant's final message and output exactly one word.\n\n` +
+    `Output \"continue\" if the message is explicitly asking the user for permission to proceed (any language). Examples: \"shall I proceed?\", \"진행할까요?\", \"ready to continue?\", \"次に進めますか？\".\n\n` +
+    `Output \"halt\" otherwise (final answer, summary, completed report, error message, etc.).\n\n` +
+    `Output exactly one of: continue OR halt. No punctuation. No other words.\n\n` +
+    `Message:\n"""\n${lastMessage}\n"""`;
 }
 
-// Pick the model the next-turn agent should use when spawning a sub-agent.
-// Default = sonnet. Codex CLI environments use the smaller mini.
+// Pick the model the lightweight classifier sub-agent should run with.
+// Default = sonnet. Codex CLI environments use mini.
 export function pickSubAgentModel() {
   if (process.env.CODEX_MODE === '1') return 'haiku';
   const cfg = readJson(join(homedir(), '.smt', 'config.json'));
   if (cfg && cfg.codexMode === true) return 'haiku';
   return 'sonnet';
+}
+
+// Resolve a runnable claude binary path. The user's shell wraps `claude` as a
+// function (looking up ~/.local/share/claude/versions/* by mtime), but a
+// subprocess does not see shell functions, so we re-implement the lookup.
+function resolveClaudeBinary() {
+  const versionsDir = join(homedir(), '.local', 'share', 'claude', 'versions');
+  if (!existsSync(versionsDir)) return null;
+  const versions = readdirSync(versionsDir);
+  let best = null;
+  let bestMtime = 0;
+  for (const v of versions) {
+    const p = join(versionsDir, v);
+    try {
+      const s = statSync(p);
+      if (s.size > 0 && (s.mode & 0o111) && s.mtimeMs > bestMtime) {
+        bestMtime = s.mtimeMs;
+        best = p;
+      }
+    } catch {}
+  }
+  return best;
+}
+
+// Spawn the lightweight classifier sub-agent and return 'continue' or 'halt'.
+// Tests inject a stub binary via SMT_CLASSIFIER_CMD env var.
+export function classifyProceedPromptViaSubAgent(lastMessage, {
+  model = 'sonnet',
+  timeoutMs = 40000,
+  cmd = process.env.SMT_CLASSIFIER_CMD,
+} = {}) {
+  if (!lastMessage || typeof lastMessage !== 'string') return 'halt';
+
+  const binary = cmd || resolveClaudeBinary();
+  if (!binary) return 'halt';
+
+  const prompt = buildClassifierPrompt(lastMessage);
+  const args = ['-p', prompt, '--model', model];
+
+  let result;
+  try {
+    result = spawnSync(binary, args, {
+      timeout: timeoutMs,
+      encoding: 'utf-8',
+      // SMT_CLASSIFIER=1 prevents the spawned claude session from re-firing
+      // this Stop hook recursively (see CLI entry guard below).
+      env: { ...process.env, SMT_CLASSIFIER: '1' },
+    });
+  } catch {
+    return 'halt';
+  }
+
+  if (!result || result.status !== 0) return 'halt';
+  const out = (result.stdout || '').trim().toLowerCase();
+  // Accept exact "continue" or any line starting with continue (defensive
+  // against trailing whitespace / punctuation).
+  if (/^continue\b/.test(out)) return 'continue';
+  return 'halt';
 }
 
 function readJson(path) {
@@ -239,11 +299,13 @@ export function decide({ state, lastAssistantText, statePath }) {
     return { action: 'enter_skill', reason: 'RED cycle ready, enter workflow-coding', payload: { skill: 'workflow-coding' } };
   }
 
-  if (detectProceedPrompt(lastAssistantText)) {
-    return { action: 'continue', reason: 'assistant asked permission to proceed — auto-confirming' };
-  }
-
-  return { action: 'halt', reason: 'no explicit signal and no proceed prompt — halting to avoid loop' };
+  // No state-machine signal matched. Hand the proceed-vs-halt decision to the
+  // lightweight LLM classifier sub-agent. No regex fallback (per spec).
+  return {
+    action: 'classify_needed',
+    reason: 'no state signal — classifier sub-agent will decide proceed vs halt',
+    payload: { lastMessage: lastAssistantText || '' },
+  };
 }
 
 export function detectRiskKeyword(text) {
@@ -300,15 +362,22 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
 // Queue-drop helpers. The queue file is a single JSON object — one entry at a
 // time; a stale file older than QUEUE_MAX_AGE_MS is ignored/overwritten.
 
-export function queuePath(cwd) {
-  return join(cwd, '.smt', 'state', QUEUE_FILENAME);
+// Session-scoped when sessionId is present; falls back to the legacy shared
+// filename only when sessionId is empty or not filename-safe. Parallel Claude
+// sessions in the same project must each read/write their own file so one
+// session does not consume another session's queued continuation payload.
+export function queuePath(cwd, sessionId = '') {
+  const safe = sanitizeSessionId(sessionId);
+  const filename = safe ? `auto-confirm-queue-${safe}.json` : QUEUE_FILENAME;
+  return join(cwd, '.smt', 'state', filename);
 }
 
-export function dropQueue(cwd, payload) {
-  const path = queuePath(cwd);
+export function dropQueue(cwd, payload, sessionId = '') {
+  const path = queuePath(cwd, sessionId);
   mkdirSync(dirname(path), { recursive: true });
   const entry = {
     t: new Date().toISOString(),
+    session_id: sanitizeSessionId(sessionId) || null,
     ...payload,
   };
   writeFileSync(path, JSON.stringify(entry, null, 2) + '\n', 'utf-8');
@@ -317,19 +386,66 @@ export function dropQueue(cwd, payload) {
 
 // CLI entry (Stop hook): reads stdin JSON from Claude Code.
 if (import.meta.url === `file://${process.argv[1]}`) {
+  // Recursion guard: when the classifier sub-agent itself fires a Stop event,
+  // bail out immediately so we don't spawn classifiers in a loop.
+  if (process.env.SMT_CLASSIFIER === '1') process.exit(0);
+
   if (!isEnabled()) { process.exit(0); }
   const stdin = readFileSync('/dev/stdin', 'utf-8');
   let input = {};
   try { input = JSON.parse(stdin); } catch {}
   const cwd = input.cwd || process.cwd();
+  const sessionId = input.session_id || '';
   const statePath = findActiveTaskState(cwd);
   const state = statePath ? readState(statePath) : null;
   const lastAssistantText = input.last_assistant_text || '';
-  const decision = decide({ state, lastAssistantText, statePath });
   const subAgentModel = pickSubAgentModel();
+
+  // Queue-signal check (highest priority): if /queue dropped a cancel-signal.json
+  // with a queued_intent, inject it now and skip both classifier + state-machine
+  // decisions. Consume the signal so it fires only once.
+  const queueSignal = readCancel(cwd, sessionId);
+  if (queueSignal && queueSignal.type === 'queue' && queueSignal.queued_intent) {
+    const injection = `[auto-confirm] queued intent → ${queueSignal.queued_intent}\nSpawn the work via a sub-agent using model='${subAgentModel}'.`;
+    try {
+      dropQueue(cwd, {
+        reason: 'queue-signal consumed',
+        action: 'continue',
+        additionalContext: injection,
+        sub_agent_model: subAgentModel,
+        state_path: statePath,
+        queued_intent: queueSignal.queued_intent,
+      }, sessionId);
+    } catch {}
+    clearCancel(cwd);
+    console.log(JSON.stringify({
+      decision: 'block',
+      reason: 'queue-signal consumed',
+      meta: { queued: true, source: 'cancel-signal', sub_agent_model: subAgentModel },
+    }));
+    process.exit(2);
+  }
+
+  let decision = decide({ state, lastAssistantText, statePath });
+
+  // 'classify_needed' resolves via the lightweight LLM classifier sub-agent.
+  // Per spec there is no regex fallback — sub-agent decision is final, and a
+  // sub-agent failure halts (safe default that breaks the prior infinite loop).
+  if (decision.action === 'classify_needed') {
+    const verdict = classifyProceedPromptViaSubAgent(decision.payload.lastMessage, { model: subAgentModel });
+    if (verdict === 'continue') {
+      decision = { action: 'continue', reason: `classifier sub-agent (${subAgentModel}) → continue` };
+    } else {
+      decision = { action: 'halt', reason: `classifier sub-agent (${subAgentModel}) → halt` };
+    }
+  }
+
   const injection = buildPromptInjection(decision, state, { subAgentModel });
 
-  if (decision.action === 'halt' || decision.action === 'no_state') {
+  // 'session_wrap' is terminal — current_stage is already 'done'. Re-injecting
+  // "write session log" on every Stop creates an infinite loop because the
+  // state never changes again. Treat it as a halt so the session ends cleanly.
+  if (decision.action === 'halt' || decision.action === 'no_state' || decision.action === 'session_wrap') {
     process.exit(0);
   }
 
@@ -340,7 +456,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       additionalContext: injection,
       sub_agent_model: subAgentModel,
       state_path: statePath,
-    });
+    }, sessionId);
   } catch {
     // Never fail the Stop hook just because disk write failed.
   }

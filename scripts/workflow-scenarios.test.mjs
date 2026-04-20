@@ -422,9 +422,10 @@ section('SCENARIO 9 — test_cycles RED forces workflow-coding entry');
     if (d.action === 'enter_skill') {
       assert.notEqual(d.payload.skill, 'workflow-coding', 'must not re-enter the current stage');
     }
-    // Positive: the fallback is either halt (no-signal safety) or continue
-    // (proceed-prompt detected). Any other action here is a bug.
-    assert.ok(['halt', 'continue'].includes(d.action), `unexpected action: ${d.action}`);
+    // Positive: the fallback is halt (no-signal safety), continue (proceed
+    // detected), or classify_needed (LLM classifier sub-agent will resolve to
+    // halt/continue at CLI entry). All three prevent re-entering workflow-coding.
+    assert.ok(['halt', 'continue', 'classify_needed'].includes(d.action), `unexpected action: ${d.action}`);
   });
 }
 
@@ -673,15 +674,16 @@ section('SCENARIO 14 — CLI integration end-to-end (Stop hook spawn + decision)
       writeState(statePath, state);
       mkdirSync(join(dir, '.smt'), { recursive: true });
       writeFileSync(join(dir, '.smt', 'active_task'), statePath);
-      const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'stage complete' });
+      const sessionId = 'sess-scn-cli-1';
+      const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'stage complete' });
       const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
       assert.equal(res.status, 2, `expected exit 2 (block), got ${res.status}. stderr: ${res.stderr}`);
       const out = JSON.parse(res.stdout);
       assert.equal(out.decision, 'block');
 
-      // Queue file must exist for consumer to pick up
-      const queuePath = join(dir, '.smt', 'state', 'auto-confirm-queue.json');
-      assert.ok(existsSync(queuePath), 'queue file not created — consumer will have nothing to inject');
+      // Session-scoped queue file must exist for the matching session's consumer to pick up
+      const queuePath = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
+      assert.ok(existsSync(queuePath), 'session-scoped queue file not created — consumer will have nothing to inject');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -706,7 +708,7 @@ section('SCENARIO 15 — Integrity: agent always moves forward (no deadlock patt
   for (const p of pathologies) {
     test(`pathology: ${p.label} → never silent stop`, () => {
       const d = decide({ state: p.state(), lastAssistantText: '' });
-      const validActions = ['halt', 'advance', 'enter_skill', 'spawn_sub_tasker', 'session_wrap', 'chain_advance', 'continue', 'request_mode_upgrade', 'no_state'];
+      const validActions = ['halt', 'advance', 'enter_skill', 'spawn_sub_tasker', 'session_wrap', 'chain_advance', 'continue', 'request_mode_upgrade', 'no_state', 'classify_needed'];
       assert.ok(validActions.includes(d.action), `decide returned unknown action: ${d.action}`);
       // The only "stop" decisions allowed are halt + no_state + session_wrap.
       // Everything else is forward motion. Agent never idles without reason.

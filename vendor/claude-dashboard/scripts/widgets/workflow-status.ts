@@ -12,13 +12,12 @@ interface WorkflowStatusData {
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 let fileCache: {
-  path: string;
-  mtime: number;
+  key: string;
   data: WorkflowStatusData | null;
 } | null = null;
 
-function normalizeModeLabel(command: string): string {
-  return `${String(command).toUpperCase()} MODE`;
+function normalizeModeLabel(mode: string): string {
+  return `${String(mode).toUpperCase()} MODE`;
 }
 
 export const workflowStatusWidget: Widget<WorkflowStatusData> = {
@@ -39,32 +38,47 @@ export const workflowStatusWidget: Widget<WorkflowStatusData> = {
       if (!existsSync(pointerPath)) return null;
       const pointerStat = statSync(pointerPath);
       if (Date.now() - pointerStat.mtimeMs > MAX_AGE_MS) {
-        fileCache = { path: pointerPath, mtime: pointerStat.mtimeMs, data: null };
+        fileCache = { key: `${pointerPath}:${pointerStat.mtimeMs}`, data: null };
         return null;
-      }
-
-      if (fileCache?.path === pointerPath && fileCache.mtime === pointerStat.mtimeMs) {
-        return fileCache.data;
       }
 
       const pointer = JSON.parse(readFileSync(pointerPath, 'utf-8')) as { slug?: string };
       if (!pointer.slug) {
-        fileCache = { path: pointerPath, mtime: pointerStat.mtimeMs, data: null };
+        fileCache = { key: `${pointerPath}:${pointerStat.mtimeMs}`, data: null };
         return null;
       }
 
-      const workflowPath = join(cwd, '.smt', 'features', pointer.slug, 'state', 'workflow.json');
-      if (!existsSync(workflowPath)) return null;
-      const workflow = JSON.parse(readFileSync(workflowPath, 'utf-8')) as { command?: string; step?: string };
-      if (!workflow.command || !workflow.step) {
-        fileCache = { path: pointerPath, mtime: pointerStat.mtimeMs, data: null };
+      const statePath = join(
+        cwd ?? projectDir,
+        '.smt',
+        'features',
+        pointer.slug,
+        'task',
+        `${pointer.slug}.state.json`,
+      );
+      if (!existsSync(statePath)) {
+        fileCache = { key: `${pointerPath}:${pointerStat.mtimeMs}`, data: null };
         return null;
       }
+      const stateStat = statSync(statePath);
+      const cacheKey = `${pointerPath}:${pointerStat.mtimeMs}:${statePath}:${stateStat.mtimeMs}`;
+      if (fileCache?.key === cacheKey) {
+        return fileCache.data;
+      }
 
-      const data = {
-        text: `${normalizeModeLabel(workflow.command)} · ${pointer.slug} · ${workflow.step}`,
+      const state = JSON.parse(readFileSync(statePath, 'utf-8')) as {
+        mode?: string;
+        current_stage?: string | null;
       };
-      fileCache = { path: pointerPath, mtime: pointerStat.mtimeMs, data };
+      if (!state.mode) {
+        fileCache = { key: cacheKey, data: null };
+        return null;
+      }
+
+      const segments = [normalizeModeLabel(state.mode), pointer.slug];
+      if (state.current_stage) segments.push(state.current_stage);
+      const data = { text: segments.join(' · ') };
+      fileCache = { key: cacheKey, data };
       return data;
     } catch {
       return null;

@@ -205,12 +205,23 @@ export function resetRetryCounter(stateDir, key) {
   }
 }
 
+function extractFilePath(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return '';
+  const fp = toolInput.file_path || toolInput.filePath || toolInput.path || '';
+  return typeof fp === 'string' ? fp : '';
+}
+
 function buildRetryInstruction(pattern, toolName, toolInput) {
   switch (pattern.action) {
     case 'retry-then-narrow':
       return `Retry the ${toolName} call. If it still times out, narrow scope: add --max-count 500, restrict the path glob, or split the pattern.`;
-    case 'reread-then-retry':
-      return `Re-Read the target file(s) first to refresh their current content, then re-issue the ${toolName} with the freshly loaded content.`;
+    case 'reread-then-retry': {
+      const fp = extractFilePath(toolInput);
+      if (fp) {
+        return `Run Read({ file_path: "${fp}" }) to refresh its current content, then re-issue the ${toolName} on "${fp}" with the freshly loaded content. Do not stop and do not report this error to the user — recovery is mechanical.`;
+      }
+      return `Re-Read the target file(s) first to refresh their current content, then re-issue the ${toolName} with the freshly loaded content. Do not stop and do not report this error to the user — recovery is mechanical.`;
+    }
     case 'wrap-in-bash-c':
       return `Retry the command wrapped in \`bash -c "..."\` so the shell parses the flags instead of the tool interpreting them.`;
     default:

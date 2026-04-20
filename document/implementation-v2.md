@@ -103,7 +103,7 @@ Mode-unrestricted (Iron Law #6). Two shipped:
 | `SessionStart: init` | `setup-init.mjs`                     | Plugin setup                                                        |
 | `SessionStart: maintenance` | `setup-maintenance.mjs`       | Plugin maintenance                                                  |
 | `UserPromptSubmit`   | `keyword-detector.mjs`               | Magic keyword classifier + command routing                          |
-| `UserPromptSubmit`   | `auto-confirm-consumer.mjs`          | Consumes `.smt/state/auto-confirm-queue.json`, injects as context   |
+| `UserPromptSubmit`   | `auto-confirm-consumer.mjs`          | Consumes `.smt/state/auto-confirm-queue-<sessionId>.json` (session-scoped), injects as context |
 | `UserPromptSubmit`   | `skill-injector.mjs`                 | Injects skill prompts per current workflow                          |
 | `PreToolUse`         | `pre-tool-enforcer.mjs`              | Pre-tool policy enforcement                                         |
 | `PreToolUse`         | `rule-injector.mjs`                  | Language-scoped rule injection (`rules-lib/<lang>`)                 |
@@ -228,7 +228,8 @@ scripts/auto-confirm.mjs
     │     ├── risk keyword in lastAssistantText → spawn_sub_tasker
     │     ├── unresolved active_feedback → enter target_skill
     │     └── last event pass → advance
-    └── drop to .smt/state/auto-confirm-queue.json + emit block (exit 2)
+    └── drop to .smt/state/auto-confirm-queue-<sessionId>.json + emit block (exit 2)
+        (session-scoped per stdin session_id; legacy shared filename fallback only when absent)
 
 next UserPromptSubmit
     │

@@ -19,33 +19,36 @@ Final user review. The one Iron Law #1 exception: waiting for user input is allo
 ## Presented Report
 
 ```
-┌────────────────────────────────────────────────┐
-│              Human Review Report               │
-├────────────────────────────────────────────────┤
-│ Feature  : <slug>                              │
-│ Task     : <title>                             │
-│ Mode     : <mode>                              │
-│ Stages   : [list of completed workflow skills] │
-│                                                │
-│ Artifacts:                                     │
-│   - Video : <path>                             │
-│   - Log   : <path>                             │
-│   - Diff  : <summary>                          │
-│                                                │
-│ Risks   : <## Risks section>                   │
-│ TDD     : <test_cycles summary>                │
-│ E2E     : <surface + pass/fail>                │
-└────────────────────────────────────────────────┘
+Human Review Report
+────────────────────────────────────
+Feature  : <slug>
+Task     : <title>
+Mode     : <mode>
+Stages   : <list of completed workflow skills>
+
+Artifacts:
+  - Video : <path or (none)>
+  - Log   : <path or (none)>
+  - Diff  : <summary>
+
+Risks    : <## Risks section or (none)>
+TDD      : <test_cycles summary>
+E2E      : <surface + pass/fail + artifacts>
+────────────────────────────────────
 ```
 
 ## User choices
 
-```
-[1] rework   → specify rework targets → create active_feedback → route to target_skill
-[2] complete → Git options (push current branch / new branch / local only)
-[3] hold     → record status: blocked
-[4] upgrade  → upgrade mode (simple_fix→fix, etc.)
-```
+**MANDATORY: Use the `AskUserQuestion` tool** — ask via the Claude Code native clickable prompt, not a plain text block. `AskUserQuestion` is a deferred tool; load its schema first via `ToolSearch("select:AskUserQuestion")`, then call it with:
+
+- Question: `"Human review — choose the next action."`
+- Options (label → description):
+  1. `rework`   — specify rework targets → create `active_feedback` → route to `target_skill`
+  2. `complete` — Git options (push current branch / new branch / local only)
+  3. `hold`     — record status: `blocked`
+  4. `upgrade`  — upgrade mode (simple_fix → fix, etc.)
+
+Do NOT paraphrase these options into a free-form text block; every human-check exit must route through `AskUserQuestion`.
 
 ## On Rework (fail routing)
 

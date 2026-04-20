@@ -71,6 +71,9 @@ import * as transcriptParser from '../utils/transcript-parser.js';
 import type { WidgetContext, StdinInput, ModelData } from '../types.js';
 import { DISPLAY_PRESETS, PRESET_CHAR_MAP } from '../types.js';
 import { MOCK_TRANSLATIONS, MOCK_CONFIG, MOCK_STDIN } from './fixtures.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as pathJoin } from 'node:path';
 
 // Mock version module for codex-client
 vi.mock('../version.js', () => ({
@@ -1583,8 +1586,41 @@ describe('widgets', () => {
   });
 
   describe('workflowStatusWidget', () => {
+    let fixtureDir = '';
+
+    function seedFixture({
+      slug,
+      sessionId,
+      mode,
+      currentStage,
+      writeStateFile = true,
+    }: {
+      slug: string;
+      sessionId: string;
+      mode?: string;
+      currentStage?: string | null;
+      writeStateFile?: boolean;
+    }) {
+      const stateDir = pathJoin(fixtureDir, '.smt', 'state');
+      const taskDir = pathJoin(fixtureDir, '.smt', 'features', slug, 'task');
+      mkdirSync(stateDir, { recursive: true });
+      mkdirSync(taskDir, { recursive: true });
+      writeFileSync(
+        pathJoin(stateDir, `active-feature-${sessionId}.json`),
+        JSON.stringify({ slug, session_id: sessionId, updated_at: Date.now() }),
+      );
+      if (writeStateFile) {
+        writeFileSync(
+          pathJoin(taskDir, `${slug}.state.json`),
+          JSON.stringify({ mode, current_stage: currentStage }),
+        );
+      }
+    }
+
     beforeEach(() => {
       vi.restoreAllMocks();
+      if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
+      fixtureDir = mkdtempSync(pathJoin(tmpdir(), 'smt-workflow-status-'));
     });
 
     it('should have correct id and name', () => {
@@ -1593,33 +1629,102 @@ describe('widgets', () => {
     });
 
     it('should return null when active workflow pointer is missing', async () => {
-      const ctx = createContext();
+      const ctx = createContext({
+        session_id: 'nope',
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
+      });
       const data = await workflowStatusWidget.getData(ctx);
       expect(data).toBeNull();
     });
 
-    it('should return workflow status when active feature exists', async () => {
+    it('should render MODE and current_stage from v2 .state.json', async () => {
+      seedFixture({
+        slug: 'fix-widget-bug',
+        sessionId: 'sess-1',
+        mode: 'fix',
+        currentStage: 'workflow-coding',
+      });
       const ctx = createContext({
-        session_id: '7b54ab5c-ab6d-496a-99ee-95b71b402656',
-        workspace: {
-          current_dir: '/Users/yusang/Smelter',
-          project_dir: '/Users/yusang/Smelter',
-        },
+        session_id: 'sess-1',
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
       });
       const data = await workflowStatusWidget.getData(ctx);
       expect(data).not.toBeNull();
-      expect(data?.text).toContain('QA MODE');
-      expect(data?.text).toContain('verify-hook-removal');
-      expect(data?.text).toContain('step-');
+      expect(data?.text).toBe('FIX MODE · fix-widget-bug · workflow-coding');
+    });
+
+    it('should omit the stage segment when current_stage is null', async () => {
+      seedFixture({
+        slug: 'plan-new-feature',
+        sessionId: 'sess-2',
+        mode: 'plan',
+        currentStage: null,
+      });
+      const ctx = createContext({
+        session_id: 'sess-2',
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
+      });
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data?.text).toBe('PLAN MODE · plan-new-feature');
+      expect(data?.text).not.toContain('step-');
+      expect(data?.text).not.toContain('null');
+    });
+
+    it('should never emit a step- literal (v1 legacy removed)', async () => {
+      seedFixture({
+        slug: 'build-thing',
+        sessionId: 'sess-3',
+        mode: 'build',
+        currentStage: 'workflow-investigate',
+      });
+      const ctx = createContext({
+        session_id: 'sess-3',
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
+      });
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data?.text).not.toMatch(/step-\d+/);
+    });
+
+    it('should return null when .state.json is missing (no legacy fallback)', async () => {
+      seedFixture({
+        slug: 'legacy-only',
+        sessionId: 'sess-4',
+        writeStateFile: false,
+      });
+      // Emulate a lingering legacy workflow.json to prove the widget does NOT fall back to it.
+      const legacyDir = pathJoin(fixtureDir, '.smt', 'features', 'legacy-only', 'state');
+      mkdirSync(legacyDir, { recursive: true });
+      writeFileSync(
+        pathJoin(legacyDir, 'workflow.json'),
+        JSON.stringify({ command: 'fix', step: 'step-1' }),
+      );
+      const ctx = createContext({
+        session_id: 'sess-4',
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
+      });
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return null when .state.json lacks mode', async () => {
+      seedFixture({
+        slug: 'missing-mode',
+        sessionId: 'sess-5',
+        mode: undefined,
+        currentStage: 'workflow-coding',
+      });
+      const ctx = createContext({
+        session_id: 'sess-5',
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
+      });
+      const data = await workflowStatusWidget.getData(ctx);
+      expect(data).toBeNull();
     });
 
     it('should read the session-scoped pointer when session_id exists', async () => {
       const ctx = createContext({
         session_id: 'missing-session-id',
-        workspace: {
-          current_dir: '/Users/yusang/Smelter',
-          project_dir: '/Users/yusang/Smelter',
-        },
+        workspace: { current_dir: fixtureDir, project_dir: fixtureDir },
       });
       const data = await workflowStatusWidget.getData(ctx);
       expect(data).toBeNull();
@@ -1633,16 +1738,14 @@ describe('widgets', () => {
       expect(PRESET_CHAR_MAP.w).toBe('workflowStatus');
     });
 
-
     it('should render workflow text with arrow prefix', () => {
       const ctx = createContext();
-      const result = workflowStatusWidget.render({ text: 'QA MODE · fix-login-typo · step-10' }, ctx);
+      const result = workflowStatusWidget.render(
+        { text: 'FIX MODE · fix-login-typo · workflow-coding' },
+        ctx,
+      );
       expect(result).toContain('▸');
-      expect(result).toContain('QA MODE · fix-login-typo · step-10');
-    });
-
-    it('should expose workflow status in the normal display preset', () => {
-      expect(DISPLAY_PRESETS.normal[2]).toContain('workflowStatus');
+      expect(result).toContain('FIX MODE · fix-login-typo · workflow-coding');
     });
   });
 

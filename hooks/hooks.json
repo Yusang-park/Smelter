@@ -154,7 +154,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/auto-confirm.mjs\"",
-            "timeout": 20
+            "timeout": 45
           },
           {
             "type": "command",

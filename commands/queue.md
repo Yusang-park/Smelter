@@ -58,4 +58,4 @@ This is a **utility command** — it does NOT enter a workflow mode.
 - Not governed by Iron Law whitelist (mode-agnostic).
 - Works in any mode (plan / simple_fix / fix / investigate / implement / verify).
 - The redirect is **advisory**, not enforced. The agent must read the banner and act on it. Iron Law #2 (no evasion) applies — the agent should not ignore a posted redirect indefinitely.
-- The `auto-confirm.mjs` Stop hook and `auto-confirm-consumer.mjs` operate on a SEPARATE queue file (`auto-confirm-queue.json`) used for workflow-skill continuation, not for `/queue` redirects.
+- The `auto-confirm.mjs` Stop hook and `auto-confirm-consumer.mjs` operate on a SEPARATE queue file — **session-scoped** at `.smt/state/auto-confirm-queue-<sessionId>.json` — used for workflow-skill continuation, not for `/queue` redirects. The session scoping prevents parallel Claude sessions in the same project from consuming each other's queued continuation payloads.
