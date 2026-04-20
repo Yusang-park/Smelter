@@ -605,6 +605,241 @@ test('C17 summary is resolved via per-session pointer when sessionId provided', 
   }
 });
 
+test('C18 sessionId present + no per-session pointer MUST NOT fall back to non-scoped pointer', () => {
+  // Regression: when a new session inherits a stale non-scoped `active-feature.json`
+  // from a prior session but has no per-session pointer, the hook must respect
+  // session isolation and treat the state as absent. Falling back to the
+  // non-scoped pointer causes today's session to be advanced through another
+  // session's feature stages indefinitely (cross-session bleed loop).
+  const dir = mkdtempSync(join(tmpdir(), 'sse-'));
+  const sessionId = 'sess-isolation-strict';
+  try {
+    const stateRoot = join(dir, '.smt', 'state');
+    mkdirSync(stateRoot, { recursive: true });
+
+    const staleSlug = 'feat-stale-prior-session';
+    mkdirSync(join(dir, '.smt', 'features', staleSlug, 'task'), { recursive: true });
+    mkdirSync(join(dir, '.smt', 'features', staleSlug, 'state'), { recursive: true });
+    const staleState = makeState({
+      mode: 'fix', current_stage: 'workflow-coding',
+      completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'],
+      allowed_skills: FIX_ALLOWED,
+    });
+    writeFileSync(
+      join(dir, '.smt', 'features', staleSlug, 'task', `${staleSlug}.state.json`),
+      JSON.stringify(staleState),
+    );
+    writeFileSync(
+      join(dir, '.smt', 'features', staleSlug, 'state', 'summary.json'),
+      JSON.stringify({ e2e_required: true, status: 'in_progress' }),
+    );
+    writeFileSync(
+      join(stateRoot, 'active-feature.json'),
+      JSON.stringify({ slug: staleSlug, session_id: 'a-different-session' }),
+    );
+
+    const res = runHook({ cwd: dir, session_id: sessionId }, dir);
+    const out = parseStdout(res);
+    assert.notEqual(out.decision, 'block', 'must not block — session has no active pointer');
+    if (typeof out.reason === 'string') {
+      assert.doesNotMatch(
+        out.reason,
+        new RegExp(staleSlug),
+        'must not reference stale cross-session feature',
+      );
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+console.log('\n[Cancel-hint on entry_not_started block reason]');
+
+test('CH1 entry_not_started reason includes /cancel escape hint for spurious seeds', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const dir = setupProject({ state });
+  try {
+    const res = runHook({ cwd: dir }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /entry_not_started/);
+    assert.match(out.reason, /\/cancel/, 'entry_not_started reason must mention /cancel as escape path');
+  } finally { tearDown(dir); }
+});
+
+console.log('\n[interactive-skill invocation detection]');
+
+// Helper: write a JSONL transcript and return its path for these tests.
+function writeTranscriptForTest(dir, entries) {
+  const path = join(dir, 'transcript.jsonl');
+  const body = entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+  writeFileSync(path, body, 'utf-8');
+  return path;
+}
+
+test('INT1 interactive skill invoked in current turn + no artifact → continue', () => {
+  // Agent entered workflow-investigate, invoked Skill(workflow-investigate),
+  // got a successful tool_result, and is now halted to await user reply.
+  // Stop must allow (no block) — not force re-invocation.
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const sessionId = 'sess-int1';
+  const dir = setupProject({ state, sessionId });
+  try {
+    const tpath = writeTranscriptForTest(dir, [
+      { role: 'user', content: [{ type: 'text', text: 'fix the bug' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'tu1', name: 'Skill', input: { skill: 'workflow-investigate' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: false, content: 'loaded' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Q1 — what surface?' }] },
+    ]);
+    const res = runHook({ cwd: dir, session_id: sessionId, transcript_path: tpath }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.continue, true, 'invocation in current-turn window → Stop allows');
+  } finally { tearDown(dir, sessionId); }
+});
+
+test('INT2 no invocation in transcript → still emits entry_not_started (unchanged)', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const sessionId = 'sess-int2';
+  const dir = setupProject({ state, sessionId });
+  try {
+    const tpath = writeTranscriptForTest(dir, [
+      { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'drifting' }] },
+    ]);
+    const res = runHook({ cwd: dir, session_id: sessionId, transcript_path: tpath }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+    assert.match(out.reason, /entry_not_started/);
+  } finally { tearDown(dir, sessionId); }
+});
+
+test('INT3 stale invocation before last user-text → blocks (anchor excludes)', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const sessionId = 'sess-int3';
+  const dir = setupProject({ state, sessionId });
+  try {
+    const tpath = writeTranscriptForTest(dir, [
+      { role: 'user', content: [{ type: 'text', text: 'old task' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'old1', name: 'Skill', input: { skill: 'workflow-investigate' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'old1', is_error: false }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'done with old' }] },
+      { role: 'user', content: [{ type: 'text', text: 'now something else' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'drifting' }] },
+    ]);
+    const res = runHook({ cwd: dir, session_id: sessionId, transcript_path: tpath }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block', 'stale invocation before last user-text must not exempt');
+    assert.match(out.reason, /entry_not_started/);
+  } finally { tearDown(dir, sessionId); }
+});
+
+test('INT4 invocation + errored tool_result → blocks (rejected call)', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const sessionId = 'sess-int4';
+  const dir = setupProject({ state, sessionId });
+  try {
+    const tpath = writeTranscriptForTest(dir, [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'err1', name: 'Skill', input: { skill: 'workflow-investigate' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'err1', is_error: true, content: 'rejected' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'recover' }] },
+    ]);
+    const res = runHook({ cwd: dir, session_id: sessionId, transcript_path: tpath }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block');
+  } finally { tearDown(dir, sessionId); }
+});
+
+test('INT5 transcript_path missing → blocks (fail-closed)', () => {
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const sessionId = 'sess-int5';
+  const dir = setupProject({ state, sessionId });
+  try {
+    // No transcript_path in stdin
+    const res = runHook({ cwd: dir, session_id: sessionId }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block', 'missing transcript_path must fall back to today\'s block behavior');
+  } finally { tearDown(dir, sessionId); }
+});
+
+test('INT6 simple_fix mode (terminal entry stage) → continue without invoking new helper', () => {
+  // simple_fix's allowed_skills is just ['workflow-coding']; entering at
+  // workflow-coding is ALSO the terminal stage (last in allowed_skills),
+  // so isTerminalStage returns true BEFORE the new in-progress branch is
+  // reached. This asserts the guard ordering.
+  const state = makeState({
+    mode: 'simple_fix',
+    current_stage: 'workflow-coding',
+    completed_stages: [],
+    allowed_skills: ['workflow-coding'],
+  });
+  const sessionId = 'sess-int6';
+  const dir = setupProject({ state, sessionId });
+  try {
+    // No transcript path — if the new helper is reached, missing path
+    // would force a block. Continue here proves we short-circuited on
+    // isTerminalStage first.
+    const res = runHook({ cwd: dir, session_id: sessionId }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.continue, true);
+  } finally { tearDown(dir, sessionId); }
+});
+
+test('INT7 invocation for different skill than current_stage → blocks', () => {
+  // Agent invoked Skill(workflow-tasker) but current_stage is
+  // workflow-investigate (mode upgraded between turns / classifier misroute).
+  // The new branch must key on exact skill-name match.
+  const state = makeState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    completed_stages: [],
+    allowed_skills: FIX_ALLOWED,
+  });
+  const sessionId = 'sess-int7';
+  const dir = setupProject({ state, sessionId });
+  try {
+    const tpath = writeTranscriptForTest(dir, [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'tu7', name: 'Skill', input: { skill: 'workflow-tasker' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu7', is_error: false }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Q1' }] },
+    ]);
+    const res = runHook({ cwd: dir, session_id: sessionId, transcript_path: tpath }, dir);
+    const out = parseStdout(res);
+    assert.equal(out.decision, 'block', 'invocation of a DIFFERENT skill must not exempt current_stage');
+  } finally { tearDown(dir, sessionId); }
+});
+
 console.log('');
 console.log(`stop-stage-enforcer: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

@@ -36,7 +36,16 @@ import { route } from './route-on-fail.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
 import { pickNextStage } from './stop-stage-enforcer.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
-import { readLastAssistantText } from './lib/transcript-reader.mjs';
+import { readLastAssistantText, lastAssistantQuestionShape, classifyQuestionShape } from './lib/transcript-reader.mjs';
+
+// Question shapes that mark the assistant as actively soliciting a user
+// reply. When the last message matches any of these, the spawn_sub_tasker
+// branch is skipped — `detectRiskKeyword` substring matches would
+// otherwise split a legitimate interactive discussion into a fictional
+// follow-up task. Shape classification is conservative: bare trailing
+// `?` is not enough; a supporting bullet / option structure is required
+// (see classifyQuestionShape).
+const INTERACTIVE_QUESTION_SHAPES = new Set(['multi_choice', 'yes_no', 'open_question']);
 
 // H3 — stuck-loop guard threshold. When decide() returns the same
 // signature (slug:mode:stage:action) this many consecutive times, the CLI
@@ -250,6 +259,11 @@ export function findActiveTaskState(cwd, sessionId) {
       }
     } catch {}
   }
+  // Session-isolation guard: when sessionId is provided but its per-session
+  // pointer is absent, treat state as absent. Any mtime-based fallback would
+  // bleed another session's feature into this one, causing the stage
+  // classifier to issue "advance to X" loops on unrelated work.
+  if (sessionId) return null;
   const featuresRoot = join(cwd, '.smt', 'features');
   if (!existsSync(featuresRoot)) return null;
   let latest = null;
@@ -346,7 +360,16 @@ export function shouldRunStageCompletionClassifier(state, lastAssistantText) {
 }
 
 // Decision tree per section 11-2. Returns { action, reason, payload }.
-export function decide({ state, lastAssistantText, statePath, stageClassifier }) {
+//
+// `questionShape` (optional) is the classification of the assistant's last
+// message from lastAssistantQuestionShape() — when it falls inside
+// INTERACTIVE_QUESTION_SHAPES, the spawn_sub_tasker branch is suppressed
+// so that a legitimate user-directed question whose prose happens to
+// contain a risk keyword (e.g. Korean "위험") does not get rerouted into
+// a fictional follow-up task. The shape gate is placed STRICTLY after
+// the halt conditions (workflow-human-check / _awaiting_mode_upgrade /
+// investigate-review) so those pauses remain authoritative.
+export function decide({ state, lastAssistantText, statePath, stageClassifier, questionShape }) {
   if (!state) return { action: 'no_state', reason: 'no active task state.json found' };
 
   // Chained-intent auto-transition must fire before human-check halt so a
@@ -384,7 +407,8 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier })
     return { action: 'session_wrap', reason: 'task complete, writing session log' };
   }
 
-  if (isSubTaskerOnRisk() && lastAssistantText && detectRiskKeyword(lastAssistantText)) {
+  if (isSubTaskerOnRisk() && lastAssistantText && detectRiskKeyword(lastAssistantText)
+      && !INTERACTIVE_QUESTION_SHAPES.has(questionShape)) {
     return {
       action: 'spawn_sub_tasker',
       reason: 'risk keyword detected in assistant response',
@@ -754,7 +778,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
 
   const stageClassifier = (ctx) => classifyStageCompletionViaSubAgent({ ...ctx, model: subAgentModel });
-  let decision = decide({ state, lastAssistantText, statePath, stageClassifier });
+  // Shape of the assistant's last message — gates spawn_sub_tasker on
+  // interactive Q&A. Pure text classifier; reuses the lastAssistantText
+  // we already read above.
+  const questionShape = classifyQuestionShape(lastAssistantText);
+  let decision = decide({ state, lastAssistantText, statePath, stageClassifier, questionShape });
 
   // Auto-write canonical artifact on stage_complete verdict when missing.
   // Iron Law #5 safety: we DO NOT flip completed_stages here — that happens

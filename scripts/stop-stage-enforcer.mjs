@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { printTag } from './lib/yellow-tag.mjs';
+import { hasSkillInvocationSinceLastUserText } from './lib/transcript-reader.mjs';
 
 // Stuck-loop escape: if the SAME state signature triggers a block this many
 // consecutive times with no progress, allow Stop to pass with a warning so
@@ -82,11 +83,16 @@ export function findActiveStatePath(cwd, sessionId) {
 }
 
 export function getActiveFeatureSummary(projectDir, sessionId) {
+  // Session-isolation: when sessionId is provided, consult ONLY the per-session
+  // pointer. Falling back to the non-scoped pointer bleeds another session's
+  // feature into this one and was the root cause of the cross-session Stop
+  // hook advancement loop.
   const candidates = [];
   if (sessionId) {
     candidates.push(join(projectDir, '.smt', 'state', `active-feature-${sessionId}.json`));
+  } else {
+    candidates.push(join(projectDir, '.smt', 'state', 'active-feature.json'));
   }
-  candidates.push(join(projectDir, '.smt', 'state', 'active-feature.json'));
 
   for (const pointerPath of candidates) {
     const pointer = readJsonFile(pointerPath);
@@ -291,7 +297,11 @@ export function buildBlockReason({ state, nextStage, summary, sourceFiles }) {
   if (currentStage && completedEmpty && eventsEmpty) {
     const tag = midFlow ? '[Stage] mid-flow' : '[Stage] entry_not_started';
     const directive = mandatoryDirective({ skill: currentStage, direction: 'enter', state });
-    return `${tag}${trackedInfo}\n${directive}`;
+    // Escape hint: when a task was seeded from a spurious classifier hit
+    // (e.g. a pasted transcript), the user can type `/cancel` to clear the
+    // seeded state instead of being forced through the workflow chain.
+    const cancelHint = 'If this input was a reference (pasted log, quoted content) and not a real task: /cancel to clear the seeded state.';
+    return `${tag}${trackedInfo}\n${directive}\n${cancelHint}`;
   }
 
   const tag = midFlow ? '[Stage] mid-flow' : '[Stage] non-terminal';
@@ -299,7 +309,13 @@ export function buildBlockReason({ state, nextStage, summary, sourceFiles }) {
   return `${tag}${trackedInfo}\n${directive}`;
 }
 
-export function evaluate({ state, summary, sourceFiles, cwd }) {
+export function evaluate({ state, summary, sourceFiles, cwd, transcriptPath, invocationCheck }) {
+  // `invocationCheck` is a unit-test seam. Production wiring passes
+  // `hasSkillInvocationSinceLastUserText`; tests inject a stub.
+  const checkInvocation = typeof invocationCheck === 'function'
+    ? invocationCheck
+    : hasSkillInvocationSinceLastUserText;
+
   // No state means non-Smelter or unseeded — don't block.
   if (!state) {
     // Legacy fallback: if summary says e2e_required and source files changed,
@@ -333,6 +349,26 @@ export function evaluate({ state, summary, sourceFiles, cwd }) {
   // Workflow mode — enforce terminal stage.
   if (isTerminalStage(state)) return { action: 'continue' };
 
+  // Interactive-skill in-progress detection. When `current_stage` is set
+  // but the skill has not yet produced its canonical artifact (events
+  // and completed_stages both empty), we would normally emit
+  // `entry_not_started` and force re-entry. But interactive skills
+  // (workflow-brainstorm / workflow-investigate / workflow-tasker) run
+  // multi-turn Q&A BEFORE writing their artifact — so `events` stays
+  // empty while the skill is legitimately mid-dialog. The fix: peek at
+  // the transcript. If the skill was actually invoked in the current
+  // turn (and its tool_result came back non-error), treat Stop as
+  // "waiting on user reply" and allow it to pass. Genuine drift (agent
+  // output text without invoking Skill) still hits the entry_not_started
+  // block below.
+  const currentStage = state?.current_stage;
+  const completedEmpty = !Array.isArray(state?.completed_stages) || state.completed_stages.length === 0;
+  const eventsEmpty = !Array.isArray(state?.events) || state.events.length === 0;
+  if (currentStage && completedEmpty && eventsEmpty
+      && checkInvocation(transcriptPath, currentStage)) {
+    return { action: 'continue' };
+  }
+
   const nextStage = pickNextStage(state);
   return {
     action: 'block',
@@ -363,8 +399,9 @@ function main() {
   const summary = getActiveFeatureSummary(cwd, stdinJson.session_id);
   const trackedRaw = readTrackedFiles(cwd) || [];
   const sourceFiles = trackedRaw.filter(isSourceFile);
+  const transcriptPath = typeof stdinJson.transcript_path === 'string' ? stdinJson.transcript_path : '';
 
-  const result = evaluate({ state, summary, sourceFiles, cwd });
+  const result = evaluate({ state, summary, sourceFiles, cwd, transcriptPath });
 
   if (result.action === 'continue') {
     clearLoopCounter(cwd, stdinJson.session_id);

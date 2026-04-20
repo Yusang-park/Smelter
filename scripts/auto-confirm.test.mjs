@@ -336,6 +336,105 @@ test('English TODO risk → spawn_sub_tasker', () => {
   const d = decide({ state: s, lastAssistantText: 'left TODO to finish later' });
   assert.equal(d.action, 'spawn_sub_tasker');
 });
+
+// ------------------------------------------------------------------------
+// Shape-gate tests (interactive-question suppression of spawn_sub_tasker)
+// ------------------------------------------------------------------------
+test('shape-gate: risk keyword + multi_choice shape → NOT spawn_sub_tasker', () => {
+  const s = baseState({ current_stage: 'workflow-brainstorm' });
+  const d = decide({
+    state: s,
+    lastAssistantText: [
+      '어느 쪽을 택하시겠습니까?',
+      '- (A) 위험이 남는 단순안',
+      '- (B) 투명 감사 (권장)',
+    ].join('\n'),
+    questionShape: 'multi_choice',
+  });
+  assert.notEqual(d.action, 'spawn_sub_tasker',
+    'interactive multi-choice must not trigger spawn_sub_tasker even with 위험');
+});
+
+test('shape-gate: risk keyword + yes_no shape → NOT spawn_sub_tasker', () => {
+  const s = baseState({ current_stage: 'workflow-investigate' });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'Include risky path? (y/n)',
+    questionShape: 'yes_no',
+  });
+  assert.notEqual(d.action, 'spawn_sub_tasker');
+});
+
+test('shape-gate: risk keyword + open_question shape → NOT spawn_sub_tasker', () => {
+  const s = baseState({ current_stage: 'workflow-brainstorm' });
+  const d = decide({
+    state: s,
+    lastAssistantText: [
+      'Which approach do you prefer?',
+      '- first (has TODO)',
+      '- second',
+    ].join('\n'),
+    questionShape: 'open_question',
+  });
+  assert.notEqual(d.action, 'spawn_sub_tasker');
+});
+
+test('shape-gate: risk keyword with shape=none (rhetorical prose) → STILL spawn_sub_tasker', () => {
+  // Regression guard: don't over-correct. When the message is not actually
+  // a user-directed question, risk-keyword detection must still fire.
+  const s = baseState({ current_stage: 'workflow-coding' });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'left TODO in this module',
+    questionShape: 'none',
+  });
+  assert.equal(d.action, 'spawn_sub_tasker');
+});
+
+test('shape-gate: questionShape omitted (legacy caller) → behavior unchanged', () => {
+  const s = baseState({ current_stage: 'workflow-coding' });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'left TODO in this module',
+    // No questionShape — emulates legacy callers before the shape gate.
+  });
+  assert.equal(d.action, 'spawn_sub_tasker');
+});
+
+test('shape-gate: no risk keyword + multi_choice shape → unchanged flow', () => {
+  const s = baseState({ current_stage: 'workflow-brainstorm' });
+  const d = decide({
+    state: s,
+    lastAssistantText: [
+      'Pick one:',
+      '- (A) first',
+      '- (B) second',
+    ].join('\n'),
+    questionShape: 'multi_choice',
+  });
+  // No risk keyword, no pass/fail event, no stage classifier — should fall
+  // through to classify_needed, matching legacy behavior.
+  assert.equal(d.action, 'classify_needed');
+});
+
+test('shape-gate: workflow-human-check halt must NOT be short-circuited by shape-gate', () => {
+  // Safety test: shape-gate must be inserted AFTER the workflow-human-check
+  // halt condition. A human-check pause with a bulleted question must
+  // still return action: 'halt', not be rerouted.
+  const s = baseState({ current_stage: 'workflow-human-check' });
+  s.events = []; // no pass event yet → halt condition matches
+  const d = decide({
+    state: s,
+    lastAssistantText: [
+      'Approve?',
+      '- (A) yes',
+      '- (B) no',
+    ].join('\n'),
+    questionShape: 'multi_choice',
+  });
+  assert.equal(d.action, 'halt',
+    'human-check halt must remain halt even when lastMessage looks like a multi_choice');
+});
 test('unresolved active_feedback → enter_skill', () => {
   const s = baseState({
     current_stage: 'workflow-coding',
@@ -846,6 +945,35 @@ test('fallback picks most-recently-modified state.json', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test('sessionId present + no per-session pointer MUST NOT use mtime fallback (cross-session bleed guard)', () => {
+  // Regression: when a new session has no per-session pointer, the
+  // mtime-based fallback would bleed another session's state into this one,
+  // causing the Stop hook's classifier to issue "advance to X" forever based
+  // on unrelated work. With strict session isolation, absent pointer → null.
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    // Stale state from a prior session
+    const staleDir = join(dir, '.smt', 'features', 'feat-stale', 'task');
+    mkdirSync(staleDir, { recursive: true });
+    writeFileSync(join(staleDir, 'feat-stale.state.json'), '{}');
+    // Non-scoped pointer (legacy) also present — must NOT be consulted.
+    const stateRoot = join(dir, '.smt', 'state');
+    mkdirSync(stateRoot, { recursive: true });
+    writeFileSync(
+      join(stateRoot, 'active-feature.json'),
+      JSON.stringify({ slug: 'feat-stale', session_id: 'prior-sess' }),
+    );
+
+    const sessionId = 'sess-new-no-pointer';
+    assert.equal(
+      findActiveTaskState(dir, sessionId),
+      null,
+      'sessionId provided but no session pointer → must return null (no fallback)',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 // ----------------------------------------------------------------------------
 section('H3: stuck-loop guard (signature counter + threshold escape)');
@@ -967,9 +1095,13 @@ test('active state + classifier stub → continue → exit 2 + queue with sub_ag
     const statePath = join(featDir, 'p.state.json');
     const state = baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [] });
     writeState(statePath, state);
-    mkdirSync(join(dir, '.smt'), { recursive: true });
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
     const sessionId = 'sess-continue-1';
+    writeFileSync(
+      join(dir, '.smt', 'state', `active-feature-${sessionId}.json`),
+      JSON.stringify({ slug: 'p', session_id: sessionId }),
+    );
     const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: '진행할까요?' });
     const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER_CMD: stub } });
     assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
@@ -1070,9 +1202,13 @@ test('active state + pass event + session_id → exit 2, session-scoped queue-dr
     const state = baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [passEvent('workflow-tasker')] });
     writeState(statePath, state);
     // Point active_task at it.
-    mkdirSync(join(dir, '.smt'), { recursive: true });
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
     const sessionId = 'sess-pass-1';
+    writeFileSync(
+      join(dir, '.smt', 'state', `active-feature-${sessionId}.json`),
+      JSON.stringify({ slug: 'f', session_id: sessionId }),
+    );
     const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'completed step' });
     const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8' });
     assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
@@ -1098,11 +1234,15 @@ test('parallel sessions do not cross-pollinate: A writes, B reads nothing', () =
     mkdirSync(featDir, { recursive: true });
     const statePath = join(featDir, 'px.state.json');
     writeState(statePath, baseState({ mode: 'fix', current_stage: 'workflow-tasker', events: [passEvent('workflow-tasker')] }));
-    mkdirSync(join(dir, '.smt'), { recursive: true });
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
 
     // Session A writes.
     const aId = 'sess-A';
+    writeFileSync(
+      join(dir, '.smt', 'state', `active-feature-${aId}.json`),
+      JSON.stringify({ slug: 'px', session_id: aId }),
+    );
     const aPayload = JSON.stringify({ cwd: dir, session_id: aId, last_assistant_text: 'A done' });
     const aRes = spawnSync('node', [HOOK], { input: aPayload, encoding: 'utf-8' });
     assert.equal(aRes.status, 2);

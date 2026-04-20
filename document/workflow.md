@@ -715,6 +715,16 @@ Untrack heuristic (matches anywhere in the command, including under `bash -c`):
 
 For each match, the corresponding `<base>.<ext>` (and its basename) is removed from the tracking list. Tests that fail leave the entries in place so the reminder still fires.
 
+#### 11-5c. Interactive-skill in-progress continue (v2.4.8)
+
+Interactive workflow skills (`workflow-brainstorm`, `workflow-investigate`, `workflow-tasker`) run a multi-turn Q&A before writing their canonical artifact. Between Q1 and Q_n, `state.completed_stages` and `state.events` are both empty — the pre-v2.4.8 enforcer read this as "skill has not been invoked yet" and emitted `[Stage] entry_not_started`, forcing the agent to re-invoke the skill on every turn. That in turn reset the Q&A, clouded the conversation, and eventually tripped the `STUCK_LOOP_THRESHOLD = 3` escape — but only after three forced re-entries.
+
+`stop-stage-enforcer.mjs::evaluate` now consults the transcript before emitting `entry_not_started`. After `isTerminalStage` (terminal short-circuit), if `current_stage` is set with empty completed/events AND `hasSkillInvocationSinceLastUserText(transcriptPath, current_stage)` returns true, the enforcer returns `{action: 'continue'}` and Stop passes cleanly — the agent halts, the user replies, and the next turn resumes the Q&A naturally.
+
+`hasSkillInvocationSinceLastUserText` (in `scripts/lib/transcript-reader.mjs`) anchors on the last `role: 'user'` entry carrying a `type: 'text'` part (so Claude Code's user-role `tool_result` envelopes do not mistakenly cut the current turn's tool loop out of the window). Success is gated on a matching `tool_result` with `is_error !== true`; platform-rejected invocations do NOT register. The helper is fail-closed — missing `transcript_path`, symlinked targets (rejected via `lstatSync`), oversize files, absent user-text anchor, and parse exceptions all return `false`, preserving the pre-v2.4.8 `entry_not_started` block.
+
+Paired with this, `auto-confirm.mjs::decide` now accepts `questionShape` and suppresses the `spawn_sub_tasker` branch when the last assistant message matches `multi_choice`, `yes_no`, or `open_question`. `classifyQuestionShape` requires BOTH a directing signal (trailing `?` / Korean question ending / selector phrase) AND a supporting structure (≥2 option lines or ≥1 bullet) so rhetorical `?`-ending prose and narrative numbered prose still route through risk-keyword detection unchanged. The shape gate is inserted AFTER the halt conditions (`workflow-human-check`, `_awaiting_mode_upgrade`, investigate-review pass halt, `done`) so those pauses remain authoritative.
+
 ### 11-6. Stall Detection & Internal Resolution Cascade
 
 > The Smelter UX principle: **minimize user monitoring**. Stalls are resolved internally first.
