@@ -234,14 +234,105 @@ Example transformation (defense-in-depth layer):
 
 Totals: `keyword-detector.test.mjs` SLUG1–4 pass (4/4 new). Pre-existing CSS1/CSS3 failures in the same suite are unrelated feature-reuse pointer issues, not affected by this change (Korean-only prompts tokenize identically under the new and old logic).
 
+## Phase 16 — Interrogative fallback in mode-classifier
+
+Closes the defect observed 2026-04-21 where a pure inquiry prompt (`[로그와함께]  sf private key가 따로 필요한건지?\n\n    키노출 절대 금지.`) misrouted to `/fix` and seeded a full repair chain. The prompt has no `investigate` keyword; all priority rules miss; `classify()` falls back to `DEFAULT_MODE='fix'` with trigger `default:unclassified`.
+
+- [x] H2. `scripts/mode-classifier.mjs` — new branch between the priority sweep and the final fallback: when `intent` (the `firstSentence()` slice) ends with ASCII `?` (U+003F) or full-width `？` (U+FF1F), return `{ mode: 'investigate', trigger: 'default:interrogative' }`. Runs AFTER every priority rule so imperative verbs still win (e.g. `버그 고쳐줘?` stays `fix` via priority-10 `/고쳐줘/`). DEFAULT_MODE is unchanged — non-question unstructured prompts still fall to `fix`.
+- [x] H2-tests. `scripts/mode-classifier.test.mjs` — 11 new cases in section `H2`: reported-bug prompt, trigger-label assertion, `~인지?`/`~까?`/`~나요?`, English `Is X needed?`/`Should we X?`, full-width `？`, plus 3 negatives (`버그 고쳐줘?` → fix, `fix this bug?` → fix, plain non-question → fix default).
+
+E2E (CLI surface): 5 real-subprocess scenarios captured under `.smt/features/다른-세션에서-로그와함께-sf-private-key가-따로-필요한건지-키노출-절대-금지-과/artifacts/cli/` with full argv+stdin+stdout+exit transcripts; the reported prompt now returns `mode=investigate, trigger=default:interrogative`.
+
+Totals: `mode-classifier.test.mjs` 55 pass (44 prior + 11 new).
+
 ## Phase 17 — Interactive-skill Stop-hook stasis (v2.4.8)
 
 Closes the infinite `entry_not_started` loop observed 2026-04-21 when a workflow-brainstorm / workflow-investigate / workflow-tasker skill is actively asking the user a multi-turn question. The canonical artifact (`brainstorm.md`, `investigation.md`, `tasks.md`) is only written at the END of the Q&A — so between Q1 and Q_n, both `state.completed_stages` and `state.events` stay empty while the skill IS in fact invoked. `stop-stage-enforcer.mjs::buildBlockReason` read that as "skill has not been invoked yet" and forced re-entry on every turn; `auto-confirm.mjs::detectRiskKeyword` simultaneously matched risk words inside legitimate option text (e.g. Korean `위험`) and routed to `spawn_sub_tasker`.
 
-- [x] I1. **Transcript invocation detector** — `scripts/lib/transcript-reader.mjs` adds `hasSkillInvocationSinceLastUserText(transcriptPath, skillName)`, `lastAssistantQuestionShape(transcriptPath)`, and a pure `classifyQuestionShape(text)` helper. Anchor: last `role: 'user'` entry carrying a `type: 'text'` part — skips user-role `tool_result` envelopes so the current turn's tool loop stays inside the window. Success gate: matching `tool_result` with `is_error !== true`. Fail-closed on missing / oversize / parse errors / absent user-text anchor (returns `false`). Symlink rejection via `lstatSync` before size check, defense-in-depth against redirect via untrusted `transcript_path` stdin.
+- [x] I1. **Transcript invocation detector** — `scripts/lib/transcript-reader.mjs` adds `hasSkillInvocationSinceLastUserText(transcriptPath, skillName)` and `lastAssistantQuestionShape(transcriptPath)` + a pure `classifyQuestionShape(text)` helper. Anchor: last `role: 'user'` entry carrying a `type: 'text'` part — skips user-role `tool_result` envelopes so the current turn's tool loop stays inside the window. Success gate: matching `tool_result` with `is_error !== true`. Fail-closed on missing / oversize / parse errors (returns `false`).
 - [x] I2. **stop-stage-enforcer in-progress branch** — `scripts/stop-stage-enforcer.mjs::evaluate` now accepts `transcriptPath` + an injectable `invocationCheck` seam; after `isTerminalStage`, if `current_stage` is set with empty completed/events AND the skill was invoked in the current turn, return `{action: 'continue'}`. Genuine drift (no matching `tool_use` since the last user-text anchor) still emits `entry_not_started`. Stuck-loop counter resets naturally via the existing `clearLoopCounter` on continue.
-- [x] I3. **auto-confirm shape gate** — `scripts/auto-confirm.mjs::decide` accepts `questionShape` and skips the `spawn_sub_tasker` branch when shape ∈ `{multi_choice, yes_no, open_question}`. Placed AFTER the `workflow-human-check` / `_awaiting_mode_upgrade` / `done` halt conditions so those pauses remain authoritative. Shape detection is conservative: bare trailing `?` alone is NOT enough — a directing signal (trailing `?` / Korean question ending / selector phrase like "Pick one"/"어느 쪽") AND a bullet / option line are BOTH required, so rhetorical prose with `위험` still spawns and narrative numbered prose still routes to risk-keyword (regression guards in tests).
-- [x] I4. **Unit coverage** — 8 new transcript-reader cases (invocation detection + 6 shape classifier cases + symlink fail-closed + narrative-prose regression), 7 new stop-stage-enforcer cases (INT1-INT7 interactive-skill), 7 new auto-confirm cases (shape-gate multi_choice / yes_no / open_question pass-through + none regression + legacy caller + human-check halt safety).
-- [x] I5. **Hook-surface E2E** — three real-interface scenarios under `.smt/features/<slug>/artifacts/hook/`: (A) interactive skill invoked → `{"continue":true}`; (B) no invocation → `{decision:"block", reason: entry_not_started ...}`; (C) auto-confirm shape gate with Korean `위험` → no `spawn_sub_tasker`. Each captures input + output + exit + stderr.
+- [x] I3. **auto-confirm shape gate** — `scripts/auto-confirm.mjs::decide` accepts `questionShape` and skips the `spawn_sub_tasker` branch when shape ∈ `{multi_choice, yes_no, open_question}`. Placed AFTER the `workflow-human-check` / `_awaiting_mode_upgrade` / `done` halt conditions so those pauses remain authoritative. Shape detection is conservative: bare trailing `?` alone is NOT enough — a bullet / option line is required, so rhetorical prose with `위험` still spawns (regression guard).
+- [x] I4. **Unit coverage** — 8 new transcript-reader cases (INT1-INT7 invocation detection + 6 shape classifier cases), 7 new stop-stage-enforcer cases (INT1-INT7 interactive-skill), 7 new auto-confirm cases (shape-gate multi_choice / yes_no / open_question pass-through + none regression + legacy caller + human-check halt safety). All 165 touched-surface tests green.
 
-Totals: `transcript-reader.test.mjs` 30/30, `stop-stage-enforcer.test.mjs` 30/30, `auto-confirm.test.mjs` 107/107.
+Totals: `transcript-reader.test.mjs` 28/28, `stop-stage-enforcer.test.mjs` 30/30, `auto-confirm.test.mjs` 107/107.
+
+## Phase 18 — Cross-session pointer bleed on missing per-session pointer (v2.4.8)
+
+Closes the Stop-hook advancement loop observed 2026-04-21 when a fresh session inherits a stale non-scoped `active-feature.json` left by a prior session but has no per-session pointer of its own. Two reader paths silently fell back to non-scoped / mtime-latest state, dragging another session's feature into today's session and driving the classifier to issue `advance to workflow-X` on every Stop event.
+
+- [x] P1. **`auto-confirm.findActiveTaskState`** — when `sessionId` is provided but `.smt/state/active-feature-<sessionId>.json` is absent, return `null` immediately instead of scanning for the most-recently-modified `*.state.json` under `.smt/features/*/task/`. The mtime-latest fallback is retained only for the session-less branch (test fixtures, legacy CLI / `session-sim.mjs`).
+- [x] P2. **`stop-stage-enforcer.getActiveFeatureSummary`** — when `sessionId` is provided, the candidate list now contains ONLY the per-session pointer path. The non-scoped `active-feature.json` is consulted solely when `sessionId` is absent. Matches the strict behavior of `findActiveStatePath` (line 66-71) which already honored session isolation.
+- [x] P3. **Test coverage** — added `auto-confirm.test.mjs` "sessionId present + no per-session pointer MUST NOT use mtime fallback (cross-session bleed guard)" + `stop-stage-enforcer.test.mjs` C18 "sessionId present + no per-session pointer MUST NOT fall back to non-scoped pointer". Three pre-existing auto-confirm tests that relied implicitly on mtime fallback (`active state + classifier stub → continue`, `active state + pass event + session_id`, `parallel sessions do not cross-pollinate`) were updated to seed a per-session pointer explicitly, reflecting the production reality that a session with active work has a session-scoped pointer.
+
+Totals: `auto-confirm.test.mjs` 107/107 (1 new + 3 migrated), `stop-stage-enforcer.test.mjs` 30/30 (1 new). All 13 test suites green.
+
+## Phase 19 — Transcript-paste passthrough + entry_not_started cancel hint (v2.4.8)
+
+Closes the false-positive classifier seed observed 2026-04-21 where pasting a Claude Code session log (e.g. `[master <sha>] fix: …`, `⏺ …`, `Stop hook error: …`) routed through the `\bfix\b` legacy pattern → mode-classifier → state seeding, spawning a full `/fix` chain for a message the user intended as a question *about* a prior session.
+
+- [x] Q1. **Transcript-paste heuristic** — `scripts/keyword-detector.mjs` adds `TRANSCRIPT_PATTERNS` (5 regexes: `⏺` bullet, `⎿` connector, `Stop hook (error|feedback)`, `Ran N stop hooks`, `[master <sha>]` / `[main <sha>]` banners) and pure-function `isTranscriptPaste(text)`. Threshold: **≥2 distinct pattern hits** — deterministic, early-exits at 2 matches, immune to percentage-of-lines instability on short prompts.
+- [x] Q2. **Passthrough wiring** — `detectNaturalLanguageCommand` returns `{ passthrough: true, matched: 'transcript-paste', source: 'passthrough' }` when the predicate fires, BEFORE the `ruleClassify` / `legacyPatternMatch` call. `main()` already treats passthrough as a no-seed path. Rollback lever: `SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1` env var disables the predicate call.
+- [x] Q3. **`/cancel` hint in entry_not_started** — `scripts/stop-stage-enforcer.mjs::buildBlockReason` entry_not_started branch appends one line: *"If this input was a reference (pasted log, quoted content) and not a real task: /cancel to clear the seeded state."* Provides a user-visible escape for spurious seeds that still slip through (`[Stage] mid-flow` branch intentionally omits the hint — real work is in progress).
+- [x] Q4. **Test coverage** — 11 new `keyword-detector.test.mjs` cases (`TPP1-TPP11`): verbatim transcript fixture, single incidental mention, ≥2 distinct marker threshold, `[master <sha>]` banner, explicit `/fix` slash bypass, `detectNaturalLanguageCommand` passthrough shape, mixed paste+question (transcript-dominant wins — pinned decision), empty/whitespace, env-var rollback. 1 new `stop-stage-enforcer.test.mjs` case (`CH1`): entry_not_started reason contains `/cancel` substring.
+- [x] Q5. **E2E coverage** — two hook-script scenarios under `.smt/features/nurl-master-fc8915cb-fix-resolve-domain-via-secret/artifacts/hook/` with full input.json + output.json + exit triples. S1: verbatim transcript paste yields `{"continue":true}` and no `.smt/features/` seeding (fs_diff). S2: seeded state with `current_stage=workflow-investigate`, `completed_stages=[]`, `events=[]` triggers a `decision: block` whose `reason` ends with the `/cancel` hint substring (stdout_parse).
+
+Totals: `keyword-detector.test.mjs` +11 cases, `stop-stage-enforcer.test.mjs` 31/31 (1 new).
+
+## Phase 20 — workflow-human-check halt-guard scoping (v2.4.9)
+
+Closes the Stop-hook advance-to-`workflow-write-test` loop observed 2026-04-21 when a fix-mode task sat at `current_stage='workflow-human-check'` without a matching `workflow-human-check` pass event in `state.events`. The prior guard at `auto-confirm.mjs::decide` checked only `lastEvent.result === 'pass'`, so a pass event from any prior skill (e.g. `workflow-tasker-review`) bypassed the halt and the generic `last.result === 'pass'` branch picked the next uncompleted skill via `pickNextStage()` — re-entering the chain past the terminal approval gate.
+
+- [x] R1. **Scoped halt predicate** — `scripts/auto-confirm.mjs::decide` now scopes the halt clearance to `events.some(e => e && e.skill === 'workflow-human-check' && e.result === 'pass')`. `Array.isArray` normalization on both `state.events` and `state.completed_stages` handles malformed / undefined state files. `legacyCompleted` (completed_stages includes `workflow-human-check`) preserves progression for pre-Fix-B states without a migration script.
+- [x] R2. **Terminal-approval short-circuit** — On `humanCheckPassed || legacyCompleted`, the guard short-circuits to `action: 'session_wrap'` so a genuine human-check approval does not fall through to the generic `last.result === 'pass'` advance branch below. Without this, `pickNextStage()` would return the first uncompleted skill after a completed approval.
+- [x] R3. **Unit coverage** — 3 new cases in `scripts/auto-confirm.test.mjs`: prior-skill pass event → halt (regression guard), legacy completed_stages → session_wrap (fallback path), empty events → halt (defensive). The pre-existing `workflow-human-check with pass event` case tightened from `notEqual('halt')` to `equal('session_wrap')` so ambiguous advance paths can no longer silently pass.
+- [x] R4. **Hook E2E** — `.smt/features/what-s-fix-2/artifacts/hook/` captures two subprocess scenarios with input.json + output.json + exit + stderr triples. Scenario A seeds `current_stage='workflow-human-check'` + prior-skill pass event → asserts exit 0 + empty stdout (halt path, not the pre-fix advance path). Scenario B no-state baseline.
+- [x] R5. **Doc sync** — `document/workflow.md` §11-4 item 2 rewritten to spell out the scoped pass-event predicate, the legacy fallback, and the session_wrap short-circuit.
+
+Totals: `auto-confirm.test.mjs` 110/110 (3 new + 1 tightened). Hook E2E: 2/2 scenarios pass.
+
+## Phase 21 — Mode-classifier LLM refactor (v2.4.9)
+
+Replaces the bilingual regex `RULES` table, `classifyChain`, paste-sanitizer (`firstSentence`), and the HARD/SOFT reject lists inside `scripts/mode-classifier.mjs` with an OAuth-authenticated Claude CLI call (`classifyMode` in `scripts/lib/subagent-classifier.mjs`, scaffolded as Stage 1 under the same feature). The new `classify(input, { cwd, sessionId })` runs four ordered layers — explicit slash, pure shell/git passthrough, LLM, safe fallback — so deterministic paths stay in regex and contextual language work goes to the model.
+
+- [x] R1. **Four-layer classifier** — Layer 1 (`EXPLICIT_COMMANDS`) and Layer 2 (`PASSTHROUGH_PATTERNS`, tightened to `$`-anchored full-input matches) preserve deterministic short-circuits. Layer 3 invokes `classifyMode` via `execFileSync` (synchronous — `keyword-detector.mjs::main` is sync-coupled) and threads `{ cwd, sessionId }` so per-session cache isolation holds. Layer 4 reacts to LLM failure with interrogative-then-`fix` fallback.
+- [x] R2. **Deletions** — `RULES` (6 blocks, ~120 lines), `PASSTHROUGH_HARD_REJECT`, `PASSTHROUGH_SOFT_REJECT`, `CHAIN_ACTION_MAP`, `CHAIN_CONNECTIVES`, `classifyChain`, `firstSentence`, and the pre-LLM interrogative rule are removed. Only `EXPLICIT_COMMANDS`, `PASSTHROUGH_PATTERNS`, `classifyMagicKeywords`, `DEFAULT_MODE`, and `MODES_WHITELIST` remain as module-local constants.
+- [x] R3. **Caller wire-up** — `scripts/keyword-detector.mjs::detectNaturalLanguageCommand` now accepts `{ cwd, sessionId }` and forwards them to `classify`, so `scripts/lib/subagent-classifier.mjs` can key its per-session `mode-classifier-cache.json` without falling back to `process.cwd()` + empty session. `legacyPatternMatch` is retained as a belt-and-suspenders fallback for `default:*` triggers (LLM parse failure chain).
+- [x] R4. **Test harness** — introduces `scripts/lib/__fixtures__/mode-classifier-stub.mjs`, a prompt-lookup-table stub (no regex) wired into three test files via `SMELTER_MODE_CLASSIFIER_MODULE`:
+    - `scripts/mode-classifier.test.mjs` — 37 cases covering all four layers plus magic-keywords + empty input + LLM-throw fallback (RED→GREEN).
+    - `scripts/keyword-detector.test.mjs::runDetector` — subprocess env pre-load so chain/state seeding is deterministic; in-process tests (`detectNaturalLanguageCommand` direct calls) also load the stub at module top.
+    - `scripts/workflow-scenarios.test.mjs` SCENARIO 13 — switches from real LLM to stub via dynamic import + env-var, eliminating the LLM-drift failures the real CLI produced across runs.
+- [x] R5. **Test suite status** — `mode-classifier.test.mjs` 37/37 pass; `subagent-mode-classifier.test.mjs` 4/4 pass; `workflow-scenarios.test.mjs` 118/118 pass; `keyword-detector.test.mjs` 24/26 pass (2 pre-existing failures untouched by this refactor: TPP4 `isTranscriptPaste` distinct-pattern accounting bug, TPP6 `extractExplicitHarnessCommand` single-line anchor).
+- [x] R6. **Doc sync** — `document/workflow.md` §1-2 rewritten as a four-layer table with LLM as Layer 3 and the `default:interrogative` wording scoped to Layer 4. §1-3 Magic Keywords gains a note that surface detection stays regex-based (hints, not a mode decision). Feature record at `.smt/features/feature-mo6xifxb-ac5a1e/classifier-llm-refactor.md` stages all work back to Stage 1.
+
+Totals: classifier & scenarios 159/159 green, keyword-detector 24/26 green (pre-existing). Test wall time dropped ~90× once the stub displaced real-LLM roundtrips (`keyword-detector.test.mjs` 145s → 1.6s).
+
+## Phase 22 — Workflow integrity: artifact basename unification + auto-synthesis removal + Stop-hook consolidation (v2.4.10)
+
+Three interlocked fixes identified 2026-04-21 via investigation at `.smt/features/all/task/`.
+
+**Fix #1 — Canonical artifact basename unification:**
+- [x] 1-1. `scripts/skill-stage-transition.mjs` — replace literal `SKILL_ARTIFACT` map with `SKILL_ARTIFACT_BASENAME` import from `state-validator.mjs` (single source of truth; eliminates drift between the two definitions).
+- [x] 1-2. `scripts/skill-stage-transition.test.mjs` — regression test: source must have no literal `SKILL_ARTIFACT = {` assignment.
+- [x] 1-3. `skills/workflow-brainstorm-review/SKILL.md` → `produces: brainstorm-review.md` (was `brainstorm_review.md`); `skills/workflow-investigate-review/SKILL.md` → `produces: investigation-review.md` (was `investigate_review.md`); `skills/workflow-tasker/SKILL.md` → `produces: tasks.md` (was `plan.md, target_type, …`); `skills/workflow-tasker-review/SKILL.md` → `consumes: tasks.md`, `produces: tasks-review.md` (was `plan.md` / `tasker_review.md`).
+- [x] 1-4. `scripts/state-validator.test.mjs` — 4 contract tests: each SKILL.md `produces:` first token must match `SKILL_ARTIFACT_BASENAME[skill]`.
+- [x] 1-5. `document/workflow.md` §3 skill table — rows 2/4/5/6/7 updated to hyphen-form basenames and `tasks.md` consumes.
+
+**Fix #2 — Remove auto-confirm stage_complete artifact auto-synthesis:**
+- [x] 2-1. `scripts/auto-confirm.mjs` — delete lines 811-832 auto-synthesis block (Iron Law #5: artifacts written by the skill producer only, never the Stop hook).
+- [x] 2-2. `scripts/auto-confirm.mjs::buildPromptInjection` stage_complete case — when artifact non-null: emit Write-tool directive instructing agent to write canonical artifact; when null: emit explicit "no canonical artifact required" line. Removes "auto-written at" language.
+- [x] 2-3. `scripts/auto-confirm.mjs::decide` — Fix B: scope `workflow-human-check` halt clearance to pass events where `e.skill === 'workflow-human-check'`; add `legacyCompleted` fallback for pre-Fix-B states; short-circuit to `session_wrap` on terminal approval.
+- [x] 2-4. `scripts/auto-confirm.test.mjs` — Fix #2 tests: no `auto-generated artifact` header, no `writeFileSync(absPath,…)` pattern, Write-tool directive present, auto-written absent, null-artifact clause present, prior-skill pass → halt, legacy completed → session_wrap, empty events → halt.
+
+**Fix #3 — Fold stop-stage-enforcer into auto-confirm (single Stop hook):**
+- [x] 3-1. `scripts/stop-stage-enforcer.mjs` — DELETED.
+- [x] 3-2. `scripts/stop-stage-enforcer.test.mjs` — DELETED.
+- [x] 3-3. `scripts/auto-confirm.mjs` — port `pickNextStage`, `isTerminalStage`, `ALWAYS_TERMINAL_STAGES` inline as local exports; remove `import { pickNextStage } from './stop-stage-enforcer.mjs'`.
+- [x] 3-4. `scripts/auto-confirm.mjs::autoConfirmSignature` — replace action string with `completed_stages.length` (monotonically increasing; resets on genuine forward progress; closes dual-counter gap).
+- [x] 3-5. `scripts/auto-confirm.mjs` CLI entry — wrap inner classifier call with `STAGE_CLASSIFIER_TIMEOUT_MS = 10000` so a hung sub-agent cannot starve the Stop hook's 120 s wall-clock budget.
+- [x] 3-6. `hooks/hooks.json` + `settings.json` — remove `stop-stage-enforcer.mjs` entry; raise `auto-confirm` timeout from 20 s/45 s to 120 s; remove stale `model` key.
+- [x] 3-7. `scripts/cancel-propagator.mjs` — add `loopCounterPaths(directory, sessionId)` helper; `clearLegacyState` now also cleans both the auto-confirm and legacy stop-loop `/tmp` counter files.
+- [x] 3-8. `scripts/workflow-scenarios.test.mjs` SCENARIO 13 — switch to `mode-classifier-stub.mjs` via env var + dynamic import for LLM-stable assertions.
+- [x] 3-9. `scripts/auto-confirm.test.mjs` — Fix #3 tests: `completedCount`-based signature, `no-state:0` null-state form, terminal-stage halt behavior, `stop-stage-enforcer.mjs` deleted assertion.
+- [x] 3-10. `document/workflow.md` §11-5b + §11-5c — rewrite to reflect single-hook architecture; update timeout from 45 s to 120 s; attribute `pickNextStage`/`isTerminalStage` to `auto-confirm.mjs`.
+
+Totals (scoped surface): `auto-confirm.test.mjs` 110+/110+ pass, `skill-stage-transition.test.mjs` pass, `state-validator.test.mjs` pass, `workflow-scenarios.test.mjs` pass.

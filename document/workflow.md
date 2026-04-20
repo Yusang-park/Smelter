@@ -57,28 +57,33 @@ translations: document/workflow.ko.md
 
 ### 1-2. Commands & Auto-Routing
 
-Commands are **hints**; the default is **rule-based auto-routing** from natural-language input. Users can invoke explicit slash commands, but when an utterance arrives the classifier assigns a mode at entry.
+Commands are **hints**; the default is **four-layer auto-routing** from natural-language input. Users can invoke explicit slash commands, but when an utterance arrives the classifier assigns a mode at entry.
 
-#### Auto-routing table
+#### Four-layer classifier (v2.4.9+)
 
-| Input pattern (natural language) | Mode | Explicit command |
-|----------------------------------|------|------------------|
-| "파악해", "분석해", "how does X work?", "investigate", "verify" (static), "validate", "check", "확인", "검증", "체크" | `investigate` | `/investigate` |
-| "테스트 해봐", "점검해", "돌려봐", "실행해", "run tests", "health check" | `verify` | `/verify` |
-| "만들거야", "리팩토링할거야", "설계해", "기획해", "design", "refactor" | `plan` | `/plan` |
-| "~만들어줘", "~추가해줘", "~구현해줘", "implement", "extend" | `implement` | `/implement` |
-| "텍스트 수정", "이름 바꿔", "색깔 변경", "css", "오타", "번역" | `simple_fix` | `/simple-fix` |
-| "버그", "문제", "에러", "작동 안 해", "고쳐줘", "bug", "fix" | `fix` | `/fix` |
-| ambiguous | `fix` (safe default) | — |
+`scripts/mode-classifier.mjs::classify(input, { cwd, sessionId })` runs the layers in order; the first non-null layer wins.
+
+| # | Layer | Implementation | Fires when |
+|---|-------|----------------|------------|
+| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table | prompt starts with `/fix`, `/plan`, `/implement`, `/investigate`, `/verify`, or `/simple-fix` |
+| 2 | Passthrough | `PASSTHROUGH_PATTERNS` (anchored) | entire prompt matches pure git/shell verb-first (e.g. `git commit`, `커밋해`, `push 좀`) |
+| 3 | LLM classifier | `scripts/lib/subagent-classifier.mjs::classifyMode` via OAuth Claude CLI | any remaining natural-language prompt |
+| 4 | Safe fallback | trailing `?` / `？` → `investigate`, else `DEFAULT_MODE='fix'` | LLM throws or returns an invalid mode |
+
+The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached per `{sessionId, prompt-hash}` under `.smt/state/mode-classifier-cache.json`.
 
 **Principles**:
 - The classifier runs **only at entry**. Mid-workflow mode changes are user-gated (upgrade).
-- Routing is **rule-based** — no LLM inference (Iron Law #2, no evasion).
+- Layers 1, 2, 4 are deterministic regex. Layer 3 is LLM-based (OAuth, no API key fallback).
 - An explicit slash command **overrides** the classifier.
 
-**Source of truth**: `scripts/mode-classifier.mjs` — pure module exporting `classify(input)`. `scripts/keyword-detector.mjs` (the UserPromptSubmit hook) imports it at step 2 of command resolution; the Haiku sub-agent classifier stays as a step-3 fallback for prompts the rule-based classifier leaves at `default:*`.
+**Source of truth**: `scripts/mode-classifier.mjs` — pure module exporting `classify(input, opts)`. `scripts/keyword-detector.mjs` (the UserPromptSubmit hook) imports it at step 2 of command resolution and passes `{ cwd, sessionId }` so per-session LLM-cache isolation holds. `keyword-detector.mjs::legacyPatternMatch` stays as a step-3 bi-pattern fallback for `default:*` triggers (LLM parse failure path); the Haiku sub-agent `classifyPrompt` still runs as a last-resort step 3 for prompts that reach `main()` without a magic-keyword match.
 
-**Compound intents (chained modes)**: when the classifier detects a connective-joined chain (e.g., "분석하고 구현해줘" → `[investigate, implement]`, "테스트하고 문제 있으면 고쳐" → `[verify, fix]`), it emits `chained_modes: MODES[]`. `keyword-detector` writes this into `.state.json` at entry; `auto-confirm.decide()` picks it up at the `mode_transition` signal and auto-advances via `consumeNextChainedMode` without a user prompt (`chain_advance`). Entry mode is always `chained_modes[0]`.
+**Interrogative fallback**: ASCII `?` (U+003F) or full-width `？` (U+FF1F) at end-of-prompt is the Layer 4 tripwire when the LLM path fails. During healthy operation the LLM handles interrogative prompts directly via `MODE_CLASSIFIER_PROMPT` examples.
+
+**Compound intents (chained modes)**: when the LLM detects a connective-joined chain (e.g., "분석하고 구현해줘" → `[investigate, implement]`), it populates `chained_modes`. `keyword-detector` writes this into `.state.json` at entry; `auto-confirm.decide()` picks it up at the `mode_transition` signal and auto-advances via `consumeNextChainedMode` without a user prompt (`chain_advance`). Entry mode is always `chained_modes[0]`.
+
+**Testing**: set `SMELTER_MODE_CLASSIFIER_MODULE=<path>` to replace Layer 3 with a deterministic stub (see `scripts/lib/__fixtures__/mode-classifier-stub.mjs`). Used by `mode-classifier.test.mjs`, `keyword-detector.test.mjs`, and `workflow-scenarios.test.mjs` SCENARIO 13 so test assertions do not depend on live LLM availability.
 
 #### Mode summary
 
@@ -93,12 +98,12 @@ Commands are **hints**; the default is **rule-based auto-routing** from natural-
 
 ### 1-3. Magic Keywords
 
-Natural-language tokens that flip flags independently of the auto-routing branch:
+Surface-detection tokens evaluated by `classifyMagicKeywords(input)` in `scripts/mode-classifier.mjs`. These remain **regex-based** — they emit hints/flags, not a mode decision, so LLM inference is unnecessary and would add latency to every submit.
 
 | Keyword | Action |
 |---------|--------|
 | `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | auto-set `workflow-write-test` TDD exemption (surface-based) |
-| `extend`, `add to`, `덧붙여` | skip `workflow-brainstorm` in `implement` |
+| `extend`, `add to`, `덧붙여`, `추가로` | skip `workflow-brainstorm` in `implement` |
 | `fix`, `bug`, `버그`, `문제` | nudge toward `fix` mode (even inside `/simple-fix` upon interface change detection) |
 
 ### 1-4. Workflow vs. Utility Skills
@@ -201,6 +206,8 @@ On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/imp
 4. `critic-watchdog.mjs` R13 — Bash-based bypass defense-in-depth. Skipped when `SMT_HOOK_WRITE=1`.
 5. `keyword-detector.mjs::shouldCreateNewFeature` (v2.4.3) — natural-language follow-ups reuse the session's active feature instead of creating a new slug per prompt. New feature is only created for slash commands, explicit `새 feature` / `new feature` phrases, or when no in-progress pointer exists. Per-session pointer `.smt/state/active-feature-<session_id>.json` keeps concurrent sessions isolated.
 
+    **Session-isolation contract (v2.4.8):** all consumer readers — `auto-confirm.findActiveTaskState`, `stop-stage-enforcer.findActiveStatePath` / `getActiveFeatureSummary`, `skill-stage-transition.resolveActiveState`, `critic-watchdog.readActiveState` — treat the per-session pointer as strictly authoritative when `sessionId` is present. None fall back to the non-scoped `active-feature.json` or to an mtime-latest scan of `features/*/task/*.state.json`. A fresh session that inherits a prior session's non-scoped pointer resolves to "no active state" and halts cleanly instead of advancing through another session's stages.
+
 **Classifier-subprocess re-entrancy guard**: when `lib/subagent-classifier.mjs` spawns the Claude CLI to run the Haiku classifier, that subprocess inherits the parent hook chain. `keyword-detector.mjs` detects this via `process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1'` and bails out before any state-seeding side effect. Without this guard, slug derivation would use the classifier's system prompt as if it were user input, polluting the state store with spurious feature slugs over multiple sessions.
 
 **Slug preamble pruning (defense-in-depth)**: `keyword-detector.mjs::deriveSlug` also strips system-prompt preambles — `You are a …`, Korean 당신은/너는, `Skill:/Role:/Context:` labels, echoed "successfully loaded skill" banners, and `[MAGIC KEYWORD: …]` tags — and drops leading filler tokens (a/an/the/for/to/of/…). So even if the re-entrancy guard is somehow bypassed (nested subprocess, env var dropped), a leaking classifier prompt produces a domain-reflective slug like `command-classifier-for-a-cli-tool-called-smelter-…` instead of `you-are-a-command-classifier-for-a-cli-tool-…`.
@@ -221,12 +228,12 @@ On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/imp
 | # | Skill | Consumes | Produces | Notes |
 |---|-------|----------|----------|-------|
 | 1 | `workflow-brainstorm` | trigger prompt | `brainstorm.md` | `depth: deep\|light` |
-| 2 | `workflow-brainstorm-review` | `brainstorm.md` | `brainstorm_review.md` | pass/fail/reshape |
+| 2 | `workflow-brainstorm-review` | `brainstorm.md` | `brainstorm-review.md` | pass/fail/reshape |
 | 3 | `workflow-investigate` | brainstorm.md or trigger | `investigation.md` | static read (structure, references) |
-| 4 | `workflow-investigate-review` | `investigation.md` | `investigate_review.md` | pass/fail/reshape |
-| 5 | `workflow-tasker` | investigation.md (+brainstorm.md) | `plan.md`, `target_type`, initial `team_runtime` | |
-| 6 | `workflow-tasker-review` | `plan.md` | `tasker_review.md` | side-effect / scope check; pass/fail/reshape |
-| 7 | `workflow-write-test` | `plan.md` | `*.test.*` (RED), `test_cycles` entries | surface-based exemption applies |
+| 4 | `workflow-investigate-review` | `investigation.md` | `investigation-review.md` | pass/fail/reshape |
+| 5 | `workflow-tasker` | investigation.md (+brainstorm.md) | `tasks.md`, `target_type`, initial `team_runtime` | |
+| 6 | `workflow-tasker-review` | `tasks.md` | `tasks-review.md` | side-effect / scope check; pass/fail/reshape |
+| 7 | `workflow-write-test` | `tasks.md` | `*.test.*` (RED), `test_cycles` entries | surface-based exemption applies |
 | 8 | `workflow-coding` | `*.test.*` (RED) or `active_feedback` | `src/**` changes | implementation |
 | 9 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` updates | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" → A. |
 | 10 | `workflow-e2e` | built `src/**` | `artifacts/` (video / screenshots / logs / transcripts / IO samples) | **Drives the real interface** (browser, subprocess, HTTP port, DB engine, hook pipe). Test-runner stdout alone is NOT a valid pass. |
@@ -662,7 +669,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 ### 11-4. Halt conditions (only allowed)
 
 1. Explicit user stop (`/cancel`, `/stop`, or manual abort).
-2. `workflow-human-check` awaiting user input.
+2. `workflow-human-check` awaiting user input. The halt clears only when `state.events` contains a pass event whose `skill === 'workflow-human-check'`, or when `state.completed_stages` includes `workflow-human-check` (legacy migration fallback). A pass event from any prior skill (e.g., `workflow-tasker-review`) must NOT clear the halt — previously, the guard only checked `lastEvent.result === 'pass'` and allowed a stale prior-skill pass to advance the chain to `workflow-write-test`. On terminal approval (pass event OR legacy marker), the guard short-circuits to `session_wrap` so a genuine human-check approval does not fall through to the generic advance branch below.
 3. Mode-upgrade decision awaited.
 4. `investigate` mode terminal (user picks the next mode).
 5. **Classifier sub-agent verdict = `halt`** — when no state-machine signal matches, the lightweight LLM classifier decides; a `halt` verdict (or any sub-agent failure: timeout, missing binary, malformed output) ends the session cleanly and prevents the prior "no explicit signal, prompting to proceed" infinite loop. There is no regex fallback (see §11-2).
@@ -684,7 +691,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 `codexMode: true` (or env `CODEX_MODE=1`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime.
 
 Hook timeouts and env vars:
-- `hooks/hooks.json` Stop hook timeout = 45 s (raised from 20 s to accommodate one classifier round-trip).
+- `hooks/hooks.json` Stop hook timeout = 120 s (raised from 45 s in v2.4.10 to give the folded single-hook enough budget for one inner classifier round-trip plus state I/O; the inner classifier call is capped at 10 s via `STAGE_CLASSIFIER_TIMEOUT_MS` so a hung sub-agent cannot consume the full budget).
 - `SMT_CLASSIFIER=1` is injected into the spawned classifier sub-agent's env. The Stop hook bails out immediately when it sees this flag, preventing recursive Stop-hook fires from the classifier session.
 - `SMT_CLASSIFIER_CMD` (test-only) overrides the classifier binary path so unit tests can inject a stub.
 
@@ -697,15 +704,17 @@ The `/queue` skill writes `.smt/state/cancel-signal.json` with `type: "queue"` +
 
 This guarantees `/queue` items always run; without this check the classifier would (correctly) halt on a final-summary message and the queued intent would be silently dropped.
 
-#### 11-5b. E2E reminder untracking (post-tool-verifier ↔ stop-stage-enforcer)
+#### 11-5b. E2E reminder untracking (post-tool-verifier ↔ auto-confirm)
 
-`stop-stage-enforcer.mjs` (renamed from `stop-e2e.mjs` in v2.4.x) is the unified Stop-hook stage-progression guard. Its primary role is to block Stop when a workflow mode (fix/implement/plan) has not yet reached a terminal stage. It also preserves the legacy E2E reminder pathway as a fallback: it reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and surfaces an `[E2E]` reason when the next stage would be `workflow-e2e` and `summary.json.e2e_required` is set.
+**v2.4.10 note**: `stop-stage-enforcer.mjs` has been deleted and its stage-progression logic (`pickNextStage`, `isTerminalStage`, `ALWAYS_TERMINAL_STAGES`) folded directly into `scripts/auto-confirm.mjs` as local exports. `auto-confirm.mjs` is now the **single Stop hook**. The `hooks/hooks.json` and `settings.json` Stop hook arrays each contain only the auto-confirm entry (timeout 120 s).
+
+`auto-confirm.mjs` is the unified Stop-hook stage-progression guard. Its primary role is to block Stop when a workflow mode (fix/implement/plan) has not yet reached a terminal stage. It also preserves the legacy E2E reminder pathway as a fallback: it reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and surfaces an `[E2E]` reason when the next stage would be `workflow-e2e` and `summary.json.e2e_required` is set.
 
 Active-state resolution is **session-isolated** (v2.4.5): `findActiveStatePath(cwd, sessionId)` reads `.smt/state/active-feature-<sessionId>.json` (primary) then `.smt/state/active-feature.json` (non-scoped, session-less fallback only). The global `.smt/active_task` pointer was removed in Phase 13 — concurrent sessions would overwrite it and strand each other's mid-flow chains. Same resolution applies to `critic-watchdog.readActiveState`, `skill-stage-transition.resolveActiveState`, `auto-confirm.findActiveTaskState`, and `critic-watchdog` R12. `keyword-detector.seedWorkflowState` writes only the per-session pointer when `session_id` is present; non-scoped pointer is written only when `session_id` is absent (legacy CLI / `session-sim.mjs`). `clearActiveFeature(directory, sessionId)` unlinks per-session + non-scoped + legacy `.smt/active_task` so `/cancel` fully clears the chain.
 
-**Stuck-loop escape** (v2.4.x): `stop-stage-enforcer` maintains a per-project + per-session loop counter at `/tmp/smelter-stop-loop-<projectHash>-<sessHash>.json`. The counter keys on `stateSignature = slug:mode:current_stage:completed_count`. When the same signature triggers `STUCK_LOOP_THRESHOLD` (default 3) consecutive blocks with no `PostToolUse:Skill` advancing state between them, Stop is allowed with a `[smelter] Stuck-loop escape` warning so the loop can break. Any genuine state transition (stage advance, mode flip, slug swap) resets the counter, and the counter is also considered stale after 30 min. Closes the 2026-04-20 incident where a stale `mode=fix, stage=null` pointer looped an external session indefinitely because the agent could only respond in text.
+**Stuck-loop escape** (v2.4.x, unified in v2.4.10): `auto-confirm` maintains a per-project + per-session loop counter at `/tmp/smelter-auto-confirm-loop-<projectHash>-<sessHash>.json`. The counter signature is now `slug:mode:current_stage:completedCount` (count of `completed_stages`, not the decision-action string) — monotonically increasing on genuine advance, so the counter resets precisely when state moves forward. When the same signature triggers `AUTO_CONFIRM_STUCK_THRESHOLD` (default 3) consecutive identical-signature runs with no state progression, the hook halts with a stuck-loop warning. Any genuine state transition (stage advance, mode flip, slug swap) resets the counter; the counter is also considered stale after 30 min. `cancel-propagator.mjs` cleans both the auto-confirm counter path and the legacy stop-loop path (`/tmp/smelter-stop-loop-<projectHash>-<sessHash>.json`) on hard cancel so pre-existing files from prior sessions do not inherit stale state.
 
-To stop the reminder firing repeatedly after the user has already validated changes, `post-tool-verifier.mjs` removes a tracked source file from the list whenever a Bash command runs `<base>.test.<ext>` and the command does **not** match `detectBashFailure()`. When the list becomes empty, the tracking file is deleted, so `stop-stage-enforcer.mjs` SKIPs the E2E surface enrichment cleanly on the next Stop event.
+To stop the reminder firing repeatedly after the user has already validated changes, `post-tool-verifier.mjs` removes a tracked source file from the list whenever a Bash command runs `<base>.test.<ext>` and the command does **not** match `detectBashFailure()`. When the list becomes empty, the tracking file is deleted, so auto-confirm SKIPs the E2E surface enrichment cleanly on the next Stop event.
 
 Untrack heuristic (matches anywhere in the command, including under `bash -c`):
 
@@ -719,11 +728,11 @@ For each match, the corresponding `<base>.<ext>` (and its basename) is removed f
 
 Interactive workflow skills (`workflow-brainstorm`, `workflow-investigate`, `workflow-tasker`) run a multi-turn Q&A before writing their canonical artifact. Between Q1 and Q_n, `state.completed_stages` and `state.events` are both empty — the pre-v2.4.8 enforcer read this as "skill has not been invoked yet" and emitted `[Stage] entry_not_started`, forcing the agent to re-invoke the skill on every turn. That in turn reset the Q&A, clouded the conversation, and eventually tripped the `STUCK_LOOP_THRESHOLD = 3` escape — but only after three forced re-entries.
 
-`stop-stage-enforcer.mjs::evaluate` now consults the transcript before emitting `entry_not_started`. After `isTerminalStage` (terminal short-circuit), if `current_stage` is set with empty completed/events AND `hasSkillInvocationSinceLastUserText(transcriptPath, current_stage)` returns true, the enforcer returns `{action: 'continue'}` and Stop passes cleanly — the agent halts, the user replies, and the next turn resumes the Q&A naturally.
+`auto-confirm.mjs::decide` (which absorbed the `isTerminalStage` / `pickNextStage` logic from the now-deleted `stop-stage-enforcer.mjs`) consults the transcript before emitting `entry_not_started`. After `isTerminalStage` (terminal short-circuit), if `current_stage` is set with empty completed/events AND `hasSkillInvocationSinceLastUserText(transcriptPath, current_stage)` returns true, the hook returns `{action: 'continue'}` and Stop passes cleanly — the agent halts, the user replies, and the next turn resumes the Q&A naturally.
 
-`hasSkillInvocationSinceLastUserText` (in `scripts/lib/transcript-reader.mjs`) anchors on the last `role: 'user'` entry carrying a `type: 'text'` part (so Claude Code's user-role `tool_result` envelopes do not mistakenly cut the current turn's tool loop out of the window). Success is gated on a matching `tool_result` with `is_error !== true`; platform-rejected invocations do NOT register. The helper is fail-closed — missing `transcript_path`, symlinked targets (rejected via `lstatSync`), oversize files, absent user-text anchor, and parse exceptions all return `false`, preserving the pre-v2.4.8 `entry_not_started` block.
+`hasSkillInvocationSinceLastUserText` (in `scripts/lib/transcript-reader.mjs`) anchors on the last `role: 'user'` entry carrying a `type: 'text'` part (so Claude Code's user-role `tool_result` envelopes do not mistakenly cut the current turn's tool loop out of the window). Success is gated on a matching `tool_result` with `is_error !== true`; platform-rejected invocations do NOT register. The helper is fail-closed — missing `transcript_path`, oversize files, and parse exceptions all return `false`, preserving the pre-v2.4.8 `entry_not_started` block.
 
-Paired with this, `auto-confirm.mjs::decide` now accepts `questionShape` and suppresses the `spawn_sub_tasker` branch when the last assistant message matches `multi_choice`, `yes_no`, or `open_question`. `classifyQuestionShape` requires BOTH a directing signal (trailing `?` / Korean question ending / selector phrase) AND a supporting structure (≥2 option lines or ≥1 bullet) so rhetorical `?`-ending prose and narrative numbered prose still route through risk-keyword detection unchanged. The shape gate is inserted AFTER the halt conditions (`workflow-human-check`, `_awaiting_mode_upgrade`, investigate-review pass halt, `done`) so those pauses remain authoritative.
+Paired with this, `auto-confirm.mjs::decide` now accepts `questionShape` and suppresses the `spawn_sub_tasker` branch when the last assistant message matches `multi_choice`, `yes_no`, or `open_question` (`classifyQuestionShape` applies a conservative bullet-line requirement so rhetorical `?`-ending prose still triggers risk-keyword routing). The shape gate is inserted AFTER the halt conditions (`workflow-human-check`, `_awaiting_mode_upgrade`, investigate-review pass halt, `done`) so those pauses remain authoritative.
 
 ### 11-6. Stall Detection & Internal Resolution Cascade
 
@@ -1143,6 +1152,14 @@ agents/
 | **Stall Detection** | 6 signals + 4-Level Cascade (§11-6). |
 | Utility skills | No whitelist; free use. |
 | **E2E real-interface enforcement (§8)** | Mandatory artifacts per surface; test-runner output alone fails the gate. R11 blocks. |
+
+---
+
+## Appendix D — Transcript-paste passthrough (v2.4.8)
+
+`scripts/keyword-detector.mjs::detectNaturalLanguageCommand` short-circuits to `{ passthrough: true, matched: 'transcript-paste', source: 'passthrough' }` when `isTranscriptPaste(prompt)` returns true (≥2 distinct markers among: `⏺` bullet, `⎿` connector, `Stop hook (error|feedback)`, `Ran \d+ stop hooks?`, `[master|main <sha>]`). Prevents pasted Claude Code session logs from seeding a spurious `/fix` chain via the legacy `\bfix\b` pattern. Explicit slash commands (`/fix`, `/plan`, …) still bypass the heuristic via `extractExplicitHarnessCommand`. Rollback: `SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1`.
+
+`scripts/stop-stage-enforcer.mjs::buildBlockReason` entry_not_started branch includes a `/cancel` escape hint so users whose legitimate prompt was nonetheless mis-seeded can clear state without completing the whole workflow chain.
 
 ---
 
