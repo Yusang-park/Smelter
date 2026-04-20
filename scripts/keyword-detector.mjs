@@ -204,16 +204,58 @@ function writeStateFile(directory, filename, data) {
 // skill advances, not on command detection.
 const INITIAL_STEP = {};
 
-// Slug from prompt: first meaningful words, sanitized.
+// Slug from prompt: first meaningful domain words, sanitized.
 // Empty/punctuation-only prompts get a collision-resistant timestamp+random fallback.
+//
+// Defense-in-depth behind the `SMELTER_CLASSIFIER_SUBPROCESS` env guard in main():
+// if a classifier system prompt ("You are a command classifier…") or an echoed
+// skill-loader banner ever reaches deriveSlug, strip the non-domain preamble so
+// the feature directory reflects the actual work, not the boilerplate.
+const SYSTEM_PREAMBLE_REGEXPS = [
+  /^you\s+are\s+(?:a\s+|an\s+|the\s+)?/i,              // "You are a X"
+  /^(?:당신은|너는|당신이|네가)\s*/,                      // Korean copula openers
+  /^\s*(?:skill|role|context|task|system|instruction|prompt)\s*[:：]\s*/i,
+  /^(?:successfully\s+loaded\s+skill\s*[:：]?\s*)+/i,    // echoed skill-loader banner
+  /^\s*\[[^\]]*magic\s+keyword[^\]]*\]\s*/i,            // "[MAGIC KEYWORD: X]" label
+];
+
+function stripSystemPreamble(text) {
+  // Replace zero-width / format chars with a space so they cannot split a
+  // preamble (e.g. `"You\u200Bare a…"` would otherwise leave `"Youare"` which
+  // bypasses the `^you\s+are` regex — dropping them entirely would also fail).
+  let out = text.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, ' ');
+  // Loop until stable so stacked preambles peel completely
+  // (e.g. `"System: You are a …"` must lose both `System:` and `You are a`).
+  let prev;
+  do {
+    prev = out;
+    for (const re of SYSTEM_PREAMBLE_REGEXPS) out = out.replace(re, '').trimStart();
+  } while (out !== prev);
+  return out.trim();
+}
+
+// Leading filler tokens that should never start a slug.
+const LEADING_FILLER_TOKENS = new Set([
+  'a','an','the','is','are','was','were','be','been','being','do','does','did',
+  'for','to','of','in','on','at','by','with','from','as','about','into','onto',
+  'that','this','it','its','he','she','they','we','you','i',
+  'and','or','but','if','so','then','than','because','just','please',
+]);
+
 function deriveSlug(prompt) {
-  const base = (prompt || '').toString().trim().slice(0, 80).toLowerCase();
-  const slug = base
-    .replace(/[^a-z0-9가-힣\s-]+/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 50);
+  const raw = (prompt || '').toString().trim();
+  const stripped = stripSystemPreamble(raw);
+  const base = (stripped || raw).slice(0, 120).toLowerCase();
+
+  const tokens = base
+    .replace(/[^a-z0-9가-힣\s-]+/g, ' ')
+    .split(/[\s-]+/)
+    .filter(Boolean);
+
+  while (tokens.length > 1 && LEADING_FILLER_TOKENS.has(tokens[0])) tokens.shift();
+
+  const slug = tokens.join('-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+
   if (slug) return slug;
   const suffix = randomBytes(3).toString('hex');
   return `feature-${Date.now().toString(36)}-${suffix}`;

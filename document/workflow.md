@@ -203,6 +203,8 @@ On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/imp
 
 **Classifier-subprocess re-entrancy guard**: when `lib/subagent-classifier.mjs` spawns the Claude CLI to run the Haiku classifier, that subprocess inherits the parent hook chain. `keyword-detector.mjs` detects this via `process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1'` and bails out before any state-seeding side effect. Without this guard, slug derivation would use the classifier's system prompt as if it were user input, polluting the state store with spurious feature slugs over multiple sessions.
 
+**Slug preamble pruning (defense-in-depth)**: `keyword-detector.mjs::deriveSlug` also strips system-prompt preambles — `You are a …`, Korean 당신은/너는, `Skill:/Role:/Context:` labels, echoed "successfully loaded skill" banners, and `[MAGIC KEYWORD: …]` tags — and drops leading filler tokens (a/an/the/for/to/of/…). So even if the re-entrancy guard is somehow bypassed (nested subprocess, env var dropped), a leaking classifier prompt produces a domain-reflective slug like `command-classifier-for-a-cli-tool-called-smelter-…` instead of `you-are-a-command-classifier-for-a-cli-tool-…`.
+
 ### 2-4. Token optimization
 
 - Prompt injection uses only the **last 5** events.

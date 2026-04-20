@@ -5,6 +5,63 @@
 
 ---
 
+## v2.4.7 — Workflow Chain Enforcement (B plan)
+**Released**: 2026-04-21
+
+Closes the stuck-loop defect where the main agent would idle after Stop block while `current_stage` stayed seeded at the entry skill. Implements a six-phase end-to-end enforcement of workflow stage transitions so the agent genuinely progresses — or the hook layer tells it exactly how to.
+
+### Phases (single release)
+
+| Phase | Commit | Summary |
+|-------|--------|---------|
+| 0 | `9d677f3` | `stop-stage-enforcer.mjs` reauthored (file corruption repaired), `WORKFLOW_MODES_FOR_STAGE_GUARD` extended to all 6 modes, `keyword-detector` seeds `current_stage = mode.entry_skill`. |
+| 1 | `50cb17c` | `skill-stage-transition` accepts entry-command skills (`fix/investigate/plan/implement/verify/simple-fix`); Watchdog R15 blocks stage-skipping code edits; `auto-confirm.buildPromptInjection` emits `[MANDATORY WORKFLOW STEP]` with direction tag (`enter/advance/back`) + last-message echo. |
+| 2 | `7ef971a` | `classifyStageCompletionViaSubAgent` — lightweight sub-agent judges whether the main's last message completes the current stage. On `complete`, auto-confirm auto-writes the canonical artifact so `skill-stage-transition` can mark the stage passed legitimately (Iron Law #5 preserved — no forged `completed_stages`). |
+| 3 | `714abe1` | `stop-stage-enforcer` now embeds the MANDATORY directive inside its block `reason` so the agent's resumption input is directly actionable. |
+| 4 | `2a6f120` | `scripts/lib/transcript-reader.mjs` (new) parses Claude Code `transcript_path` JSONL to supply `lastAssistantText` in production (the test-only `last_assistant_text` field was never populated by the real hook stdin). R13 gains `unwrapShellCExec` + `isPureReadCmd` so `bash -c 'ls …'` read wrappers no longer false-positive. |
+| 5 | `9603c05` | SCENARIO 16 — 7 new workflow-scenarios tests covering implement/verify/fail/replan/re-implement/re-verify cycles with explicit `direction` assertions. No deadlock patterns. |
+| 6 | `1c9cbff` | Classifier subprocess now sets `SMELTER_CLASSIFIER_SUBPROCESS=1` alongside `SMT_CLASSIFIER=1`; `SMT_CLASSIFIER_CMD` is an env fallback for stage classifier. Closes the "ghost feature slug" regression where the classifier's own system prompt was seeded as a new feature. |
+
+### Slug preamble pruning (defense-in-depth)
+
+`keyword-detector.deriveSlug` strips classifier/system preambles (`You are a …`, Korean 당신은, `Skill:/Role:/Context:` labels, echoed loader banners, `[MAGIC KEYWORD: …]` tags) and drops leading filler tokens before slugifying. Combined with the re-entrancy guard, this makes classifier-prompt leakage produce a domain-reflective slug even if the env var is somehow dropped.
+
+### User conditions satisfied
+
+| # | Condition | Implementation |
+|---|-----------|----------------|
+| 1 | Sub-agent delivers last message + workflow directive | `classifyProceedPromptViaSubAgent` + `classifyStageCompletionViaSubAgent` spawn sonnet/haiku; `formatMandatoryInjection` embeds 400-char excerpt. |
+| 2 | Main forced to follow workflow | `[MANDATORY WORKFLOW STEP]` with explicit `Skill(skill: '<next>')` demand + R15 block-with-guidance. |
+| 3 | Stop hook does NOT elevate unfinished stage | `stop-stage-enforcer` is read-only; wording differentiates `entry_not_started` (invoke current) vs `advance to <next>`. |
+| 4 | Back-edge routing | `decide()` tags `direction='back'` on producer-chain routes; injection emits `go BACK to <skill>`. |
+| 5 | Watchdog enforces transitions | R15 blocks `Edit/Write` of source files outside `workflow-coding`; guides the agent to the right Skill. |
+
+### Scoped tests (all green)
+
+| Suite | Count |
+|-------|-------|
+| auto-confirm | 99 |
+| stop-stage-enforcer | 21 |
+| critic-watchdog | 16 |
+| skill-stage-transition | 16 |
+| workflow-scenarios | 118 |
+| test-keyword-detector | 6 |
+| pre-tool-enforcer | 13 |
+| transcript-reader | 13 |
+| **Total** | **302** |
+
+### Schema
+
+- `SCHEMA_VERSION` stays at `2.4.1`. State shape unchanged; `direction` is a decision-time payload tag, not persisted.
+
+### Docs
+
+- `document/implementation.md` Phase 10–15 + Phase 2/3/4/5 records (inlined under Phase 14/15 per chronological style).
+- `document/reference-topics/hooks-execution-workflow.md` §8-B updated with the broadened guard set and session-aware summary.
+- `document/workflow.md` §2-3 documents the classifier-subprocess re-entrancy guard + slug preamble pruning.
+
+---
+
 ## v2.4.1 — E2E Real-Interface Enforcement
 **Released**: 2026-04-20
 

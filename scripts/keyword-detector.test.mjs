@@ -163,3 +163,82 @@ test('CSS5: different session_id on same cwd gets its own active pointer', async
     assert.equal(dirs.length, 2, `each session has its own feature; sess-A follow-up must reuse. got ${dirs.length}: ${dirs.join(', ')}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
+
+// ── Slug preamble pruning (defense-in-depth behind SMELTER_CLASSIFIER_SUBPROCESS) ──
+
+test('SLUG1: "/fix You are a command classifier…" strips "You are a" preamble', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-you-'));
+  try {
+    runDetector({
+      cwd,
+      prompt: '/fix You are a command classifier for a CLI tool called smelter',
+      sessionId: 'slug-s1',
+    });
+    const slugs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(slugs.length, 1, `expected 1 feature dir, got: ${slugs.join(', ')}`);
+    const slug = slugs[0];
+    assert.ok(!slug.startsWith('you-are'), `slug must not start with 'you-are'; got: ${slug}`);
+    assert.match(slug, /command|classifier|cli|smelter/, `slug should reflect domain; got: ${slug}`);
+    assert.ok(slug.length <= 50, `slug too long (${slug.length}): ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('SLUG2: "/fix The login endpoint…" drops leading filler "the"', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-filler-'));
+  try {
+    runDetector({ cwd, prompt: '/fix The login endpoint 500 regression', sessionId: 'slug-s2' });
+    const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
+    assert.ok(!slug.startsWith('the-'), `leading 'the' must be dropped; got: ${slug}`);
+    assert.match(slug, /^login/, `slug should lead with domain word 'login'; got: ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('SLUG3: "/fix Skill: fix successfully loaded skill: X" strips skill-loader banner', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-skill-'));
+  try {
+    runDetector({
+      cwd,
+      prompt: '/fix Skill: fix successfully loaded skill: workflow-investigate — fix hook crash',
+      sessionId: 'slug-s3',
+    });
+    const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
+    assert.ok(!/^skill/.test(slug), `leading 'skill:' label must be stripped; got: ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('SLUG4: "/fix 당신은 …" strips Korean copula preamble', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-ko-'));
+  try {
+    runDetector({ cwd, prompt: '/fix 당신은 코드 리뷰어입니다 로그인 버그 수정', sessionId: 'slug-s4' });
+    const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
+    assert.ok(!slug.startsWith('당신은'), `Korean preamble must be stripped; got: ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('SLUG5: stacked preambles ("System: You are a X") peel iteratively', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-stacked-'));
+  try {
+    runDetector({
+      cwd,
+      prompt: '/fix System: You are a command classifier — fix the slug generation bug',
+      sessionId: 'slug-s5',
+    });
+    const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
+    assert.ok(!slug.startsWith('system'), `nested 'System:' label must peel; got: ${slug}`);
+    assert.ok(!slug.startsWith('you-are'), `nested 'You are a' must peel; got: ${slug}`);
+    assert.match(slug, /command|classifier|fix|slug/, `slug should reflect domain; got: ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('SLUG6: zero-width char inside "You\\u200Bare a …" cannot bypass preamble strip', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-zwsp-'));
+  try {
+    runDetector({
+      cwd,
+      prompt: '/fix You\u200Bare a command classifier fix the bug',
+      sessionId: 'slug-s6',
+    });
+    const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
+    assert.ok(!slug.startsWith('you'), `zero-width char must not bypass 'You are a' strip; got: ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});

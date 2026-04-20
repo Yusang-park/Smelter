@@ -5,6 +5,63 @@
 
 ---
 
+## v2.4.7 — 워크플로우 체인 강제 (B안)
+**릴리즈**: 2026-04-21
+
+메인 에이전트가 Stop block 후 진전하지 못하고 `current_stage`가 엔트리 스킬에서 고착되는 루프 결함을 제거한다. 6개 Phase로 워크플로우 stage 전이를 end-to-end로 강제하여, 에이전트가 실제로 진전하거나 훅이 다음 행동을 명확히 지시하도록 한다.
+
+### Phases (단일 릴리즈)
+
+| Phase | 커밋 | 요약 |
+|-------|------|------|
+| 0 | `9d677f3` | `stop-stage-enforcer.mjs` 재작성(파일 오염 복구), `WORKFLOW_MODES_FOR_STAGE_GUARD`를 6개 모드 전체로 확장, `keyword-detector`가 `current_stage = mode.entry_skill`을 seed. |
+| 1 | `50cb17c` | `skill-stage-transition`이 엔트리 커맨드 스킬(`fix/investigate/plan/implement/verify/simple-fix`)도 수용; Watchdog R15가 stage 건너뛰기 코드 편집 차단; `auto-confirm.buildPromptInjection`이 `[MANDATORY WORKFLOW STEP]` + `direction`(enter/advance/back) + 마지막 메시지 발췌 포함. |
+| 2 | `7ef971a` | `classifyStageCompletionViaSubAgent` — 경량 서브에이전트가 메인의 마지막 메시지가 현재 stage를 완료했는지 판정. `complete` 시 auto-confirm이 canonical artifact를 자동 작성하여 `skill-stage-transition`이 합법적으로 stage를 pass로 기록(Iron Law #5 위반 없음 — forged `completed_stages` 없음). |
+| 3 | `714abe1` | `stop-stage-enforcer`의 block `reason`에 MANDATORY 지시를 직접 포함시켜 Claude Code가 에이전트 재호출 시점에 즉시 실행 가능한 지시를 받도록 함. |
+| 4 | `2a6f120` | `scripts/lib/transcript-reader.mjs`(신규)가 Claude Code `transcript_path` JSONL을 파싱하여 프로덕션에서 `lastAssistantText`를 공급(테스트 전용이던 `last_assistant_text` 필드는 실제 훅 stdin에 없음). R13에 `unwrapShellCExec` + `isPureReadCmd` 추가 → `bash -c 'ls …'` false positive 해소. |
+| 5 | `9603c05` | SCENARIO 16 — 구현/검증/실패/재계획/재구현/재검증 루프 커버하는 7개 workflow-scenarios 테스트 추가(명시적 `direction` 단언). 데드락 패턴 없음. |
+| 6 | `1c9cbff` | Classifier 서브프로세스가 `SMELTER_CLASSIFIER_SUBPROCESS=1`을 `SMT_CLASSIFIER=1`과 함께 설정; stage classifier는 `SMT_CLASSIFIER_CMD` fallback. Classifier 자체 시스템 프롬프트가 새 feature slug로 seed되던 "ghost slug" regression 제거. |
+
+### Slug preamble 정리 (defense-in-depth)
+
+`keyword-detector.deriveSlug`가 classifier/시스템 preamble을 제거(`You are a …`, 한국어 당신은, `Skill:/Role:/Context:` 라벨, skill-loader 배너 에코, `[MAGIC KEYWORD: …]` 태그) 및 leading filler 토큰 제거 후 slug화. 재진입 가드와 결합해, env var이 누락되어도 도메인 반영 slug를 생성.
+
+### 사용자 조건 충족
+
+| # | 조건 | 구현 |
+|---|------|------|
+| 1 | 서브에이전트가 마지막 메시지 + 워크플로우 지시 전달 | `classifyProceedPromptViaSubAgent` + `classifyStageCompletionViaSubAgent`가 sonnet/haiku spawn; `formatMandatoryInjection`에 400자 발췌 포함. |
+| 2 | 메인이 워크플로우 미준수 시 강제 | `[MANDATORY WORKFLOW STEP]` + 명시적 `Skill(skill: '<next>')` 요구 + R15 block-with-guidance. |
+| 3 | Stop hook이 미완료 stage를 올리지 않음 | `stop-stage-enforcer`는 read-only; `entry_not_started`(현재 실행 지시)와 `advance to <next>` 문구 분리. |
+| 4 | 이전 단계 회귀 지시 | `decide()`가 producer chain 경로에 `direction='back'` 태그; injection이 `go BACK to <skill>` 출력. |
+| 5 | Watchdog로 단계 전환 유도 | R15가 `workflow-coding` 밖에서의 source 파일 `Edit/Write` 차단; 올바른 Skill로 안내. |
+
+### 스코프 테스트 (전부 green)
+
+| Suite | Count |
+|-------|-------|
+| auto-confirm | 99 |
+| stop-stage-enforcer | 21 |
+| critic-watchdog | 16 |
+| skill-stage-transition | 16 |
+| workflow-scenarios | 118 |
+| test-keyword-detector | 6 |
+| pre-tool-enforcer | 13 |
+| transcript-reader | 13 |
+| **Total** | **302** |
+
+### 스키마
+
+- `SCHEMA_VERSION`은 `2.4.1` 유지. State shape 변경 없음; `direction`은 결정 시점 payload 태그로만 존재.
+
+### 문서
+
+- `document/implementation.md` Phase 10–15 + Phase 2/3/4/5 기록.
+- `document/reference-topics/hooks-execution-workflow.md` §8-B 가드 모드 확장 + session-aware summary 반영.
+- `document/workflow.md` §2-3에 classifier-subprocess 재진입 가드 + slug preamble 정리 설명 추가.
+
+---
+
 ## v2.4.1 — E2E 실제 인터페이스 강제
 **릴리즈**: 2026-04-20
 

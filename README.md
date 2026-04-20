@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <code>v2.4.1</code>
+  <code>v2.4.7</code>
 </p>
 
 <p align="center">
@@ -243,7 +243,7 @@ Mode upgrade, human-check verdict, and mode transitions are gated by the user. E
 
 ## Status
 
-- Version: `2.4.1`
+- Version: `2.4.7`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
 - Implementation reference: [`document/implementation-v2.md`](document/implementation-v2.md)
 - Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)

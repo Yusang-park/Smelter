@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.4.1
+**Version:** 2.4.7
 
 ## Core Philosophy
 

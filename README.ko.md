@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <code>v2.4.1</code>
+  <code>v2.4.7</code>
 </p>
 
 <p align="center">
@@ -262,7 +262,7 @@ Mode upgrade, human-check 결정, mode transition은 사용자가 게이트. 나
 
 ## 상태
 
-- 버전: `2.4.1`
+- 버전: `2.4.7`
 - Canonical 스펙: [`document/workflow.md`](document/workflow.md) (영문) · [`document/workflow.ko.md`](document/workflow.ko.md) (한국어)
 - 구현 레퍼런스: [`document/implementation-v2.md`](document/implementation-v2.md)
 - Agent 지시: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)
