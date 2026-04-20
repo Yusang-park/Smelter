@@ -130,6 +130,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/yusang/Smelter/scripts/skill-stage-transition.mjs\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "SubagentStart": [
