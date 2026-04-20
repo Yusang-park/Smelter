@@ -133,7 +133,7 @@ export function classifyProceedPromptViaSubAgent(lastMessage, {
       encoding: 'utf-8',
       // SMT_CLASSIFIER=1 prevents the spawned claude session from re-firing
       // this Stop hook recursively (see CLI entry guard below).
-      env: { ...process.env, SMT_CLASSIFIER: '1' },
+      env: { ...process.env, SMT_CLASSIFIER: '1', SMELTER_CLASSIFIER_SUBPROCESS: '1' },
     });
   } catch {
     return 'halt';
@@ -170,7 +170,7 @@ export function classifyStageCompletionViaSubAgent({
   lastMessage, currentStage, mode,
   model = 'sonnet',
   timeoutMs = 40000,
-  cmd = process.env.SMT_STAGE_CLASSIFIER_CMD,
+  cmd = process.env.SMT_STAGE_CLASSIFIER_CMD || process.env.SMT_CLASSIFIER_CMD,
 } = {}) {
   if (!lastMessage || typeof lastMessage !== 'string') return { verdict: 'unknown', summary: '' };
   if (!currentStage || typeof currentStage !== 'string') return { verdict: 'unknown', summary: '' };
@@ -186,7 +186,7 @@ export function classifyStageCompletionViaSubAgent({
     result = spawnSync(binary, args, {
       timeout: timeoutMs,
       encoding: 'utf-8',
-      env: { ...process.env, SMT_CLASSIFIER: '1' },
+      env: { ...process.env, SMT_CLASSIFIER: '1', SMELTER_CLASSIFIER_SUBPROCESS: '1' },
     });
   } catch {
     return { verdict: 'unknown', summary: '' };
