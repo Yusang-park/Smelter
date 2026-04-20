@@ -6,12 +6,26 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { validateEvidenceIntegrity } from './state-validator.mjs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { validateEvidenceIntegrity, SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { createInitialState, writeState } from './state-schema.mjs';
+
+const _thisDir = dirname(fileURLToPath(import.meta.url));
+const _projectRoot = join(_thisDir, '..');
+
+function parseSkillMdProduces(skillName) {
+  // Returns the first token on the `produces:` frontmatter line.
+  const absPath = join(_projectRoot, 'skills', skillName, 'SKILL.md');
+  const content = readFileSync(absPath, 'utf-8');
+  const m = content.match(/^produces:\s*(.+)$/m);
+  if (!m) return null;
+  // first token only (comma-separated or space-separated)
+  return m[1].trim().split(/[\s,]+/)[0];
+}
 
 function baseState() {
   return createInitialState({ taskId: 'feat', mode: 'investigate' });
@@ -224,4 +238,48 @@ test('T4-I2: writeState() succeeds with valid evidence', async () => {
     writeState(sp, state);
     assert.ok(existsSync(sp));
   } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+// ── Contract: SKILL.md produces: field must match SKILL_ARTIFACT_BASENAME ────
+// These 4 tests are RED until Fix #1 (Task 1-3) flips the produces: lines in
+// SKILL.md from underscore form to hyphen form.
+
+test('contract: workflow-brainstorm-review SKILL.md produces matches SKILL_ARTIFACT_BASENAME', () => {
+  // RED: SKILL.md currently declares brainstorm_review.md (underscore).
+  // GREEN after Fix #1 Task 1-3 flips to brainstorm-review.md.
+  const skill = 'workflow-brainstorm-review';
+  const declared = parseSkillMdProduces(skill);
+  const expected = SKILL_ARTIFACT_BASENAME[skill]; // 'brainstorm-review.md'
+  assert.equal(declared, expected,
+    `SKILL.md produces "${declared}" but SKILL_ARTIFACT_BASENAME expects "${expected}"`);
+});
+
+test('contract: workflow-investigate-review SKILL.md produces matches SKILL_ARTIFACT_BASENAME', () => {
+  // RED: SKILL.md currently declares investigate_review.md (underscore).
+  // GREEN after Fix #1 Task 1-3 flips to investigation-review.md.
+  const skill = 'workflow-investigate-review';
+  const declared = parseSkillMdProduces(skill);
+  const expected = SKILL_ARTIFACT_BASENAME[skill]; // 'investigation-review.md'
+  assert.equal(declared, expected,
+    `SKILL.md produces "${declared}" but SKILL_ARTIFACT_BASENAME expects "${expected}"`);
+});
+
+test('contract: workflow-tasker SKILL.md produces matches SKILL_ARTIFACT_BASENAME', () => {
+  // RED: SKILL.md currently declares "plan.md," (multi-token; first token is plan.md).
+  // GREEN after Fix #1 Task 1-3 rewrites produces to tasks.md.
+  const skill = 'workflow-tasker';
+  const declared = parseSkillMdProduces(skill);
+  const expected = SKILL_ARTIFACT_BASENAME[skill]; // 'tasks.md'
+  assert.equal(declared, expected,
+    `SKILL.md produces "${declared}" but SKILL_ARTIFACT_BASENAME expects "${expected}"`);
+});
+
+test('contract: workflow-tasker-review SKILL.md produces matches SKILL_ARTIFACT_BASENAME', () => {
+  // RED: SKILL.md currently declares tasker_review.md (underscore).
+  // GREEN after Fix #1 Task 1-3 flips to tasks-review.md.
+  const skill = 'workflow-tasker-review';
+  const declared = parseSkillMdProduces(skill);
+  const expected = SKILL_ARTIFACT_BASENAME[skill]; // 'tasks-review.md'
+  assert.equal(declared, expected,
+    `SKILL.md produces "${declared}" but SKILL_ARTIFACT_BASENAME expects "${expected}"`);
 });

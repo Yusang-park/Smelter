@@ -2,8 +2,8 @@
 name: workflow-tasker-review
 version: 2.4.1
 type: workflow
-consumes: plan.md
-produces: tasker_review.md
+consumes: tasks.md
+produces: tasks-review.md
 default_pattern: B
 default_agents: [advocate, critic, arbitrator]
 supports_patterns: [A, B]

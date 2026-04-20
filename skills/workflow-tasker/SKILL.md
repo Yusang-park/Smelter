@@ -3,7 +3,7 @@ name: workflow-tasker
 version: 2.4.1
 type: workflow
 consumes: investigation.md (+brainstorm.md optional)
-produces: plan.md, target_type, team_runtime initial assignment
+produces: tasks.md (+ target_type + team_runtime initial assignment)
 default_pattern: D
 default_agent: architect
 supports_patterns: [A, D]

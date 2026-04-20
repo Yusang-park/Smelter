@@ -276,6 +276,16 @@ test('ST-E4: entry command "simple-fix" maps to simple_fix mode entry_skill', as
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+// ── Regression: no literal SKILL_ARTIFACT map in skill-stage-transition.mjs ──
+// RED until Fix #1 Task 1-2 replaces the literal map with an import from
+// state-validator.mjs.
+test('regression: skill-stage-transition.mjs has NO literal SKILL_ARTIFACT map assignment (import-only)', () => {
+  const src = readFileSync(SCRIPT, 'utf-8');
+  const match = /^\s*const\s+SKILL_ARTIFACT\s*=\s*\{/m.test(src);
+  assert.equal(match, false,
+    'skill-stage-transition.mjs must not contain a literal SKILL_ARTIFACT = { ... } assignment; import from state-validator.mjs instead');
+});
+
 test('T3-S2: per-session pointer with slug producing non-canonical path is rejected', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-s2-'));
   try {

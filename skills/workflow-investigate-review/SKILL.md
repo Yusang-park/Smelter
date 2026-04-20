@@ -3,7 +3,7 @@ name: workflow-investigate-review
 version: 2.4.1
 type: workflow
 consumes: investigation.md
-produces: investigate_review.md
+produces: investigation-review.md
 default_pattern: A
 default_agent: explore-high
 supports_patterns: [A]

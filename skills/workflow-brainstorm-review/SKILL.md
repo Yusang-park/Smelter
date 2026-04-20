@@ -3,7 +3,7 @@ name: workflow-brainstorm-review
 version: 2.4.1
 type: workflow
 consumes: brainstorm.md
-produces: brainstorm_review.md
+produces: brainstorm-review.md
 default_pattern: B
 default_agent: critic
 supports_patterns: [A, B]

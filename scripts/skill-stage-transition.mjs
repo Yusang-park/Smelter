@@ -26,6 +26,7 @@ import { readFileSync, existsSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname, basename, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeState, appendEvent, markComplete } from './state-schema.mjs';
+import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -75,18 +76,10 @@ const COMPLETION_DEFERRED_SKILLS = new Set([
 ]);
 
 // Skill → expected artifact filename inside the feature's task/ directory.
-// Stage completion is only recorded when this file exists, tying the gate
-// to real producer output instead of tautologically pointing at state.json.
-const SKILL_ARTIFACT = {
-  'workflow-brainstorm':       'brainstorm.md',
-  'workflow-brainstorm-review': 'brainstorm-review.md',
-  'workflow-investigate':      'investigation.md',
-  'workflow-investigate-review': 'investigation-review.md',
-  'workflow-tasker':           'tasks.md',
-  'workflow-tasker-review':    'tasks-review.md',
-  'workflow-write-test':       null, // evidenced by test_cycles[]; see below
-  'workflow-coding':           null, // evidenced by git diff; see below
-};
+// Single source of truth: imported from state-validator.mjs (SKILL_ARTIFACT_BASENAME).
+// Skills not present in that map (workflow-write-test, workflow-coding) evidence
+// completion through other signals — test_cycles[] and git diff respectively —
+// so resolveArtifactPath returns null for them.
 
 // Canonical state.json shape: /.../.smt/features/<slug>/task/<slug-or-name>.state.json
 const STATE_PATH_RE = /[\/\\]\.smt[\/\\]features[\/\\][^\/\\]+[\/\\]task[\/\\][^\/\\]+\.state\.json$/;
@@ -143,7 +136,7 @@ function resolveActiveState(cwd, sessionId) {
 }
 
 function resolveArtifactPath(statePath, skill) {
-  const artifactName = SKILL_ARTIFACT[skill];
+  const artifactName = SKILL_ARTIFACT_BASENAME[skill];
   if (artifactName === null || artifactName === undefined) return null;
   const taskDir = dirname(statePath);
   return join(taskDir, artifactName);
