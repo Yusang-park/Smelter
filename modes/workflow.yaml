@@ -1,0 +1,329 @@
+# Smelter v3.1 — unified workflow configuration.
+#
+# Single source of truth for: skills, pipelines, modes, target-type routing,
+# verification rounds, and command aliases. Consumers: scripts/lib/workflow-loader.mjs.
+#
+# Schema shape:
+#   verification_rounds — global defaults per review phase
+#   skills.<name>       — team pattern + default agents, optional round override
+#   pipelines.<name>    — ordered skill sequence
+#   target_type_routing — in /fix mode, pick pipeline by target_type + scope signals
+#   modes.<name>        — thin composition (entry + pipeline + flags + team_hints)
+#   command_aliases     — /slash → mode
+
+schema_version: "3.1.0"
+
+# v3.1 — Multi-Pass Verification rounds refined.
+# Terminal gates (visual E2E + multi-agent consensus + human) keep 3 rounds.
+# Mid-pipeline reviews drop to 2 rounds — omission + contradiction are the load-bearing
+# passes; edge-case is the one most often false-positive on simple bug fixes.
+verification_rounds:
+  mid_pipeline: 2       # brainstorm-review, investigate-review, tasker-review, agent-review
+  terminal: 3           # e2e-review, team-code-review, human-check
+
+# -----------------------------------------------------------------------------
+# Skill registry — per-skill team patterns and agents (workflow-* only).
+# -----------------------------------------------------------------------------
+skills:
+  workflow-brainstorm:
+    teams:
+      deep:
+        pattern: D
+        lead: planner
+        sub_agents: [product-persona, engineer-persona, design-persona]
+      light:
+        pattern: A
+        default_agent: planner
+
+  workflow-brainstorm-review:
+    team:
+      pattern: B
+      default_agent: critic
+    rounds: mid_pipeline
+
+  workflow-investigate:
+    team:
+      pattern: C
+      default_agent: explore-medium
+      aggregator: architect
+
+  workflow-investigate-review:
+    team:
+      pattern: A
+      default_agent: explore-high
+    rounds: mid_pipeline
+
+  workflow-tasker:
+    teams:
+      deep:
+        pattern: D
+        lead: architect
+        sub_agents: [researcher, executor]
+      light:
+        pattern: D
+        lead: architect
+        sub_agents: [executor]
+
+  workflow-tasker-review:
+    team:
+      pattern: B
+      default_agents: [advocate, critic, arbitrator]
+    rounds: mid_pipeline
+
+  workflow-write-test:
+    team:
+      pattern: C
+      default_agent: executor
+      aggregator: executor
+
+  workflow-coding:
+    teams:
+      fix:
+        pattern: A
+        default_agent: executor
+        watchdog_enabled: true
+      implement:
+        pattern: C
+        default_agent: executor
+        watchdog_enabled: true
+        aggregator: architect
+      simple:
+        pattern: A
+        default_agent: executor
+
+  workflow-agent-review:
+    team:
+      pattern: B
+      default_agents: [code-reviewer, security-reviewer]
+      aggregator: arbitrator
+    rounds: mid_pipeline
+
+  workflow-e2e:
+    team:
+      pattern: A
+      default_agent: qa-tester
+
+  workflow-e2e-review:
+    team:
+      pattern: A
+      default_agent: code-reviewer
+    rounds: terminal
+
+  workflow-team-code-review:
+    team:
+      pattern: B
+      default_agents: [advocate, critic, arbitrator]
+      aggregator: arbitrator
+    rounds: terminal
+
+  workflow-verify:
+    team:
+      pattern: A
+      default_agent: qa-tester
+
+  workflow-human-check:
+    team:
+      pattern: A
+      default_agent: null     # user-driven
+    rounds: terminal
+
+# -----------------------------------------------------------------------------
+# Pipelines — reusable skill sequences, ordered.
+# -----------------------------------------------------------------------------
+pipelines:
+  # Full — new feature / refactor / migration. 13 skills.
+  full:
+    - workflow-brainstorm
+    - workflow-brainstorm-review
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
+    - workflow-write-test
+    - workflow-coding
+    - workflow-agent-review
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-team-code-review
+    - workflow-human-check
+
+  # Medium — extend_existing, complex bug_fix (>3 files / multi-surface). 11 skills.
+  # Identical to legacy "no_brainstorm" but renamed for target-type clarity.
+  medium:
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
+    - workflow-write-test
+    - workflow-coding
+    - workflow-agent-review
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-team-code-review
+    - workflow-human-check
+
+  # Light — simple bug_fix (≤3 files, single surface). 8 skills — skip tasker+tasker-review
+  # (no decomposition needed) and team-code-review (agent-review suffices for scoped fix).
+  light:
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-write-test
+    - workflow-coding
+    - workflow-agent-review
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-human-check
+
+  # Minimal — typo / dialogue / pure-copy change. 4 skills — TDD exempt, no tasker,
+  # no review phases that verify logic (copy changes have no logic).
+  minimal:
+    - workflow-investigate
+    - workflow-coding
+    - workflow-e2e
+    - workflow-human-check
+
+  # Planning-only — /think. Terminal, no code.
+  planning_only:
+    - workflow-brainstorm
+    - workflow-brainstorm-review
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
+
+  # Read-only — /investigate.
+  investigate_only:
+    - workflow-investigate
+    - workflow-investigate-review
+
+  # Verify — /verify.
+  verify_only:
+    - workflow-verify
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-human-check
+
+# -----------------------------------------------------------------------------
+# Target-type routing — in /fix mode, select pipeline after workflow-investigate
+# determines target_type + file_count + surface.
+# -----------------------------------------------------------------------------
+target_type_routing:
+  # target_type → pipeline. Scope signals (file_count, surface_count) refine.
+  typo: minimal
+  dialogue: minimal
+
+  # bug_fix: scope-dependent. Default light; upgrade to medium when complex.
+  # Upgrade rule: file_count > 3 OR surface_count > 1 → medium.
+  bug_fix:
+    default: light
+    upgrade_to_medium_when:
+      file_count_gt: 3
+      surface_count_gt: 1
+
+  # extend_existing = adding functionality on top of existing code.
+  # Per user direction: this is "new 기능" level — medium pipeline (full pipeline
+  # minus brainstorm, since the existing feature defines scope).
+  extend_existing: medium
+
+  # These escalate to think/implement. /fix with one of these declared → upgrade prompt.
+  new_feature: upgrade_required   # escalate user to /implement or /think
+  refactor: upgrade_required      # escalate user to /implement or /think
+  migration: upgrade_required     # escalate user to /think
+
+# -----------------------------------------------------------------------------
+# Mode definitions — thin composition.
+# -----------------------------------------------------------------------------
+modes:
+  think:
+    description: Ideation + planning. No code changes. Produces brainstorm.md + tasks.md.
+    entry_skill: workflow-brainstorm
+    entry_params: { workflow-brainstorm: { depth: deep } }
+    pipeline: planning_only
+    read_only: true
+    default_exempt: { tdd: true, e2e: true }
+    team_hints:
+      workflow-brainstorm: deep
+      workflow-tasker: deep
+    terminal_actions: [mode_transition_to_implement]
+    transitions:
+      upgrade_to: [implement]
+      downgrade_to: [fix]
+
+  fix:
+    description: Bug / regression repair. Pipeline selected by workflow-investigate based on target_type.
+    entry_skill: workflow-investigate
+    # Runtime pipeline selection via target_type_routing. Default pipeline used until
+    # target_type is determined by workflow-investigate output.
+    pipeline: medium              # default (safest) — may shrink or upgrade at runtime
+    target_type_dispatch: true    # v3.1: workflow-loader picks pipeline after investigate
+    read_only: false
+    default_exempt: { tdd: false, e2e: false }
+    team_hints:
+      workflow-coding: fix
+      workflow-tasker: light
+    magic_keywords:
+      css:      { set: { exempt.tdd: true,  exempt.e2e: false } }
+      style:    { set: { exempt.tdd: true,  exempt.e2e: false } }
+      텍스트:    { set: { exempt.tdd: true,  exempt.e2e: false } }
+      i18n:     { set: { exempt.tdd: true,  exempt.e2e: false } }
+      typo:     { set: { exempt.tdd: true,  exempt.e2e: true, target_type: typo    } }
+      오타:      { set: { exempt.tdd: true,  exempt.e2e: true, target_type: typo    } }   # Korean: typo
+      dialogue: { set: { exempt.tdd: true,  exempt.e2e: true, target_type: dialogue } }
+      대화:      { set: { exempt.tdd: true,  exempt.e2e: true, target_type: dialogue } }   # Korean: dialogue
+    transitions:
+      upgrade_to: [implement, think]
+      downgrade_to: []
+
+  implement:
+    description: Feature development. Lightweight brainstorm + full pipeline.
+    entry_skill: workflow-brainstorm
+    entry_params: { workflow-brainstorm: { depth: light } }
+    pipeline: full
+    read_only: false
+    default_exempt: { tdd: false, e2e: false }
+    team_hints:
+      workflow-brainstorm: light
+      workflow-tasker: light
+      workflow-coding: implement
+    magic_keywords:
+      extend:   { set: { skip_brainstorm: true } }
+      add to:   { set: { skip_brainstorm: true } }
+      덧붙여:    { set: { skip_brainstorm: true } }
+      추가로:    { set: { skip_brainstorm: true } }
+      css:      { set: { exempt.tdd: true, exempt.e2e: false } }
+      style:    { set: { exempt.tdd: true, exempt.e2e: false } }
+      i18n:     { set: { exempt.tdd: true, exempt.e2e: false } }
+    transitions:
+      upgrade_to: [think]
+      downgrade_to: [fix]
+
+  investigate:
+    description: Static read only. Exits via user-chosen mode transition.
+    entry_skill: workflow-investigate
+    pipeline: investigate_only
+    read_only: true
+    default_exempt: { tdd: true, e2e: true }
+    terminal_actions: [mode_transition_to_fix, mode_transition_to_think, mode_transition_to_implement, free_chat]
+    transitions:
+      upgrade_to: [fix, think, implement]
+      downgrade_to: []
+
+  verify:
+    description: Non-modifying verification. Tests + static inspection + real-interface E2E.
+    entry_skill: workflow-verify
+    pipeline: verify_only
+    read_only: true
+    default_exempt: { tdd: true, e2e: false }
+    transitions:
+      upgrade_to: [fix, implement, think]
+      downgrade_to: []
+
+# -----------------------------------------------------------------------------
+# Slash command aliases (v3 canonical set).
+# -----------------------------------------------------------------------------
+command_aliases:
+  /think:       think
+  /fix:         fix
+  /implement:   implement
+  /investigate: investigate
+  /verify:      verify

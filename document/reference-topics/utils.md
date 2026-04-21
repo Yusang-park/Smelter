@@ -6,10 +6,10 @@
 | 항목 | 파일 | 상태 |
 |------|------|------|
 | Skill 정의 | `skills/caveman/SKILL.md` | ✅ |
-| 타입 | `src/types.ts` — `HarnessRunOptions.caveman` | ✅ |
-| 시스템 프롬프트 | `src/rules/defaults.ts` — `CAVEMAN_SYSTEM_PROMPT` | ✅ |
-| 엔진 주입 | `src/engine.ts` — skill/agent 이후 caveman 프롬프트 prepend | ✅ |
-| CLI 플래그 | `bin/cli.ts` — `--caveman [lite\|full\|ultra]` | ✅ |
+| 타입 | `src/types.ts` — `HarnessRunOptions.noCaveman` | ⚠️ parsed but not wired in SessionStart path |
+| 시스템 프롬프트 | `src/rules/defaults.ts` — `CAVEMAN_SYSTEM_PROMPT` loads vendored skill file | ✅ |
+| SessionStart 주입 | `scripts/session-start-smt.mjs` — reads `skills/caveman/SKILL.md` and emits it as hook context | ✅ |
+| CLI 플래그 | `bin/cli.ts` — `--no-caveman` only | ⚠️ existing flag remains separate from SessionStart injection |
 | Public API | `src/index.ts` — `CAVEMAN_SYSTEM_PROMPT` export | ✅ |
 
 ```bash

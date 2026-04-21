@@ -103,7 +103,7 @@ async function ensureProxyRunning() {
 async function main() {
   const { mode, passthrough } = parseArgs(process.argv.slice(2));
   const binary = resolveClaudeBinary();
-  const settings = setModelMode(mode, process.cwd());
+  setModelMode(mode, process.cwd());
 
   if (mode === 'codex' && process.env.SMELTER_WRAPPER_TEST !== '1') {
     if (!hasCodexAuth()) {
@@ -113,12 +113,15 @@ async function main() {
   }
 
   if (process.env.SMELTER_WRAPPER_TEST === '1') {
+    const activeModel = mode === 'codex'
+      ? process.env.SMELTER_WRAPPER_TEST_ACTIVE_MODEL ?? 'gpt-5.4'
+      : process.env.SMELTER_WRAPPER_TEST_ACTIVE_MODEL ?? null;
     process.stdout.write(
       JSON.stringify({
         binary,
         mode,
         passthrough,
-        settings,
+        activeModel,
       }),
     );
     return;
@@ -128,7 +131,13 @@ async function main() {
   // settings.json env vars only apply after Claude Code restarts; passing them
   // in the child's process.env ensures the model picker shows Codex models
   // immediately on first launch.
+  const codexStateModel = process.env.SMELTER_WRAPPER_TEST === '1'
+    ? (process.env.SMELTER_WRAPPER_TEST_ACTIVE_MODEL ?? 'gpt-5.4')
+    : null;
   const codexEnv = mode === 'codex' ? {
+    CODEX_MODE: '1',
+    SMELTER_MODEL_MODE: 'codex',
+    SMELTER_ACTIVE_MODEL: codexStateModel ?? 'gpt-5.4',
     // Route all API calls through the local proxy.
     // Proxy passes claude-* model IDs through to Anthropic unchanged,
     // and translates gpt-*/o* model IDs to OpenAI format.
@@ -137,6 +146,8 @@ async function main() {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
   } : {
     // Restore defaults — unset any codex overrides inherited from parent env
+    CODEX_MODE: '',
+    SMELTER_MODEL_MODE: 'claude',
     ANTHROPIC_BASE_URL: '',
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '',
   };

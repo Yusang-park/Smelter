@@ -1,14 +1,92 @@
 ---
-title: Smelter Workflow v2.4.1 — Implementation Status
-status: complete
+title: Smelter Workflow v3 — Implementation Status
+status: in_progress
 started: 2026-04-20
-completed: 2026-04-20
+updated: 2026-04-21
 ---
 
-# Smelter v2.4.1 Implementation Status
+# Smelter v3 Implementation Status
 
-> Source of truth: `document/workflow.md` (spec v2.4.1).
+> Source of truth: `document/workflow.md`.
 > Principle: sequential execution, respect dependencies, no omissions.
+
+## Phase v3.1 — `/fix` speed/quality balance (2026-04-22)
+
+### Caveman integration correction (2026-04-22)
+
+- [x] Replaced the hardcoded SessionStart concise prompt with vendored upstream Caveman skill content from `skills/caveman/SKILL.md`.
+- [x] `src/rules/defaults.ts` now exports `CAVEMAN_SYSTEM_PROMPT` from the same vendored skill source.
+- [x] Added targeted regression tests for SessionStart Caveman injection and defaults export behavior.
+- [x] Synced Codex model-mode into `~/.smt/config.json.codexMode` during `SessionStart` so Stop/UserPromptSubmit hooks can reliably detect codex sessions even when only `SMELTER_MODEL_MODE=codex` is present.
+- [x] Extended `scripts/auto-confirm.mjs::pickSubAgentModel()` to treat `SMELTER_MODEL_MODE=codex` the same as `CODEX_MODE=1`, forcing queued sub-agents onto `haiku` in codex windows.
+- [x] Hardened `scripts/keyword-detector.mjs` so an LLM `passthrough:true` hint is overridden when the current session already has an active, non-terminal workflow pointer. This preserves Smelter continuation in codex windows instead of silently dropping the session out of workflow mode. Transcript-paste passthrough remains exempt.
+- [x] Fixed multi-window mode bleed by making `scripts/claude-wrapper.mjs` inject `SMELTER_MODEL_MODE=codex` (+ `CODEX_MODE=1`) for codex launches and `SMELTER_MODEL_MODE=claude` for regular launches, so `scripts/lib/subagent-classifier.mjs` can resolve model family from session env before shared state files.
+- [x] Fixed `scripts/statusline-hud.mjs` to prefer Codex mode label over raw stdin `display_name` in Codex windows, so HUD shows `Codex ...` instead of leaking plain `gpt-5.4`.
+
+
+User reported: brainstorm→review cycle + tasker + reshape → `/fix` takes longer than `/implement` (inverted). v3.1 balances speed and quality by (a) collapsing the three split YAML configs into one unified file, (b) adding target-type pipeline dispatch in `/fix`, (c) reducing mid-pipeline review rounds from 3 to 2, and (d) enforcing workflow-human-check before `git commit`.
+
+- [x] v3.1-1. **Unified config** → `modes/workflow.yaml` (single file). Deleted the v3 split (`modes/skills.yaml`, `modes/pipelines.yaml`, `modes/modes.yaml`).
+- [x] v3.1-2. **Target-type dispatch** — `selectPipeline(mode, {target_type, file_count, surface_count})` in `workflow-loader.mjs`. `/fix` picks pipeline at runtime: `typo`/`dialogue` → `minimal` (4 skills), simple `bug_fix` → `light` (8 skills), complex `bug_fix` / `extend_existing` → `medium` (11 skills). `new_feature`/`refactor`/`migration` → `upgrade_required` (escalate to `/implement` or `/think`). Cuts tasker overhead on trivial fixes.
+- [x] v3.1-3. **Verification round split** — `verification_rounds: { mid_pipeline: 2, terminal: 3 }` in `workflow.yaml`. Mid reviews (brainstorm-review, investigate-review, tasker-review, agent-review) drop to 2 rounds (omission + contradiction; edge-case dropped for speed). Terminal reviews (e2e-review, team-code-review, human-check) stay at 3 rounds. `min_verification_rounds: 2` in 4 SKILL.md files; 3 kept in e2e-review and team-code-review.
+- [x] v3.1-4. **`getVerificationRounds(skill)` helper** in `workflow-loader.mjs` — reads skill's `rounds` bucket field from `workflow.yaml`. Default `mid_pipeline`.
+- [x] v3.1-5. **Commit gate** — `pre-tool-enforcer.mjs` PreToolUse:Bash rule: when command starts with `git commit` AND state.mode ∈ {fix, implement} AND workflow-human-check not passed → block with clear reason. Closes queued bug: agent committing before human-check.
+- [x] v3.1-6. **Human-check visual render** — `skills/workflow-human-check/SKILL.md` new section "Visual Artifact Rendering (v3.1)": `Read` tool invocation on every `.png`/`.jpg`/`.webm` under artifacts/; multimodal inline render in terminal; user sees output before `AskUserQuestion`.
+- [x] v3.1-7. **Tests** — `scripts/lib/workflow-loader.test.mjs` expanded to 28 tests covering v3.1 features (selectPipeline × 6, getVerificationRounds × 3, unified-file load, legacy-file absence).
+- [x] v3.1-8. **Docs** — `document/workflow.md` §4 updated for v3.1 pipelines + target-type dispatch + round split.
+
+### Non-regression verification
+
+All suites green after v3.1: workflow-loader 28/28, auto-confirm 115/115, workflow-scenarios 118/118, mode-classifier 39/39, skill-stage-transition 17/17, state-validator 18/18, pre-tool-enforcer 13/13, critic-watchdog 24/24, keyword-detector 26/26. **398/398 pass.**
+
+### Deferred to future phase
+
+- Reshape-event gate (original queued bug about `workflow-investigate` running twice). Deferred because investigating revealed the reported trace was spec-conformant §5-2 reshape; the true pain point was the `critic-watchdog` plan.md false-positive, which v3.1-2 (target_type dispatch) + Part B (mode-aware R07, still in `.smt/features/smelter-v3-duplicate-skill-fix/` design) addresses.
+- Brainstorm iteration audit: the session that produced this phase itself ran through 3 brainstorm→review cycles before committing. Post-analysis lives in the deferred design doc.
+
+---
+
+## Phase v3 — Mode Simplification + Superpowers Hybridization (2026-04-21)
+
+Consolidates six modes into five, removes v2 legacy (modes/*.json, /plan, /simple-fix), and adopts file-driven routing from obra/superpowers while preserving Smelter's hook-enforced workflow fixing.
+
+- [x] v3-1. Three-file YAML config → `modes/skills.yaml` + `modes/pipelines.yaml` + `modes/modes.yaml`.
+- [x] v3-2. Loader → `scripts/lib/workflow-loader.mjs` + `scripts/lib/workflow-loader.test.mjs` (16 tests passing).
+- [x] v3-3. `scripts/state-schema.mjs::MODES` → 5 v3 modes (`think/fix/implement/investigate/verify`). `CAUSE_ENUM` extended with `visual_mismatch` + `e2e_infra_missing`.
+- [x] v3-4. `scripts/keyword-detector.mjs` — v3 loader only; legacy JSON fallback removed; `COMMAND_TO_MODE` + `COMMAND_CONFIG` + slash-command regex + `validCommands` all v3.
+- [x] v3-5. `scripts/mode-classifier.mjs` — `EXPLICIT_COMMANDS` + `MODES_WHITELIST` v3.
+- [x] v3-6. `scripts/lib/subagent-classifier.mjs` — `VALID_MODES` set + `MODE_CLASSIFIER_PROMPT` v3.
+- [x] v3-7. `scripts/skill-stage-transition.mjs` — uses `workflow-loader.getMode` (no more `modes/<mode>.json` read).
+- [x] v3-8. `scripts/auto-confirm.mjs::detectModeTransitionSignal` — regex alternation extended to v3 set.
+- [x] v3-9. `scripts/session-end.mjs::EXPECTED_COMMANDS` — v3 set; section 3 now validates `modes.yaml/pipelines.yaml/skills.yaml` presence and rejects leftover `modes/*.json`.
+- [x] v3-10. Delete `modes/*.json` (6 files: fix/implement/investigate/plan/simple_fix/verify.json).
+- [x] v3-11. Delete `commands/plan.md` + `commands/simple-fix.md`. Create `commands/think.md`. Update `commands/implement.md` to reference `modes/modes.yaml`.
+- [x] v3-12. `skills/workflow-e2e/SKILL.md` — new `## Infra Preflight` section: harness auto-install (Playwright) when absent, new gate postcondition `e2e_infra_present`.
+- [x] v3-13. `skills/workflow-e2e-review/SKILL.md` — new `## Visual Inspection` section: every screenshot opened, 3+ video frames reviewed, failures emit `cause: visual_mismatch` → routes to `workflow-coding`.
+- [x] v3-14. Test fixtures updated: `scripts/lib/__fixtures__/mode-classifier-stub.mjs` (plan→think, simple_fix→fix); `scripts/auto-confirm.test.mjs`, `scripts/workflow-scenarios.test.mjs`, `scripts/skill-stage-transition.test.mjs`, `scripts/keyword-detector.test.mjs`, `scripts/mode-classifier.test.mjs`, `scripts/lib/subagent-mode-classifier.test.mjs` — all v3.
+- [x] v3-15. `document/workflow.md` §1-2 + §4 + §5-1 producer chain + §5-4 upgrade graph updated for v3.
+- [x] v3-16. `document/workflow.md` — §1-2 mode summary, §4 mode definitions, §5-1 producer chain (new causes), §5-4 upgrade diagram, §7 file tree, §11-5b auto-confirm reference all updated. Routing table + mode summary now v3.
+- [x] v3-17. `document/workflow.ko.md` — §1-2 auto-routing + mode summary tables + magic keyword table + §4 mode definitions (think/fix headers), upgrade diagram, file tree all synced to v3.
+- [x] v3-18. All test suites green under v3: auto-confirm 115/115, workflow-scenarios 118/118, mode-classifier 39/39, workflow-loader 16/16, keyword-detector 26/26, skill-stage-transition 17/17, state-validator 18/18, critic-watchdog 24/24, pre-tool-enforcer 13/13, dev-install 25/25, plus hook-audit/transcript-reader/feature-summary/yellow-tag/post-tool-verifier/tool-retry/auto-confirm-consumer/subagent-mode-classifier — **421/421 pass**.
+- [x] v3-19. `scripts/keyword-detector.mjs` collateral fixes discovered during migration:
+  - `main()` gated by `import.meta.url === argv[1]` — prevented `node --test` runner hangs when the module was imported for in-process unit tests.
+  - `isTranscriptPaste` counts total pattern occurrences (was distinct-pattern-count), so two ⏺ bullets alone trigger the heuristic (TPP4).
+  - `extractExplicitHarnessCommand` regex uses `[\s\S]*` instead of `.*` so `/fix` prefix matches when followed by multi-line pasted transcript (TPP6).
+
+### Added user requirements (2026-04-21)
+
+- **Terminal human-check**: `fix` + `implement` pipelines end with `workflow-human-check` (enforced by pipeline shape in `pipelines.yaml`). Plan §8.
+- **E2E lock-in**: infrastructure auto-install when missing (Playwright for UI); visual artifacts inspected frame-by-frame, mismatch loops back to `workflow-coding`. Plan §7.
+- **Removed v2 legacy completely**: no fallback code paths, no backward-compat aliases. `/plan` and `/simple-fix` fully deleted. Plan rollout §Rollout Plan.
+
+### Added user requirements (2026-04-22)
+
+- **E2E credentials policy** (`skills/workflow-e2e/SKILL.md` §Credentials, `document/workflow.md` §8-4, `document/workflow.ko.md` §6-3):
+  - Auth-required scenarios read secrets from a git-ignored `.env.e2e` at the project root (never `.env`, never committed).
+  - Canonical variables: `E2E_ACCOUNT_ID`, `E2E_ACCOUNT_PW`, `E2E_COOKIE`, `E2E_KEY` (scenario-specific keys use the `E2E_` prefix).
+  - New fail `cause: missing_credentials` — evidence `file_absent` (missing `.env.e2e`) or `parse` (missing key). Halts for user to populate the file; fabricating values or mocking auth is disallowed.
+
+---
 
 ## Phase 1 — Foundation
 

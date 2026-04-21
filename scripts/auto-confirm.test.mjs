@@ -111,7 +111,7 @@ test('mode_transition_to_<mode> marker matches', () => {
   assert.equal(detectModeTransitionSignal('ready. mode_transition_to_implement now'), 'implement');
 });
 test('English "transitioning to X mode" matches', () => {
-  assert.equal(detectModeTransitionSignal('transitioning to plan mode'), 'plan');
+  assert.equal(detectModeTransitionSignal('transitioning to think mode'), 'think');
 });
 test('English "switching to X mode" matches', () => {
   assert.equal(detectModeTransitionSignal('switching to fix mode'), 'fix');
@@ -161,14 +161,15 @@ test('prompt embeds the assistant message verbatim', () => {
   const p = buildClassifierPrompt('Shall I proceed?');
   assert.match(p, /Shall I proceed\?/);
 });
-test('prompt instructs binary continue/halt output', () => {
+test('prompt instructs JSON continue/halt output', () => {
   const p = buildClassifierPrompt('hello');
-  assert.match(p, /continue/);
-  assert.match(p, /halt/);
+  assert.match(p, /"action":"continue"\|"halt"/);
+  assert.match(p, /"reason"/);
 });
-test('prompt is language-agnostic (mentions "any language")', () => {
+test('prompt describes explicit proceed-vs-halt contract', () => {
   const p = buildClassifierPrompt('hello');
-  assert.match(p, /any language/i);
+  assert.match(p, /explicitly asking permission/i);
+  assert.match(p, /final answers, summaries/i);
 });
 
 // ----------------------------------------------------------------------------
@@ -180,63 +181,74 @@ function makeStub(stdout, exitCode = 0) {
   writeFileSync(stub, `#!/bin/sh\nprintf '%s' '${stdout}'\nexit ${exitCode}\n`, { mode: 0o755 });
   return { dir, stub };
 }
-test('stub returning "continue" → continue', () => {
-  const { dir, stub } = makeStub('continue');
+test('stub returning JSON continue → continue with reason', () => {
+  const { dir, stub } = makeStub('{"action":"continue","reason":"asked_permission"}');
   try {
     const v = classifyProceedPromptViaSubAgent('next?', { cmd: stub });
-    assert.equal(v, 'continue');
+    assert.deepEqual(v, { action: 'continue', reason: 'asked_permission' });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('stub returning "halt" → halt', () => {
-  const { dir, stub } = makeStub('halt');
+test('stub returning JSON halt → halt with reason', () => {
+  const { dir, stub } = makeStub('{"action":"halt","reason":"final_answer"}');
   try {
     const v = classifyProceedPromptViaSubAgent('done.', { cmd: stub });
-    assert.equal(v, 'halt');
+    assert.deepEqual(v, { action: 'halt', reason: 'final_answer' });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('stub returning garbage → halt (safe default, no fallback)', () => {
+test('stub returning garbage → halt with invalid_output', () => {
   const { dir, stub } = makeStub('maybe?');
   try {
     const v = classifyProceedPromptViaSubAgent('?', { cmd: stub });
-    assert.equal(v, 'halt');
+    assert.deepEqual(v, { action: 'halt', reason: 'invalid_output' });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('stub exit non-zero → halt', () => {
-  const { dir, stub } = makeStub('continue', 1);
+test('stub exit non-zero → halt with nonzero_exit', () => {
+  const { dir, stub } = makeStub('{"action":"continue","reason":"x"}', 1);
   try {
     const v = classifyProceedPromptViaSubAgent('?', { cmd: stub });
-    assert.equal(v, 'halt');
+    assert.deepEqual(v, { action: 'halt', reason: 'nonzero_exit' });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('empty input → halt without spawning', () => {
-  assert.equal(classifyProceedPromptViaSubAgent('', { cmd: '/bin/false' }), 'halt');
-  assert.equal(classifyProceedPromptViaSubAgent(null, { cmd: '/bin/false' }), 'halt');
+  assert.deepEqual(classifyProceedPromptViaSubAgent('', { cmd: '/bin/false' }), { action: 'halt', reason: 'empty_message' });
+  assert.deepEqual(classifyProceedPromptViaSubAgent(null, { cmd: '/bin/false' }), { action: 'halt', reason: 'empty_message' });
 });
 test('missing binary → halt (no fallback)', () => {
   const v = classifyProceedPromptViaSubAgent('proceed?', { cmd: '/nonexistent/path/xyz' });
-  assert.equal(v, 'halt');
+  assert.equal(v.action, 'halt');
+  assert.match(v.reason, /missing_binary|nonzero_exit/);
 });
 test('stub trimmed whitespace + trailing newline accepted', () => {
-  const { dir, stub } = makeStub('continue\\n');
+  const { dir, stub } = makeStub('{"action":"continue","reason":"trimmed"}');
   try {
     const v = classifyProceedPromptViaSubAgent('?', { cmd: stub });
-    assert.equal(v, 'continue');
+    assert.deepEqual(v, { action: 'continue', reason: 'trimmed' });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ----------------------------------------------------------------------------
-section('pickSubAgentModel (sonnet default, mini under codex)');
+section('pickSubAgentModel (haiku default, codex mini under codex)');
 // ----------------------------------------------------------------------------
-test('default returns sonnet', () => {
+test('default returns settings-derived model', () => {
   delete process.env.CODEX_MODE;
-  assert.equal(pickSubAgentModel(), 'sonnet');
+  delete process.env.SMELTER_MODEL_MODE;
+  assert.equal(pickSubAgentModel(), 'gpt-5.4-mini');
 });
-test('CODEX_MODE=1 env returns haiku', () => {
+test('CODEX_MODE=1 env returns gpt-5.4-mini', () => {
   process.env.CODEX_MODE = '1';
   try {
-    assert.equal(pickSubAgentModel(), 'haiku');
+    assert.equal(pickSubAgentModel(), 'gpt-5.4-mini');
   } finally {
     delete process.env.CODEX_MODE;
+  }
+});
+
+test('SMELTER_MODEL_MODE=codex env returns gpt-5.4-mini', () => {
+  process.env.SMELTER_MODEL_MODE = 'codex';
+  try {
+    assert.equal(pickSubAgentModel(), 'gpt-5.4-mini');
+  } finally {
+    delete process.env.SMELTER_MODEL_MODE;
   }
 });
 
@@ -277,13 +289,13 @@ test('two-element chain advances to next mode', () => {
   });
 });
 test('requestedMode "*" takes the immediate next in chain', () => {
-  withTempState(baseState({ mode: 'plan', chained_modes: ['plan', 'implement'] }), (path, state) => {
+  withTempState(baseState({ mode: 'think', chained_modes: ['think', 'implement'] }), (path, state) => {
     const next = consumeNextChainedMode(path, state, '*');
     assert.equal(next, 'implement');
   });
 });
 test('requestedMode matching later entry skips head', () => {
-  withTempState(baseState({ mode: 'investigate', chained_modes: ['investigate', 'plan', 'implement'] }), (path, state) => {
+  withTempState(baseState({ mode: 'investigate', chained_modes: ['investigate', 'think', 'implement'] }), (path, state) => {
     const next = consumeNextChainedMode(path, state, 'implement');
     assert.equal(next, 'implement');
     assert.deepEqual(state.chained_modes, ['implement']);
@@ -291,7 +303,7 @@ test('requestedMode matching later entry skips head', () => {
 });
 test('requestedMode not in remaining chain returns empty', () => {
   withTempState(baseState({ mode: 'fix', chained_modes: ['fix', 'implement'] }), (path, state) => {
-    const next = consumeNextChainedMode(path, state, 'plan');
+    const next = consumeNextChainedMode(path, state, 'think');
     assert.equal(next, '');
   });
 });
@@ -613,7 +625,7 @@ test('chained_modes + transition signal → chain_advance', () => {
   });
 });
 test('chain_advance fires BEFORE halt — compound intents bypass human-check wait', () => {
-  withTempState(baseState({ mode: 'plan', chained_modes: ['plan', 'implement'], current_stage: 'workflow-human-check' }), (path, state) => {
+  withTempState(baseState({ mode: 'think', chained_modes: ['think', 'implement'], current_stage: 'workflow-human-check' }), (path, state) => {
     const d = decide({
       state,
       lastAssistantText: 'transitioning to implement mode',
@@ -628,7 +640,7 @@ test('transition signal without chain → no chain_advance', () => {
   assert.notEqual(d.action, 'chain_advance');
 });
 test('missing statePath disables chain_advance (safe default)', () => {
-  const s = baseState({ mode: 'plan', chained_modes: ['plan', 'implement'], events: [] });
+  const s = baseState({ mode: 'think', chained_modes: ['think', 'implement'], events: [] });
   const d = decide({ state: s, lastAssistantText: 'transitioning to implement mode' });
   assert.notEqual(d.action, 'chain_advance');
 });
@@ -652,8 +664,8 @@ test('H2: advance injection names the skill when payload.skill is set', () => {
   assert.match(text, /workflow-coding/);
 });
 test('chain_advance includes target + remaining chain tail', () => {
-  const s = baseState({ mode: 'plan' });
-  const text = buildPromptInjection({ action: 'chain_advance', reason: 'r', payload: { nextMode: 'implement', remaining: ['plan', 'implement', 'fix'] } }, s);
+  const s = baseState({ mode: 'think' });
+  const text = buildPromptInjection({ action: 'chain_advance', reason: 'r', payload: { nextMode: 'implement', remaining: ['think', 'implement', 'fix'] } }, s);
   assert.match(text, /implement/);
   assert.match(text, /remaining chain/);
 });
@@ -727,6 +739,19 @@ test('MANDATORY: injection truncates lastAssistantText to 400 chars', () => {
   assert.ok(quoted[1].length <= 400, `truncation must be <=400, got ${quoted[1].length}`);
 });
 
+test('MANDATORY: injection does not replay stale coding-stage alignment prose', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-tasker' });
+  const stale = 'The stage tracker wasn’t advanced even though the coding skill is active, so I’m updating the Smelter state to the coding stage and then continuing the scoped fix. The coding stage is now aligned, and I’m resuming the planned source edits.';
+  const text = buildPromptInjection(
+    { action: 'advance', reason: 'r', payload: { skill: 'workflow-coding', direction: 'advance' } },
+    s,
+    { subAgentModel: 'sonnet', lastAssistantText: stale },
+  );
+  assert.doesNotMatch(text, /Your last message \(truncated\)/);
+  assert.doesNotMatch(text, /resuming the planned source edits/i);
+  assert.match(text, /Skill\(skill: 'workflow-coding'\)/);
+});
+
 // ----------------------------------------------------------------------------
 section('Phase 4 — transcript_path fallback for lastAssistantText');
 
@@ -750,9 +775,9 @@ test('CLI reads transcript_path when last_assistant_text is absent', () => {
       JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: '진행할까요?' }] }),
     ].join('\n') + '\n');
 
-    // Stub classifier that echoes "continue".
+    // Stub classifier that returns JSON continue.
     const stub = join(dir, 'claude-stub.sh');
-    writeFileSync(stub, '#!/bin/sh\necho continue\n', { mode: 0o755 });
+    writeFileSync(stub, `#!/bin/sh\nprintf '%s' '{"action":"continue","reason":"asked_permission"}'\n`, { mode: 0o755 });
 
     const payload = JSON.stringify({
       cwd: dir,
@@ -1132,7 +1157,7 @@ test('active state + classifier stub → continue → exit 2 + queue with sub_ag
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
   const stubDir = mkdtempSync(join(tmpdir(), 'cls-stub-'));
   const stub = join(stubDir, 'cls.sh');
-  writeFileSync(stub, `#!/bin/sh\nprintf 'continue'\n`, { mode: 0o755 });
+  writeFileSync(stub, `#!/bin/sh\nprintf '{"action":"continue","reason":"asked_permission"}'\n`, { mode: 0o755 });
   try {
     const featDir = join(dir, '.smt', 'features', 'p', 'task');
     mkdirSync(featDir, { recursive: true });
@@ -1151,11 +1176,11 @@ test('active state + classifier stub → continue → exit 2 + queue with sub_ag
     assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
     const out = JSON.parse(res.stdout);
     assert.equal(out.decision, 'block');
-    assert.equal(out.meta.sub_agent_model, 'sonnet');
+    assert.equal(out.meta.sub_agent_model, 'gpt-5.4-mini');
     const queuePath = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
     const queue = JSON.parse(readFileSync(queuePath, 'utf-8'));
     assert.equal(queue.session_id, sessionId, 'queue payload must embed session_id');
-    assert.equal(queue.sub_agent_model, 'sonnet');
+    assert.equal(queue.sub_agent_model, 'gpt-5.4-mini');
     assert.match(queue.additionalContext, /sub-agent/i);
     assert.match(queue.additionalContext, /classifier sub-agent/);
     const legacyQueue = join(dir, '.smt', 'state', 'auto-confirm-queue.json');

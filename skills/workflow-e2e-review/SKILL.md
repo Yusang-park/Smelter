@@ -23,6 +23,7 @@ gate:
   postcondition:
     - file_exists: "e2e_review.md"
     - contains_verdict: "pass|fail"
+    - visual_inspected: true  # every screenshot + ≥3 video frames opened by a vision-capable reader
 ---
 
 # workflow-e2e-review
@@ -44,6 +45,47 @@ NO TEAM-REVIEW HANDOFF WITHOUT 3/3 ROUNDS AT pass INCLUDING EFFECT VERIFICATION
 ```
 
 Round 3 is specifically `effect_verification` — it catches the ack-only failure mode that `workflow-e2e`'s gate protects against. Both layers must hold.
+
+## Visual Inspection (v3)
+
+**Artifacts are not just counted — they are opened and read.** The ack-only failure mode has a visual analog: screenshots exist, but they show the wrong state, or a blank page, or an error boundary. Counting file bytes is not inspection.
+
+### Inspection contract
+
+1. **Every screenshot** (`.png`, `.jpg`) under `.smt/features/<slug>/artifacts/` is opened via the `Read` tool (multimodal) or delegated to the `vision` agent. The reviewer must *describe what is in the frame*.
+2. **Every video** (`.webm`, `.mp4`) has at least **3 frames sampled** — start, middle, end. The middle frame is the most diagnostic: it captures the mid-flow state.
+3. For each opened artifact, the reviewer must answer:
+   - Does the frame match the expected state from `tasks.md` §§ scenarios?
+   - Is the UI in a success state or an error / loading / blank state?
+   - Does the captured effect match the target in `test_cycles[].case_name`?
+
+### Failure emission
+
+A visible discrepancy is a hard fail with cause `visual_mismatch`:
+
+```json
+{
+  "skill": "workflow-e2e-review",
+  "result": "fail",
+  "declarer": "skill",
+  "cause": "visual_mismatch",
+  "evidence": {
+    "type": "file_present",
+    "detail": "artifacts/screenshots/07-after-save.png shows toast \"Saved\" but the saved row is absent from the table — expected effect not rendered"
+  }
+}
+```
+
+Producer chain routes `visual_mismatch` → `workflow-coding` (UI / logic bug). Iteration continues per Iron Law #1 until the frame matches.
+
+### Red flags
+
+| Thought | Reality |
+|---------|---------|
+| "The PNG is 85 KB so it rendered" | File size ≠ content. Open and describe. |
+| "The video is 12s so the flow completed" | Duration ≠ correctness. Sample 3+ frames. |
+| "Screenshot count matches scenario count" | Counting is not inspection. |
+| "Vision agents are slow" | Visual verification is the user requirement. There is no faster substitute. |
 
 ## Output
 

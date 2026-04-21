@@ -34,6 +34,39 @@ NO COMPLETION WITHOUT USER DECISION VIA AskUserQuestion
 
 The `AskUserQuestion` call is the gate. A plain-text question asking "should I continue?" does NOT satisfy this gate. The decision must be recorded via the native clickable prompt and persisted in `state.json.current_stage`.
 
+## Visual Artifact Rendering (v3.1)
+
+**Before `AskUserQuestion`, render every visual artifact inline via the `Read` tool.** Users decide `complete`/`rework` based on what they SEE, not file paths they have to open manually.
+
+### Protocol
+
+1. Scan `.smt/features/<slug>/artifacts/` and `.smt/features/<slug>/task/` for visual artifacts:
+   - `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, `*.webp` — screenshots
+   - `*.webm`, `*.mp4` — videos (Read tool extracts representative frame; cite "video at <path>" if frame extraction unavailable)
+   - `*.pdf` — reports
+2. For each artifact, emit a **`Read` tool invocation** with the absolute path. Claude Code renders images / PDFs inline in the terminal (multimodal).
+3. Briefly describe what each frame shows ("screenshot: login page with valid user, DOM shows dashboard loaded").
+4. Present the description + path list to the user **inside** the `AskUserQuestion` prompt so the clickable options sit directly below the visual evidence.
+
+### Required order
+
+```
+1. List diff scope (files changed)
+2. List artifacts and Read each visual one
+3. Describe each visual ("screenshot 03 shows toast 'Saved' + row rendered in table")
+4. Summarize test results (unit / integration / e2e pass counts)
+5. AskUserQuestion with options [complete | rework | hold | upgrade]
+```
+
+### Red flags
+
+| Thought | Reality |
+|---------|---------|
+| "File paths are enough, user can open them" | No — `complete` vs `rework` hinges on seeing the output. The Read tool's multimodal render is non-negotiable. |
+| "The video is too long to show" | Sample at least start / middle / end frames. The middle frame is most diagnostic. |
+| "PDF reports are text-like" | Read them via the `Read` tool with `pages: "1-5"` — the rendered content surfaces issues prose summaries miss. |
+| "Already described in e2e-review.md" | That was the review stage. Human-check must render again for the user's decision; secondhand descriptions are not visual evidence. |
+
 ## Red Flags - STOP
 
 | Thought | Reality |

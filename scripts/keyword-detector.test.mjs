@@ -111,7 +111,7 @@ test('explicit slash command bypasses classifier and seeds single mode', async (
   }
 });
 
-test('plan+implement chain (설계하고 구현해) seeds plan → implement', async () => {
+test('think+implement chain (설계하고 구현해) seeds think → implement', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-chain2-'));
   try {
     const out = runDetector({ cwd, prompt: '설계하고 구현해줘' });
@@ -120,8 +120,8 @@ test('plan+implement chain (설계하고 구현해) seeds plan → implement', a
     const statePath = findStateFile(cwd);
     assert.ok(statePath, 'state file not seeded');
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
-    assert.deepEqual(state.chained_modes.slice(0, 2), ['plan', 'implement']);
-    assert.equal(state.mode, 'plan', 'entry mode must be first chain element');
+    assert.deepEqual(state.chained_modes.slice(0, 2), ['think', 'implement']);
+    assert.equal(state.mode, 'think', 'entry mode must be first chain element');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -159,6 +159,29 @@ test('CSS3: after slash command, next natural-language follow-up REUSES the slas
     runDetector({ cwd, prompt: 'OAuth 부분 추가로 확인', sessionId: 's1' });
     const dirs = readdirSync(join(cwd, '.smt', 'features'));
     assert.equal(dirs.length, 1, `post-slash follow-up must reuse; got ${dirs.length}: ${dirs.join(', ')}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('CSS3b: active workflow blocks LLM passthrough and keeps seeding current session', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse3b-'));
+  try {
+    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    const out = runDetector({ cwd, prompt: 'workflow-tasker가 뭐야?', sessionId: 's1' });
+    assert.equal(out.continue, true);
+    const ctx = out.hookSpecificOutput?.additionalContext ?? '';
+    assert.match(ctx, /Skill: fix/);
+    const dirs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(dirs.length, 1, `active workflow follow-up must not passthrough or fork feature; got ${dirs.length}: ${dirs.join(', ')}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('CSS3c: active workflow still allows transcript paste passthrough', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse3c-'));
+  try {
+    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    const out = runDetector({ cwd, prompt: '⏺ step 1\n⏺ step 2', sessionId: 's1' });
+    assert.equal(out.continue, true);
+    assert.equal(out.hookSpecificOutput, undefined);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -345,4 +368,86 @@ test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async (
       `env-var bypass must route to fix (or any skill) rather than passthrough; got ctx=${ctx}`,
     );
   } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------
+// Magic-keyword → target_type → pipeline dispatch (v3.1).
+// Verifies `/fix typo ...` resolves to the minimal pipeline, `/fix css ...`
+// sets TDD exemption without shrinking the pipeline, and an unmatched /fix
+// prompt falls through to the default medium pipeline.
+// ---------------------------------------------------------------------------
+
+test('MK1 /fix typo ... → target_type=typo, minimal pipeline (4 skills), TDD+E2E exempt', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-typo-'));
+  try {
+    const out = runDetector({ cwd, sessionId: 'mk-typo', prompt: '/fix typo 오타 하나 있어요' });
+    assert.equal(out.continue, true);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file not seeded');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+
+    assert.equal(state.mode, 'fix');
+    assert.equal(state.target_type, 'typo', 'magic keyword `typo` must set target_type');
+    assert.deepEqual(
+      state.allowed_skills,
+      ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
+      'typo must resolve to minimal pipeline (4 skills)',
+    );
+    assert.equal(state.exempt?.tdd, true, 'typo must set exempt.tdd');
+    assert.equal(state.exempt?.e2e, true, 'typo must set exempt.e2e');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('MK2 /fix css ... → exempt.tdd=true, pipeline unchanged (target_type unset → default medium)', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-css-'));
+  try {
+    const out = runDetector({ cwd, sessionId: 'mk-css', prompt: '/fix css 버튼 색상 좀 바꿔줘' });
+    assert.equal(out.continue, true);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file not seeded');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+
+    assert.equal(state.mode, 'fix');
+    assert.equal(state.exempt?.tdd, true, 'css must set exempt.tdd');
+    assert.equal(state.exempt?.e2e, false, 'css must NOT exempt e2e (visual surface)');
+    // css does not set target_type, so target_type stays null and the mode's
+    // default pipeline (medium, 11 skills) is used.
+    assert.equal(state.target_type, null, 'css must not set target_type');
+    assert.equal(
+      state.allowed_skills.length,
+      11,
+      `css must keep default medium pipeline (11 skills); got ${state.allowed_skills.length}`,
+    );
+    assert.ok(state.allowed_skills.includes('workflow-tasker'), 'medium pipeline must include tasker');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('MK3 /fix 버그 ... with no magic keyword → default medium pipeline, no exemption', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-none-'));
+  try {
+    const out = runDetector({ cwd, sessionId: 'mk-none', prompt: '/fix 로그인 버그 고쳐줘' });
+    assert.equal(out.continue, true);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file not seeded');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+
+    assert.equal(state.mode, 'fix');
+    assert.equal(state.target_type, null, 'no magic keyword → target_type stays null');
+    assert.equal(state.exempt?.tdd, false);
+    assert.equal(state.exempt?.e2e, false);
+    assert.equal(
+      state.allowed_skills.length,
+      11,
+      `unmatched /fix must use default medium pipeline (11 skills); got ${state.allowed_skills.length}`,
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 });

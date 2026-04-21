@@ -55,40 +55,47 @@ const codex = run(['--codex', '--version']);
 assert.equal(codex.mode, 'codex');
 assert.deepEqual(codex.passthrough, ['--version']);
 // ANTHROPIC_BASE_URL must NOT be in settings.json — it's only injected into child process env
-assert.equal(codex.settings.env.ANTHROPIC_BASE_URL, undefined);
+assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL, undefined);
 // CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is set only in wrapper's child process env, not in settings.json
 // (setting it in settings.json blocks rate_limits/context_window from HUD stdin)
 // Coming from 'sonnet' alias → should default to gpt-5.4
-assert.equal(codex.settings.model, 'gpt-5.4');
+assert.equal(codex.activeModel, 'gpt-5.4');
 // Slots 1-4 must NOT be redirected to gpt models
-assert.equal(codex.settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, undefined);
-assert.equal(codex.settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined);
+assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_DEFAULT_SONNET_MODEL, undefined);
+assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined);
 
-// Re-entering codex mode always resets to the default Codex model.
-const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
-settings.model = 'gpt-5.4-mini';
-writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
-const codexPreserve = run(['--codex', '--version']);
-assert.equal(codexPreserve.settings.model, 'gpt-5.4', 'codex mode should reset to the default model');
+// Re-entering codex mode keeps an already-selected Codex model for that window.
+const codexPreserve = JSON.parse(
+  execFileSync('node', [wrapper, '--codex', '--version'], {
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      SMELTER_WRAPPER_TEST: '1',
+      SMELTER_WRAPPER_TEST_ACTIVE_MODEL: 'gpt-5.4-mini',
+    },
+    encoding: 'utf8',
+  }),
+);
+assert.equal(codexPreserve.activeModel, 'gpt-5.4-mini', 'codex mode should preserve selected codex model for that window');
 
-// Full claude model IDs are also replaced with the default Codex model.
+// Full claude model IDs no longer force a global codex default into other windows.
 const settings2 = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
 settings2.model = 'claude-opus-4-6';
 writeFileSync(SETTINGS_PATH, JSON.stringify(settings2, null, 2) + '\n');
 const codexPreserveClaude = run(['--codex', '--version']);
-assert.equal(codexPreserveClaude.settings.model, 'gpt-5.4', 'full claude model ID should be replaced by the default codex model');
+assert.equal(codexPreserveClaude.activeModel, 'gpt-5.4', 'codex window without prior codex selection should use default model');
 
 resetModelToSonnet();
 const plain = run(['--version']);
 assert.equal(plain.mode, 'claude');
 assert.deepEqual(plain.passthrough, ['--version']);
-assert.equal(plain.settings.env.ANTHROPIC_BASE_URL, undefined);
-assert.equal(plain.settings.model, 'sonnet');
+assert.equal(savedSettings ? JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL : undefined, undefined);
+assert.equal(plain.activeModel, null);
 
 const forcedClaude = run(['--codex', '--claude', '--version']);
 assert.equal(forcedClaude.mode, 'claude');
 assert.deepEqual(forcedClaude.passthrough, ['--version']);
-assert.equal(forcedClaude.settings.env.ANTHROPIC_BASE_URL, undefined);
+assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL, undefined);
 
 resetModelToSonnet();
 const hudCacheDir = join(tempHome, '.claude', 'hud', 'task-summary');

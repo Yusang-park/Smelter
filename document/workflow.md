@@ -95,11 +95,11 @@ Commands are **hints**; the default is **three-layer auto-routing** from natural
 
 | # | Layer | Implementation | Fires when |
 |---|-------|----------------|------------|
-| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table + word-boundary check | prompt starts with `/fix`, `/plan`, `/implement`, `/investigate`, `/verify`, or `/simple-fix` followed by EOL, whitespace, `:`, or `-` |
+| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table + word-boundary check | prompt starts with `/think`, `/fix`, `/implement`, `/investigate`, or `/verify` followed by EOL, whitespace, `:`, or `-` |
 | 2 | Passthrough | `PASSTHROUGH_PATTERNS` (anchored) | entire prompt matches pure git/shell verb-first (e.g. `git commit`, `커밋해`, `push 좀`) |
 | 3 | LLM classifier | `scripts/lib/subagent-classifier.mjs::classifyMode` via OAuth Claude CLI | any remaining natural-language prompt |
 
-The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached per `{sessionId, prompt-hash}` under `.smt/state/mode-classifier-cache.json` with trigger-prefix whitelist revalidation on read.
+The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached per `{sessionId, prompt-hash}` under `.smt/state/mode-classifier-cache.json` with trigger-prefix whitelist revalidation on read. If `passthrough === true` but the current session already has an active non-terminal workflow pointer (`.smt/state/active-feature-<sessionId>.json`), `keyword-detector.mjs` overrides the passthrough hint and keeps the turn inside workflow continuation; only explicit transcript-paste passthrough remains exempt.
 
 **Failure policy (v2.4.9)**: if Layer 3 throws (LLM outage, invalid response, or tampered cache dropped by the validator), the error **propagates**. There is no regex fallback. Callers treat a throw or `null` return as "no classification" and skip state seeding — the prompt flows through unseeded.
 
@@ -118,14 +118,15 @@ The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached 
 
 #### Mode summary
 
-| Mode | Entry skill | Purpose |
-|------|-------------|---------|
-| `simple_fix` | `workflow-coding` | Text/CSS/constant substitution. |
-| `fix` | `workflow-investigate` | Bug / logic repair. |
-| `investigate` | `workflow-investigate` | Static read only (맥락·근거 파악). Exits via mode transition. |
-| `verify` | `workflow-verify` | Non-modifying verification (test run + static inspection + real-interface E2E). Single report output. |
-| `plan` | `workflow-brainstorm` (deep) | New feature / refactor, planning first. |
-| `implement` | `workflow-brainstorm` (light) | Lightweight build on existing code. |
+| Mode | Entry skill | Pipeline | Purpose |
+|------|-------------|----------|---------|
+| `think` | `workflow-brainstorm` (deep) | `planning_only` | Ideation & planning. No code changes. Produces `brainstorm.md` + `tasks.md`. |
+| `fix` | `workflow-investigate` | `no_brainstorm` | Bug / logic repair. Surface-based TDD exemption for CSS/typo/i18n via magic keyword. |
+| `implement` | `workflow-brainstorm` (light) | `full` | Feature development on existing code. |
+| `investigate` | `workflow-investigate` | `investigate_only` | Static read only (맥락·근거 파악). Exits via mode transition. |
+| `verify` | `workflow-verify` | `verify_only` | Non-modifying verification (test run + static inspection + real-interface E2E). |
+
+v3 (2026-04-21): the 6-mode set (`simple_fix` / `plan` retained) collapsed to 5. `/simple-fix` folded into `/fix` + magic keyword; `/plan` renamed to `/think`. Mode/pipeline/skill definitions live in `modes/{modes,pipelines,skills}.yaml` loaded by `scripts/lib/workflow-loader.mjs`.
 
 ### 1-3. Magic Keywords
 
@@ -133,9 +134,9 @@ Surface-detection tokens evaluated by `classifyMagicKeywords(input)` in `scripts
 
 | Keyword | Action |
 |---------|--------|
-| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | auto-set `workflow-write-test` TDD exemption (surface-based) |
+| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | auto-set `workflow-write-test` TDD exemption (surface-based). In `fix` mode this replaces the removed `simple_fix` mode. |
 | `extend`, `add to`, `덧붙여`, `추가로` | skip `workflow-brainstorm` in `implement` |
-| `fix`, `bug`, `버그`, `문제` | nudge toward `fix` mode (even inside `/simple-fix` upon interface change detection) |
+| `fix`, `bug`, `버그`, `문제` | nudge toward `fix` mode |
 
 ### 1-4. Workflow vs. Utility Skills
 
@@ -275,42 +276,79 @@ On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/imp
 
 ---
 
-## 4. Mode Definitions
+## 4. Mode Definitions (v3.1)
 
-Each mode is a subset of the 14 workflow skills plus an entry point.
+v3 collapsed the six-mode set to **five**. v3.1 unifies all configuration into a single file for maintenance simplicity and adds target-type dispatch + 2-round mid-pipeline reviews.
 
-### 4-1. simple_fix (`/simple-fix`)
+- `modes/workflow.yaml` — single source of truth: skills + pipelines + modes + target_type_routing + verification_rounds + command_aliases.
+- Loader: `scripts/lib/workflow-loader.mjs`. Consumers: `keyword-detector.mjs`, `skill-stage-transition.mjs`.
 
-**allowed**: `workflow-coding`, `workflow-e2e`, `workflow-human-check`.
-**defaults**: `exempt.tdd: true`, `exempt.e2e: false`.
-Interface changes force `/fix` mode upgrade at `workflow-human-check`.
+### v3.1 pipelines (4 code-modifying + 3 read-only)
 
-### 4-2. fix (`/fix`)
+| Pipeline | Skills | Used by |
+|---|---|---|
+| `full` | 13 (brainstorm → ... → human-check) | `/implement` |
+| `medium` | 11 (investigate → ... → human-check, no brainstorm) | `/fix` for `extend_existing` or complex `bug_fix` (>3 files or multi-surface) |
+| `light` | 8 (no tasker, no team-code-review) | `/fix` for simple `bug_fix` (≤3 files, single surface) |
+| `minimal` | 4 (investigate → coding → e2e → human-check) | `/fix` for `typo` / `dialogue` |
+| `planning_only` | 6 | `/think` |
+| `investigate_only` | 2 | `/investigate` |
+| `verify_only` | 4 | `/verify` |
 
-**allowed**: all 11 core skills (no brainstorm; investigate-first pipeline).
-Full bug-repair pipeline: investigate → investigate-review → tasker → tasker-review → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check.
+### v3.1 target_type dispatch (`/fix` only)
 
-### 4-3. investigate (`/investigate`)
+`workflow-investigate` determines `target_type` + scope (file_count, surface_count). `workflow-loader.selectPipeline()` picks the appropriate pipeline:
 
-**allowed**: `workflow-investigate`, `workflow-investigate-review`.
-Static read only. Exits via user-chosen mode transition.
+- `typo` / `dialogue` → `minimal`
+- `bug_fix` simple (≤3 files, single surface) → `light`
+- `bug_fix` complex OR `extend_existing` → `medium`
+- `new_feature` / `refactor` / `migration` → `upgrade_required` (prompt user to switch to `/implement` or `/think`)
 
-### 4-4. verify (`/verify`)
+Prevents the tasker-overhead problem where trivial fixes ran the full 11-skill chain.
 
-**allowed**: `workflow-verify`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`.
-**defaults**: `exempt.tdd: true`, `exempt.e2e: false`.
-Non-modifying verification. `workflow-verify` runs three phases in one invocation (tests + static inspection + real-interface E2E). Report-only. Fails route to `/fix` via mode upgrade (or chain auto-advance).
+### v3.1 verification rounds
 
-### 4-5. plan (`/plan`)
+`workflow.yaml.verification_rounds` separates mid-pipeline reviews from terminal gates:
+- `mid_pipeline: 2` — `workflow-brainstorm-review`, `workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`. Rounds: omission + contradiction (edge-case dropped for speed).
+- `terminal: 3` — `workflow-e2e-review` (visual verification), `workflow-team-code-review` (95% consensus), `workflow-human-check`.
 
-**allowed**: brainstorm + investigate + tasker (+ reviews). Planning-only mode.
-Entry: `workflow-brainstorm` with `depth: deep`. Exits to `/implement`.
+v3 ran every review at 3 rounds; v3.1 cuts 4 mid-reviews × 1 round per `/fix` run in the common path.
 
-### 4-6. implement (`/implement`)
+### 4-1. think (`/think`) — was `/plan`
 
-**allowed**: all 14 skills.
-Entry: `workflow-brainstorm` with `depth: light`. Full pipeline after brainstorm.
-`extend` / `add to` / `덧붙여` magic keywords skip brainstorm.
+**pipeline**: `planning_only` (brainstorm → brainstorm-review → investigate → investigate-review → tasker → tasker-review).
+**defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: true`.
+**entry**: `workflow-brainstorm` with `depth: deep`.
+**purpose**: ideation + planning without touching code. Produces `brainstorm.md` + `tasks.md`. Exits via `mode_transition_to_implement` after user approves `tasks.md`.
+
+### 4-2. fix (`/fix`) — absorbs former `simple_fix`
+
+**pipeline**: `no_brainstorm` (investigate → ... → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check).
+**defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
+**entry**: `workflow-investigate`.
+**surface exemption**: magic keywords `css` / `style` / `텍스트` / `i18n` / `typo` / `dialogue` set `exempt.tdd=true` (typo/dialogue also set `exempt.e2e=true`). This replaces the v2 `simple_fix` mode.
+**terminal**: `workflow-human-check` — **mandatory, cannot be skipped** (§8 human review).
+
+### 4-3. implement (`/implement`)
+
+**pipeline**: `full` (13 skills — brainstorm → ... → human-check).
+**defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
+**entry**: `workflow-brainstorm` with `depth: light`.
+`extend` / `add to` / `덧붙여` magic keywords set `skip_brainstorm: true`.
+**resume**: when entered after `/think`, pre-existing `brainstorm.md` / `tasks.md` cause `nextSkill()` to skip straight to `workflow-write-test` (file-driven routing from superpowers).
+**terminal**: `workflow-human-check` — **mandatory**.
+
+### 4-4. investigate (`/investigate`)
+
+**pipeline**: `investigate_only` (investigate + investigate-review).
+**defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: true`.
+Static read only. Exits via user-chosen mode transition (`mode_transition_to_fix`, `mode_transition_to_think`, `mode_transition_to_implement`, `free_chat`).
+
+### 4-5. verify (`/verify`)
+
+**pipeline**: `verify_only` (verify + e2e + e2e-review + human-check).
+**defaults**: `exempt.tdd: true`, `exempt.e2e: false`, `read_only: true`.
+**entry**: `workflow-verify`. Three-phase report (tests + static inspection + real-interface E2E). Fails route to `/fix` via mode upgrade or chain auto-advance.
 
 ---
 
@@ -327,8 +365,10 @@ workflow-coding              ─fail─▶ workflow-write-test      (RED cycle m
                                     OR workflow-tasker       (scope mismatch)
 workflow-agent-review        ─fail─▶ workflow-coding
 workflow-e2e                 ─fail─▶ workflow-coding          (assertion, typecheck, build)
+                                    OR workflow-coding       (e2e_infra_missing → install harness, v3 §7-1)
                                     OR workflow-e2e          (artifact_missing / mocked_interface)
 workflow-e2e-review          ─fail─▶ workflow-coding          (insufficient_scenario)
+                                    OR workflow-coding       (visual_mismatch → v3 §7-2 vision inspection)
                                     OR workflow-e2e          (file_absent)
 workflow-team-code-review    ─fail─▶ workflow-coding          (medium/low)
                                     OR workflow-tasker        (high/critical)
@@ -360,9 +400,11 @@ If a fail-route target is `workflow-*` but not in `allowed_skills`:
 Any direction allowed; always user-gated.
 
 ```
-simple_fix ──▶ fix ──▶ implement ──▶ plan
-              ◀──     ◀──           ◀──
+fix ──▶ implement ──▶ think
+ ◀──    ◀──          ◀──
 ```
+
+`investigate` and `verify` are read-only siblings that upgrade to any of the three code-writing modes via user-gated transition.
 
 On upgrade: `mode` and `allowed_skills` are rewritten; `events`, `test_cycles`, `active_feedback`, `sub_tasks` are **preserved**.
 
@@ -412,6 +454,7 @@ On upgrade: `mode` and `allowed_skills` are rewritten; `events`, `test_cycles`, 
 | `verification_failed` | Multi-Pass review skills | a verification round failed |
 | `artifact_missing` | e2e, verify | E2E pass claim without real-interface artifacts (§8) |
 | `mocked_interface` | e2e, verify | the surface under test was mocked (§8) |
+| `missing_credentials` | e2e, verify | scenario requires auth and `.env.e2e` is absent (`file_absent` evidence) or a required `E2E_*` key is missing (`parse` evidence) — §8-4 |
 
 ### 6-4. Evidence type enum
 
@@ -530,12 +573,26 @@ Record exemption at `state.json.exempt` + `decisions.md: TDD: exempt (<reason>)`
 - Playwright `--list` / dry runs.
 - Asserting on function return values without the externally visible side effect.
 
-### 8-4. Enforcement
+### 8-4. Credentials for authenticated E2E
+
+If a scenario requires a login account, session cookie, API key, or any other secret the runner cannot obtain on its own:
+
+- The runner reads secrets from **`.env.e2e`** at the project root (git-ignored; never `.env`, never committed, never inlined into test code or artifacts).
+- Canonical variable names — use only what the scenario needs:
+  - `E2E_ACCOUNT_ID` — login identifier (email / username).
+  - `E2E_ACCOUNT_PW` — login password.
+  - `E2E_COOKIE` — pre-authenticated session cookie.
+  - `E2E_KEY` — API key / bearer token.
+  - Additional scenario-specific variables MUST use the `E2E_` prefix.
+- When `.env.e2e` is missing, or a required variable is absent/empty, the skill halts the scenario and asks the user to populate the exact missing keys before retrying. Fabricating values, stubbing the auth layer, or silently running an anonymous path is disallowed.
+- Fail cause: `missing_credentials` (new) — evidence `file_absent` or `env_missing` referencing `.env.e2e` and the required variable names. Routes back to `workflow-e2e` on next entry after the user populates the file.
+
+### 8-5. Enforcement
 
 - `workflow-e2e` gate postconditions include `real_interface_invoked`, `no_interface_mocks`, `per_surface_artifact_present`.
 - `critic-watchdog` rule R11 (CRITICAL) blocks any attempt to record an E2E pass while `artifacts/` holds none of the allowed file types (`.webm`, `.mp4`, `.png`, `.jpg`, `.log`, `.transcript`, `.json`, `.sql`, `.exit`).
 - `critic-watchdog` rule R12 (CRITICAL) blocks `Edit` / `Write` tool calls to `src/`, `scripts/`, `bin/`, or `lib/` paths (non-test files) when `.state.json` exists with `current_stage === null` OR `.state.json` does not exist but `.smt/state/active-feature.json` exists. Exception: outside a Smelter project (no `.smt/` directory). Rationale: enforces workflow-skill entry before code mutation; closes the "write code before invoking any workflow skill" bypass. Also exempts `test-<name>` prefix and `<name>-test` infix filenames used by Smelter's hook test scaffolds.
-- New fail causes: `artifact_missing`, `mocked_interface`. Both route to `workflow-e2e` (self-rerun with correct runner / without mocks).
+- New fail causes: `artifact_missing`, `mocked_interface`, `missing_credentials`. `artifact_missing` / `mocked_interface` route to `workflow-e2e` (self-rerun with correct runner / without mocks). `missing_credentials` halts for user input before re-entering.
 
 ---
 
@@ -683,9 +740,12 @@ Recursion is prevented by setting `SMT_CLASSIFIER=1` on the spawned sub-agent's 
 
 Sub-agent model selection (`pickSubAgentModel`):
 - Default = `sonnet`.
-- `~/.smt/config.json.codexMode === true` or env `CODEX_MODE=1` → `haiku` (mini) for the Codex CLI runtime.
+- `~/.smt/config.json.codexMode === true`, env `CODEX_MODE=1`, or env `SMELTER_MODEL_MODE=codex` → `haiku` (mini) for the Codex CLI runtime.
+- `SMELTER_MODEL_MODE=claude` (set by the claude wrapper for non-codex sessions) forces the queued sub-agent back to `sonnet`.
 
 The queued payload includes `sub_agent_model` so the next-turn agent's continuation work uses the same model.
+
+Statusline HUD model labeling: in Codex windows, `scripts/statusline-hud.mjs` prefers the Codex mode label/state over raw stdin `model.display_name`, preventing plain `gpt-*` IDs from leaking into the HUD.
 
 ### 11-3. Risk auto-tasking (sub-tasker)
 
@@ -719,7 +779,8 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 }
 ```
 
-`codexMode: true` (or env `CODEX_MODE=1`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime.
+`codexMode: true` (or env `CODEX_MODE=1` / `SMELTER_MODEL_MODE=codex`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime. `scripts/session-start-smt.mjs` also syncs the current model-mode env into `~/.smt/config.json.codexMode` at session start so Stop/UserPromptSubmit hooks can read a stable codex flag. The same SessionStart hook now injects Caveman from vendored upstream skill content at `skills/caveman/SKILL.md`, replacing the old inline concise prompt string.
+`claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` (and clear `CODEX_MODE`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session.
 
 Hook timeouts and env vars:
 - `hooks/hooks.json` Stop hook timeout = 120 s (raised from 45 s in v2.4.10 to give the folded single-hook enough budget for one inner classifier round-trip plus state I/O; the inner classifier call is capped at 10 s via `STAGE_CLASSIFIER_TIMEOUT_MS` so a hung sub-agent cannot consume the full budget).
@@ -739,7 +800,7 @@ This guarantees `/queue` items always run; without this check the classifier wou
 
 **v2.4.10 note**: `stop-stage-enforcer.mjs` has been deleted and its stage-progression logic (`pickNextStage`, `isTerminalStage`, `ALWAYS_TERMINAL_STAGES`) folded directly into `scripts/auto-confirm.mjs` as local exports. `auto-confirm.mjs` is now the **single Stop hook**. The `hooks/hooks.json` and `settings.json` Stop hook arrays each contain only the auto-confirm entry (timeout 120 s).
 
-`auto-confirm.mjs` is the unified Stop-hook stage-progression guard. Its primary role is to block Stop when a workflow mode (fix/implement/plan) has not yet reached a terminal stage. It also preserves the legacy E2E reminder pathway as a fallback: it reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and surfaces an `[E2E]` reason when the next stage would be `workflow-e2e` and `summary.json.e2e_required` is set.
+`auto-confirm.mjs` is the unified Stop-hook stage-progression guard. Its primary role is to block Stop when a workflow mode (fix/implement/think) has not yet reached a terminal stage. It also preserves the legacy E2E reminder pathway as a fallback: it reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and surfaces an `[E2E]` reason when the next stage would be `workflow-e2e` and `summary.json.e2e_required` is set.
 
 Active-state resolution is **session-isolated** (v2.4.5): `findActiveStatePath(cwd, sessionId)` reads `.smt/state/active-feature-<sessionId>.json` (primary) then `.smt/state/active-feature.json` (non-scoped, session-less fallback only). The global `.smt/active_task` pointer was removed in Phase 13 — concurrent sessions would overwrite it and strand each other's mid-flow chains. Same resolution applies to `critic-watchdog.readActiveState`, `skill-stage-transition.resolveActiveState`, `auto-confirm.findActiveTaskState`, and `critic-watchdog` R12. `keyword-detector.seedWorkflowState` writes only the per-session pointer when `session_id` is present; non-scoped pointer is written only when `session_id` is absent (legacy CLI / `session-sim.mjs`). `clearActiveFeature(directory, sessionId)` unlinks per-session + non-scoped + legacy `.smt/active_task` so `/cancel` fully clears the chain.
 
@@ -890,43 +951,34 @@ Per-task queues are independent; session context may be shared. Specialist agent
                                 │ (pattern match)   │
                                 ╰──────────────────╯
                                          │
-       ┌──────┬──────────┬─────────┬──────┼───────┬──────────┐
-       ▼      ▼          ▼         ▼      ▼       ▼          ▼
-  simple_fix fix    investigate  verify  plan  implement  (explicit override)
-       │       │          │         │      │        │
-       │       ▼          ▼         ▼      ▼        ▼
-       │   ╭────────────────────────────────────────────────╮
-       │   │           SHARED PIPELINE (workflow-*)          │
-       │   │                                                  │
-       │   │  brainstorm ◀──▶ investigate                    │
-       │   │       │                │                         │
-       │   │       ▼                ▼                         │
-       │   │  brainstorm-review  investigate-review          │
-       │   │                        │                         │
-       │   │                        ▼                         │
-       │   │  tasker ──▶ tasker-review                       │
-       │   │                        │                         │
-       │   │                        ▼                         │
-       │   │  write-test ──▶ coding                          │
-       │   │                        │                         │
-       │   │                        ▼                         │
-       │   │  agent-review ──▶ e2e (real interface)          │
-       │   │                        │                         │
-       │   │                        ▼                         │
-       │   │  e2e-review ──▶ team-code-review                │
-       │   │                        │                         │
-       │   │                        ▼                         │
-       │   │                  human-check                     │
-       │   ╰──────────────────────┬──────────────────────────╯
-       │                          │
-       │                          ▼
-       └──────────▶         ╭───────────────╮
-                            │workflow-coding│
-                            ╰───────────────╯
-                                    │
-                                    ▼
-                         workflow-e2e → workflow-human-check
-                         (simple_fix path)
+            ┌──────┬─────────┬──────┬──────────┐
+            ▼      ▼         ▼      ▼          ▼
+           think  fix    investigate verify  implement   (explicit override)
+            │      │         │         │        │
+            ▼      ▼         ▼         ▼        ▼
+           ╭────────────────────────────────────────────────╮
+           │           SHARED PIPELINE (workflow-*)          │
+           │                                                  │
+           │  brainstorm ◀──▶ investigate                    │
+           │       │                │                         │
+           │       ▼                ▼                         │
+           │  brainstorm-review  investigate-review          │
+           │                        │                         │
+           │                        ▼                         │
+           │  tasker ──▶ tasker-review                       │
+           │                        │                         │
+           │                        ▼                         │
+           │  write-test ──▶ coding                          │
+           │                        │                         │
+           │                        ▼                         │
+           │  agent-review ──▶ e2e (real interface)          │
+           │                        │                         │
+           │                        ▼                         │
+           │  e2e-review ──▶ team-code-review                │
+           │                        │                         │
+           │                        ▼                         │
+           │                  human-check                     │
+           ╰────────────────────────────────────────────────╯
 
            verify path: workflow-verify → (e2e / e2e-review) → workflow-human-check
 
@@ -1039,21 +1091,18 @@ skills/
     ├── deep-interview/SKILL.md
     └── ...
 
-modes/
-├── simple_fix.json
-├── fix.json
-├── investigate.json
-├── verify.json
-├── plan.json
-└── implement.json
+modes/                                 ← v3: three-file YAML config (replaces modes/*.json)
+├── skills.yaml                        ← per-skill team patterns + agent defaults
+├── pipelines.yaml                     ← reusable skill sequences
+└── modes.yaml                         ← thin mode defs (entry + pipeline + flags + team_hints)
 
-commands/
-├── simple-fix.md
+commands/                              ← v3 canonical set (5 workflow + 1 utility)
+├── think.md                           ← was plan.md
 ├── fix.md
+├── implement.md
 ├── investigate.md
 ├── verify.md
-├── plan.md
-└── implement.md
+└── queue.md                           ← utility (no mode)
 
 scripts/
 ├── auto-confirm.mjs              ← §11 Stop hook (queue-drop)
@@ -1173,7 +1222,7 @@ agents/
 | Mode upgrade | Always user-gated; any direction. |
 | brainstorm ↔ investigate | Bidirectional (reshape edge). |
 | Implement brainstorm | `depth: light` shared skill. |
-| Simple-fix vs fix routing | **Auto-classifier first** (pattern match); `/simple-fix` and `/fix` overrides. |
+| Fix routing (CSS/typo/text) | **Auto-classifier first** (pattern match); `/fix` + magic keyword (`css`/`typo`/`i18n`/`dialogue`) sets `exempt.tdd` instead of dedicated mode. |
 | State store | `<task>.state.json` (JSON, per-task). |
 | Event history in context | Last 5 events. |
 | TDD verification | `test_cycles` RED entry required. |
@@ -1193,6 +1242,8 @@ agents/
 ---
 
 ## Appendix D — Transcript-paste passthrough (v2.4.8)
+
+This passthrough is intentionally narrower than the Layer-3 LLM passthrough hint. Transcript-paste detection still bypasses workflow seeding even during an active workflow session, but generic LLM `passthrough:true` hints do not: active workflow continuation wins unless the input matches the transcript-paste heuristic.
 
 `scripts/keyword-detector.mjs::detectNaturalLanguageCommand` short-circuits to `{ passthrough: true, matched: 'transcript-paste', source: 'passthrough' }` when `isTranscriptPaste(prompt)` returns true (≥2 distinct markers among: `⏺` bullet, `⎿` connector, `Stop hook (error|feedback)`, `Ran \d+ stop hooks?`, `[master|main <sha>]`). Prevents pasted Claude Code session logs from seeding a spurious `/fix` chain via the legacy `\bfix\b` pattern. Explicit slash commands (`/fix`, `/plan`, …) still bypass the heuristic via `extractExplicitHarnessCommand`. Rollback: `SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1`.
 

@@ -17,6 +17,7 @@ gate:
     - no_interface_mocks: true           # interfaces must not be stubbed/mocked
     - per_surface_artifact_present: true # each exercised surface has its own artifact
     - effect_observed: true              # ack signal alone is NOT sufficient — target effect must be asserted (see §Effect-vs-Ack)
+    - e2e_infra_present: true            # harness must exist for the surface (see §Infra Preflight) — install if missing
 surface_mapping:
   UI: "Playwright (real browser)"
   CLI: "subprocess stdin/argv/exit_code"
@@ -50,6 +51,32 @@ NO E2E PASS WITHOUT ARTIFACTS ON DISK AND A TARGET-EFFECT ASSERTION
 ```
 
 Every exercised surface must produce its required artifact (video, transcript, HTTP log, SQL log, or hook I/O JSON). Every scenario claiming success must populate `state.json.scenarios[].effect_evidence` with a valid type and reference. Ack-only observations fail the gate with `cause: effect_unverified`.
+
+## Infra Preflight (v3)
+
+**Before any scenario runs, verify the surface's E2E harness exists. If missing, install it.** A missing harness is not an excuse to skip — it is a setup task that blocks E2E.
+
+| Surface | Required artifact on disk | Install command (when missing) |
+|---------|---------------------------|-------------------------------|
+| UI / Web frontend | `playwright.config.*` + `@playwright/test` dep | `npm install -D @playwright/test && npx playwright install` |
+| CLI / shell | none (process + stdin runner) | — |
+| HTTP API | HTTP client available (curl, fetch built-in) | — |
+| Hook / script | `scripts/__test-harness.mjs` or equivalent | generate via subagent if missing |
+| Database | test DB connection string (env or config) | invoke `workflow-coding` with "wire test DB config" |
+
+### Flow when infra is missing
+
+1. Detect absence (file not present, package not in `node_modules`, import throws).
+2. Emit `cause: e2e_infra_missing` fail event with `evidence.type: file_absent`.
+3. Producer chain routes to `workflow-coding` with the synthetic task **"Install and configure <harness> for <surface>"**.
+4. `workflow-coding` runs the install, commits config, and re-enters `workflow-e2e`.
+5. Second entry passes the preflight and the scenario executes.
+
+### Absolute prohibitions
+
+- **Do NOT skip E2E because "infra isn't set up"** — that is the single fail mode this block was written to eliminate.
+- **Do NOT mock the harness to bypass installation** — `cause: mocked_interface` fires.
+- **Do NOT exempt `ui` surface from this check** — UI regressions are the most user-visible and the visual-verification layer (`workflow-e2e-review`) depends on real browser screenshots.
 
 ## Red Flags - STOP
 
@@ -205,8 +232,22 @@ If a run reports "all tests passed" but produces no artifacts, the gate flips th
 ## Constraints (unchanged from prior versions)
 
 - No modification or deletion of PROD data (explicit user permission required).
-- When login is needed, use `E2E_TEST_ID` / `E2E_TEST_PW` from `.env`.
 - When data is missing, ask the user to insert it — do not fabricate fixtures to silently pass.
+
+### Credentials for authenticated E2E
+
+If a scenario needs a login account, session cookie, API key, or any other secret the runner cannot obtain on its own, **halt the scenario and ask the user to populate `.env.e2e` at the project root** before retrying.
+
+- Canonical filename: `.env.e2e` (project root, git-ignored — NEVER commit).
+- Canonical variable names (use only what the scenario needs):
+  - `E2E_ACCOUNT_ID` — login identifier (email / username).
+  - `E2E_ACCOUNT_PW` — login password.
+  - `E2E_COOKIE` — pre-authenticated session cookie (string or header value).
+  - `E2E_KEY` — API key / bearer token for HTTP surfaces.
+  - Extra scenario-specific keys may be added with an `E2E_` prefix.
+- Loader: the runner reads `.env.e2e` via `dotenv` / `process.env` (or equivalent) — do NOT read secrets from `.env`, do NOT inline them into test code, do NOT echo them into artifacts.
+- Missing file → emit `cause: missing_credentials` with `evidence.type: file_absent` and `evidence.path: .env.e2e`. Missing required key inside an existing file → `cause: missing_credentials` with `evidence.type: parse` and a reference naming the absent variable(s). In both cases, surface a single message to the user listing the exact variable names required, and wait for `.env.e2e` to be populated before re-entering.
+- Fabricating fake credentials, stubbing the auth layer, or running a downgraded "anonymous" path to bypass the missing secret is disallowed (`cause: mocked_interface`).
 
 ## Scoped execution (principle 8)
 

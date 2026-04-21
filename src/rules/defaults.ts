@@ -1,4 +1,15 @@
 import type { HarnessRule } from '../types.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const CAVEMAN_SKILL_PATH = join(__dirname, '..', '..', 'skills', 'caveman', 'SKILL.md');
+
+function loadCavemanSystemPrompt() {
+  return readFileSync(CAVEMAN_SKILL_PATH, 'utf8');
+}
 
 export const DEFAULT_RULES: HarnessRule[] = [
   {
@@ -99,12 +110,7 @@ Only run E2E tests related to changed files — NOT the full test suite.
 3. Run only those specs: npx playwright test <spec1> <spec2>
 Full regression only when explicitly requested.`;
 
-export const CAVEMAN_SYSTEM_PROMPT = `[RESPONSE STYLE: CONCISE]
-Remove filler words, pleasantries, and hedging from all responses.
-Keep articles, grammar, and complete sentences intact.
-Technical terms, code blocks, and error messages must be exact and unchanged.
-If safety warnings, security issues, or irreversible actions are involved, use full clear prose regardless of this instruction.
-Higher-priority task instructions take precedence over this style instruction.`;
+export const CAVEMAN_SYSTEM_PROMPT = loadCavemanSystemPrompt();
 
 export const HARNESS_CONFIG = {
   maxRetries: 3,

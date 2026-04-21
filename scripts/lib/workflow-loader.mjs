@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 /**
- * workflow-loader.mjs — Load the v3 three-file workflow config:
- *   modes/skills.yaml     — per-skill team defaults
- *   modes/pipelines.yaml  — reusable skill sequences
- *   modes/modes.yaml      — thin mode definitions
+ * workflow-loader.mjs — Load the v3.1 unified workflow config:
+ *   modes/workflow.yaml  — skills + pipelines + modes + target-type routing
+ *                          + verification_rounds in a single file.
  *
- * Replaces the legacy `modes/<mode>.json` loader in keyword-detector.mjs.
+ * Replaces the legacy `modes/<mode>.json` loader AND the v3.0 split-file variant.
  *
  * Public API:
- *   - loadWorkflowConfig({ root? })      → raw composite { skills, pipelines, modes, command_aliases }
- *   - getMode(name, cfg?)                → expanded mode object (back-compat with old JSON shape)
- *   - nextSkill(modeName, completed, cfg?) → next uncompleted skill in pipeline, or null
- *   - scanFeatureArtifacts(featureDir)   → { brainstorm, investigation, tasks, ...: boolean }
- *   - resolveSkipFromArtifacts(mode, artifacts, cfg?) → stages to skip (file-driven routing)
- *
- * Zero-deps rule: only js-yaml (new runtime dep) + node built-ins.
+ *   - loadWorkflowConfig({ root? })      → full composite
+ *   - getMode(name, cfg?)                → expanded mode (back-compat shape)
+ *   - nextSkill(mode, completed, cfg?, skipFromArtifacts?)
+ *   - scanFeatureArtifacts(featureDir)
+ *   - resolveSkipFromArtifacts(mode, artifacts, cfg?)
+ *   - resolveCommandAlias(slash, cfg?)
+ *   - selectPipeline(mode, { target_type, file_count, surface_count }, cfg?)
+ *     → v3.1 target-type dispatch for /fix mode
+ *   - getVerificationRounds(skill, cfg?) → 2 or 3 per skill's `rounds` bucket
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -25,32 +26,24 @@ import yaml from 'js-yaml';
 const __filename = fileURLToPath(import.meta.url);
 const PLUGIN_ROOT = dirname(dirname(dirname(__filename)));
 
-// ---------------------------------------------------------------------------
-// Loader
-// ---------------------------------------------------------------------------
-
 let CACHED_CONFIG = null;
 
 export function loadWorkflowConfig({ root = PLUGIN_ROOT, fresh = false } = {}) {
   if (CACHED_CONFIG && !fresh && CACHED_CONFIG._root === root) return CACHED_CONFIG;
 
-  const read = (name) => {
-    const p = join(root, 'modes', name);
-    if (!existsSync(p)) throw new Error(`workflow-loader: missing ${p}`);
-    return yaml.load(readFileSync(p, 'utf-8'));
-  };
+  const workflowPath = join(root, 'modes', 'workflow.yaml');
+  if (!existsSync(workflowPath)) throw new Error(`workflow-loader: missing ${workflowPath}`);
+  const doc = yaml.load(readFileSync(workflowPath, 'utf-8')) ?? {};
 
-  const skillsDoc = read('skills.yaml');
-  const pipelinesDoc = read('pipelines.yaml');
-  const modesDoc = read('modes.yaml');
+  const skills = doc.skills ?? {};
+  const pipelines = doc.pipelines ?? {};
+  const modes = doc.modes ?? {};
+  const commandAliases = doc.command_aliases ?? {};
+  const targetTypeRouting = doc.target_type_routing ?? {};
+  const verificationRounds = doc.verification_rounds ?? { mid_pipeline: 2, terminal: 3 };
+  const schemaVersion = doc.schema_version ?? 'unknown';
 
-  const skills = skillsDoc?.skills ?? {};
-  const pipelines = pipelinesDoc?.pipelines ?? {};
-  const modes = modesDoc?.modes ?? {};
-  const commandAliases = modesDoc?.command_aliases ?? {};
-
-  // Structural validation — fail loud on bad config rather than producing
-  // malformed state at runtime.
+  // Structural validation.
   for (const [modeName, m] of Object.entries(modes)) {
     if (!m.entry_skill) throw new Error(`mode ${modeName}: missing entry_skill`);
     if (!m.pipeline) throw new Error(`mode ${modeName}: missing pipeline`);
@@ -58,30 +51,24 @@ export function loadWorkflowConfig({ root = PLUGIN_ROOT, fresh = false } = {}) {
     if (!skills[m.entry_skill]) throw new Error(`mode ${modeName}: entry_skill ${m.entry_skill} not in skills`);
   }
 
-  const cfg = { skills, pipelines, modes, command_aliases: commandAliases, _root: root };
+  const cfg = {
+    schema_version: schemaVersion,
+    skills,
+    pipelines,
+    modes,
+    command_aliases: commandAliases,
+    target_type_routing: targetTypeRouting,
+    verification_rounds: verificationRounds,
+    _root: root,
+  };
   CACHED_CONFIG = cfg;
   return cfg;
 }
 
 // ---------------------------------------------------------------------------
-// Mode expansion — emits the back-compat shape consumers expect.
+// Mode expansion — back-compat JSON shape for downstream consumers.
 // ---------------------------------------------------------------------------
 
-/**
- * getMode — return the expanded mode configuration. Shape intentionally
- * mirrors the legacy `modes/<mode>.json` files so downstream consumers
- * (keyword-detector, skill-stage-transition) can migrate with minimal diff.
- *
- * Returned object:
- *   {
- *     mode, description, entry_skill, entry_params,
- *     pipeline,                         // name (v3 addition)
- *     allowed_skills,                   // expanded from pipeline
- *     default_team_overrides,           // composed from skills.yaml
- *     default_exempt, magic_keywords, transitions, terminal_actions,
- *     read_only,                        // v3 addition
- *   }
- */
 export function getMode(name, cfg = loadWorkflowConfig()) {
   const m = cfg.modes[name];
   if (!m) return null;
@@ -91,14 +78,7 @@ export function getMode(name, cfg = loadWorkflowConfig()) {
 
   const allowedSkills = [...pipeline];
 
-  // Compose default_team_overrides from skills.yaml.
-  // Each skill may define a single `team` or multiple named `teams`. When
-  // `teams` is present, pick the one matching the mode's context hint:
-  //   - mode `think` → deep
-  //   - mode `implement` with entry_params.depth → that depth
-  //   - mode `fix` → fix team (for workflow-coding)
-  //   - fallback: first key.
-  const teamHint = resolveTeamHint(name, m);
+  const teamHints = m.team_hints ?? {};
   const overrides = {};
   for (const skill of allowedSkills) {
     const skillDef = cfg.skills[skill];
@@ -106,7 +86,8 @@ export function getMode(name, cfg = loadWorkflowConfig()) {
     if (skillDef.team) {
       overrides[skill] = { ...skillDef.team };
     } else if (skillDef.teams) {
-      const key = skillDef.teams[teamHint] ? teamHint : Object.keys(skillDef.teams)[0];
+      const hint = teamHints[skill];
+      const key = hint && skillDef.teams[hint] ? hint : Object.keys(skillDef.teams)[0];
       overrides[skill] = { ...skillDef.teams[key] };
     }
   }
@@ -124,27 +105,78 @@ export function getMode(name, cfg = loadWorkflowConfig()) {
     transitions: m.transitions ?? { upgrade_to: [], downgrade_to: [] },
     terminal_actions: m.terminal_actions ?? [],
     read_only: Boolean(m.read_only),
+    target_type_dispatch: Boolean(m.target_type_dispatch),
   };
 }
 
-function resolveTeamHint(modeName, modeDef) {
-  if (modeName === 'think') return 'deep';
-  if (modeName === 'fix') return 'fix';
-  if (modeName === 'implement') {
-    const depth = modeDef?.entry_params?.['workflow-brainstorm']?.depth;
-    if (depth === 'light' || depth === 'deep') return depth;
-    return 'implement';
+// ---------------------------------------------------------------------------
+// v3.1 — Target-type dispatch for /fix mode.
+// ---------------------------------------------------------------------------
+
+/**
+ * selectPipeline — resolve a pipeline name for a mode at runtime.
+ *
+ * For modes with `target_type_dispatch: true` (currently only /fix), walk the
+ * target_type_routing table. Simple types map to pipeline strings; complex
+ * types (like bug_fix) may have scope-dependent upgrades.
+ *
+ * @param {string} modeName
+ * @param {{target_type?: string, file_count?: number, surface_count?: number}} scope
+ * @param {object} cfg
+ * @returns {string|'upgrade_required'} pipeline name or escalation sentinel
+ */
+export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig()) {
+  const m = cfg.modes[modeName];
+  if (!m) return null;
+
+  // Non-dispatching modes always use their declared pipeline.
+  if (!m.target_type_dispatch) return m.pipeline;
+
+  const targetType = scope.target_type;
+  // No target_type yet (pre-investigate) → use mode's default.
+  if (!targetType) return m.pipeline;
+
+  const route = cfg.target_type_routing[targetType];
+  if (!route) return m.pipeline;
+
+  // Simple string mapping: typo → minimal, extend_existing → medium, etc.
+  if (typeof route === 'string') return route;
+
+  // Scope-dependent routing (e.g., bug_fix): default + upgrade rules.
+  if (typeof route === 'object' && route.default) {
+    const upgrade = route.upgrade_to_medium_when ?? {};
+    const fileCountGt = upgrade.file_count_gt ?? Infinity;
+    const surfaceCountGt = upgrade.surface_count_gt ?? Infinity;
+
+    if ((scope.file_count ?? 0) > fileCountGt) return 'medium';
+    if ((scope.surface_count ?? 0) > surfaceCountGt) return 'medium';
+    return route.default;
   }
-  return 'default';
+
+  return m.pipeline;
 }
 
 // ---------------------------------------------------------------------------
-// File-driven routing — the superpowers-style skip logic.
+// v3.1 — Verification rounds per skill.
 // ---------------------------------------------------------------------------
 
-// Map from produced-artifact → the workflow skill that produces it.
-// Used by resolveSkipFromArtifacts to infer which stages can be skipped
-// when their outputs already exist on disk.
+/**
+ * getVerificationRounds — resolve the round count for a review skill.
+ *
+ * Skill's `rounds` field references a bucket in verification_rounds
+ * (`mid_pipeline` → 2, `terminal` → 3). Default mid_pipeline when unset.
+ */
+export function getVerificationRounds(skill, cfg = loadWorkflowConfig()) {
+  const skillDef = cfg.skills[skill];
+  if (!skillDef) return cfg.verification_rounds.mid_pipeline;
+  const bucket = skillDef.rounds ?? 'mid_pipeline';
+  return cfg.verification_rounds[bucket] ?? cfg.verification_rounds.mid_pipeline;
+}
+
+// ---------------------------------------------------------------------------
+// File-driven routing.
+// ---------------------------------------------------------------------------
+
 const ARTIFACT_TO_SKILL = Object.freeze({
   'brainstorm.md': 'workflow-brainstorm',
   'brainstorm-review.md': 'workflow-brainstorm-review',
@@ -154,10 +186,6 @@ const ARTIFACT_TO_SKILL = Object.freeze({
   'tasks-review.md': 'workflow-tasker-review',
 });
 
-/**
- * scanFeatureArtifacts — inspect a feature's task/ directory and return a
- * map of { artifactFilename: boolean } for the known phase outputs.
- */
 export function scanFeatureArtifacts(featureDir) {
   const taskDir = join(featureDir, 'task');
   const result = {};
@@ -167,15 +195,6 @@ export function scanFeatureArtifacts(featureDir) {
   return result;
 }
 
-/**
- * resolveSkipFromArtifacts — given a mode and artifact scan, return the list
- * of pipeline skills that can be safely skipped because their produced file
- * already exists. Skills are returned in pipeline order.
- *
- * NOTE: this is *advisory*. The actual skip decision is taken by the skill
- * itself at entry (it reads its `produces` path and short-circuits). This
- * function is used by nextSkill() to project "where should we resume?".
- */
 export function resolveSkipFromArtifacts(modeName, artifacts, cfg = loadWorkflowConfig()) {
   const mode = getMode(modeName, cfg);
   if (!mode) return [];
@@ -187,16 +206,6 @@ export function resolveSkipFromArtifacts(modeName, artifacts, cfg = loadWorkflow
   return skip;
 }
 
-/**
- * nextSkill — return the next skill to run in the mode's pipeline, given the
- * current `completed_stages` array. Returns null when the pipeline is
- * exhausted (terminal — mode should transition or stop).
- *
- * Optionally accepts `skipFromArtifacts` (produced by resolveSkipFromArtifacts)
- * to additionally skip stages whose outputs already exist on disk — this is
- * the file-driven routing from superpowers. Stages appearing in either
- * `completed` or `skipFromArtifacts` are consumed from the pipeline head.
- */
 export function nextSkill(modeName, completed = [], cfg = loadWorkflowConfig(), skipFromArtifacts = []) {
   const mode = getMode(modeName, cfg);
   if (!mode) return null;
@@ -209,13 +218,9 @@ export function nextSkill(modeName, completed = [], cfg = loadWorkflowConfig(), 
 }
 
 // ---------------------------------------------------------------------------
-// Command alias resolution — supports `/plan` → `think`, `/simple-fix` → `fix` etc.
+// Command alias.
 // ---------------------------------------------------------------------------
 
-/**
- * resolveCommandAlias — map `/plan` → `think` etc. via modes.yaml
- * `command_aliases` map. Returns the mode name on match, null otherwise.
- */
 export function resolveCommandAlias(slash, cfg = loadWorkflowConfig()) {
   if (!slash) return null;
   const key = slash.startsWith('/') ? slash : `/${slash}`;
@@ -223,21 +228,23 @@ export function resolveCommandAlias(slash, cfg = loadWorkflowConfig()) {
 }
 
 // ---------------------------------------------------------------------------
-// CLI entry — quick sanity / smoke dump
+// CLI.
 // ---------------------------------------------------------------------------
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const cfg = loadWorkflowConfig();
-  const summary = {
-    modes: Object.keys(cfg.modes),
-    pipelines: Object.keys(cfg.pipelines),
-    skills: Object.keys(cfg.skills),
-    command_aliases: cfg.command_aliases,
-  };
   if (process.argv[2]) {
     const m = getMode(process.argv[2], cfg);
     console.log(JSON.stringify(m, null, 2));
   } else {
-    console.log(JSON.stringify(summary, null, 2));
+    console.log(JSON.stringify({
+      schema_version: cfg.schema_version,
+      modes: Object.keys(cfg.modes),
+      pipelines: Object.keys(cfg.pipelines),
+      skills: Object.keys(cfg.skills),
+      target_type_routing: Object.keys(cfg.target_type_routing),
+      verification_rounds: cfg.verification_rounds,
+      command_aliases: cfg.command_aliases,
+    }, null, 2));
   }
 }

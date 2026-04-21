@@ -53,11 +53,10 @@ section('Layer 1 — Explicit slash commands (no LLM call)');
   const { classify } = await freshImport();
   assert('/fix → fix', classify('/fix login bug').mode, 'fix');
   assert('/fix overridden=true', classify('/fix login bug').overridden, true);
-  assert('/plan → plan', classify('/plan redesign auth').mode, 'plan');
+  assert('/think → think', classify('/think redesign auth').mode, 'think');
   assert('/implement → implement', classify('/implement extend foo').mode, 'implement');
   assert('/investigate → investigate', classify('/investigate race cond').mode, 'investigate');
   assert('/verify → verify', classify('/verify suite').mode, 'verify');
-  assert('/simple-fix → simple_fix', classify('/simple-fix typo').mode, 'simple_fix');
   assert('slash trigger prefix', classify('/fix x').trigger.startsWith('command:/fix'), true);
 }
 

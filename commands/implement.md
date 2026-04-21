@@ -1,8 +1,8 @@
-# Smelter: /implement — Lightweight Build on Existing Code
+# Smelter: /implement — Feature Development
 
-Run the `implement` mode on $ARGUMENTS. Use for building features on top of existing code, extensions, or incremental additions. Lighter than `/plan` (brainstorm is `depth: light`).
+Run the `implement` mode on $ARGUMENTS. Use for building features on top of existing code, extensions, or incremental additions. Lighter than `/think` (brainstorm is `depth: light`).
 
-Backed by `modes/implement.json`. Allowed workflow skills: full 13-skill pipeline.
+Backed by `modes/workflow.yaml → modes.implement`. Pipeline: `full` (13 skills).
 
 ## Task
 $ARGUMENTS
@@ -18,16 +18,16 @@ $ARGUMENTS
 ## Magic-keyword branches
 
 - `extend` / `add to` / `덧붙여` → SKIP `workflow-brainstorm` (Protocol step 3)
-- `css` / `style` / `i18n` → `workflow-write-test` TDD-exempt flag (per `modes/implement.json.magic_keywords`)
+- `css` / `style` / `i18n` → `workflow-write-test` TDD-exempt flag (per `workflow.yaml → modes.implement.magic_keywords`)
 
-## When to use /implement vs /plan
+## When to use /implement vs /think
 
 | Signal | Mode |
 |--------|------|
 | "Extend existing feature with X" | /implement |
 | "Add new feature on top of Y" | /implement |
-| "Rework / rewrite / re-architect" | /plan |
-| "Greenfield / new product" | /plan |
+| "Rework / rewrite / re-architect" | /think (then /implement) |
+| "Greenfield / new product" | /think (then /implement) |
 
 `target_type` declared by `workflow-tasker`:
 `extend_existing` / `new_feature` / `refactor` / `bug_fix` / `migration`.

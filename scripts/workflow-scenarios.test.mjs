@@ -104,7 +104,7 @@ function fixModeState(overrides = {}) {
 }
 
 function planModeState() {
-  const s = createInitialState({ taskId: 'plan-scn', mode: 'plan' });
+  const s = createInitialState({ taskId: 'plan-scn', mode: 'think' });
   s.allowed_skills = [
     'workflow-brainstorm', 'workflow-brainstorm-review',
     'workflow-investigate', 'workflow-investigate-review',
@@ -268,7 +268,7 @@ section('SCENARIO 4 — Mode whitelist enforcement (spec §5-3)');
 // ============================================================================
 {
   test('route target outside allowed_skills → whitelist_violation', () => {
-    const state = createInitialState({ taskId: 't', mode: 'plan' });
+    const state = createInitialState({ taskId: 't', mode: 'think' });
     state.allowed_skills = ['workflow-brainstorm', 'workflow-brainstorm-review'];
     // fail in workflow-coding (not in plan mode) should flag violation
     const r = route({ event: failEvent('workflow-coding', 'typecheck'), state });
@@ -277,7 +277,7 @@ section('SCENARIO 4 — Mode whitelist enforcement (spec §5-3)');
   });
 
   test('decide() with fail+whitelist_violation → request_mode_upgrade (user decides)', () => {
-    const state = createInitialState({ taskId: 't', mode: 'plan' });
+    const state = createInitialState({ taskId: 't', mode: 'think' });
     state.allowed_skills = ['workflow-brainstorm', 'workflow-brainstorm-review'];
     state.events = [failEvent('workflow-coding', 'typecheck')];
     const d = decide({ state, lastAssistantText: '' });
@@ -447,10 +447,10 @@ section('SCENARIO 10 — Chained intent auto-transition (no user prompt between 
     });
   });
 
-  test('plan→implement chain: even in human-check, chain_advance fires FIRST (bypasses halt)', () => {
+  test('think→implement chain: even in human-check, chain_advance fires FIRST (bypasses halt)', () => {
     withTempState(Object.assign(fixModeState(), {
-      mode: 'plan',
-      chained_modes: ['plan', 'implement'],
+      mode: 'think',
+      chained_modes: ['think', 'implement'],
       current_stage: 'workflow-human-check',
     }), (dir, path) => {
       const state = JSON.parse(readFileSync(path, 'utf-8'));
@@ -463,13 +463,13 @@ section('SCENARIO 10 — Chained intent auto-transition (no user prompt between 
     });
   });
 
-  test('3-mode chain sequentially advances: investigate → plan → implement', () => {
+  test('3-mode chain sequentially advances: investigate → think → implement', () => {
     withTempState(Object.assign(fixModeState(), {
       mode: 'investigate',
-      chained_modes: ['investigate', 'plan', 'implement'],
+      chained_modes: ['investigate', 'think', 'implement'],
     }), (dir, path) => {
       let state = JSON.parse(readFileSync(path, 'utf-8'));
-      assert.equal(consumeNextChainedMode(path, state, '*'), 'plan');
+      assert.equal(consumeNextChainedMode(path, state, '*'), 'think');
       state = JSON.parse(readFileSync(path, 'utf-8'));
       assert.equal(consumeNextChainedMode(path, state, '*'), 'implement');
       state = JSON.parse(readFileSync(path, 'utf-8'));
@@ -567,9 +567,9 @@ section('SCENARIO 11 — Multi-Pass Verification gate (§9-3)');
 section('SCENARIO 12 — State-schema consistency with spec');
 // ============================================================================
 {
-  test('14 workflow skills, 6 modes exposed in schema', () => {
+  test('14 workflow skills, 5 modes exposed in schema', () => {
     assert.equal(WORKFLOW_SKILLS.length, 14);
-    assert.equal(MODES.length, 6);
+    assert.equal(MODES.length, 5);
   });
   test('all 5 Team Agent Patterns present', () => {
     assert.deepEqual([...PATTERNS].sort(), ['A', 'B', 'C', 'D', 'E']);
@@ -583,10 +583,10 @@ section('SCENARIO 12 — State-schema consistency with spec');
   test('VERIFICATION_FOCUS_ENUM matches current schema', () => {
     assert.deepEqual([...VERIFICATION_FOCUS_ENUM].sort(), ['contradiction', 'edge_case', 'effect_verification', 'omission']);
   });
-  test('TARGET_TYPE_ENUM matches tasker §3 output spec', () => {
+  test('TARGET_TYPE_ENUM matches tasker §3 output spec (v3.1 adds typo/dialogue for magic-keyword dispatch)', () => {
     assert.deepEqual(
       [...TARGET_TYPE_ENUM].sort(),
-      ['bug_fix', 'extend_existing', 'migration', 'new_feature', 'refactor'],
+      ['bug_fix', 'dialogue', 'extend_existing', 'migration', 'new_feature', 'refactor', 'typo'],
     );
   });
   test('EVIDENCE_TYPE_ENUM includes file_present (used in §2-2 example)', () => {
@@ -622,11 +622,10 @@ section('SCENARIO 13 — Mode classifier verdict coherence with spec §1-2');
   const mc = await import('./mode-classifier.mjs?' + Date.now());
 
   const cases = [
-    // simple_fix (text/CSS/constant)
-    ['텍스트 수정해줘', 'simple_fix'],
-    ['css 색깔 바꿔', 'simple_fix'],
-    ['오타 고쳐', 'simple_fix'],
-    // fix (bug / error)
+    // fix (bug / error / text / CSS / typo — simple_fix folded into fix via magic keywords)
+    ['텍스트 수정해줘', 'fix'],
+    ['css 색깔 바꿔', 'fix'],
+    ['오타 고쳐', 'fix'],
     ['버그 고쳐줘', 'fix'],
     ['이거 안 돌아가', 'fix'],
     ['fix the login error', 'fix'],
@@ -638,10 +637,10 @@ section('SCENARIO 13 — Mode classifier verdict coherence with spec §1-2');
     ['점검해', 'verify'],
     ['테스트 해봐', 'verify'],
     ['run the tests', 'verify'],
-    // plan (design / refactor / new feature)
-    ['설계해줘', 'plan'],
-    ['리팩토링할거야', 'plan'],
-    ['새로운 기능 만들거야', 'plan'],
+    // think (design / refactor / new feature — renamed from plan)
+    ['설계해줘', 'think'],
+    ['리팩토링할거야', 'think'],
+    ['새로운 기능 만들거야', 'think'],
     // implement (extend / add)
     ['다크모드 토글 추가해줘', 'implement'],
     ['덧붙여서 이메일 알림도', 'implement'],
@@ -711,7 +710,7 @@ section('SCENARIO 15 — Integrity: agent always moves forward (no deadlock patt
   // every combination produces either a halt (legitimate) or a forward action.
 
   const pathologies = [
-    { label: 'fail in non-allowed skill', state: () => { const s = createInitialState({ taskId: 't', mode: 'plan' }); s.allowed_skills = ['workflow-brainstorm']; s.events = [failEvent('workflow-coding', 'typecheck')]; return s; } },
+    { label: 'fail in non-allowed skill', state: () => { const s = createInitialState({ taskId: 't', mode: 'think' }); s.allowed_skills = ['workflow-brainstorm']; s.events = [failEvent('workflow-coding', 'typecheck')]; return s; } },
     { label: 'double-fail (two consecutive fails)', state: () => { const s = fixModeState({ current_stage: 'workflow-coding' }); s.events = [failEvent('workflow-coding', 'typecheck'), failEvent('workflow-coding', 'typecheck')]; return s; } },
     { label: 'empty events + no feedback + random stage', state: () => fixModeState({ current_stage: 'workflow-tasker' }) },
     { label: 'all feedback resolved + empty events', state: () => { const s = fixModeState({ current_stage: 'workflow-tasker' }); s.active_feedback = [{ id: 'x', target_skill: 'workflow-coding', resolved: true, text: 'x', from: 'x', evidence_ref: 'x' }]; return s; } },
@@ -727,6 +726,43 @@ section('SCENARIO 15 — Integrity: agent always moves forward (no deadlock patt
       // Everything else is forward motion. Agent never idles without reason.
     });
   }
+}
+
+// ============================================================================
+section('SCENARIO 15-B — Active workflow suppresses LLM passthrough drop');
+// ============================================================================
+{
+  test('15-B active workflow + LLM passthrough hint → keyword-detector keeps workflow alive', () => {
+    const detector = join(process.cwd(), 'scripts', 'keyword-detector.mjs');
+    const dir = mkdtempSync(join(tmpdir(), 'scn-active-pass-'));
+    try {
+      const sessionId = 'sess-active-pass-1';
+      const first = spawnSync(process.execPath, [detector], {
+        input: JSON.stringify({ cwd: dir, session_id: sessionId, prompt: '/investigate 로그인 플로우' }),
+        encoding: 'utf-8',
+        env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: join(process.cwd(), 'scripts', 'lib', '__fixtures__', 'mode-classifier-stub.mjs') },
+      });
+      assert.equal(first.status, 0, `first seed failed: ${first.stderr}`);
+
+      const follow = spawnSync(process.execPath, [detector], {
+        input: JSON.stringify({ cwd: dir, session_id: sessionId, prompt: 'workflow-tasker가 뭐야?' }),
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          SMELTER_MODE_CLASSIFIER_MODULE: join(process.cwd(), 'scripts', 'lib', '__fixtures__', 'mode-classifier-stub.mjs'),
+          SMT_CLASSIFIER_NO_PASSTHROUGH: '0',
+        },
+      });
+      assert.equal(follow.status, 0, `follow-up failed: ${follow.stderr}`);
+      const out = JSON.parse(follow.stdout);
+      assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Skill: fix/);
+
+      const pointerPath = join(dir, '.smt', 'state', `active-feature-${sessionId}.json`);
+      assert.ok(existsSync(pointerPath), 'per-session pointer must persist across passthrough-like follow-up');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 }
 
 // ============================================================================

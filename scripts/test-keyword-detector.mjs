@@ -84,7 +84,7 @@ test('keyword-detector bails out when invoked inside a classifier subprocess', a
   }
 });
 
-test('/fix seeds .state.json with mode=fix and allowed_skills from modes/fix.json', async () => {
+test('/fix seeds .state.json with mode=fix and allowed_skills from modes/workflow.yaml', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
 
   try {

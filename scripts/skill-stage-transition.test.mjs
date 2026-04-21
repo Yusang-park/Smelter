@@ -32,9 +32,8 @@ function seedState(cwd, { mode = 'investigate', slug = 'feat', sessionId = 't3' 
   const state = createInitialState({ taskId: slug, mode });
   state.allowed_skills = { investigate: ['workflow-investigate', 'workflow-investigate-review'],
     fix: ['workflow-investigate', 'workflow-coding', 'workflow-agent-review', 'workflow-e2e', 'workflow-human-check'],
-    plan: ['workflow-brainstorm', 'workflow-investigate', 'workflow-tasker'],
+    think: ['workflow-brainstorm', 'workflow-investigate', 'workflow-tasker'],
     implement: ['workflow-coding', 'workflow-e2e'],
-    simple_fix: ['workflow-coding', 'workflow-e2e', 'workflow-human-check'],
     verify: ['workflow-verify', 'workflow-e2e', 'workflow-human-check'],
   }[mode] || [];
   writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
@@ -109,7 +108,7 @@ test('T3-H2: workflow-investigate WITHOUT artifact → current_stage only, defer
 test('T3-B1: workflow-e2e does NOT auto-complete (requires pass event)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-b1-'));
   try {
-    const sp = seedState(cwd, { mode: 'simple_fix' });
+    const sp = seedState(cwd, { mode: 'fix' });
     runTransition({ cwd, skill: 'workflow-e2e' });
     const state = readState(sp);
     assert.equal(state.current_stage, 'workflow-e2e', 'current_stage set');
@@ -120,7 +119,7 @@ test('T3-B1: workflow-e2e does NOT auto-complete (requires pass event)', async (
 test('T3-B2: workflow-human-check does NOT auto-complete', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-b2-'));
   try {
-    const sp = seedState(cwd, { mode: 'simple_fix' });
+    const sp = seedState(cwd, { mode: 'fix' });
     runTransition({ cwd, skill: 'workflow-human-check' });
     const state = readState(sp);
     assert.ok(!state.completed_stages.includes('workflow-human-check'));
@@ -224,8 +223,8 @@ test('T3-S1: per-session pointer with traversal slug escaping cwd is rejected', 
 });
 
 // ── Entry-command stage seeding (workflow chain enforcement) ───────────────
-// When the main agent invokes an entry command skill (fix / investigate /
-// plan / implement / verify / simple-fix) the hook must set current_stage
+// When the main agent invokes an entry command skill (think / fix / investigate /
+// implement / verify) the hook must set current_stage
 // to the mode's entry_skill WITHOUT writing to completed_stages, so Iron
 // Law #5 is not violated but Stop hook no longer loops on a seeded entry.
 test('ST-E1: Skill(skill="fix") in fix-mode state sets current_stage=workflow-investigate', async () => {
@@ -264,15 +263,15 @@ test('ST-E3: unknown skill (non-workflow, non-entry) is ignored', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('ST-E4: entry command "simple-fix" maps to simple_fix mode entry_skill', async () => {
+test('ST-E4: entry command "think" maps to think mode entry_skill (workflow-brainstorm)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'st-e4-'));
   try {
-    const sp = seedState(cwd, { mode: 'simple_fix' });
-    const r = runTransition({ cwd, skill: 'simple-fix' });
+    const sp = seedState(cwd, { mode: 'think' });
+    const r = runTransition({ cwd, skill: 'think' });
     assert.equal(r.status, 0);
     const state = readState(sp);
-    // modes/simple_fix.json entry_skill is workflow-coding
-    assert.equal(state.current_stage, 'workflow-coding');
+    // modes.yaml → think.entry_skill = workflow-brainstorm
+    assert.equal(state.current_stage, 'workflow-brainstorm');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

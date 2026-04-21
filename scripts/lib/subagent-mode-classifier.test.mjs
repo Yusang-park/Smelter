@@ -112,15 +112,15 @@ test('classifyMode caches repeated prompts per session', async () => {
       export function classifyMode(prompt) {
         const n = Number(readFileSync('${counterPath}', 'utf-8')) + 1;
         writeFileSync('${counterPath}', String(n));
-        return { mode: 'plan', trigger: 'llm:call-' + n };
+        return { mode: 'think', trigger: 'llm:call-' + n };
       }
     `);
     process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
     const { classifyMode } = await freshImport();
     const r1 = classifyMode('리팩토링 계획 세워', { cwd: dir, sessionId: 'cache-s' });
     const r2 = classifyMode('리팩토링 계획 세워', { cwd: dir, sessionId: 'cache-s' });
-    assert.equal(r1.mode, 'plan');
-    assert.equal(r2.mode, 'plan');
+    assert.equal(r1.mode, 'think');
+    assert.equal(r2.mode, 'think');
     const callCount = Number(readFileSync(counterPath, 'utf-8'));
     assert.equal(callCount, 1, 'stub invoked once — second read served from cache');
   } finally {
@@ -151,12 +151,12 @@ test('classifyMode rejects poisoned non-passthrough cache entry with command: tr
     const cache = JSON.parse(readFileSync(cachePath, 'utf-8'));
     const hashKey = Object.keys(cache).find((k) => k !== '_session');
     // Poison: claim a non-LLM provenance prefix.
-    cache[hashKey] = { mode: 'plan', passthrough: false, trigger: 'command:/plan', chained_modes: null };
+    cache[hashKey] = { mode: 'think', passthrough: false, trigger: 'command:/think', chained_modes: null };
     writeFileSync(cachePath, JSON.stringify(cache));
 
     const r2 = classifyMode(prompt, { cwd: dir, sessionId: 'poison2' });
     assert.equal(r2.mode, 'fix', 'poisoned non-passthrough entry must be rejected');
-    assert.notEqual(r2.mode, 'plan');
+    assert.notEqual(r2.mode, 'think');
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });

@@ -361,8 +361,8 @@ function rule13_bashStateJsonWrite(input) {
   // `python -c`, `perl -e`, `ruby -e`, `node -e`, `bash -c`, etc. Checked
   // on the unwrapped body so `bash -c 'ls'` does NOT look like interpreter
   // exec of a mutating script.
-  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|awk)\s+-(?:[iIem]|-eval|-exec)\b/.test(body)
-    || /\b(?:bash|sh|zsh)\s+-(?:[iIem]|-eval|-exec)\b/.test(body);
+  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|awk)\s+-(?:[iIemc]|-eval|-exec)\b/.test(body)
+    || /\b(?:bash|sh|zsh)\s+-(?:[iIemc]|-eval|-exec)\b/.test(body);
   const shellMutators = /\b(?:cp|mv|install|rsync|ln|touch|truncate|dd|tee|shred|rm|sed)\b/.test(body);
   const apiWriters = /\bwriteFile(?:Sync)?\b/.test(body) || /\bcreateWriteStream\b/.test(body);
   const openForWrite = /\bopen\s*\(\s*['"][^'"]+['"]\s*,\s*['"][wa]/.test(body);

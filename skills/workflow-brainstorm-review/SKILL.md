@@ -12,7 +12,7 @@ team_template:
     agents: [critic]
     mode: adversarial_single
 result_types: [pass, fail, reshape]
-min_verification_rounds: 3
+min_verification_rounds: 2   # v3.1 — mid-pipeline review (omission + contradiction). Edge-case dropped for speed.
 verification_rounds:
   - n: 1
     focus: omission

@@ -26,6 +26,31 @@ function extractJsonField(input, field, defaultValue = '') {
   }
 }
 
+// looksLikeGitCommit — detect "git commit" invocations even through shell wrappers.
+// Matches all of:
+//   git commit ...
+//   /path/to/git commit           (absolute path)
+//   git -C /somedir commit        (dir override)
+//   FOO=1 git commit              (env prefix)
+//   bash -c 'git commit ...'      (shell wrapper)
+//   sh -c "... git commit ..."    (same)
+//   subshell invocation           (command substitution forms)
+//   "; git commit", "&& git commit", "| git commit"
+// Command aliases (gc / gcm) are NOT matched — alias-level gating would
+// require an agent-controlled shell profile, out of scope.
+function looksLikeGitCommit(command) {
+  if (!command || typeof command !== 'string') return false;
+  const stripped = String(command);
+
+  // Match "git commit" with optional "-C <dir>" between, optionally prefixed by
+  // a path (/usr/bin/git), preceded by start-of-string or a shell-boundary
+  // character (whitespace, ; & | $ ( ` , single-quote ' , double-quote ").
+  // Quote boundaries catch wrapped forms: bash -c 'git commit ...' / sh -c "... git commit ...".
+  // Env prefix (FOO=1 git commit) handled by the whitespace boundary.
+  const re = /(^|[\s;&|$(`'"])(?:[\w/.-]*\/)?git(?:\s+-C\s+\S+)?\s+commit\b/i;
+  return re.test(stripped);
+}
+
 // Generate human-readable description of what the tool is actually doing
 function generateToolDescription(toolName, toolInput) {
   if (!toolInput || typeof toolInput !== 'object') return null;
@@ -150,6 +175,75 @@ function main() {
             `or hook scripts using fs.writeFileSync directly. Invoke the appropriate workflow-* skill instead.`,
         }));
         return;
+      }
+    }
+
+    // --- v3.1: Block `git commit` before workflow-human-check (fix/implement modes) ---
+    // When a code-modifying workflow is active and workflow-human-check has not
+    // produced a pass event, agents must not commit. Human review is the last
+    // gate; committing before it defeats the workflow's whole point.
+    //
+    // Shell-unwrap matching handles bypass attempts like:
+    //   bash -c 'git commit -m x'
+    //   /usr/bin/git commit
+    //   git -C /path commit
+    //   FOO=1 git commit
+    //   somecmd && git commit
+    //   $(which git) commit
+    // The matcher strips shell-layer context and then searches for
+    // `(^|/)git(\s+-C\s+\S+)?\s+commit\b` appearing ANYWHERE in the command.
+    if (process.env.SMT_HOOK_WRITE !== '1' && toolName === 'Bash') {
+      const toolInputData = data.tool_input || data.toolInput || {};
+      const command = String(toolInputData.command || '');
+      if (looksLikeGitCommit(command)) {
+        const smtState = sessionId
+          ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(directory, '.smt', 'state', 'active-feature.json');
+        // Fail-CLOSED when an active pointer exists but state parsing fails.
+        // An attacker who corrupts `.state.json` to bypass this gate gets
+        // blocked instead of silently passing through.
+        let blockReason = null;
+        let pointerExists = false;
+        let stateFileExists = false;
+        try {
+          if (existsSync(smtState)) {
+            pointerExists = true;
+            const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
+            if (pointer?.slug) {
+              const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
+              if (existsSync(statePath)) {
+                stateFileExists = true;
+                const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+                const needsHumanCheck = state?.mode === 'fix' || state?.mode === 'implement';
+                if (needsHumanCheck) {
+                  const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
+                  const events = Array.isArray(state.events) ? state.events : [];
+                  const humanCheckPassed = completed.includes('workflow-human-check') ||
+                    events.some(e => e?.skill === 'workflow-human-check' && e?.result === 'pass');
+                  if (!humanCheckPassed) {
+                    blockReason = `[SMELTER] git commit is blocked: ${state.mode} mode requires workflow-human-check to pass before commit.\n` +
+                      `Current state: mode=${state.mode}, completed_stages=[${completed.join(', ')}], human-check=NOT_PASSED.\n` +
+                      `Invoke workflow-human-check to present artifacts (screenshots, diffs, test output) to the user and obtain a pass verdict.\n` +
+                      `Iron Law: Iron Law #5 — human review is the final file-verifiable gate for code-modifying modes.`;
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          // Fail-CLOSED when pointer exists but state is unreadable/unparseable.
+          // Intent: an agent that corrupts state to bypass the gate does not win.
+          // When pointer ITSELF is unreadable (no workflow active), fall through.
+          if (pointerExists) {
+            blockReason = `[SMELTER] git commit is blocked: active workflow pointer exists but state is unreadable (${err.message}).\n` +
+              `Either (a) the state is corrupted — run \`/cancel hard\` and restart, or (b) re-invoke workflow-human-check to rebuild.`;
+          }
+        }
+        if (blockReason) {
+          printTag(`Block: git commit (see reason)`);
+          console.log(JSON.stringify({ decision: 'block', reason: blockReason }));
+          return;
+        }
       }
     }
 

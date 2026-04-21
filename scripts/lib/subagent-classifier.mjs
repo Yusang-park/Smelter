@@ -4,16 +4,55 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-
 const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
 const CODEX_SUBAGENT_MODEL = 'gpt-5.4-mini';
 const DEFAULT_SUBAGENT_MODEL = 'haiku';
+const PROJECT_MODEL_MODE_PATH = join(process.cwd(), '.smt', 'state', 'model-mode.json');
+const PROJECT_CONFIG_PATH = join(homedir(), '.smt', 'config.json');
 
 function isCodexModel(model = '') {
   return ['gpt-', 'o3', 'o4', 'codex'].some((prefix) => model.startsWith(prefix));
 }
 
+function readConfiguredCodexMode() {
+  try {
+    const cfg = JSON.parse(readFileSync(PROJECT_CONFIG_PATH, 'utf8'));
+    if (cfg && typeof cfg.codexMode === 'boolean') return cfg.codexMode ? 'codex' : 'claude';
+  } catch {
+    // fallback to env / file precedence
+  }
+  return null;
+}
+
+function readProjectModelMode() {
+  try {
+    const state = JSON.parse(readFileSync(PROJECT_MODEL_MODE_PATH, 'utf8'));
+    if (state?.mode === 'codex' && typeof state.model === 'string') {
+      return state.model.replace(/^Codex\s+/i, '').trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function inferClassifierModelFromProcessMode() {
+  if (process.env.CODEX_MODE === '1' || process.env.SMELTER_MODEL_MODE === 'codex') return 'codex';
+  if (process.env.SMELTER_MODEL_MODE === 'claude') return 'claude';
+  const cfgMode = readConfiguredCodexMode();
+  return cfgMode || null;
+}
+
 function readMainModel() {
+  if (process.env.SMELTER_ACTIVE_MODEL) return process.env.SMELTER_ACTIVE_MODEL;
+
+  const modeMode = inferClassifierModelFromProcessMode();
+  if (modeMode === 'codex') return readProjectModelMode() || 'gpt-5.4';
+  if (modeMode === 'claude') return 'sonnet';
+
+  const projectMode = readProjectModelMode();
+  if (projectMode) return projectMode;
+
   try {
     const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
     return String(settings.model ?? '');
@@ -267,24 +306,23 @@ export function classifyPrompt(prompt, { cwd = process.cwd(), sessionId = '' } =
 // ambiguous natural language.
 
 const MODE_CLASSIFIER_CACHE_FILE = 'mode-classifier-cache.json';
-const VALID_MODES = new Set(['simple_fix', 'fix', 'investigate', 'verify', 'plan', 'implement']);
+const VALID_MODES = new Set(['think', 'fix', 'investigate', 'verify', 'implement']);
 
-const MODE_CLASSIFIER_PROMPT = `You classify a user's natural-language prompt into one of Smelter's 6 workflow modes.
+const MODE_CLASSIFIER_PROMPT = `You classify a user's natural-language prompt into one of Smelter's 5 workflow modes.
 
 Return ONLY valid JSON (no markdown, no prose):
 {"mode": "<mode>", "chained_modes": ["<m1>","<m2>"] | null, "passthrough": true|false, "trigger": "<short reason>"}
 
 Modes (pick exactly one for "mode"):
-- "simple_fix" — Trivial text / CSS / i18n / typo / dialogue-only change. No logic touched.
-- "fix" — Bug repair, regression, logic error, crash, deploy failure.
+- "think" — Ideation & planning without code. New feature design, major refactor scoping, architectural exploration.
+- "fix" — Bug repair, regression, logic error, crash, deploy failure. ALSO covers trivial text / CSS / i18n / typo / dialogue-only changes (surface detected via magic keyword → TDD exemption).
 - "investigate" — Static code reading / inspection. User wants to UNDERSTAND, not change code.
 - "verify" — Run tests, health check, sanity check. Execute verification, not modify.
-- "plan" — Design a NEW feature or major refactor from scratch. Deep planning.
 - "implement" — Build new functionality ON TOP OF existing code. Lightweight planning.
 
 Chained intents: when the prompt mixes two modes in sequence (e.g. "조사하고 수정해", "fix then plan the refactor"), populate "chained_modes" with the ordered list; otherwise null.
 
-Passthrough (boolean): set true ONLY when the prompt is a pure question / explanation request about a code artifact that needs no workflow (e.g. "이 함수 뭐 하는거야?", "what does X do?"). Most questions are actually investigate mode — use passthrough sparingly, only for direct-answer queries.
+Passthrough (boolean): set true ONLY when the prompt is a pure question / explanation request about a code artifact that needs no workflow (e.g. "이 함수 뭐 하는거야?", "what does X do?"). Most questions are actually investigate mode — use passthrough sparingly, only for direct-answer queries. If the session is already inside an active workflow, the caller may ignore passthrough and keep the session in workflow continuation.
 
 Trigger: one-line reason, e.g. "imperative:고쳐줘", "interrogative:how-question", "chain:investigate-then-fix".
 
@@ -292,8 +330,8 @@ Examples:
 - "버그 고쳐줘" → {"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"imperative:repair"}
 - "이 함수 어떻게 동작해?" → {"mode":"investigate","chained_modes":null,"passthrough":false,"trigger":"interrogative:how-question"}
 - "검증하고 수정해" → {"mode":"investigate","chained_modes":["investigate","fix"],"passthrough":false,"trigger":"chain:investigate-then-fix"}
-- "오타 고쳐" → {"mode":"simple_fix","chained_modes":null,"passthrough":false,"trigger":"surface:typo"}
-- "새 기능 설계해" → {"mode":"plan","chained_modes":null,"passthrough":false,"trigger":"imperative:design-new"}
+- "오타 고쳐" → {"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:typo"}
+- "새 기능 설계해" → {"mode":"think","chained_modes":null,"passthrough":false,"trigger":"imperative:design-new"}
 - "덧붙여서 추가해" → {"mode":"implement","chained_modes":null,"passthrough":false,"trigger":"imperative:extend"}
 - "테스트 돌려봐" → {"mode":"verify","chained_modes":null,"passthrough":false,"trigger":"imperative:run-tests"}
 - "workflow-tasker가 뭐야?" → {"mode":"investigate","chained_modes":null,"passthrough":true,"trigger":"passthrough:lookup"}`;

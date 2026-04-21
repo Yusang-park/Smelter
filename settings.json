@@ -207,6 +207,7 @@
     "type": "command",
     "command": "node /Users/yusang/smelter/vendor/claude-dashboard/dist/index.js"
   },
+  "effortLevel": "medium",
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
   "_comment": "Smelter runs directly from this ~/.claude-linked repo. Plugin marketplace wiring and duplicate hook registration were removed to avoid double execution and prompt inflation.",

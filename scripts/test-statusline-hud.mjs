@@ -86,6 +86,7 @@ mkdirSync(join(tempHome, '.claude', 'hud', 'last-model'), { recursive: true });
 writeFileSync(claudeJsonPath, JSON.stringify({
   additionalModelOptionsCache: [
     { value: 'gpt-5.4', label: 'Codex gpt-5.4', description: 'Codex balanced model' },
+    { value: 'gpt-5.3-codex-spark', label: 'Codex gpt-5.3-codex-spark', description: 'Codex spark model' },
   ],
 }) + '\n');
 
@@ -115,9 +116,10 @@ try {
   assert.match(runHud(), /ULTRAWORK/, 'expected ULTRAWORK badge when ultrawork mode is active');
   rmSync(join(stateDir, 'ultrawork-state.json'));
 
-  // Test 3: HUD should not duplicate the model label already shown by Claude Code,
-  // but stale legacy state still must not leak a Claude label into Codex mode.
+  // Test 3: HUD should not duplicate model labels already shown by Claude Code,
+  // including alternate Codex picker labels, and stale legacy state still must not leak.
   assert.doesNotMatch(runHud(), /Codex gpt-5\.4/, 'expected Codex model label to stay hidden in HUD');
+  assert.doesNotMatch(runHud({ model: { id: 'gpt-5.3-codex-spark', display_name: 'gpt-5.3-codex-spark' } }), /gpt-5\.3-codex-spark/, 'expected codex-spark model label to stay hidden in HUD');
   assert.doesNotMatch(runHud(), /Sonnet 4\.6/, 'expected stale legacy mode state not to override project codex mode');
 
   // Test 4: Percentage display when rate_limits in stdin
@@ -141,7 +143,7 @@ try {
     context_window: { context_window_size: 200000, total_input_tokens: 250000, total_output_tokens: 50000 },
     model: { id: 'gpt-5.4', display_name: 'gpt-5.4' },
   });
-  assert.doesNotMatch(codexWithLegacyWindow, /Codex gpt-5\.4/, 'expected model label to be hidden when HUD already shows model elsewhere');
+  assert.doesNotMatch(codexWithLegacyWindow, /gpt-5\.4(?!-)/, 'expected raw Codex model id to stay hidden in HUD');
   assert.match(codexWithLegacyWindow, /50\.0k out/, 'expected codex session output badge to render');
   assert.match(codexWithLegacyWindow, /ctx 25%/, 'expected codex context percent to be computed against 1M');
 

@@ -288,10 +288,10 @@ async function main() {
   let modelLabel;
   const cache = claudeJson?.additionalModelOptionsCache;
   const codexModeLabel = inCodexMode ? (modelModeState?.model ?? 'Codex') : null;
-  if (stdinModelId && /^(gpt-|o\d)/i.test(stdinModelId)) {
-    modelLabel = resolveModelLabel(stdinModelId, cache) ?? stdinModelLabel ?? stdinModelId;
-  } else if (windowIsCodex && codexModeLabel) {
+  if (windowIsCodex && codexModeLabel) {
     modelLabel = codexModeLabel;
+  } else if (stdinModelId && /^(gpt-|o\d)/i.test(stdinModelId)) {
+    modelLabel = resolveModelLabel(stdinModelId, cache) ?? stdinModelLabel ?? stdinModelId;
   } else if (stdinModelLabel) {
     modelLabel = stdinModelLabel;
   } else if (cachedModel?.label) {

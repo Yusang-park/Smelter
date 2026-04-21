@@ -66,13 +66,15 @@ Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 
 
 | 입력 패턴 (자연어) | 분기 모드 | 명시 커맨드 |
 |-------------------|-----------|-------------|
-| "파악해", "분석해", "어떻게 되어있어?", "조사해", "검증해", "확인해", "체크해" | `investigate` | `/investigate` |
+| "파악해", "분석해", "어떻게 되어있어?", "조사해", "확인해", "체크해" | `investigate` | `/investigate` |
 | "테스트 해봐", "점검해", "돌려봐", "실행해", "run tests", "health check" | `verify` | `/verify` |
-| "만들거야", "리팩토링할거야", "설계해", "기획해" | `plan` | `/plan` |
+| "만들거야", "리팩토링할거야", "설계해", "기획해" | `think` | `/think` |
 | "~만들어줘", "~추가해줘", "~구현해줘" | `implement` | `/implement` |
-| "텍스트 수정", "이름 바꿔", "색깔 변경", "css", "오타", "번역" | `simple_fix` | `/simple-fix` |
+| "텍스트 수정", "css", "오타", "번역" | `fix` (+ magic keyword로 TDD 면제) | `/fix` |
 | "버그", "문제", "에러", "작동 안 해", "고쳐줘" | `fix` | `/fix` |
 | 불명확 | `fix` (안전 기본값) | — |
+
+v3 (2026-04-21): `/plan` → `/think`, `/simple-fix` 삭제 (→ `/fix` + magic keyword).
 
 **원칙**:
 - 분기 판단은 **엔트리 시점에만** 수행. 워크플로우 중간 모드 변경은 사용자 결정 (upgrade gate).
@@ -85,14 +87,15 @@ Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 
 
 #### 모드 요약
 
-| Mode | 진입 스킬 | 용도 |
-|------|---------|------|
-| `simple_fix` | `workflow-coding` | 텍스트/CSS/상수 등 명확한 값 치환 |
-| `fix` | `workflow-investigate` | 버그·문제 수정. 로직/흐름 변경 필요. |
-| `investigate` | `workflow-investigate` | 정적 파악만 수행 (맥락·근거). 이후 mode transition. |
-| `verify` | `workflow-verify` | 비수정 검증 (테스트·점검·E2E 인터페이스). 단일 리포트 산출. |
-| `plan` | `workflow-brainstorm` (deep) | 신규 기능·리팩토링 기획 우선 |
-| `implement` | `workflow-brainstorm` (light) | 기존 코드 기반 경량 구현 |
+| Mode | 진입 스킬 | Pipeline | 용도 |
+|------|---------|----------|------|
+| `think` | `workflow-brainstorm` (deep) | `planning_only` | 기획·설계 (코드 변경 없음). `brainstorm.md`+`tasks.md` 산출. |
+| `fix` | `workflow-investigate` | `no_brainstorm` | 버그·회귀 수정. CSS/typo/i18n은 magic keyword로 TDD 면제. |
+| `implement` | `workflow-brainstorm` (light) | `full` | 기존 코드 기반 기능 개발. |
+| `investigate` | `workflow-investigate` | `investigate_only` | 정적 파악만 수행 (맥락·근거). mode transition으로 종료. |
+| `verify` | `workflow-verify` | `verify_only` | 비수정 검증 (테스트·점검·real-interface E2E). |
+
+v3 구성: 5개 모드, `modes/{skills,pipelines,modes}.yaml` 3파일로 관리. 로더 `scripts/lib/workflow-loader.mjs`.
 
 ### 1-3. Magic Keyword
 
@@ -100,9 +103,9 @@ Commands는 **힌트**이며, 기본 원칙은 **사용자 입력 기반 자동 
 
 | 키워드 | 동작 |
 |--------|------|
-| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | `workflow-write-test` TDD 면제 플래그 auto-set (surface-based exemption) |
+| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | `workflow-write-test` TDD 면제 플래그 auto-set (surface-based exemption). v3: 과거 `simple_fix` 모드를 대체. |
 | `extend`, `add to`, `덧붙여` | `implement`의 `workflow-brainstorm` 단계 **skip** |
-| `fix`, `bug`, `버그`, `문제` | `fix` 모드 유도 (`/simple-fix` 진입 중에도 interface 변경 감지 시 mode upgrade 제안) |
+| `fix`, `bug`, `버그`, `문제` | `fix` 모드 유도 |
 
 ### 1-4. Workflow Skills vs Utility Skills
 
@@ -309,31 +312,23 @@ can_delegate_to: [ui-ux-pro-max, copywriting, vercel-react-best-practices]
 
 ---
 
-## 4. Mode Definitions
+## 4. Mode Definitions (v3.1)
 
-### 4-1. simple_fix (entry: `/simple-fix` 또는 자동 분기)
+v3.1는 5개 모드, 단일 YAML 파일 구성:
+- `modes/workflow.yaml` — 단일 소스: skills + pipelines + modes + target_type_routing + verification_rounds + command_aliases (v3.1에서 3-파일 구성을 1-파일로 통합)
 
-**allowed_skills**: `workflow-coding`, `workflow-e2e`, `workflow-human-check`
+정식 파이프라인/스킬 오버라이드 스펙은 영문 `workflow.md` §4 참조 — 아래는 한국어 개요.
 
-```
-   ╭─────────────────╮     ╭──────────────╮     ╭──────────────────────╮
-   │ workflow-coding │────▶│ workflow-e2e │────▶│ workflow-human-check │
-   ╰─────────────────╯     ╰──────────────╯     ╰──────────────────────╯
-           ▲                      │                        │
-           │ fail                 │ fail                   │ rework
-           │                      ▼                        │
-           └──────────────────────┴────────────────────────┘
-```
+### 4-1. think (`/think`) — 구 `/plan`
 
-**특징**:
-- 텍스트·CSS·상수 치환 전용
-- TDD 면제 (surface-based auto-apply)
-- interface 변경이 있으면 `workflow-e2e`는 반드시 수행
-- 로직 변경이 감지되면 `workflow-human-check`에서 사용자에게 **mode upgrade to `fix` 제안**
+**pipeline**: `planning_only` (brainstorm → brainstorm-review → investigate → investigate-review → tasker → tasker-review)
+**defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: true`
+**entry**: `workflow-brainstorm` (depth: deep)
+**용도**: 코드 변경 없는 기획. `brainstorm.md`+`tasks.md` 산출. 사용자가 `tasks.md` 승인 후 `mode_transition_to_implement`로 종료.
 
-### 4-2. fix (entry: `/fix` 또는 자동 분기)
+### 4-2. fix (`/fix`) — 구 `simple_fix` 흡수
 
-**allowed_skills**: simple_fix의 3개 + `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`, `workflow-write-test`, `workflow-agent-review`, `workflow-e2e-review`, `workflow-team-code-review`
+**allowed_skills**: `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`, `workflow-write-test`, `workflow-coding`, `workflow-agent-review`, `workflow-e2e`, `workflow-e2e-review`, `workflow-team-code-review`, `workflow-human-check`
 
 ```
   ╭──────────────────────╮    ╭───────────────────────────╮    ╭─────────────────╮
@@ -379,12 +374,12 @@ can_delegate_to: [ui-ux-pro-max, copywriting, vercel-react-best-practices]
   ╰──────────────────────╯   ╰────────────────────────────╯   ╰──────────────────────╯
             ▲                        │                         │       │       │
             │ fail                   │                         ▼       ▼       ▼
-            └────────────────────────┘                       /fix   /plan  free_chat
+            └────────────────────────┘                       /fix   /think  free_chat
 ```
 
 **출구**: 사용자가 다음 모드 선택. 자동 전환 금지(사용자 확인 필수).
 
-### 4-4. plan (entry: `/plan` 또는 자동 분기)
+### 4-4. think (entry: `/think` 또는 자동 분기) — 구 `/plan`
 
 **allowed_skills**: `workflow-brainstorm`, `workflow-brainstorm-review`, `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`
 
@@ -416,7 +411,7 @@ can_delegate_to: [ui-ux-pro-max, copywriting, vercel-react-best-practices]
 
 ### 4-5. implement (entry: `/implement` 또는 자동 분기)
 
-**allowed_skills**: plan + fix의 합집합 (13개 전체)
+**allowed_skills**: think + fix의 합집합 (13개 전체) = `full` pipeline
 
 ```
   ╭──────────────────────────╮    ╭────────────────────────────╮    ╭──────────────────────╮
@@ -482,10 +477,12 @@ Review 스킬은 `result ∈ { pass, fail, reshape }` 출력 가능.
 **방향**: 모두 허용 (양방향 포함)
 
 ```
-simple_fix ──▶ fix ──▶ implement ──▶ plan
-              ◀──     ◀──           ◀──
+fix ──▶ implement ──▶ think
+ ◀──    ◀──          ◀──
    (← 되돌아가기도 허용, 단 사용자 결정 필수)
 ```
+
+`investigate`와 `verify`는 read-only 형제 모드. 사용자 게이트로 위 3개 모드 중 하나로 upgrade.
 
 **업그레이드 시 state.json 갱신**:
 - `mode` 필드 치환
@@ -533,6 +530,7 @@ simple_fix ──▶ fix ──▶ implement ──▶ plan
 | `side_effect` | workflow-tasker-review | 타 기능 영향 감지 |
 | `security` | workflow-agent-review, workflow-team-code-review | 취약점 발견 |
 | `insufficient_scenario` | workflow-e2e-review | 시나리오 커버리지 부족 |
+| `missing_credentials` | workflow-e2e, workflow-verify | 인증이 필요한 시나리오에서 `.env.e2e` 파일이 없거나 필요한 `E2E_*` 키가 비어 있음 — 사용자에게 `.env.e2e`에 `E2E_ACCOUNT_ID / E2E_ACCOUNT_PW / E2E_COOKIE / E2E_KEY` 등 필요한 값을 채워 달라고 요청하고 재진입 대기. 가짜 값 주입·auth 계층 mocking 금지. |
 
 ### 6-4. Evidence Type Enum
 
@@ -1526,19 +1524,18 @@ skills/
 │   ├── ui-ux-pro-max/SKILL.md
 │   ├── copywriting/SKILL.md
 │   └── ...
-modes/
-├── simple_fix.json
-├── fix.json
-├── investigate.json
-├── plan.json
-└── implement.json
+modes/                                 ← v3: YAML 3파일 (modes/*.json 폐기)
+├── skills.yaml                        ← 스킬별 team pattern + 에이전트 기본값
+├── pipelines.yaml                     ← 재사용 스킬 시퀀스
+└── modes.yaml                         ← 얇은 모드 정의 + command_aliases
 
-commands/
-├── simple-fix.md
+commands/                              ← v3 정규 5+1 (utility는 queue)
+├── think.md                           ← 구 plan.md
 ├── fix.md
+├── implement.md
 ├── investigate.md
-├── plan.md
-└── implement.md
+├── verify.md
+└── queue.md
 
 scripts/
 ├── auto-confirm.mjs       ← 섹션 11 Stop hook (queue-drop)

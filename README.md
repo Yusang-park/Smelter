@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <code>v2.4.7</code>
+  <code>v3.1.0</code>
 </p>
 
 <p align="center">
@@ -60,11 +60,15 @@ Activation: start a new Claude Code session (hooks load at session start).
 
 ## TL;DR
 
-- **6 commands**: `/plan`, `/implement`, `/fix`, `/simple-fix`, `/investigate`, `/verify`. Natural-language input is auto-routed — explicit slash commands override.
-- **14 workflow skills** compose into modes (no fixed 10-step pipeline). Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
-- **8 Iron Laws** are runtime-enforced via hooks (`auto-confirm`, `critic-watchdog`), not just prompts.
-- **Multi-Pass Verification**: all 6 review skills run 3 mandatory rounds (omission / contradiction / edge_case) before declaring `pass`.
-- **File-based state**: every task has a single-source `*.state.json` at schema v2.4.1. Agents read files, not memory.
+- **5 commands** (v3): `/think`, `/implement`, `/fix`, `/investigate`, `/verify`. Natural-language input is auto-routed — explicit slash commands override. v2 `/plan` + `/simple-fix` removed.
+- **Unified config**: `modes/workflow.yaml` holds skills + pipelines + modes + target_type_routing + verification_rounds in one file.
+- **Target-type dispatch (v3.1)**: `/fix` picks the pipeline at runtime based on `target_type` + scope signals — `typo`/`dialogue` → `minimal` (4 skills), simple `bug_fix` → `light` (8), complex → `medium` (11). Cuts tasker overhead on trivial fixes.
+- **14 workflow skills** compose into modes. Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
+- **8 Iron Laws** are runtime-enforced via hooks (`auto-confirm`, `critic-watchdog`, `pre-tool-enforcer`), not just prompts.
+- **Multi-Pass Verification (v3.1)**: mid-pipeline reviews (brainstorm-review, investigate-review, tasker-review, agent-review) run **2 rounds** (omission + contradiction). Terminal reviews (e2e-review, team-code-review, human-check) run **3 rounds**.
+- **File-based state**: every task has a single-source `*.state.json`. Agents read files, not memory.
+- **Commit gate (v3.1)**: `pre-tool-enforcer` blocks `git commit` in code-modifying modes until `workflow-human-check` passes. Shell-unwrap matcher catches `bash -c`, env prefix, absolute path.
+- **Visual artifact rendering (v3.1)**: `workflow-human-check` opens every `.png`/`.jpg`/`.webm` via the `Read` tool before `AskUserQuestion`.
 
 ---
 
@@ -86,16 +90,17 @@ Activation: start a new Claude Code session (hooks load at session start).
 
 ---
 
-## Commands
+## Commands (v3)
 
-| Command        | Mode          | Entry skill                      | Use when                                                |
-|----------------|---------------|----------------------------------|---------------------------------------------------------|
-| `/plan`        | `plan`        | `workflow-brainstorm` (deep)     | New feature or refactor; planning comes first           |
-| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | Build on existing code; lightweight interview           |
-| `/fix`         | `fix`         | `workflow-investigate`           | Bug / logic repair requiring investigation              |
-| `/simple-fix`  | `simple_fix`  | `workflow-coding`                | Trivial text, CSS, or constant substitution             |
-| `/investigate` | `investigate` | `workflow-investigate`           | Static read (맥락·근거 파악); exit via mode transition |
-| `/verify`      | `verify`      | `workflow-verify`                | Non-modifying verification (테스트·점검·E2E in one pass) |
+| Command        | Mode          | Entry skill                      | Pipeline           | Use when                                                |
+|----------------|---------------|----------------------------------|--------------------|---------------------------------------------------------|
+| `/think`       | `think`       | `workflow-brainstorm` (deep)     | `planning_only`    | Ideation + planning. No code changes. (was `/plan` in v2) |
+| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | `full` (13)        | Build on existing code; lightweight interview           |
+| `/fix`         | `fix`         | `workflow-investigate`           | runtime-selected   | Bug / logic repair. Trivial (`typo`/`dialogue`) → `minimal` (4) · simple `bug_fix` → `light` (8) · `extend_existing` / complex → `medium` (11) |
+| `/investigate` | `investigate` | `workflow-investigate`           | `investigate_only` | Static read (맥락·근거 파악); exit via mode transition |
+| `/verify`      | `verify`      | `workflow-verify`                | `verify_only`      | Non-modifying verification (테스트·점검·E2E in one pass) |
+
+v3 migration: `/plan` → `/think`. `/simple-fix` absorbed into `/fix` (magic keyword `typo`/`dialogue`/`css` sets exempt flags).
 
 Natural-language auto-routing covers Korean + English verbs (`검증`, `분석`, `파악`, `만들어줘`, `리팩토링`, `verify`, `validate`, `implement`, …) and compound intents (`검증하고 수정해` → `investigate → fix`).
 

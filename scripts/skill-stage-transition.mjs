@@ -27,6 +27,8 @@ import { join, dirname, basename, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeState, appendEvent, markComplete } from './state-schema.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
+import { loadWorkflowConfig, getMode as getV3Mode, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
+import yaml from 'js-yaml';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,20 +40,18 @@ const PLUGIN_ROOT = dirname(__dirname);
 // does not loop on a stale null/seeded stage, while `completed_stages` is
 // kept empty (Iron Law #5 — no forged completion).
 const COMMAND_TO_MODE_ENTRY = Object.freeze({
+  think: 'think',
   fix: 'fix',
   investigate: 'investigate',
-  plan: 'plan',
   implement: 'implement',
   verify: 'verify',
-  'simple-fix': 'simple_fix',
 });
 
 function loadModeEntrySkill(mode) {
   try {
-    const path = join(PLUGIN_ROOT, 'modes', `${mode}.json`);
-    if (!existsSync(path)) return null;
-    const cfg = JSON.parse(readFileSync(path, 'utf-8'));
-    return typeof cfg?.entry_skill === 'string' ? cfg.entry_skill : null;
+    const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+    const m = getV3Mode(mode, cfg);
+    return m && typeof m.entry_skill === 'string' ? m.entry_skill : null;
   } catch { return null; }
 }
 
@@ -229,6 +229,64 @@ function main() {
         t: now, skill, result: 'pass', declarer: 'hook',
         evidence: { type: 'file_present', path: artifactPath },
       });
+    }
+
+    // v3.1 — post-investigate pipeline re-selection for target_type_dispatch modes.
+    // After workflow-investigate-review passes, the investigation.md frontmatter
+    // may declare target_type + file_count + surface. If the mode declares
+    // target_type_dispatch, we re-run selectPipeline with those signals and, if
+    // the resulting pipeline differs from the current allowed_skills, re-write
+    // state.allowed_skills. This closes the gap where non-magic-keyword /fix
+    // flows stayed on the default `medium` pipeline regardless of scope.
+    if (skill === 'workflow-investigate-review' || skill === 'workflow-tasker') {
+      try {
+        const artifactForScope = skill === 'workflow-tasker' ? 'tasks.md' : 'investigation.md';
+        const scopePath = join(dirname(statePath), artifactForScope);
+        if (existsSync(scopePath)) {
+          const raw = readFileSync(scopePath, 'utf-8');
+          const fmMatch = raw.match(/^---\s*\n([\s\S]*?)\n---/);
+          if (fmMatch) {
+            const fm = yaml.load(fmMatch[1]) ?? {};
+            // Extract scope signals. Tolerate missing fields.
+            if (typeof fm.target_type === 'string') state.target_type = fm.target_type;
+            // Number.isFinite rejects NaN + Infinity + string coercions that `typeof === 'number'` would accept.
+            if (Number.isFinite(fm.file_count) && fm.file_count >= 0) state.file_count = fm.file_count;
+            if (Array.isArray(fm.surface)) state.surface = fm.surface;
+
+            // Only re-select for target_type_dispatch modes with a resolved target_type.
+            const modeCfg = getV3Mode(state.mode);
+            if (modeCfg?.target_type_dispatch && state.target_type) {
+              const cfg = loadWorkflowConfig();
+              const newPipeline = v3SelectPipeline(state.mode, {
+                target_type: state.target_type,
+                file_count: state.file_count,
+                surface_count: Array.isArray(state.surface) ? state.surface.length : 0,
+              }, cfg);
+              if (newPipeline && newPipeline !== 'upgrade_required' && cfg.pipelines[newPipeline]) {
+                const newSkills = [...cfg.pipelines[newPipeline]];
+                const cur = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+                // Preserve already-completed stages even if they're not in the new
+                // pipeline (e.g., tasker ran under medium; light doesn't include it).
+                // This is a one-way narrowing: remaining stages may shrink, but the
+                // audit trail of what already ran stays complete.
+                const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
+                // Preserve ALL already-completed stages (even those not in `cur`) so the
+                // audit trail never loses history during repeated re-selections.
+                const converged = Array.from(new Set([...completed, ...newSkills]));
+                if (JSON.stringify(converged) !== JSON.stringify(cur)) {
+                  state.allowed_skills = converged;
+                  // No synthetic event — events[].skill is enum-constrained to
+                  // WORKFLOW_SKILLS. The state change itself (allowed_skills
+                  // narrowed) is the audit. Stderr tag records the decision.
+                  printTag(`pipeline re-select: ${state.mode}/${state.target_type} → ${newPipeline} (${newSkills.length} skills)`);
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        printTag(`pipeline-resolver warn: ${err.message}`);
+      }
     }
 
     // completed_stages append rule:

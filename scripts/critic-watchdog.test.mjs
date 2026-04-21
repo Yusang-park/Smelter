@@ -220,6 +220,19 @@ test('R13: bash -c with node -e writing to state still blocked', () => {
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('R13: python -c mutating state is blocked', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'python3 -c "from pathlib import Path; Path(\'.smt/features/x/task/x.state.json\').write_text(\'{}\')"' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.ok(hits.find(h => h.rule === 'R13'), 'R13 must fire on python -c state write');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('R15: block src edit when current_stage != workflow-coding but mode allows it', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
   try {

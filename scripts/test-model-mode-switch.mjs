@@ -28,9 +28,9 @@ try {
   settings.env ??= {};
   settings.model = 'sonnet';
 
-  applyCodexMode(settings);
+  const activeCodexModel = applyCodexMode(settings);
   writeJsonFile(claudeJsonPath, { additionalModelOptionsCache: CODEX_MODEL_OPTIONS });
-  writeJsonFile(statePath, buildModelModeState());
+  writeJsonFile(statePath, buildModelModeState(activeCodexModel));
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 
   settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
@@ -39,7 +39,7 @@ try {
     ? claudeJson.additionalModelOptionsCache
     : [...CODEX_MODEL_OPTIONS];
 
-  assert.equal(settings.model, 'gpt-5.4', 'expected Codex mode to set active model to gpt-5.4');
+  assert.equal(settings.model, 'sonnet', 'expected Codex mode not to overwrite global Claude model');
   assert.equal(settings.env.ANTHROPIC_BASE_URL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined);
@@ -49,6 +49,7 @@ try {
   assert.equal(codexCache.length, 4, 'expected 4 codex model options');
   assert.equal(new Set(codexCache.map((option) => option.value)).size, 4, 'expected unique codex model values');
   assert.deepEqual(codexCache, CODEX_MODEL_OPTIONS, 'expected canonical codex model options');
+  assert.ok(codexCache.some((option) => option.value === 'gpt-5.3-codex-spark'), 'expected codex-spark model option');
 
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   assert.equal(state.mode, 'codex');
@@ -63,7 +64,7 @@ try {
   settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
   claudeJson = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
 
-  assert.equal(settings.model, 'sonnet', 'expected Claude mode to restore default sonnet model');
+  assert.equal(settings.model, 'sonnet', 'expected Claude mode to preserve global Claude model');
   assert.equal(settings.env.ANTHROPIC_BASE_URL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined);

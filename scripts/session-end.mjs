@@ -61,12 +61,11 @@ export const TRACKED_LEGACY_SCAN = [
   'rules/common/testing.md',
 ];
 
-// Canonical six-command set (workflow modes). /queue is a utility command and intentionally excluded.
-export const EXPECTED_COMMANDS = ['plan', 'simple-fix', 'fix', 'investigate', 'verify', 'implement'];
+// Canonical v3 five-command set (workflow modes). /queue is a utility command and intentionally excluded.
+export const EXPECTED_COMMANDS = ['think', 'fix', 'investigate', 'verify', 'implement'];
 // Retired command names and other legacy terms that must not appear as commands.
-// NOTE: `simple` is intentionally NOT listed because `/simple-fix` is canonical;
-// the doc-sync regex must not collide with it.
-export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'build', 'tasker', 'feat', 'qa'];
+// v3: `plan` and `simple-fix` are v2 legacy, fully removed.
+export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'build', 'tasker', 'feat', 'qa', 'plan', 'simple-fix'];
 export const FORBIDDEN_LEGACY_PATTERN = /persistent-mode(?:\.cjs|\.mjs|\.sh)?/i;
 export const FORBIDDEN_TASKER_NATIVE_PLAN_PATTERN = /EnterPlanMode|ExitPlanMode|Native Plan File|\[Plan Mode: Enter\]|\[Plan Mode: Exit\]/i;
 
@@ -378,21 +377,25 @@ export function checkDocSync(projectRoot) {
     }
   }
 
-  // --- 3. Mode definition files must exist for every expected command ---
+  // --- 3. v3 workflow config (three YAML files) must exist ---
   const modesDir = join(projectRoot, 'modes');
-  const modeFiles = listDir(modesDir)
-    .filter(f => /\.json$/i.test(f))
-    .map(f => f.toLowerCase().replace(/\.json$/i, ''));
-  // `simple-fix` command maps to `simple_fix` mode (hyphen vs underscore).
-  const expectedModes = EXPECTED_COMMANDS.map(c => c.replace(/-/g, '_'));
-  for (const mode of expectedModes) {
-    if (!modeFiles.includes(mode)) {
+  for (const required of ['modes.yaml', 'pipelines.yaml', 'skills.yaml']) {
+    if (!existsSync(join(modesDir, required))) {
       issues.push({
         severity: 'error',
         file: 'modes/',
-        message: `Missing mode: modes/${mode}.json (expected for v2 mode set)`,
+        message: `Missing workflow config: modes/${required}`,
       });
     }
+  }
+  // v3: legacy modes/*.json must be fully removed.
+  const leftoverJson = listDir(modesDir).filter(f => /\.json$/i.test(f));
+  for (const f of leftoverJson) {
+    issues.push({
+      severity: 'error',
+      file: 'modes/',
+      message: `Legacy mode file still present: modes/${f} (v3 removed modes/*.json)`,
+    });
   }
 
   // --- 4. Command directory must have exactly the expected files ---
@@ -423,9 +426,9 @@ export function checkDocSync(projectRoot) {
   const kd = readFileSafe(join(projectRoot, 'scripts', 'keyword-detector.mjs'));
   if (kd !== null) {
     for (const cmd of EXPECTED_COMMANDS) {
-      // Match either `command: 'plan'` or `plan:` (object key in COMMAND_CONFIG)
-      // Match either a quoted-key form `'simple-fix': {` or a bare-key form `plan: {`
-      // or an explicit `command: 'simple-fix'` literal.
+      // Match either `command: 'think'` or `think:` (object key in COMMAND_CONFIG)
+      // Match either a quoted-key form `'think': {` or a bare-key form `think: {`
+      // or an explicit `command: 'think'` literal.
       const pattern = new RegExp(
         `(?:command:\\s*['"]${cmd}['"])`
         + `|(?:^\\s*['"]${cmd}['"]\\s*:\\s*\\{)`

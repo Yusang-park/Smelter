@@ -34,27 +34,32 @@ import { classify as ruleClassify } from './mode-classifier.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
 import { writeFeatureSummary } from './lib/feature-summary.mjs';
 import { createInitialState, writeState } from './state-schema.mjs';
+import { getMode as getV3Mode, loadWorkflowConfig, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PLUGIN_ROOT = dirname(__dirname);
 
-// Command name as it appears on disk (e.g. `simple-fix`) → internal mode id
-// used by state-schema (`simple_fix`). Only differs where the slash uses `-`
-// but the mode enum uses `_`.
+// Command name (on disk) → v3 mode id. v3 canonical modes only; legacy
+// /plan and /simple-fix commands are removed entirely.
 const COMMAND_TO_MODE = {
-  plan: 'plan',
+  think: 'think',
   fix: 'fix',
-  'simple-fix': 'simple_fix',
   investigate: 'investigate',
   implement: 'implement',
   verify: 'verify',
 };
 
+// v3 loader: reads modes/{skills,pipelines,modes}.yaml via workflow-loader.mjs.
+// No legacy JSON fallback — modes/*.json has been removed.
 function loadModeConfig(mode) {
-  const modePath = join(PLUGIN_ROOT, 'modes', `${mode}.json`);
-  if (!existsSync(modePath)) return null;
-  try { return JSON.parse(readFileSync(modePath, 'utf-8')); } catch { return null; }
+  try {
+    const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+    return getV3Mode(mode, cfg);
+  } catch (err) {
+    printTag(`workflow-loader failed for ${mode}: ${err.message}`);
+    return null;
+  }
 }
 
 // Read stdin synchronously
@@ -90,7 +95,11 @@ function extractPrompt(input) {
 function extractExplicitHarnessCommand(prompt) {
   if (!prompt) return null;
   const trimmed = prompt.trim();
-  const match = trimmed.match(/^\/(plan|build|fix|simple-fix|investigate|implement|verify|cancel|queue)\b(?:[:\s-]*(.*))?$/i);
+  // `[\s\S]*` (not `.*`) so the arg capture crosses newlines — a user
+  // starting with `/fix` followed by a pasted multi-line transcript still
+  // matches the slash command and bypasses the transcript-paste heuristic
+  // (TPP6).
+  const match = trimmed.match(/^\/(think|fix|investigate|implement|verify|cancel|queue)\b(?:[:\s-]*([\s\S]*))?$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase(),
@@ -99,15 +108,13 @@ function extractExplicitHarnessCommand(prompt) {
   };
 }
 
-// Internal map: mode-classifier emits mode ids (enum in state-schema MODES), but
-// detector contract speaks dash-cased command names (matches file names in
-// commands/ and keys in COMMAND_CONFIG below).
+// Internal map: mode-classifier emits v3 mode ids, detector contract speaks
+// dash-cased command names (matches file names in commands/).
 const MODE_TO_COMMAND = {
-  simple_fix: 'simple-fix',
+  think: 'think',
   fix: 'fix',
   investigate: 'investigate',
   verify: 'verify',
-  plan: 'plan',
   implement: 'implement',
 };
 
@@ -126,12 +133,17 @@ const MODE_TO_COMMAND = {
 // deterministic, and tolerant of short prompts where any percentage clause
 // would be unstable. A single incidental `fix:` mention cannot reach two
 // distinct markers.
+// Global flags so match().length yields the occurrence count per pattern.
+// Dominance heuristic counts OCCURRENCES across all patterns; ≥2 total
+// matches = transcript paste. So two ⏺ bullets alone (same pattern, twice)
+// still exceed the threshold — the previous distinct-pattern count missed
+// that case (TPP4).
 const TRANSCRIPT_PATTERNS = [
-  /^\s*⏺/m,                                   // assistant-bullet marker
-  /^\s*⎿/m,                                   // tool-result connector
-  /^\s*Stop hook (?:error|feedback)\b/mi,
-  /Ran \d+ stop hooks?/i,
-  /\[(?:master|main)\s+[0-9a-f]{7,40}\]/i,    // git-commit banner
+  /^\s*⏺/gm,                                   // assistant-bullet marker
+  /^\s*⎿/gm,                                   // tool-result connector
+  /^\s*Stop hook (?:error|feedback)\b/gim,
+  /Ran \d+ stop hooks?/gi,
+  /\[(?:master|main)\s+[0-9a-f]{7,40}\]/gi,    // git-commit banner
 ];
 
 export function isTranscriptPaste(text) {
@@ -139,10 +151,9 @@ export function isTranscriptPaste(text) {
   if (!s.trim()) return false;
   let hits = 0;
   for (const re of TRANSCRIPT_PATTERNS) {
-    if (re.test(s)) {
-      hits++;
-      if (hits >= 2) return true;
-    }
+    const matches = s.match(re);
+    if (matches) hits += matches.length;
+    if (hits >= 2) return true;
   }
   return false;
 }
@@ -185,6 +196,17 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
   // `mode: null`, and indexing `MODE_TO_COMMAND[null]` would read an inherited
   // property (e.g. `null.toString`) on a malformed map.
   if (classification.passthrough === true) {
+    const active = shouldCreateNewFeature(cwd, sessionId, text, 'magic');
+    if (!active.create && active.state?.current_stage && active.state.current_stage !== 'done') {
+      return {
+        name: active.state.mode === 'verify' ? 'verify' : 'investigate',
+        args: '',
+        hint: 'active-workflow-continuation',
+        matched: `active-workflow:${trigger || 'passthrough'}`,
+        source: 'magic',
+        chained_modes: null,
+      };
+    }
     return { passthrough: true, matched: trigger, source: 'passthrough' };
   }
 
@@ -205,15 +227,15 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
   };
 }
 
-// Command → v2 mode mapping. The six workflow commands map to modes in
-// `modes/<mode>.json`; `queue` and `cancel` are utility commands (no mode).
+// Command → v3 mode mapping. Five workflow commands; `queue` and `cancel`
+// are utility commands (no mode). Modes resolved via workflow-loader.mjs
+// from modes/workflow.yaml.
 const COMMAND_CONFIG = {
-  plan:         { mode: 'plan' },
-  'simple-fix': { mode: 'simple_fix' },
-  fix:          { mode: 'fix' },
-  investigate:  { mode: 'investigate' },
-  verify:       { mode: 'verify' },
-  implement:    { mode: 'implement' },
+  think:       { mode: 'think' },
+  fix:         { mode: 'fix' },
+  investigate: { mode: 'investigate' },
+  verify:      { mode: 'verify' },
+  implement:   { mode: 'implement' },
 };
 
 function writeStateFile(directory, filename, data) {
@@ -324,8 +346,64 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
     if (!existsSync(statePath)) return { create: true, reason: 'state-missing' };
     const state = JSON.parse(readFileSync(statePath, 'utf-8'));
     if (state.current_stage === 'done') return { create: true, reason: 'prior-done' };
-    return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath };
+    return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath, state };
   } catch { return { create: true, reason: 'pointer-parse-error' }; }
+}
+
+/**
+ * applyMagicKeywords — scan the prompt for keys listed in modeCfg.magic_keywords
+ * and apply each key's `set: {...}` to the state. Returns a summary of what was
+ * applied (specifically `target_type`) so the caller can drive pipeline selection.
+ *
+ * Each magic keyword entry shape (from modes/workflow.yaml):
+ *   typo: { set: { exempt.tdd: true, exempt.e2e: true, target_type: 'typo' } }
+ *
+ * Dotted keys under `set.exempt` are applied to state.exempt.*;
+ * flat keys like `target_type` / `skip_brainstorm` are applied to state.<key>.
+ *
+ * @param {string} prompt
+ * @param {object} modeCfg — output of loadModeConfig (workflow-loader getMode shape)
+ * @param {object} state — mutable machineState being seeded
+ * @returns {{ target_type?: string, skip_brainstorm?: boolean, matched: string[] }}
+ */
+function applyMagicKeywords(prompt, modeCfg, state) {
+  const applied = { matched: [] };
+  const text = String(prompt || '');
+  const magic = modeCfg?.magic_keywords;
+  if (!text || !magic || typeof magic !== 'object') return applied;
+
+  for (const [keyword, spec] of Object.entries(magic)) {
+    // Case-insensitive match on whole prompt. For ASCII keywords use
+    // word-boundary `\b` (prevents `typography` matching `typo`). For non-ASCII
+    // keywords (CJK: 텍스트, 덧붙여, 추가로) `\b` fails because CJK chars are
+    // not in \w, so fall back to plain substring match. Multi-word keys (`add
+    // to`) still work via word boundary on the outer edges.
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const isAscii = /^[\x00-\x7F]+$/.test(keyword);
+    const re = isAscii
+      ? new RegExp(`\\b${escaped}\\b`, 'i')
+      : new RegExp(escaped, 'i');
+    if (!re.test(text)) continue;
+    applied.matched.push(keyword);
+    const set = spec?.set;
+    if (!set || typeof set !== 'object') continue;
+
+    for (const [k, v] of Object.entries(set)) {
+      if (k.startsWith('exempt.')) {
+        const sub = k.slice('exempt.'.length);
+        state.exempt = { ...(state.exempt ?? {}), [sub]: v };
+      } else if (k === 'target_type') {
+        state.target_type = v;
+        applied.target_type = v;
+      } else if (k === 'skip_brainstorm') {
+        applied.skip_brainstorm = Boolean(v);
+      } else {
+        state[k] = v;
+      }
+    }
+  }
+
+  return applied;
 }
 
 function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic') {
@@ -429,14 +507,37 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
         const modeCfg = loadModeConfig(mode);
         const chain = Array.isArray(chainedModes) && chainedModes.length >= 2 ? chainedModes : [];
         const machineState = createInitialState({ taskId: slug, mode, chainedModes: chain });
-        if (modeCfg?.allowed_skills?.length) {
-          machineState.allowed_skills = modeCfg.allowed_skills;
+        if (modeCfg?.default_exempt) {
+          machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
+        }
+
+        // v3.1 — apply magic_keywords from the prompt: exempt flags, target_type,
+        // skip_brainstorm. This is what wires the `/fix typo ...` → target_type=typo
+        // → minimal-pipeline path that prior versions declared but never executed.
+        const magicApplied = applyMagicKeywords(prompt, modeCfg, machineState);
+
+        // v3.1 — if target_type_dispatch is set and we now have a target_type
+        // (from magic keyword), resolve the runtime pipeline via selectPipeline.
+        // Otherwise fall back to the mode's default allowed_skills.
+        let resolvedAllowedSkills = modeCfg?.allowed_skills ?? [];
+        if (modeCfg?.target_type_dispatch && magicApplied.target_type) {
+          try {
+            const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+            const pipelineName = v3SelectPipeline(mode, { target_type: magicApplied.target_type }, cfg);
+            if (pipelineName && pipelineName !== 'upgrade_required' && cfg.pipelines[pipelineName]) {
+              resolvedAllowedSkills = [...cfg.pipelines[pipelineName]];
+              machineState.target_type = magicApplied.target_type;
+              printTag(`Pipeline: ${pipelineName} (target_type=${magicApplied.target_type})`);
+            }
+          } catch (err) {
+            printTag(`Pipeline resolution failed: ${err.message}`);
+          }
+        }
+        if (resolvedAllowedSkills.length) {
+          machineState.allowed_skills = resolvedAllowedSkills;
         }
         if (typeof modeCfg?.entry_skill === 'string' && machineState.allowed_skills.includes(modeCfg.entry_skill)) {
           machineState.current_stage = modeCfg.entry_skill;
-        }
-        if (modeCfg?.default_exempt) {
-          machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
         }
         writeState(stateJsonPath, machineState);
         // Global `.smt/active_task` is no longer written — per-session pointer
@@ -569,7 +670,7 @@ async function main() {
     if (!detected) {
       const classification = classifyPrompt(prompt, { cwd: directory, sessionId });
       if (classification.intent === 'command' && classification.command) {
-        const validCommands = ['plan', 'build', 'fix', 'simple-fix', 'investigate', 'implement', 'verify', 'cancel', 'queue'];
+        const validCommands = ['think', 'fix', 'investigate', 'implement', 'verify', 'cancel', 'queue'];
         const cmd = classification.command.toLowerCase().replace(/^\//, '');
         if (validCommands.includes(cmd)) {
           printTag(`Magic Keyword: Haiku classified command`);
@@ -699,4 +800,12 @@ async function main() {
   }
 }
 
-main();
+// Guard: only run main() when this file is the entry module (CLI/hook path).
+// Test files import `detectNaturalLanguageCommand` and `isTranscriptPaste`
+// as pure functions; without this guard, module evaluation would enter main(),
+// which reads /dev/stdin and hangs under `node --test` (stdin inherited from
+// runner never closes). Runtime behavior unchanged — hook invocation still
+// matches `file://${process.argv[1]}`.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}

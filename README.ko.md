@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <code>v2.4.7</code>
+  <code>v3.1.0</code>
 </p>
 
 <p align="center">
@@ -62,11 +62,15 @@ node ~/Smelter/scripts/dev-install.mjs
 
 ## 요약
 
-- **6개 커맨드**: `/plan`, `/implement`, `/fix`, `/simple-fix`, `/investigate`, `/verify`. 자연어 입력은 자동 라우팅 — 명시 slash 커맨드가 override.
-- **14개 workflow 스킬**을 모드로 조합 (고정 10-step 파이프라인 아님). 각 스킬은 `consumes → produces` 계약을 선언; 실패는 **producer chain**으로 라우팅 — 재시도 없음, 회피 없음, 자기 포기 없음.
-- **8개 Iron Laws**는 hook (`auto-confirm`, `critic-watchdog`)으로 runtime 강제. 프롬프트 차원이 아님.
-- **Multi-Pass Verification**: 6개 review 스킬 모두 pass 선언 전 3 라운드(omission / contradiction / edge_case) 수행.
-- **파일 기반 상태**: 모든 task는 schema v2.4.1의 단일 `*.state.json`을 가짐. 에이전트는 메모리가 아닌 파일을 읽는다.
+- **5개 커맨드** (v3): `/think`, `/implement`, `/fix`, `/investigate`, `/verify`. 자연어 입력은 자동 라우팅 — 명시 slash 커맨드가 override. v2 `/plan` + `/simple-fix` 제거됨.
+- **단일 통합 설정**: `modes/workflow.yaml`이 skills + pipelines + modes + target_type_routing + verification_rounds를 한 파일에 담음.
+- **Target-type 분기 (v3.1)**: `/fix`가 `target_type` + 스코프 신호 기반으로 런타임에 파이프라인 선택 — `typo`/`dialogue` → `minimal` (4 스킬), 단순 `bug_fix` → `light` (8), 복잡 → `medium` (11). 사소한 fix의 tasker 오버헤드 제거.
+- **14개 workflow 스킬**을 모드로 조합. 각 스킬은 `consumes → produces` 계약; 실패는 **producer chain**으로 라우팅 — 재시도 없음, 회피 없음, 자기 포기 없음.
+- **8개 Iron Laws**는 hook (`auto-confirm`, `critic-watchdog`, `pre-tool-enforcer`)으로 runtime 강제.
+- **Multi-Pass Verification (v3.1)**: 중간 리뷰 (brainstorm-review, investigate-review, tasker-review, agent-review) **2 라운드** (omission + contradiction). 종단 리뷰 (e2e-review, team-code-review, human-check) **3 라운드**.
+- **파일 기반 상태**: 모든 task는 단일 `*.state.json`을 가짐. 에이전트는 메모리가 아닌 파일을 읽는다.
+- **Commit gate (v3.1)**: `pre-tool-enforcer`가 `workflow-human-check` 통과 전까지 `git commit` 차단. Shell-unwrap으로 `bash -c`, env prefix, 절대경로 우회 방지.
+- **Visual 아티팩트 렌더링 (v3.1)**: `workflow-human-check`이 `AskUserQuestion` 전에 모든 `.png`/`.jpg`/`.webm`을 `Read` tool로 인라인 표시.
 
 ---
 
@@ -88,16 +92,17 @@ node ~/Smelter/scripts/dev-install.mjs
 
 ---
 
-## 커맨드
+## 커맨드 (v3)
 
-| 커맨드 | 모드 | 진입 스킬 | 사용 시점 |
-|--------|------|-----------|-----------|
-| `/plan`        | `plan`        | `workflow-brainstorm` (deep)     | 신규 기능 또는 리팩토링; 기획이 먼저 |
-| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | 기존 코드 위에 빌드; 경량 인터뷰 |
-| `/fix`         | `fix`         | `workflow-investigate`           | 조사가 필요한 버그 / 로직 수리 |
-| `/simple-fix`  | `simple_fix`  | `workflow-coding`                | 텍스트, CSS, 상수 치환 |
-| `/investigate` | `investigate` | `workflow-investigate`           | 정적 읽기 (맥락·근거 파악); mode transition으로 종료 |
-| `/verify`      | `verify`      | `workflow-verify`                | 비수정 검증 (테스트·점검·실 E2E 인터페이스를 1회에) |
+| 커맨드 | 모드 | 진입 스킬 | 파이프라인 | 사용 시점 |
+|--------|------|-----------|------------|-----------|
+| `/think`       | `think`       | `workflow-brainstorm` (deep)     | `planning_only`    | 기획+계획. 코드 변경 없음 (v2 `/plan`에서 이름 변경) |
+| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | `full` (13)        | 기존 코드 위에 빌드; 경량 인터뷰 |
+| `/fix`         | `fix`         | `workflow-investigate`           | 런타임 선택       | 버그/로직 수리. `typo`/`dialogue` → `minimal` (4) · 단순 `bug_fix` → `light` (8) · 복잡 / `extend_existing` → `medium` (11) |
+| `/investigate` | `investigate` | `workflow-investigate`           | `investigate_only` | 정적 읽기 (맥락·근거 파악); mode transition으로 종료 |
+| `/verify`      | `verify`      | `workflow-verify`                | `verify_only`      | 비수정 검증 (테스트·점검·실 E2E 인터페이스를 1회에) |
+
+v3 마이그레이션: `/plan` → `/think`. `/simple-fix`는 `/fix` + magic keyword (`typo`/`dialogue`/`css`)로 흡수.
 
 자연어 자동 라우팅은 한글 + 영어 동사 (`검증`, `분석`, `파악`, `만들어줘`, `리팩토링`, `verify`, `validate`, `implement`, …)와 복합 의도 (`검증하고 수정해` → `investigate → fix`)를 커버.
 

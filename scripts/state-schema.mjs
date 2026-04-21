@@ -31,7 +31,10 @@ export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-human-check',
 ]);
 
-export const MODES = Object.freeze(['simple_fix', 'fix', 'investigate', 'verify', 'plan', 'implement']);
+// v3 canonical modes — legacy `plan` and `simple_fix` fully removed.
+export const MODES = Object.freeze([
+  'think', 'fix', 'implement', 'investigate', 'verify',
+]);
 
 export const CAUSE_ENUM = Object.freeze([
   'typecheck', 'lint', 'test_run', 'build', 'assertion',
@@ -42,6 +45,8 @@ export const CAUSE_ENUM = Object.freeze([
   'artifact_missing',    // E2E pass claim with no real-interface artifact (§8)
   'mocked_interface',    // E2E run mocked the interface under test (§8)
   'effect_unverified',   // E2E run asserted only ack, not the target effect (§8)
+  'visual_mismatch',     // v3: e2e-review vision inspection found screenshot/video does not match expected state
+  'e2e_infra_missing',   // v3: e2e harness absent (playwright, test-runner, etc.) — needs install before scenarios run
 ]);
 
 export const VERIFICATION_FOCUS_ENUM = Object.freeze([
@@ -58,6 +63,7 @@ export const EFFECT_EVIDENCE_TYPE_ENUM = Object.freeze([
 
 export const TARGET_TYPE_ENUM = Object.freeze([
   'new_feature', 'refactor', 'extend_existing', 'migration', 'bug_fix',
+  'typo', 'dialogue',   // v3.1 — surface-based types set by magic keyword; route to `minimal` pipeline
 ]);
 
 export const PATTERNS = Object.freeze(['A', 'B', 'C', 'D', 'E']);

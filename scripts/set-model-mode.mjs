@@ -59,13 +59,13 @@ export function writeJsonFile(filePath, data) {
 }
 
 export function resolveCodexDefaultModel(currentModel = '') {
-  return DEFAULT_CODEX_MODEL;
+  return isCodexModel(currentModel) ? currentModel : DEFAULT_CODEX_MODEL;
 }
 
-export function buildModelModeState() {
+export function buildModelModeState(model = DEFAULT_CODEX_MODEL) {
   return {
     mode: 'codex',
-    model: getCodexModelLabel(DEFAULT_CODEX_MODEL),
+    model: getCodexModelLabel(model),
     updated_at: new Date().toISOString(),
   };
 }
@@ -96,18 +96,18 @@ export function stripModelEnv(settings) {
 
 export function applyCodexMode(settings) {
   const current = settings.model ?? '';
-  settings.model = resolveCodexDefaultModel(current);
+  const activeModel = resolveCodexDefaultModel(current);
   delete settings.modelOverrides;
   delete settings.availableModels;
   stripModelEnv(settings);
   delete settings.env.ANTHROPIC_BASE_URL;
   setModelCache(CODEX_MODEL_OPTIONS);
   ensureStateDir(defaultStateDir);
-  writeJsonFile(statePath, buildModelModeState());
+  writeJsonFile(statePath, buildModelModeState(activeModel));
+  return activeModel;
 }
 
 export function applyClaudeMode(settings, cwd = process.cwd()) {
-  settings.model = 'sonnet';
   delete settings.modelOverrides;
   delete settings.env.ANTHROPIC_BASE_URL;
   delete settings.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC;

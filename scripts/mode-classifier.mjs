@@ -30,18 +30,16 @@ import { readFileSync } from 'node:fs';
 import { classifyMode } from './lib/subagent-classifier.mjs';
 
 const EXPLICIT_COMMANDS = {
-  '/simple-fix': 'simple_fix',
+  '/think': 'think',
   '/fix': 'fix',
   '/investigate': 'investigate',
   '/verify': 'verify',
-  '/plan': 'plan',
   '/implement': 'implement',
 };
 
-// Mode whitelist — kept in sync with state-schema MODES. Duplicated here to
-// avoid creating a hard dependency on state-schema from classifier imports.
+// Mode whitelist — kept in sync with state-schema MODES (v3 canonical set).
 const MODES_WHITELIST = Object.freeze([
-  'simple_fix', 'fix', 'investigate', 'verify', 'plan', 'implement',
+  'think', 'fix', 'investigate', 'verify', 'implement',
 ]);
 
 // ---------------------------------------------------------------------------

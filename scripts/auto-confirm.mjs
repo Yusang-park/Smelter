@@ -36,6 +36,7 @@ import { route } from './route-on-fail.mjs';
 import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { readLastAssistantText, lastAssistantQuestionShape, classifyQuestionShape } from './lib/transcript-reader.mjs';
+import { inspectClassifierModel } from './lib/subagent-classifier.mjs';
 
 // Question shapes that mark the assistant as actively soliciting a user
 // reply. When the last message matches any of these, the spawn_sub_tasker
@@ -81,20 +82,30 @@ const RISK_KEYWORDS = [
 // breaks the infinite "no explicit signal, prompting to proceed" loop).
 
 export function buildClassifierPrompt(lastMessage) {
-  return `You are a binary classifier. Read the assistant's final message and output exactly one word.\n\n` +
-    `Output \"continue\" if the message is explicitly asking the user for permission to proceed (any language). Examples: \"shall I proceed?\", \"진행할까요?\", \"ready to continue?\", \"次に進めますか？\".\n\n` +
-    `Output \"halt\" otherwise (final answer, summary, completed report, error message, etc.).\n\n` +
-    `Output exactly one of: continue OR halt. No punctuation. No other words.\n\n` +
+  return `You classify whether Claude should continue automatically after a stop hook.\n\n` +
+    `Return EXACTLY one line of JSON and nothing else:\n` +
+    `{"action":"continue"|"halt","reason":"<short reason>"}\n\n` +
+    `Default is continue. Choose action=continue when the assistant:\n` +
+    `  - explicitly asks permission to proceed, OR\n` +
+    `  - offers immediate next work (even conditionally), OR\n` +
+    `  - names a concrete next step / file / command to run next, OR\n` +
+    `  - uses conditional-offer phrasing such as "원하면", "원하시면", "하시려면", "말씀해 주시면", "if you want", "if desired", "let me know if", "want me to", "shall I", "바로 ~한다", "다음 작업", "next:", "계속하려면".\n\n` +
+    `Only choose action=halt when the message is clearly a terminal final answer / completed report / pure summary with no forward-looking proposal, OR when it is explicitly blocked on external user decision (credentials, destructive confirmation, ambiguous requirement).\n\n` +
+    `When in doubt between continue and halt, pick continue.\n\n` +
     `Message:\n"""\n${lastMessage}\n"""`;
 }
 
 // Pick the model the lightweight classifier sub-agent should run with.
-// Default = sonnet. Codex CLI environments use mini.
+// Unified with scripts/lib/subagent-classifier.mjs so Codex windows use a
+// Codex-family mini model and Claude windows use haiku.
 export function pickSubAgentModel() {
-  if (process.env.CODEX_MODE === '1') return 'haiku';
+  if (process.env.CODEX_MODE === '1') return 'gpt-5.4-mini';
+  if (process.env.SMELTER_MODEL_MODE === 'codex') return 'gpt-5.4-mini';
   const cfg = readJson(join(homedir(), '.smt', 'config.json'));
-  if (cfg && cfg.codexMode === true) return 'haiku';
-  return 'sonnet';
+  if (cfg && cfg.codexMode === true) return 'gpt-5.4-mini';
+  const settings = readJson('/Users/yusang/smelter/settings.json');
+  const model = String(settings?.model ?? '');
+  return inspectClassifierModel(model);
 }
 
 // Resolve a runnable claude binary path. The user's shell wraps `claude` as a
@@ -119,17 +130,18 @@ function resolveClaudeBinary() {
   return best;
 }
 
-// Spawn the lightweight classifier sub-agent and return 'continue' or 'halt'.
+// Spawn the lightweight classifier sub-agent and return
+// { action: 'continue'|'halt', reason: string }.
 // Tests inject a stub binary via SMT_CLASSIFIER_CMD env var.
 export function classifyProceedPromptViaSubAgent(lastMessage, {
-  model = 'sonnet',
+  model = 'haiku',
   timeoutMs = 40000,
   cmd = process.env.SMT_CLASSIFIER_CMD,
 } = {}) {
-  if (!lastMessage || typeof lastMessage !== 'string') return 'halt';
+  if (!lastMessage || typeof lastMessage !== 'string') return { action: 'halt', reason: 'empty_message' };
 
   const binary = cmd || resolveClaudeBinary();
-  if (!binary) return 'halt';
+  if (!binary) return { action: 'halt', reason: 'missing_binary' };
 
   const prompt = buildClassifierPrompt(lastMessage);
   const args = ['-p', prompt, '--model', model];
@@ -139,20 +151,30 @@ export function classifyProceedPromptViaSubAgent(lastMessage, {
     result = spawnSync(binary, args, {
       timeout: timeoutMs,
       encoding: 'utf-8',
-      // SMT_CLASSIFIER=1 prevents the spawned claude session from re-firing
-      // this Stop hook recursively (see CLI entry guard below).
       env: { ...process.env, SMT_CLASSIFIER: '1', SMELTER_CLASSIFIER_SUBPROCESS: '1' },
     });
   } catch {
-    return 'halt';
+    return { action: 'halt', reason: 'spawn_error' };
   }
 
-  if (!result || result.status !== 0) return 'halt';
-  const out = (result.stdout || '').trim().toLowerCase();
-  // Accept exact "continue" or any line starting with continue (defensive
-  // against trailing whitespace / punctuation).
-  if (/^continue\b/.test(out)) return 'continue';
-  return 'halt';
+  if (!result || result.status !== 0) return { action: 'halt', reason: 'nonzero_exit' };
+  const raw = (result.stdout || '').trim();
+  if (!raw) return { action: 'halt', reason: 'empty_output' };
+  const lines = raw.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed?.action === 'continue' || parsed?.action === 'halt') {
+        return {
+          action: parsed.action,
+          reason: typeof parsed?.reason === 'string' && parsed.reason ? parsed.reason : 'no_reason',
+        };
+      }
+    } catch {}
+  }
+  return { action: 'halt', reason: 'invalid_output' };
 }
 
 // Build the stage-completion classifier prompt. The classifier judges whether
@@ -287,10 +309,10 @@ export function findActiveTaskState(cwd, sessionId) {
 export function detectModeTransitionSignal(message) {
   if (!message || typeof message !== 'string') return '';
   const patterns = [
-    /mode_transition_to_(simple_fix|fix|investigate|plan|implement)\b/i,
-    /transition(?:ing)?\s+to\s+(simple_fix|fix|investigate|plan|implement)\s+mode/i,
-    /switching\s+to\s+(simple_fix|fix|investigate|plan|implement)\s+mode/i,
-    /(simple_fix|fix|investigate|plan|implement)\s+모드로\s*(?:전환|넘어)/i,
+    /mode_transition_to_(think|fix|investigate|implement|verify)\b/i,
+    /transition(?:ing)?\s+to\s+(think|fix|investigate|implement|verify)\s+mode/i,
+    /switching\s+to\s+(think|fix|investigate|implement|verify)\s+mode/i,
+    /(think|fix|investigate|implement|verify)\s+모드로\s*(?:전환|넘어)/i,
   ];
   for (const p of patterns) {
     const m = message.match(p);
@@ -542,6 +564,38 @@ export function detectRiskKeyword(text) {
 // action is a concrete skill invocation (enter_skill / advance / continue).
 // The block is designed so the main agent cannot skip it as prose: it reads
 // as an imperative with the exact Skill tool call required.
+export function shouldEchoLastAssistantText(lastAssistantText, skill) {
+  if (!lastAssistantText || typeof lastAssistantText !== 'string') return false;
+  const text = lastAssistantText.slice(0, 800).replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+
+  // Never replay imperative transition text back into the next turn. The
+  // mandatory injection itself already carries the authoritative directive.
+  if (/\[MANDATORY WORKFLOW STEP\]/.test(text)) return false;
+  if (/\bYou MUST invoke Skill\(skill:/i.test(text)) return false;
+  if (/\bDo not answer in prose before the Skill call\b/i.test(text)) return false;
+  if (/\bThe PostToolUse:Skill hook only advances state\b/i.test(text)) return false;
+
+  // Never replay stale stage-alignment prose that claims a coding stage is
+  // active/aligned without proving the Skill tool was invoked. Echoing this
+  // text into the next mandatory injection biases the model toward prose-first
+  // continuation instead of the required Skill call.
+  if (/\bcoding stage is now aligned\b/i.test(text)) return false;
+  if (/\bstage tracker wasn.?t advanced\b/i.test(text)) return false;
+  if (/\bupdating the Smelter state\b/i.test(text)) return false;
+  if (/\bresuming the planned source edits\b/i.test(text)) return false;
+
+  // Generic stale transition claims. If the previous text already names the
+  // exact target skill as "entered/active/aligned", don't replay it.
+  const skillRe = String(skill || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (skillRe) {
+    const staleTransition = new RegExp(`\\b(?:entered|entering|active|aligned|resuming)\\b[\\s\\S]{0,80}${skillRe}`, 'i');
+    if (staleTransition.test(text)) return false;
+  }
+
+  return true;
+}
+
 export function formatMandatoryInjection({ skill, direction, subAgentModel, state, lastAssistantText }) {
   const lines = [];
   const dir = direction || 'advance';
@@ -561,7 +615,7 @@ export function formatMandatoryInjection({ skill, direction, subAgentModel, stat
   if (subAgentModel) {
     lines.push(`Delegate the actual work to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') when a specialist is needed.`);
   }
-  if (lastAssistantText && typeof lastAssistantText === 'string') {
+  if (shouldEchoLastAssistantText(lastAssistantText, skill)) {
     const truncated = lastAssistantText.slice(0, 400).replace(/\s+/g, ' ').trim();
     if (truncated.length > 0) {
       lines.push('');
@@ -888,10 +942,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // sub-agent failure halts (safe default that breaks the prior infinite loop).
   if (decision.action === 'classify_needed') {
     const verdict = classifyProceedPromptViaSubAgent(decision.payload.lastMessage, { model: subAgentModel });
-    if (verdict === 'continue') {
-      decision = { action: 'continue', reason: `classifier sub-agent (${subAgentModel}) → continue` };
+    if (verdict.action === 'continue') {
+      decision = { action: 'continue', reason: `classifier sub-agent (${subAgentModel}) → continue: ${verdict.reason}` };
     } else {
-      decision = { action: 'halt', reason: `classifier sub-agent (${subAgentModel}) → halt` };
+      decision = { action: 'halt', reason: `classifier sub-agent (${subAgentModel}) → halt: ${verdict.reason}` };
     }
   }
 
