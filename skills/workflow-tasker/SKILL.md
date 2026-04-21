@@ -22,11 +22,35 @@ gate:
 
 # workflow-tasker
 
-Based on investigation results, decides the **plan, queue, and team composition**.
+## Overview
+
+Based on investigation results, decides the **plan, queue, and team composition**. Produces the single artifact that `workflow-write-test`, `workflow-coding`, and every downstream skill consume.
+
+**Core principle:** No implementation work begins until the plan, target_type, and team_runtime are all written. Missing any one of the three is a gate fail.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-tasker to produce plan.md + target_type + team_runtime from the investigation."
+
+## The Iron Law
+
+```
+NO IMPLEMENTATION SKILL WITHOUT plan.md + target_type + team_runtime
+```
+
+`workflow-write-test` and `workflow-coding` both refuse to start if any of the three postconditions is missing. The hook gate is:
+
+- `file_exists: plan.md`
+- `plan_has_queue: true`
+- `target_type_set: true`
+- `team_runtime_populated: true`
+
+All four must hold. Partial plans do not advance.
 
 ## Three core artifacts
 
 ### 1. `plan.md`
+
 ```markdown
 ## Goal
 <one-line goal>
@@ -46,17 +70,38 @@ Based on investigation results, decides the **plan, queue, and team composition*
 ```
 
 ### 2. `state.json.target_type`
+
 One of the fixed enum values.
 
 ### 3. `state.json.team_runtime` (initial assignment)
+
 Assign a Pattern + agent for each downstream workflow-* skill.
 
 #### Assignment principles
+
 - Default: follow mode's `default_team_overrides`
 - Override conditions:
   - security sensitive → force `workflow-agent-review` Pattern B
   - low complexity → demote Pattern C to A
   - frontend/backend separable → promote `workflow-coding` to Pattern C
+
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "I know the tasks, why write them in plan.md" | `workflow-write-test` and `workflow-coding` READ plan.md. In-head tasks are invisible to them. |
+| "Team assignment can wait" | `team_runtime` gates pattern selection downstream. An empty field forces Pattern A defaults even when the tasker would have chosen B or C. |
+| "Target type is obvious" | `target_type` drives mode-specific routing (e.g., migration forces extra review). Set it explicitly. |
+| "Queue is too granular" | Bite-sized tasks are the contract with `workflow-coding`. Each queue item maps to a TDD cycle. |
+| "Skip the 2–3 approaches section, I already picked one" | The rejected approaches and rationale are audit evidence for `workflow-tasker-review`. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Security isn't touched here" | Tasker declares `security_surface: false` explicitly. Absence is ambiguous — default Pattern B stays on. |
+| "Plan is short, skip the queue" | No queue = gate fail. The queue is what `workflow-coding` iterates on. |
+| "I'll populate team_runtime later" | Later = never. Fill it now or downstream skills run with wrong defaults. |
 
 ## Entry output format
 
@@ -69,3 +114,14 @@ Goal: Produce plan, target_type, and team_runtime for <feature>
 
 - gate failure (empty team_runtime, etc.) → self re-run
 - `workflow-tasker-review` declaring fail/reshape → returns here
+
+## Terminal State — Required Next Skill
+
+**REQUIRED NEXT SKILL:** `workflow-tasker-review`
+
+Do NOT:
+- Invoke `workflow-write-test`, `workflow-coding`, or any implementation skill
+- Stop after plan.md is written, report "plan ready", or ask for approval
+- Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
+
+The `workflow-tasker-review` 95% consensus + 3-round pass is the only gate that releases downstream execution.

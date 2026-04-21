@@ -27,15 +27,49 @@ gate:
 
 # workflow-investigate-review
 
-Reviews `investigation.md`. Identifies missing coverage, excess, and risks.
+## Overview
+
+Reviews `investigation.md`. Identifies missing coverage, excess, and risks before tasker consumes.
+
+**Core principle:** Tasker only gets evidence that survives 3-round review. Partial review is not review.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-investigate-review to run 3-round verification on `investigation.md`."
+
+## The Iron Law
+
+```
+NO TASKER HANDOFF WITHOUT 3/3 REVIEW ROUNDS AT pass
+```
+
+Skill-level `pass` requires `completed_rounds === 3 && all rounds result === pass`. Declaring `pass` with `completed_rounds < 3` is blocked by hook.
 
 ## Output
 
 `investigate_review.md`:
+
 - `## Verdict` — `pass` / `fail` / `reshape`
 - `## Coverage Check` — whether any area is missing
 - `## Risks Validated` — re-validated risks
 - `## Reshape Target` — upstream skill on reshape (e.g., `workflow-brainstorm`)
+
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "The investigation looks fine, skip rounds 2–3" | Hook blocks sub-3 pass. Run all rounds. |
+| "No contradictions, round 2 is wasted" | Round 2 finds the contradictions. Absence is what the round discovers. |
+| "Edge cases can be caught in tasker-review" | Each review catches different bugs. Do not defer. |
+| "Reshape feels heavy, downgrade to fail" | If scope is wrong, reshape. Calling reshape `fail` wastes the investigate re-run without fixing the upstream brainstorm. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Coverage is good enough" | Reviewer decides, not implementer. Record the verdict. |
+| "Risks are already in brainstorm" | `## Risks Validated` is a fresh re-evaluation, not a copy. |
+| "Just this once" | No exceptions. Iron Law applies to every run. |
 
 ## Routing
 
@@ -81,3 +115,17 @@ All rounds recorded in `state.json.team_runtime.workflow-investigate-review.roun
 2. Critic Watchdog blocks "already verified" skip statements
 3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥2 types)
 4. Declaring `pass` with `completed_rounds < 3` is blocked by hook
+
+## Terminal State — Required Next Skill
+
+**REQUIRED NEXT SKILL on `pass`:**
+- `/plan`, `/implement`, `/fix` mode → `workflow-tasker`
+- `/investigate` mode → `mode_transition` gate (may route to `/plan` or `/fix` per suggested next mode)
+
+**On `fail`:** route back to `workflow-investigate`.
+**On `reshape`:** route back to `workflow-brainstorm`.
+
+Do NOT:
+- Invoke `workflow-coding`, `workflow-write-test`, or any implementation skill
+- Stop on pass, report completion, or ask "shall I continue?"
+- Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages

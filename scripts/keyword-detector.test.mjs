@@ -14,10 +14,29 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const SCRIPT_PATH = join(process.cwd(), 'scripts', 'keyword-detector.mjs');
+// Deterministic LLM stub so tests do not depend on real Claude CLI availability.
+const CLASSIFIER_STUB_PATH = join(process.cwd(), 'scripts', 'lib', '__fixtures__', 'mode-classifier-stub.mjs');
+// In-process tests (TPP7/TPP8 call detectNaturalLanguageCommand directly) also
+// need the stub: setting this before the module is imported makes classifyMode
+// use the stub instead of a real Claude subprocess. Scope via before/after
+// hooks so the override does NOT leak to unrelated tests if this file is ever
+// batched into a shared runner process.
+const __ORIG_MODE_CLASSIFIER_MODULE = process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+process.env.SMELTER_MODE_CLASSIFIER_MODULE = CLASSIFIER_STUB_PATH;
+test.after(() => {
+  if (__ORIG_MODE_CLASSIFIER_MODULE === undefined) {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+  } else {
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = __ORIG_MODE_CLASSIFIER_MODULE;
+  }
+});
 
 function runDetector({ cwd, prompt, sessionId = 'chain-test' }) {
   const input = JSON.stringify({ cwd, session_id: sessionId, prompt });
-  const result = spawnSync(process.execPath, [SCRIPT_PATH], { input, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [SCRIPT_PATH], {
+    input, encoding: 'utf8',
+    env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: CLASSIFIER_STUB_PATH },
+  });
   assert.equal(result.status, 0, `detector exit=${result.status} stderr=${result.stderr}`);
   return JSON.parse(result.stdout);
 }
@@ -240,5 +259,90 @@ test('SLUG6: zero-width char inside "You\\u200Bare a …" cannot bypass preamble
     });
     const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
     assert.ok(!slug.startsWith('you'), `zero-width char must not bypass 'You are a' strip; got: ${slug}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+// ── Transcript-paste passthrough (feature: transcript-paste-heuristic) ────
+
+import { isTranscriptPaste, detectNaturalLanguageCommand } from './keyword-detector.mjs';
+
+const VERBATIM_TRANSCRIPT = `[master fc8915cb] fix: resolve DOMAIN via SecretsManager in getUpdateSubscriptionUrl
+ 2 files changed, 174 insertions(+), 5 deletions(-)
+⏺ 커밋 완료: fc8915cb — 2 files changed (index.ts + index.test.ts만).
+⏺ Ran 2 stop hooks (ctrl+o to expand)
+  ⎿  Stop hook error: [Stage] entry_not_started
+  ⎿  Stop hook error: stage-completion classifier → workflow-investigate incomplete
+⏺ Skill(workflow-investigate)
+  ⎿  Successfully loaded skill`;
+
+test('TPP1 isTranscriptPaste: true for verbatim user transcript', () => {
+  assert.equal(isTranscriptPaste(VERBATIM_TRANSCRIPT), true);
+});
+
+test('TPP2 isTranscriptPaste: false on natural-language intent "fix the bug in auth"', () => {
+  assert.equal(isTranscriptPaste('fix the bug in auth'), false);
+});
+
+test('TPP3 isTranscriptPaste: false on single incidental mention (one marker only)', () => {
+  assert.equal(isTranscriptPaste('I saw this error: fix: 123 — is it related?'), false);
+});
+
+test('TPP4 isTranscriptPaste: true on two distinct ⏺ markers alone', () => {
+  assert.equal(isTranscriptPaste('⏺ step 1\n⏺ step 2'), true);
+});
+
+test('TPP5 isTranscriptPaste: true on [master <sha>] banner + ⏺ marker', () => {
+  assert.equal(isTranscriptPaste('[master abc1234] fix: something\n⏺ done'), true);
+});
+
+test('TPP6 explicit /fix slash at prompt start bypasses transcript heuristic', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-tpp6-'));
+  try {
+    const prompt = `/fix quoted log follows\n${VERBATIM_TRANSCRIPT}`;
+    const out = runDetector({ cwd, prompt, sessionId: 'tpp6' });
+    assert.equal(out.continue, true);
+    assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Skill: fix/);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TPP7 detectNaturalLanguageCommand returns passthrough on transcript paste', () => {
+  const result = detectNaturalLanguageCommand(VERBATIM_TRANSCRIPT);
+  assert.equal(result?.passthrough, true, `expected passthrough, got ${JSON.stringify(result)}`);
+  assert.equal(result?.source, 'passthrough');
+});
+
+test('TPP8 detectNaturalLanguageCommand still returns fix on "버그 고쳐줘"', () => {
+  const result = detectNaturalLanguageCommand('버그 고쳐줘');
+  assert.equal(result?.name, 'fix');
+  assert.equal(result?.source, 'magic');
+});
+
+test('TPP9 isTranscriptPaste: false on empty / whitespace-only', () => {
+  assert.equal(isTranscriptPaste(''), false);
+  assert.equal(isTranscriptPaste('   \n  \t  '), false);
+});
+
+test('TPP10 mixed paste+question with transcript-dominant markers → passthrough (pinned decision)', () => {
+  const mixed = `${VERBATIM_TRANSCRIPT}\n이걸 고쳐줘`;
+  const result = detectNaturalLanguageCommand(mixed);
+  assert.equal(result?.passthrough, true, `transcript-dominant paste must win; got ${JSON.stringify(result)}`);
+});
+
+test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-tpp11-'));
+  try {
+    const input = JSON.stringify({ cwd, session_id: 'tpp11', prompt: VERBATIM_TRANSCRIPT });
+    const result = spawnSync(process.execPath, [SCRIPT_PATH], {
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, SMELTER_SKIP_TRANSCRIPT_HEURISTIC: '1' },
+    });
+    assert.equal(result.status, 0);
+    const out = JSON.parse(result.stdout);
+    const ctx = out.hookSpecificOutput?.additionalContext ?? '';
+    assert.ok(
+      /Skill: fix/.test(ctx) || /Skill:/.test(ctx),
+      `env-var bypass must route to fix (or any skill) rather than passthrough; got ctx=${ctx}`,
+    );
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

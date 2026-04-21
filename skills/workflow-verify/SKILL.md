@@ -22,7 +22,23 @@ gate:
 
 # workflow-verify
 
+## Overview
+
 Non-modifying verification of the current codebase. Runs three phases in a single skill invocation and produces one consolidated report. Used as the entry skill of `/verify` mode.
+
+**Core principle:** All three phases run every time. Phase 1 (tests) alone is not verification. Phase 2 (static) alone is not verification. Phase 3 (real-interface E2E) alone is not verification. Verify = all three.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-verify to run Phase 1 (tests) + Phase 2 (static) + Phase 3 (E2E) and produce `verify_report.md`."
+
+## The Iron Law
+
+```
+NO VERIFY REPORT WITHOUT ALL THREE PHASES EXECUTED
+```
+
+The skill completes when `verify_report.md` exists AND all three phase sections are present. Skipping a phase = gate fail.
 
 ## Three phases (all mandatory)
 
@@ -130,3 +146,39 @@ The skill itself **completes** as soon as all three phases have run and the repo
 ## Multi-Pass Verification
 
 This is **not** a review skill. It does not run Multi-Pass rounds. One invocation = one report.
+
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "Phase 1 passed, report clean" | Report needs all three phase sections present, regardless of phase results. |
+| "Phase 3 is just like `pnpm test`" | Phase 3 is real-interface E2E, not a test runner. `pnpm test` is Phase 1. Phase 3 requires artifacts. |
+| "Ack signal is enough for Phase 3" | Phase 3 inherits `workflow-e2e`'s Effect-vs-Ack rule. Ack alone fails. |
+| "I'll skip Phase 2 if Phase 1 passed" | Typecheck / lint / state-schema / doc-sync catch different bugs than tests. |
+| "One failure means I should modify tests to make them pass" | `workflow-verify` NEVER modifies source or tests. It reads + runs + reports only. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "No interface surface, skip Phase 3" | Tasker decides `exempt.e2e`. If not declared exempt, run Phase 3. |
+| "Full regression would take too long" | Scoped by changed surface. Full regression is only on `workflow-human-check` request. |
+| "I already ran this last session" | Re-run. Session-local state is irrelevant; `verify_report.md` must be fresh. |
+
+## Terminal State — Required Next Skill
+
+**Skill completes** when `verify_report.md` exists with all three phase sections. Routing depends on the report verdict, not the skill pass.
+
+| Report verdict | Next action |
+|----------------|-------------|
+| `pass` | Halt — `/verify` mode does not itself run `workflow-human-check`. The user reads the report and decides. |
+| `fail` with bug / regression | Suggest mode upgrade to `/fix` in the report's "Summary verdict" |
+| `fail` with trivial diff (typo / CSS / copy) | Suggest `/simple-fix` |
+| `file_absent` (report missing) | Self-rerun |
+
+`/verify` is a terminal mode by design. It does not chain into implementation skills. Mode upgrade to `/fix` is an explicit user decision, not an automatic transition.
+
+Do NOT:
+- Modify source code or tests to "fix" phase failures within this skill
+- Invoke `workflow-coding` directly — that is a mode upgrade decision
+- Skip producing `verify_report.md` because "all passed locally"

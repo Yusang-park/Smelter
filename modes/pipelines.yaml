@@ -1,0 +1,59 @@
+# Reusable Pipelines — ordered skill sequences that modes compose.
+#
+# YAML anchors (&name) + aliases (*name) allow pipelines to extend each
+# other without literal duplication. The `no_brainstorm` pipeline is
+# `full` minus the first two brainstorm skills, expressed as an anchor.
+#
+# The engine treats the pipeline as the ordered set from which
+# `allowed_skills` and the producer-chain neighbors are derived.
+
+pipelines:
+  full: &full
+    - workflow-brainstorm
+    - workflow-brainstorm-review
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
+    - workflow-write-test
+    - workflow-coding
+    - workflow-agent-review
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-team-code-review
+    - workflow-human-check
+
+  # Bug repair: investigate-first, skip brainstorm phase.
+  no_brainstorm:
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
+    - workflow-write-test
+    - workflow-coding
+    - workflow-agent-review
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-team-code-review
+    - workflow-human-check
+
+  # Planning-only: produces brainstorm.md + tasks.md; no code changes.
+  planning_only:
+    - workflow-brainstorm
+    - workflow-brainstorm-review
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
+
+  # Read-only inspection.
+  investigate_only:
+    - workflow-investigate
+    - workflow-investigate-review
+
+  # Non-modifying test run + inspection.
+  verify_only:
+    - workflow-verify
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-human-check

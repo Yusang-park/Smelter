@@ -14,7 +14,43 @@ gate:
 
 # workflow-human-check
 
+## Overview
+
 Final user review. The one Iron Law #1 exception: waiting for user input is allowed.
+
+This is the ONLY halting point in the entire workflow chain. No other skill may stop the session.
+
+**Core principle:** Claiming a task is done without this skill's `complete` decision is a lie. Prior reviews and tests prove the code works; only the user can decide that the task is actually finished.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-human-check to render the summary report and collect the user's complete / rework / hold / upgrade decision via AskUserQuestion."
+
+## The Iron Law
+
+```
+NO COMPLETION WITHOUT USER DECISION VIA AskUserQuestion
+```
+
+The `AskUserQuestion` call is the gate. A plain-text question asking "should I continue?" does NOT satisfy this gate. The decision must be recorded via the native clickable prompt and persisted in `state.json.current_stage`.
+
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "User is present, just ask in plain text" | Mandatory: use `AskUserQuestion`. Plain-text questions bypass the decision-logging gate. |
+| "User will know the task is done from the diff" | `workflow-human-check` produces `results.md` + session log + state update. These only happen on explicit `complete`. |
+| "The report is long, skip to the question" | The report IS the context the user uses to decide. Render every section. |
+| "Tables are hard to format, use prose" | MANDATORY: Markdown tables + bullets. Plain-text box is forbidden (see `feedback_human_check_format`). |
+| "Risks are minor, omit them" | `## Risks` bullets are mandatory when present. LOW risks go there, not silently elided. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "The user already gave permission" | Session-local. Re-ask on every human-check. |
+| "I'll paraphrase the options" | Mandatory: exactly `rework`, `complete`, `hold`, `upgrade`. No paraphrasing. |
+| "I'll skip the Artifacts table if Video is `(none)`" | Render the table with `(none)` or `MISSING`. Omission is misleading. |
 
 ## Presented Report
 
@@ -113,3 +149,14 @@ Create an `active_feedback` entry:
 ## Full regression
 
 Only on explicit user request: run full `pnpm test` / `npx playwright test`.
+
+## Terminal State — Routing by User Decision
+
+| Decision | Next action |
+|----------|-------------|
+| `complete` | Write `results.md`, update `state.json.current_stage: done`, append session log, perform Git options — then halt |
+| `rework` | Create `active_feedback` entry, route to user-specified `target_skill` (default `workflow-coding`) |
+| `hold` | Set `state.json.status: blocked` — then halt |
+| `upgrade` | Transition mode (e.g., `simple_fix → fix`), re-enter appropriate entry skill |
+
+This is the ONLY workflow-* skill with `halts_session: true`. All other skills are forbidden from stopping the session per Iron Law #1.

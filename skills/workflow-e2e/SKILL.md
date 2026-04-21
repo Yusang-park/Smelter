@@ -28,12 +28,60 @@ exempt_if_surface: [style, typography, typo, dialogue]
 
 # workflow-e2e
 
+## Overview
+
 > **This stage is NOT a test-code run.**
 > `vitest run`, `jest`, or `pytest` alone DO NOT satisfy E2E. They exercise test files, not the real interface.
 >
 > E2E means the **actual interface** that a real user / caller / client touches — a real browser, a real shell, a real HTTP port, a real database engine, a real hook stdin/stdout pipe — is driven with real inputs and the real output is captured as evidence.
 
 Verifies user scenarios at the real interface. Runner selection depends on the surface.
+
+**Core principle:** Test-runner stdout is not truth. Artifacts on disk, captured from the real interface, are truth. An ack signal (toast, banner, 2xx, exit 0) is not an effect — the target state must be independently asserted.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-e2e to drive the real interface and capture artifacts proving the target effect materialized."
+
+## The Iron Law
+
+```
+NO E2E PASS WITHOUT ARTIFACTS ON DISK AND A TARGET-EFFECT ASSERTION
+```
+
+Every exercised surface must produce its required artifact (video, transcript, HTTP log, SQL log, or hook I/O JSON). Every scenario claiming success must populate `state.json.scenarios[].effect_evidence` with a valid type and reference. Ack-only observations fail the gate with `cause: effect_unverified`.
+
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "Tests pass is enough" | That's Phase 1 of `workflow-verify`, not E2E. E2E needs the real interface. |
+| "Banner visible = effect proved" | Banner = ack. Effect = the new data / DOM / row / file the operation was supposed to produce. Assert both. |
+| "No artifacts needed, logs look good" | Zero artifacts = gate fail, even if the runner reported success. |
+| "Mocking HTTP is fine" | If the HTTP surface IS the subject, mocks are disallowed. See `no_interface_mocks`. |
+| "I'll skip the screenshot" | Per-surface artifacts are mandatory. UI needs video + screenshot. |
+| "Scenario passed in dry-run mode" | Playwright `--list` or any dry-run is disallowed. Real browser launch required. |
+| "The agent reported success" | Trust but verify: check VCS diff + artifact files on disk. Agent reports are not evidence. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "The operation is too simple for effect assertion" | `local_ui_toggle` is the only effect_type that accepts "no separate effect evidence" — and only when the operation has no durable external effect. Anything else must produce effect_evidence. |
+| "Ack and effect are the same in this case" | Rare. Declare `local_ui_toggle` explicitly or produce separate effect_evidence. |
+| "Full regression next, scoped E2E suffices" | Scoped E2E on changed surfaces IS the contract. Full regression is opt-in at `workflow-human-check`. |
+| "I'm tired" | Re-run. Evidence before claims. |
+
+## Common Failures
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| "UI scenario passed" | Video + screenshot on disk + DOM state assertion | Banner regex match alone |
+| "API scenario passed" | HTTP request/response log + follow-up GET or DB SELECT confirming state | 2xx status alone |
+| "Hook scenario passed" | input.json + output.json + exit code file + stdout_parse assertion | Exit 0 alone |
+| "DB scenario passed" | Query log + SELECT that reads back the new row's content | `rowcount > 0` alone |
+
+## 5-Surface Mapping — Real Interface Contract
 
 ## 5-Surface Mapping — Real Interface Contract
 
@@ -187,3 +235,18 @@ Full regression runs only when `workflow-human-check` explicitly requests it.
 - `workflow-write-test` — writes RED unit/integration tests. **Not E2E**.
 - `workflow-verify` Phase 1 — runs existing test suites. **Not E2E** (that's Phase 3).
 - `workflow-verify` Phase 3 — a light-touch E2E smoke reusing this skill's contract. Same real-interface rules apply.
+
+## Terminal State — Required Next Skill
+
+**REQUIRED NEXT SKILL on gate pass:** `workflow-e2e-review`
+
+**On `artifact_missing`:** self re-run with correct runner.
+**On `mocked_interface`:** self re-run without mocks.
+**On `assertion` / `build` / `typecheck`:** route to `workflow-coding`.
+
+Do NOT:
+- Skip to `workflow-team-code-review` — artifacts need review first
+- Stop after artifacts exist, report "E2E passed", or ask "shall I review?"
+- Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
+
+Artifacts on disk alone are not the gate — `workflow-e2e-review` 3-round pass is.

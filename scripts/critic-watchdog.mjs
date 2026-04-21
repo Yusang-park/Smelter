@@ -492,6 +492,108 @@ export function rule15_stageSkipOnCodeEdit(input, state) {
   };
 }
 
+// R16 — Premature completion: block `"current_stage": "done"` or `"done"` stage
+// writes when `workflow-human-check` has not recorded a pass event. The full
+// chain requires workflow-human-check as the only halting point; any other
+// path to `done` is a workflow skip.
+//
+// Fires when ALL of the following hold:
+//   - tool is Edit/Write/Bash and content sets current_stage to 'done'
+//   - state exists AND mode's allowed_skills includes 'workflow-human-check'
+//   - no state.events[] entry with { skill: 'workflow-human-check', result: 'pass' }
+//
+// Deliberately does NOT fire when:
+//   - mode does not include workflow-human-check (e.g., pure /verify, /investigate)
+//   - state.user_decision === 'complete' (decision already recorded)
+//   - SMT_HOOK_WRITE=1 (hook-owned writes)
+export function rule16_prematureDone(input, state) {
+  if (!state) return null;
+  if (process.env.SMT_HOOK_WRITE === '1') return null;
+
+  const content = input.tool_input?.new_string || input.tool_input?.content || '';
+  const cmd = input.tool_input?.command || '';
+  const setsDone =
+    /"current_stage"\s*:\s*"done"/.test(content) ||
+    /"current_stage"\s*:\s*"done"/.test(cmd) ||
+    /current_stage:\s*['"]?done['"]?/.test(content);
+  if (!setsDone) return null;
+
+  const allowed = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+  if (!allowed.includes('workflow-human-check')) return null;
+
+  if (state.user_decision === 'complete') return null;
+
+  const events = Array.isArray(state.events) ? state.events : [];
+  const humanPass = events.some(e =>
+    e?.skill === 'workflow-human-check' && e?.result === 'pass'
+  );
+  if (humanPass) return null;
+
+  return {
+    rule: 'R16',
+    severity: 'CRITICAL',
+    reason: `premature current_stage='done' — workflow-human-check has no pass event in state.events[]; the ONLY allowed halting point must run first (Iron Law #1)`,
+  };
+}
+
+// R17 — Premature completion prose in canonical artifact files. Detects
+// "task complete / bug fixed / implementation complete / ready to ship"
+// language in plan.md, results.md, session logs, or task .md files when
+// workflow-human-check has not passed. Distinct from R16 (which catches the
+// state.json side effect) — R17 catches the human-readable side effect.
+//
+// Scope: writes to `.smt/features/**/task/*.md`, `.smt/features/**/results.md`,
+// `.smt/session/*.md`. Does NOT fire on skill SKILL.md, review docs, code, or
+// test files.
+export function rule17_prematureCompletionProse(input, state) {
+  if (!state) return null;
+  if (input.tool_name !== 'Edit' && input.tool_name !== 'Write') return null;
+
+  const target = input.tool_input?.file_path || '';
+  if (!target) return null;
+
+  // Scope to canonical task / results / session log files.
+  const isCanonical =
+    /\.smt\/features\/[^/]+\/task\/[^/]+\.md$/.test(target) ||
+    /\.smt\/features\/[^/]+\/results\.md$/.test(target) ||
+    /\.smt\/session\/\d{4}-\d{2}-\d{2}\.md$/.test(target);
+  if (!isCanonical) return null;
+
+  // Plan.md legitimately contains the queue, task descriptions, target type
+  // etc. — those are not completion claims. Only the FINAL results.md or
+  // session log or explicit task-completion edits should be gated.
+  if (/\/plan\.md$/.test(target)) return null;
+
+  const content = input.tool_input?.new_string || input.tool_input?.content || '';
+  if (!content) return null;
+
+  const completionProse =
+    /\btask\s+(?:is\s+)?complete(?:d)?\b/i.test(content) ||
+    /\bimplementation\s+(?:is\s+)?complete(?:d)?\b/i.test(content) ||
+    /\bbug\s+(?:is\s+)?fixed\b/i.test(content) ||
+    /\bissue\s+(?:is\s+)?resolved\b/i.test(content) ||
+    /\bready\s+to\s+ship\b/i.test(content) ||
+    /\ball\s+(?:tests\s+)?passing,?\s+(?:we(?:'re)?\s+)?done\b/i.test(content);
+  if (!completionProse) return null;
+
+  const allowed = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+  if (!allowed.includes('workflow-human-check')) return null;
+
+  if (state.user_decision === 'complete') return null;
+
+  const events = Array.isArray(state.events) ? state.events : [];
+  const humanPass = events.some(e =>
+    e?.skill === 'workflow-human-check' && e?.result === 'pass'
+  );
+  if (humanPass) return null;
+
+  return {
+    rule: 'R17',
+    severity: 'HIGH',
+    reason: `completion-claim prose in ${target.split('/').slice(-3).join('/')} but workflow-human-check has no pass event — route through human-check before declaring the task complete`,
+  };
+}
+
 // ===== Helpers =====
 
 function guessPlanPath(featuresRoot, state) {
@@ -536,6 +638,8 @@ export const RULES = [
   rule13_bashStateJsonWrite,
   rule14_e2ePassWithoutEffectEvidence,
   rule15_stageSkipOnCodeEdit,
+  rule16_prematureDone,
+  rule17_prematureCompletionProse,
 ];
 
 export function runAll(input, state, cwd) {

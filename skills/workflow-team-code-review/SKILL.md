@@ -34,7 +34,26 @@ gate:
 
 # workflow-team-code-review
 
-The final team review. Re-examines the whole implementation from 3 independent perspectives.
+## Overview
+
+The final team review. Re-examines the whole implementation from 3 independent perspectives (advocate / critic / arbitrator). This is distinct from `workflow-agent-review`:
+
+- `workflow-agent-review` = diff-scoped, dual adversarial (code + security), runs immediately after coding
+- `workflow-team-code-review` = whole-task scope, 3-role consensus, runs after E2E — last technical gate before human-check
+
+**Core principle:** The last technical gate before human-check must see the whole task (diff + artifacts + prior reviews) from 3 independent perspectives and reach 95% consensus.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-team-code-review to run 95% consensus + 3-round review on the complete task."
+
+## The Iron Law
+
+```
+NO HUMAN-CHECK HANDOFF WITHOUT 95% CONSENSUS AND 3/3 ROUNDS AT pass
+```
+
+Both must hold: `consensus_reached === true` AND `completed_rounds === 3 && all rounds result === pass`.
 
 ## Pattern B consensus (95%)
 
@@ -65,15 +84,34 @@ Rounds repeat until agreement ≥ 95% (max 5).
 ## Output
 
 `team_review.md`:
+
 - `## Advocate Report`
 - `## Critic Report`
 - `## Arbitrator Synthesis`
 - `## Final Verdict (severity)`
 - `## Consensus Rounds`
 
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "workflow-agent-review passed, this is rubber-stamp" | Team review sees the WHOLE task + E2E artifacts. Agent review saw only the diff. New findings here are common. |
+| "95% is close to 90%" | Threshold is 95%. 90% is not pass. Run another round. |
+| "Advocate and critic have stopped disagreeing early — force consensus" | 95% computed by arbitrator, not forced. |
+| "All findings are MEDIUM, route to coding and call it done" | MEDIUM routes to coding. But the review itself still needs 3-round pass before the handoff. |
+| "Prior agent-review findings are auto-resolved by now" | Re-verify that each finding has been addressed in the diff. Missing resolutions are `HIGH`. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Nothing will change in round 2" | Round 2 targets contradiction. Absence is what the round reveals. |
+| "Skip round 3 — edge cases are too rare" | Rare cases in prod are expensive. Round 3 catches them. |
+| "I'm tired" | Iron Law applies. |
+
 ## Consensus not reached
 
-5 rounds exceeded → enter section 11-7 Stall Cascade Level 2.
+5 rounds exceeded → enter section 11-7 Stall Cascade Level 2. Do NOT force-pass.
 
 ## Multi-Pass Verification (3-Round Enforcement)
 
@@ -107,3 +145,19 @@ All rounds recorded in `state.json.team_runtime.workflow-team-code-review.rounds
 2. Critic Watchdog blocks "already verified" skip statements
 3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥2 types)
 4. Declaring `pass` with `completed_rounds < 3` is blocked by hook
+
+## Terminal State — Required Next Skill
+
+**REQUIRED NEXT SKILL on `pass`:** `workflow-human-check`
+
+**On `fail`:** route per severity:
+- `CRITICAL` / `HIGH` → `workflow-tasker`
+- `MEDIUM` → `workflow-coding`
+- `LOW` → record in `## Risks`, proceed to human-check
+
+**On consensus exceeded (5 rounds):** Stall Cascade Level 2.
+
+Do NOT:
+- Declare the task complete here — only `workflow-human-check` does that
+- Stop after pass, report "all reviews passed", or ask "shall I finalize?"
+- Offer A/B/continue choices — `workflow-human-check` is the next skill and it's the ONLY allowed halting point

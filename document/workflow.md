@@ -32,6 +32,36 @@ translations: document/workflow.ko.md
 
 ---
 
+## 0-bis. Per-Skill Enforcement Language (Superpowers-style)
+
+Every `workflow-*/SKILL.md` now carries the same enforcement layout — imported from `obra/superpowers` and adapted to Smelter's state machine. Authors editing a skill must preserve all six blocks.
+
+### Required sections (in order)
+
+| Section | Purpose | Example (workflow-coding) |
+|---------|---------|---------------------------|
+| **Overview** | 1–2 sentence core principle + spirit clause + announce | `**Core principle:** Tests passing is not done...` |
+| **The Iron Law** | One-line capitalized rule in a fenced code block | `TESTS GREEN ≠ DONE. NO COMPLETION CLAIM WHILE STAGE < workflow-human-check` |
+| **Red Flags - STOP** | Rationalization → Reality table | "Tests pass so I'm done" → "5 more skills must run" |
+| **Rationalization Prevention** | Excuse → Reality table | "Should work now" → "Run the post-gate verifications" |
+| **Common Failures** *(review & completion skills)* | Claim → Requires → Not Sufficient table | `"Bug fixed"` requires `workflow-e2e reproduces symptom and sees fix` |
+| **Terminal State — Required Next Skill** | Explicit next-skill name + forbidden actions | `REQUIRED NEXT SKILL: workflow-agent-review` |
+
+### Writing rules
+
+- **Spirit clause:** every skill contains the sentence *"Violating the letter of this rule is violating the spirit of this rule."* — anti-loophole
+- **Announce at start:** every skill prescribes a single-sentence verbal commitment so the model cannot silently skip
+- **Terminal State:** every non-terminal skill names the exact next skill. No branching words ("may", "could", "depending on"). The only skill with `halts_session: true` is `workflow-human-check` — every other skill lists explicit forbidden actions including "offer A/B/continue choices", "stop the session", "ask 'shall I continue?'"
+- **Forbidden Responses:** review skills and `workflow-human-check` list phrases that are banned ("You're absolutely right!", "Great point!"), aligning with the `feedback_precision` memory
+
+### Why this exists
+
+Prior to v2.4.1, skills described technical gates but not linguistic gates. The model could see "tests pass" and declare completion without triggering any hook — because the hook fires on explicit STOP or tool-call, not on self-narrative. The enforcement language makes the linguistic act of "claiming done" itself visible to the Critic Watchdog (§12-8) and gives the model explicit patterns to refuse.
+
+The pattern is imported from `obra/superpowers` (brainstorming, using-superpowers, verification-before-completion, test-driven-development, systematic-debugging, subagent-driven-development). Smelter adapts it to the state machine + mode routing + Pattern B/C/D topologies.
+
+---
+
 ## 1. Execution Model
 
 ### 1-1. Structure
@@ -57,29 +87,30 @@ translations: document/workflow.ko.md
 
 ### 1-2. Commands & Auto-Routing
 
-Commands are **hints**; the default is **four-layer auto-routing** from natural-language input. Users can invoke explicit slash commands, but when an utterance arrives the classifier assigns a mode at entry.
+Commands are **hints**; the default is **three-layer auto-routing** from natural-language input. Users can invoke explicit slash commands, but when an utterance arrives the classifier assigns a mode at entry.
 
-#### Four-layer classifier (v2.4.9+)
+#### Three-layer classifier (v2.4.9+)
 
-`scripts/mode-classifier.mjs::classify(input, { cwd, sessionId })` runs the layers in order; the first non-null layer wins.
+`scripts/mode-classifier.mjs::classify(input, { cwd, sessionId })` runs the layers in order; the first match wins.
 
 | # | Layer | Implementation | Fires when |
 |---|-------|----------------|------------|
-| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table | prompt starts with `/fix`, `/plan`, `/implement`, `/investigate`, `/verify`, or `/simple-fix` |
+| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table + word-boundary check | prompt starts with `/fix`, `/plan`, `/implement`, `/investigate`, `/verify`, or `/simple-fix` followed by EOL, whitespace, `:`, or `-` |
 | 2 | Passthrough | `PASSTHROUGH_PATTERNS` (anchored) | entire prompt matches pure git/shell verb-first (e.g. `git commit`, `커밋해`, `push 좀`) |
 | 3 | LLM classifier | `scripts/lib/subagent-classifier.mjs::classifyMode` via OAuth Claude CLI | any remaining natural-language prompt |
-| 4 | Safe fallback | trailing `?` / `？` → `investigate`, else `DEFAULT_MODE='fix'` | LLM throws or returns an invalid mode |
 
-The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached per `{sessionId, prompt-hash}` under `.smt/state/mode-classifier-cache.json`.
+The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached per `{sessionId, prompt-hash}` under `.smt/state/mode-classifier-cache.json` with trigger-prefix whitelist revalidation on read.
+
+**Failure policy (v2.4.9)**: if Layer 3 throws (LLM outage, invalid response, or tampered cache dropped by the validator), the error **propagates**. There is no regex fallback. Callers treat a throw or `null` return as "no classification" and skip state seeding — the prompt flows through unseeded.
+
+**Empty input** returns `null` (no classification, no exception).
 
 **Principles**:
 - The classifier runs **only at entry**. Mid-workflow mode changes are user-gated (upgrade).
-- Layers 1, 2, 4 are deterministic regex. Layer 3 is LLM-based (OAuth, no API key fallback).
+- Layers 1 and 2 are deterministic regex. Layer 3 is LLM-based (OAuth). No fallback — LLM failures surface as errors.
 - An explicit slash command **overrides** the classifier.
 
-**Source of truth**: `scripts/mode-classifier.mjs` — pure module exporting `classify(input, opts)`. `scripts/keyword-detector.mjs` (the UserPromptSubmit hook) imports it at step 2 of command resolution and passes `{ cwd, sessionId }` so per-session LLM-cache isolation holds. `keyword-detector.mjs::legacyPatternMatch` stays as a step-3 bi-pattern fallback for `default:*` triggers (LLM parse failure path); the Haiku sub-agent `classifyPrompt` still runs as a last-resort step 3 for prompts that reach `main()` without a magic-keyword match.
-
-**Interrogative fallback**: ASCII `?` (U+003F) or full-width `？` (U+FF1F) at end-of-prompt is the Layer 4 tripwire when the LLM path fails. During healthy operation the LLM handles interrogative prompts directly via `MODE_CLASSIFIER_PROMPT` examples.
+**Source of truth**: `scripts/mode-classifier.mjs` — pure module exporting `classify(input, opts)`. `scripts/keyword-detector.mjs` (the UserPromptSubmit hook) imports it at step 2 of command resolution and passes `{ cwd, sessionId }` so per-session LLM-cache isolation holds. On classifier throw, the detector returns `null` and the prompt flows through without state seeding.
 
 **Compound intents (chained modes)**: when the LLM detects a connective-joined chain (e.g., "분석하고 구현해줘" → `[investigate, implement]`), it populates `chained_modes`. `keyword-detector` writes this into `.state.json` at entry; `auto-confirm.decide()` picks it up at the `mode_transition` signal and auto-advances via `consumeNextChainedMode` without a user prompt (`chain_advance`). Entry mode is always `chained_modes[0]`.
 
@@ -813,7 +844,7 @@ Each level retries up to 2 times before escalating. Level 2 onward do not reset 
 
 Two-layer architecture:
 
-- **Layer 1** — `scripts/critic-watchdog.mjs` (PostToolUse hook, **13 formal rules**, millisecond latency):
+- **Layer 1** — `scripts/critic-watchdog.mjs` (PostToolUse hook, **17 formal rules**, millisecond latency):
 
 | # | Rule | Severity |
 |---|------|----------|
@@ -828,8 +859,14 @@ Two-layer architecture:
 | R09 | Parallel file conflict | HIGH |
 | R10 | Complete without session log | MEDIUM |
 | R11 | E2E pass claim without real-interface artifact | CRITICAL |
-| **R12** | **Edit/Write to src-like path when workflow active but current_stage null** | **CRITICAL** |
-| **R13** | **Bash-based state.json write bypassing pre-tool-enforcer** | **CRITICAL** |
+| R12 | Edit/Write to src-like path when workflow active but current_stage null | CRITICAL |
+| R13 | Bash-based state.json write bypassing pre-tool-enforcer | CRITICAL |
+| R14 | E2E pass claim without populated `scenarios[].effect_evidence` | CRITICAL |
+| R15 | Code edit at stage ≠ `workflow-coding` (stage-skip on code edit) | CRITICAL |
+| **R16** | **`current_stage: done` write without `workflow-human-check` pass event** | **CRITICAL** |
+| **R17** | **Completion-claim prose in canonical task / results / session files before human-check pass** | **HIGH** |
+
+**R16 / R17 rationale:** Complements the per-skill enforcement language (§0-bis). R16 catches the *state-level* side effect (writing `"current_stage": "done"` without running `workflow-human-check`). R17 catches the *human-readable* side effect (phrases like "task complete", "bug fixed", "implementation complete", "ready to ship") in `.smt/features/**/task/*.md` (excluding `plan.md`), `.smt/features/**/results.md`, and `.smt/session/YYYY-MM-DD.md`. Both skip when the current mode does not include `workflow-human-check` (e.g., `/verify`) and when `state.user_decision === 'complete'` is already recorded. Code files, test files, and `plan.md` are out of scope — those legitimately contain phrases like "task complete when X" as descriptive text.
 
 - **Layer 2** — `agents/critic-watchdog.md` (periodic agent, ReadOnly, every 5-10 tool calls during coding): semantic checks that Layer 1 cannot do (scope drift via intent, evasion via type gap, logic evasion, half-done, Iron-Law evasion).
 
@@ -1025,7 +1062,7 @@ scripts/
 ├── mode-classifier.mjs           ← natural-language routing (§1-2)
 ├── route-on-fail.mjs             ← producer chain (§5-1)
 ├── stall-detector.mjs            ← §11-6 stall signals + cascade
-├── critic-watchdog.mjs           ← Pattern E Layer 1 (12 rules, §12-5)
+├── critic-watchdog.mjs           ← Pattern E Layer 1 (17 rules, §12-5)
 ├── parallel-dispatcher.mjs       ← Pattern A/B/C/D dispatch plan
 ├── feature-version-check.mjs     ← .smt/features/* state integrity
 └── rule-injector.mjs             ← rules-lib injection
@@ -1179,7 +1216,7 @@ agents/
 | 10 | Aggregator agent | 9 | architect-based |
 | 11 | Conflict-Resolver agent | 10 | merge-failure safety |
 | 12 | Pattern B Dual Adversarial (agent-review) | 4 | code-reviewer + security-reviewer |
-| 13 | Critic Watchdog Hook Layer 1 | 1, 6 | 11 rules (R01–R11) |
+| 13 | Critic Watchdog Hook Layer 1 | 1, 6 | 17 rules (R01–R17); R16/R17 enforce per-skill Terminal State language (§0-bis) |
 | 14 | Critic Watchdog Agent Layer 2 | 13 | periodic semantic checks |
 | 15 | Pattern D Hierarchical (tasker / brainstorm) | 4 | architect + personas |
 | 16 | Multi-Pass Verification engine | 4 | 3-round enforcement for review skills |

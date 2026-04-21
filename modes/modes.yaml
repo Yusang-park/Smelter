@@ -1,0 +1,87 @@
+# Mode Definitions — thin composition over skills.yaml + pipelines.yaml.
+#
+# A mode is (entry_skill, pipeline, flags). That's it. Any per-skill
+# override lives in skills.yaml; any pipeline shape lives in
+# pipelines.yaml. This file stays small and change-resistant.
+
+modes:
+  think:
+    description: Ideation + planning. No code changes. Produces brainstorm.md + tasks.md.
+    entry_skill: workflow-brainstorm
+    entry_params: { workflow-brainstorm: { depth: deep } }
+    pipeline: planning_only
+    read_only: true
+    default_exempt: { tdd: true, e2e: true }
+    terminal_actions: [mode_transition_to_implement]
+    transitions:
+      upgrade_to: [implement]
+      downgrade_to: [fix]
+
+  fix:
+    description: Bug / regression repair. Investigate-first, brainstorm skipped.
+    entry_skill: workflow-investigate
+    pipeline: no_brainstorm
+    read_only: false
+    default_exempt: { tdd: false, e2e: false }
+    # Surface-based TDD exemption. No separate simple_fix mode.
+    magic_keywords:
+      css:      { set: { exempt.tdd: true, exempt.e2e: false } }
+      style:    { set: { exempt.tdd: true, exempt.e2e: false } }
+      텍스트:    { set: { exempt.tdd: true, exempt.e2e: false } }
+      i18n:     { set: { exempt.tdd: true, exempt.e2e: false } }
+      typo:     { set: { exempt.tdd: true, exempt.e2e: true  } }
+      dialogue: { set: { exempt.tdd: true, exempt.e2e: true  } }
+    transitions:
+      upgrade_to: [implement, think]
+      downgrade_to: []
+
+  implement:
+    description: Feature development. Lightweight brainstorm + full pipeline.
+    entry_skill: workflow-brainstorm
+    entry_params: { workflow-brainstorm: { depth: light } }
+    pipeline: full
+    read_only: false
+    default_exempt: { tdd: false, e2e: false }
+    magic_keywords:
+      extend:   { set: { skip_brainstorm: true } }
+      add to:   { set: { skip_brainstorm: true } }
+      덧붙여:    { set: { skip_brainstorm: true } }
+      추가로:    { set: { skip_brainstorm: true } }
+      css:      { set: { exempt.tdd: true, exempt.e2e: false } }
+      style:    { set: { exempt.tdd: true, exempt.e2e: false } }
+      i18n:     { set: { exempt.tdd: true, exempt.e2e: false } }
+    transitions:
+      upgrade_to: [think]
+      downgrade_to: [fix]
+
+  investigate:
+    description: Static read only. Exits via user-chosen mode transition.
+    entry_skill: workflow-investigate
+    pipeline: investigate_only
+    read_only: true
+    default_exempt: { tdd: true, e2e: true }
+    terminal_actions: [mode_transition_to_fix, mode_transition_to_think, mode_transition_to_implement, free_chat]
+    transitions:
+      upgrade_to: [fix, think, implement]
+      downgrade_to: []
+
+  verify:
+    description: Non-modifying verification. Tests + static inspection + real-interface E2E.
+    entry_skill: workflow-verify
+    pipeline: verify_only
+    read_only: true
+    default_exempt: { tdd: true, e2e: false }
+    transitions:
+      upgrade_to: [fix, implement, think]
+      downgrade_to: []
+
+# Slash command aliases (for keyword-detector Layer 1).
+# `/plan` maps to `think` for one release, then deprecated.
+command_aliases:
+  /plan:        think
+  /think:       think
+  /fix:         fix
+  /simple-fix:  fix   # auto-sets exempt.tdd via magic keyword
+  /implement:   implement
+  /investigate: investigate
+  /verify:      verify

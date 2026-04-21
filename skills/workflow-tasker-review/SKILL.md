@@ -34,7 +34,23 @@ gate:
 
 # workflow-tasker-review
 
-95% consensus review of `plan.md`. Multi-angle assessment of side-effects, scope, and feasibility.
+## Overview
+
+95% consensus review of `plan.md`. Multi-angle assessment of side-effects, scope, and feasibility. This is the last gate before test-writing or coding begins — a bad plan that passes here becomes wasted implementation.
+
+**Core principle:** Two independent enforcements must both hold — 95% consensus between advocate/critic/arbitrator AND 3-round pass (omission, contradiction, edge case).
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
+**Announce at start:** "I'm using workflow-tasker-review to run 95% consensus + 3-round verification on `plan.md`."
+
+## The Iron Law
+
+```
+NO IMPLEMENTATION SKILL WITHOUT 95% CONSENSUS AND 3/3 REVIEW ROUNDS AT pass
+```
+
+Both conditions are gated. `consensus_reached` and `contains_decision: pass` both required. Declaring pass with `completed_rounds < 3` is blocked by hook.
 
 ## Pattern B consensus process
 
@@ -48,10 +64,29 @@ arbitrator: synthesize both sides and compute the score
 ## Output
 
 `tasker_review.md`:
+
 - `## Consensus` — agreement rate per round
 - `## Side Effects` — impact on existing functionality
 - `## Verdict` — `pass` / `fail` / `reshape`
 - `## Required Changes` — concrete requirements on fail
+
+## Red Flags - STOP
+
+| Thought | Reality |
+|---------|---------|
+| "Advocate and critic agree, skip arbitrator" | Arbitrator computes the score that decides the verdict. Skipping = no verdict. |
+| "90% agreement is close enough" | The threshold is 95%. 90% is not pass. Run another round. |
+| "5 rounds hit — just pass it" | 5 rounds exceeded = Stall Cascade Level 2. Escalate, do not force-pass. |
+| "The plan is short, skip review entirely" | Short plans hide the most implicit assumptions. Review is non-optional. |
+| "Side effects are obvious, omit the section" | `## Side Effects` is mandatory. Empty == "none" — which the reviewer will then challenge. |
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "We already reviewed the brainstorm" | Plan ≠ brainstorm. Plan introduces task decomposition, team assignment, TDD count — all new review surface. |
+| "Consensus is performative" | 95% is calibrated to catch hidden risks. Drop it and risks slip to coding. |
+| "Just this once" | Iron Law has no exceptions. |
 
 ## Fail routing (producer)
 
@@ -96,3 +131,18 @@ All rounds recorded in `state.json.team_runtime.workflow-tasker-review.rounds[]`
 2. Critic Watchdog blocks "already verified" skip statements
 3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥2 types)
 4. Declaring `pass` with `completed_rounds < 3` is blocked by hook
+
+## Terminal State — Required Next Skill
+
+**REQUIRED NEXT SKILL on `pass`:**
+- Mode with TDD: `workflow-write-test`
+- Mode with `exempt.tdd === true` (e.g., `/simple-fix` for CSS/copy/typo): `workflow-coding`
+
+**On `fail`:** route to `workflow-tasker`.
+**On `reshape`:** route to `workflow-investigate`.
+**On consensus exceeded (5 rounds):** Stall Cascade Level 2.
+
+Do NOT:
+- Invoke `workflow-coding` directly when TDD is not exempt
+- Stop after pass, report "plan approved", or ask for approval
+- Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages

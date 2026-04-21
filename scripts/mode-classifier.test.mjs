@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 /**
- * mode-classifier.test.mjs — Unit tests for classify() and classifyChain().
+ * mode-classifier.test.mjs — Unit tests for the 4-layer classify().
  *
- * Rule-based detection only; run with `node scripts/mode-classifier.test.mjs`.
+ * Layer 3 (LLM) is mocked via SMELTER_MODE_CLASSIFIER_MODULE to avoid hitting
+ * the real Claude CLI. Layer 1 (explicit slash) and Layer 2 (passthrough) are
+ * deterministic and tested without mocking. Layer 4 (fallback) is exercised
+ * by stubbing the LLM to throw.
  */
 
-import { classify, classifyChain, firstSentence } from './mode-classifier.mjs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 let pass = 0;
 let fail = 0;
@@ -29,157 +34,259 @@ function section(title) {
   console.log(`\n[${title}]`);
 }
 
-// ---------------------------------------------------------------------------
-section('Single-mode investigate (5 new verification keywords)');
-// ---------------------------------------------------------------------------
-assert('검증해봐 -> investigate', classify('검증해봐').mode, 'investigate');
-assert('확인 좀 해줘 -> investigate', classify('확인 좀 해줘').mode, 'investigate');
-assert('체크해 -> investigate', classify('체크해').mode, 'investigate');
-assert('verify this -> investigate', classify('verify this').mode, 'investigate');
-assert('validate the config -> investigate', classify('validate the config').mode, 'investigate');
+function mkStub(dir, body) {
+  const stubPath = join(dir, 'mode-classifier-stub.mjs');
+  writeFileSync(stubPath, body, 'utf-8');
+  return stubPath;
+}
+
+async function freshImport() {
+  // Force fresh module state so env-var side effects in the classifier-lib are
+  // observed between stubs.
+  return import('./mode-classifier.mjs?' + Date.now() + Math.random());
+}
 
 // ---------------------------------------------------------------------------
-section('Chained intents (5 cases)');
+section('Layer 1 — Explicit slash commands (no LLM call)');
 // ---------------------------------------------------------------------------
-assert(
-  '검증하고 수정해 -> [investigate, fix]',
-  classify('검증하고 수정해').chained_modes,
-  ['investigate', 'fix'],
-);
-assert(
-  '파악한 뒤 리팩토링할거야 -> [investigate, plan]',
-  classify('파악한 뒤 리팩토링할거야').chained_modes,
-  ['investigate', 'plan'],
-);
-assert(
-  '분석하고 구현해줘 -> [investigate, implement]',
-  classify('분석하고 구현해줘').chained_modes,
-  ['investigate', 'implement'],
-);
-assert(
-  '설계하고 구현해줘 -> [plan, implement]',
-  classify('설계하고 구현해줘').chained_modes,
-  ['plan', 'implement'],
-);
-assert(
-  'validate and then fix -> [investigate, fix]',
-  classify('validate and then fix').chained_modes,
-  ['investigate', 'fix'],
-);
+{
+  const { classify } = await freshImport();
+  assert('/fix → fix', classify('/fix login bug').mode, 'fix');
+  assert('/fix overridden=true', classify('/fix login bug').overridden, true);
+  assert('/plan → plan', classify('/plan redesign auth').mode, 'plan');
+  assert('/implement → implement', classify('/implement extend foo').mode, 'implement');
+  assert('/investigate → investigate', classify('/investigate race cond').mode, 'investigate');
+  assert('/verify → verify', classify('/verify suite').mode, 'verify');
+  assert('/simple-fix → simple_fix', classify('/simple-fix typo').mode, 'simple_fix');
+  assert('slash trigger prefix', classify('/fix x').trigger.startsWith('command:/fix'), true);
+}
 
 // ---------------------------------------------------------------------------
-section('Non-chain negatives (3 cases that look like a chain but are not)');
+section('Layer 2 — Passthrough (pure git/shell verb-first only)');
 // ---------------------------------------------------------------------------
-
-// (1) Single verb with a trailing connective but no second action verb.
-assert(
-  '검증하고 -> single investigate, no chain',
-  classify('검증하고').chained_modes,
-  undefined,
-);
-
-// (2) Two verbs mapping to the SAME mode — not a chain.
-assert(
-  '버그 고쳐줘 수정해줘 -> single fix, no chain',
-  classify('버그 고쳐줘 수정해줘').chained_modes,
-  undefined,
-);
-
-// (3) Two verbs with NO connective between them (e.g., "verify fix" = single token pair).
-assert(
-  'verify fix -> single investigate, no chain',
-  classify('verify fix').chained_modes,
-  undefined,
-);
+{
+  const { classify } = await freshImport();
+  assert('git commit → passthrough', classify('git commit').passthrough, true);
+  assert('git push origin main → passthrough', classify('git push origin main').passthrough, true);
+  assert('gh pr list → passthrough', classify('gh pr list').passthrough, true);
+  assert('커밋해 → passthrough', classify('커밋해').passthrough, true);
+  assert('push 좀 → passthrough', classify('push 좀').passthrough, true);
+  assert('stash 해 → passthrough', classify('stash 해').passthrough, true);
+  assert('passthrough mode=null', classify('git commit').mode, null);
+  assert('passthrough trigger prefix', classify('git commit').trigger.startsWith('passthrough:'), true);
+}
 
 // ---------------------------------------------------------------------------
-section('classifyChain() direct API');
+section('Layer 2 — Mixed-intent NOT passthrough (falls to LLM)');
 // ---------------------------------------------------------------------------
-assert(
-  'classifyChain(검증하고 수정해) modes',
-  classifyChain('검증하고 수정해').modes,
-  ['investigate', 'fix'],
-);
-assert(
-  'classifyChain(hello world) null',
-  classifyChain('hello world'),
-  null,
-);
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-mixed-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'llm:mixed-intent', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('git log 후 고쳐줘', { cwd: dir, sessionId: 'mix1' });
+    assert('mixed "git log 후 고쳐줘" NOT passthrough', r.passthrough, undefined);
+    assert('mixed routes to LLM (fix)', r.mode, 'fix');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
-section('T1: Korean declarative 한다 suffix (feature: harness-integrity-4-fixes)');
+section('Layer 3 — LLM single-mode (stub)');
 // ---------------------------------------------------------------------------
-assert('파악한다 -> investigate', classify('무엇이 문제인지 파악한다').mode, 'investigate');
-assert('분석한다 -> investigate', classify('이 모듈을 분석한다').mode, 'investigate');
-assert('조사한다 -> investigate', classify('코드를 조사한다').mode, 'investigate');
-assert('파악했다 -> investigate', classify('이미 파악했다').mode, 'investigate');
-assert('분석한다면 -> investigate', classify('그걸 분석한다면').mode, 'investigate');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-llm-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'bug-intent', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('버그 고쳐줘', { cwd: dir, sessionId: 'llm1' });
+    assert('LLM single-mode → fix', r.mode, 'fix');
+    assert('LLM trigger prefixed with llm:', r.trigger.startsWith('llm:'), true);
+    assert('LLM single-mode no chained_modes', r.chained_modes, undefined);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
-section('T1-bis: bare-stem robustness');
+section('Layer 3 — LLM chain emits chained_modes');
 // ---------------------------------------------------------------------------
-assert('검증한답니다 -> investigate', classify('검증한답니다').mode, 'investigate');
-assert('분석하세요 -> investigate', classify('분석하세요').mode, 'investigate');
-assert('파악하시겠습니까 -> investigate', classify('파악하시겠습니까').mode, 'investigate');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-chain-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'investigate', trigger: 'chain:inv-then-fix', chained_modes: ['investigate','fix'] };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('조사하고 수정해', { cwd: dir, sessionId: 'chain1' });
+    assert('LLM chain primary mode', r.mode, 'investigate');
+    assert('LLM chain chained_modes', r.chained_modes, ['investigate', 'fix']);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
-section('T1: paste-pollution resistance (first-sentence extraction)');
+section('Layer 3 — LLM passthrough hint flows through');
 // ---------------------------------------------------------------------------
-assert(
-  'paste-polluted 수정 block -> investigate',
-  classify('파악한다.\n\n이전 대화 붙여넣기: 텍스트 수정 문구 수정 스타일 수정').mode,
-  'investigate',
-);
-assert(
-  'paste with ⏺ marker -> investigate',
-  classify('파악해줘\n\n⏺ 수정 진행했습니다 텍스트 수정').mode,
-  'investigate',
-);
-assert(
-  'long multi-line with prior convo -> investigate',
-  classify([
-    '무엇이 문제인지 파악한다.',
-    '',
-    '⏺ 수정 진행했습니다. 텍스트 수정 / 스타일 수정.',
-    '❯ 왜 안되지? 수정 필요.',
-  ].join('\n')).mode,
-  'investigate',
-);
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-lookup-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'investigate', trigger: 'lookup', chained_modes: null, passthrough: true };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('workflow-tasker가 뭐야?', { cwd: dir, sessionId: 'look1' });
+    assert('LLM lookup passthrough=true', r.passthrough, true);
+    assert('LLM lookup mode=investigate', r.mode, 'investigate');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
-section('H1: simple_fix — doc/comment/guide add patterns');
+section('No-fallback policy — LLM throw propagates');
 // ---------------------------------------------------------------------------
-// Pure documentation or comment-addition requests must route to simple_fix,
-// not fall through to DEFAULT_MODE='fix' which triggers the full repair chain.
-assert('가이드를 넣어줘 -> simple_fix', classify('Read 툴을 쓰도록 가이드를 넣어줘').mode, 'simple_fix');
-assert('가이드 추가해 -> simple_fix', classify('사용 가이드 추가해').mode, 'simple_fix');
-assert('주석 달아줘 -> simple_fix', classify('이 함수에 주석 달아줘').mode, 'simple_fix');
-assert('주석 넣어 -> simple_fix', classify('주석 넣어').mode, 'simple_fix');
-assert('문서 보강 -> simple_fix', classify('문서 보강').mode, 'simple_fix');
-assert('문서화해 -> simple_fix', classify('이 모듈 문서화해').mode, 'simple_fix');
-assert('docstring 추가 -> simple_fix', classify('add a docstring here').mode, 'simple_fix');
-assert('add a comment -> simple_fix', classify('add a comment for this branch').mode, 'simple_fix');
-// Negatives — prevent over-reach into fix/implement/plan.
-assert('주석까지 해결해 -> fix', classify('주석까지 해결해').mode, 'fix');
-assert('설명 넣어서 로직 추가해줘 -> implement (not simple_fix)',
-  classify('이 함수에 설명 넣어서 로직 추가해줘').mode, 'implement');
-assert('API 문서화 리팩토링해줘 -> plan (not simple_fix)',
-  classify('API 문서화 리팩토링해줘').mode, 'plan');
-assert('문서화 설계해 -> plan (not simple_fix)',
-  classify('문서화 체계 설계해').mode, 'plan');
-// Compound doc + implement — the noun+add should NOT absorb the implement verb.
-assert('주석 추가하고 로직 구현해줘 -> implement (not simple_fix)',
-  classify('주석 추가하고 로직 구현해줘').mode, 'implement');
-assert('가이드 추가하고 기능 만들어줘 -> implement (not simple_fix)',
-  classify('가이드 추가하고 기능 만들어줘').mode, 'implement');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-nofb1-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() { throw new Error('classifier down'); }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    let threw = false;
+    try { classify('이게 정상인지?', { cwd: dir, sessionId: 'nofb1' }); }
+    catch (e) { threw = e.message.includes('classifier down'); }
+    assert('LLM throw propagates (no interrogative fallback)', threw, true);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
-section('T1: firstSentence helper');
+section('No-fallback policy — LLM invalid mode throws');
 // ---------------------------------------------------------------------------
-assert('cuts at first blank line', firstSentence('파악한다.\n\n[paste]'), '파악한다.');
-assert('cuts at chevron marker', firstSentence('파악한다 ⏺ 수정'), '파악한다');
-assert('empty input -> empty', firstSentence(''), '');
-assert('non-string -> empty', firstSentence(null), '');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-nofb2-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'garbage', trigger: 'bad' };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    // classifyMode in subagent-classifier.mjs already throws on invalid mode,
+    // so classify() re-throws up through the caller with no mask.
+    let threw = false;
+    try { classify('do something', { cwd: dir, sessionId: 'nofb2' }); }
+    catch { threw = true; }
+    assert('invalid mode throws (no default:fix fallback)', threw, true);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('Empty / nullish inputs — return null, no classification');
+// ---------------------------------------------------------------------------
+{
+  const { classify } = await freshImport();
+  assert('empty string → null', classify(''), null);
+  assert('null → null', classify(null), null);
+  assert('whitespace → null', classify('   '), null);
+}
+
+// ---------------------------------------------------------------------------
+section('classifyMagicKeywords — surface detection retained');
+// ---------------------------------------------------------------------------
+{
+  const { classifyMagicKeywords } = await freshImport();
+  const css = classifyMagicKeywords('change button css color');
+  assert('css surface', css.surface, ['style_or_text']);
+  assert('css hint', css.hints.includes('exempt.tdd=true'), true);
+
+  const ext = classifyMagicKeywords('extend this feature');
+  assert('extend hint', ext.hints.includes('skip_brainstorm_in_implement'), true);
+
+  const empty = classifyMagicKeywords('');
+  assert('empty magic kw', empty, { surface: [], hints: [] });
+}
+
+// ---------------------------------------------------------------------------
+section('Layer 1 — word boundary: /fixture must NOT match /fix');
+// ---------------------------------------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-wb-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'implement', trigger: 'llm:fixture-not-fix', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    // Deliberately non-command, prefix-colliding input. Must reach Layer 3.
+    const r = classify('/fixture something', { cwd: dir, sessionId: 'wb1' });
+    assert('/fixture does NOT resolve to /fix', r.trigger.startsWith('command:'), false);
+    assert('/fixture reaches LLM layer', r.mode, 'implement');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('Layer 3 — invalid chained_modes dropped, primary mode kept');
+// ---------------------------------------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-badchain-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'bad-chain', chained_modes: ['fix', 'garbage'] };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('do a thing', { cwd: dir, sessionId: 'bc1' });
+    assert('invalid chained_modes dropped', r.chained_modes, undefined);
+    assert('invalid chain still returns primary mode', r.mode, 'fix');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('Layer 2 — SMT_CLASSIFIER_NO_PASSTHROUGH=1 kill switch');
+// ---------------------------------------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-killswitch-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'fallthrough', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    process.env.SMT_CLASSIFIER_NO_PASSTHROUGH = '1';
+    const { classify } = await freshImport();
+    const r = classify('git commit', { cwd: dir, sessionId: 'ks1' });
+    assert('passthrough disabled → LLM', r.passthrough, undefined);
+    assert('passthrough disabled → mode from LLM', r.mode, 'fix');
+  } finally {
+    delete process.env.SMT_CLASSIFIER_NO_PASSTHROUGH;
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);

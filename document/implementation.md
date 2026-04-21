@@ -336,3 +336,52 @@ Three interlocked fixes identified 2026-04-21 via investigation at `.smt/feature
 - [x] 3-10. `document/workflow.md` §11-5b + §11-5c — rewrite to reflect single-hook architecture; update timeout from 45 s to 120 s; attribute `pickNextStage`/`isTerminalStage` to `auto-confirm.mjs`.
 
 Totals (scoped surface): `auto-confirm.test.mjs` 110+/110+ pass, `skill-stage-transition.test.mjs` pass, `state-validator.test.mjs` pass, `workflow-scenarios.test.mjs` pass.
+
+## Phase 23 — Superpowers-style enforcement language port (v2.4.1+)
+
+Motivation 2026-04-21: recurring symptom of agents stopping at `workflow-coding` and skipping `workflow-agent-review` → `workflow-e2e` → `workflow-e2e-review` → `workflow-team-code-review` → `workflow-human-check`. Tests pass → agent declares "done" without any hook firing, because the linguistic act of self-claiming completion was not addressable by the existing state-based gates.
+
+Root cause: Smelter's `workflow-*/SKILL.md` files described technical gates (postconditions, artifact presence) but lacked the linguistic enforcement that `obra/superpowers` skills carry — Iron Law blocks, Red Flags tables, Rationalization Prevention, explicit Terminal Next-Skill, Forbidden Responses. The model had no canonical language pattern to refuse premature completion.
+
+**Fix #1 — Per-skill enforcement layout (14 skills):**
+- [x] 1-1. `skills/workflow-brainstorm/SKILL.md` — added Overview + Iron Law + Red Flags + Rationalization Prevention + Scope decomposition + Terminal Next-Skill (`workflow-brainstorm-review`).
+- [x] 1-2. `skills/workflow-brainstorm-review/SKILL.md` — added enforcement blocks; Terminal Next-Skill on `pass`: `workflow-investigate`.
+- [x] 1-3. `skills/workflow-investigate/SKILL.md` — added Iron Law `NO PLAN WITHOUT EVIDENCE FROM CODE`; Terminal Next-Skill: `workflow-investigate-review`.
+- [x] 1-4. `skills/workflow-investigate-review/SKILL.md` — added enforcement blocks; Terminal Next-Skill on `pass`: `workflow-tasker` (or mode_transition on `/investigate`).
+- [x] 1-5. `skills/workflow-tasker/SKILL.md` — Iron Law `NO IMPLEMENTATION WITHOUT plan.md + target_type + team_runtime`; Terminal Next-Skill: `workflow-tasker-review`.
+- [x] 1-6. `skills/workflow-tasker-review/SKILL.md` — Iron Law `NO IMPLEMENTATION WITHOUT 95% CONSENSUS AND 3/3 REVIEW ROUNDS`; Terminal Next-Skill: `workflow-write-test` (or `workflow-coding` if `exempt.tdd`).
+- [x] 1-7. `skills/workflow-write-test/SKILL.md` — Iron Law `NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST`; Terminal Next-Skill: `workflow-coding`.
+- [x] 1-8. `skills/workflow-coding/SKILL.md` — Iron Law `TESTS GREEN ≠ DONE. NO COMPLETION CLAIM WHILE STAGE < workflow-human-check`; Red Flags explicitly ban "Tests pass so I'm done", "Shall I continue?"; Terminal Next-Skill: `workflow-agent-review`.
+- [x] 1-9. `skills/workflow-agent-review/SKILL.md` — added Forbidden Responses ("You're absolutely right!", "Great point!", "Let me implement that now"); Terminal Next-Skill: `workflow-e2e`.
+- [x] 1-10. `skills/workflow-e2e/SKILL.md` — Iron Law `NO E2E PASS WITHOUT ARTIFACTS ON DISK AND TARGET-EFFECT ASSERTION`; Common Failures table with ack-vs-effect rows; Terminal Next-Skill: `workflow-e2e-review`.
+- [x] 1-11. `skills/workflow-e2e-review/SKILL.md` — added enforcement blocks; Terminal Next-Skill on `pass`: `workflow-team-code-review`.
+- [x] 1-12. `skills/workflow-team-code-review/SKILL.md` — Iron Law `NO HUMAN-CHECK HANDOFF WITHOUT 95% CONSENSUS AND 3/3 ROUNDS`; Terminal Next-Skill: `workflow-human-check`.
+- [x] 1-13. `skills/workflow-human-check/SKILL.md` — Iron Law `NO COMPLETION WITHOUT USER DECISION VIA AskUserQuestion`; explicit decision-routing table (`complete` / `rework` / `hold` / `upgrade`).
+- [x] 1-14. `skills/workflow-verify/SKILL.md` — Iron Law `NO VERIFY REPORT WITHOUT ALL THREE PHASES EXECUTED`; terminal by mode design (no auto-chain into implementation).
+
+**Fix #2 — Doc sync:**
+- [x] 2-1. `document/workflow.md` — new §0-bis documenting the Superpowers-style enforcement layout (Overview / Iron Law / Red Flags / Rationalization Prevention / Common Failures / Terminal State). Lists the required sections in order and writing rules (spirit clause, announce-at-start, forbidden-responses).
+- [x] 2-2. `document/implementation.md` — this Phase 23 entry.
+
+**Fix #3 — Hook-level teeth via critic-watchdog R16/R17:**
+- [x] 3-1. `scripts/critic-watchdog.mjs` — add `rule16_prematureDone` (CRITICAL): blocks `Edit`/`Write`/`Bash` that sets `"current_stage": "done"` in any form when the mode's `allowed_skills` contains `workflow-human-check` AND no `events[]` entry has `{ skill: 'workflow-human-check', result: 'pass' }` AND `user_decision !== 'complete'`. Catches the premature-termination state write that the Terminal State language tells the model not to do.
+- [x] 3-2. `scripts/critic-watchdog.mjs` — add `rule17_prematureCompletionProse` (HIGH): blocks `Edit`/`Write` that introduces phrases `task complete`, `implementation complete`, `bug fixed`, `issue resolved`, `ready to ship`, or `all tests passing, (we're) done` into `.smt/features/**/task/*.md` (excluding `plan.md`), `.smt/features/**/results.md`, or `.smt/session/YYYY-MM-DD.md` when `workflow-human-check` hasn't passed. Scoped to human-readable canonical artifacts; code files, test files, and `plan.md` are exempt (`plan.md` legitimately contains phrases like "task complete when X" as pre-impl descriptive text).
+- [x] 3-3. `scripts/critic-watchdog.mjs` — register both in the `RULES` array (now 17 total).
+- [x] 3-4. `scripts/critic-watchdog.test.mjs` — 7 new tests: R16 block on premature done, R16 allow with human-check pass, R16 allow with user_decision=complete, R16 skip in `/verify`-only mode, R17 block on "bug fixed / task complete" prose in `results.md`, R17 allow after human-check pass, R17 skip on `plan.md`, R17 skip on `src/` code edits. Total 24/24 pass.
+- [x] 3-5. `document/workflow.md` §12-5 — extend rule table with R14/R15 (previously undocumented in table), R16, R17. Rationale block explaining R16 = state-level catch, R17 = prose-level catch, complementing §0-bis Terminal State language.
+- [x] 3-6. `document/workflow.md` §17 + §18 — update `critic-watchdog.mjs` comment and table row 13 from "12 rules (R01–R11)" to "17 rules (R01–R17)".
+
+Totals: 14/14 workflow-* skills ported (text), 2 new watchdog rules with 7 new tests (enforcement teeth), `critic-watchdog.test.mjs` 24/24 pass, `skill-stage-transition.test.mjs` 17/17 pass, `state-validator.test.mjs` 18/18 pass, `mode-classifier.test.mjs` 40/40 pass, `auto-confirm.test.mjs` 115/115 pass.
+
+**Source attribution:** patterns imported from `obra/superpowers` skills:
+- `brainstorming/SKILL.md` — HARD-GATE, "too simple to need design" anti-pattern, scope decomposition, spec self-review
+- `using-superpowers/SKILL.md` — Red Flags rationalization table, Skill Priority, Instruction Priority ladder
+- `verification-before-completion/SKILL.md` — Iron Law block, Gate Function, Common Failures table, Rationalization Prevention
+- `test-driven-development/SKILL.md` — "NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST"
+- `systematic-debugging/SKILL.md` — phase-gated investigation pattern
+- `subagent-driven-development/SKILL.md` — terminal next-skill naming, never-blind-retry
+- `receiving-code-review/SKILL.md` — Forbidden Responses list
+
+Not imported (intentional): Visual companion (browser-based UI, conflicts with file-based memory principle), "1% chance must invoke skill" rule (mode-classifier already routes), TodoWrite forcing function (Smelter explicitly disables Claude Code task tools), worktree enforcement (Smelter's .smt/ state already provides session isolation).
+
+Observation period: re-run prior failing scenario (sheet-limit auth leak fix that stopped at `workflow-coding`) and verify the chain continues autonomously to `workflow-human-check`. R16/R17 now reject the state-level and prose-level manifestations of premature completion, so regressions should surface as explicit CRITICAL/HIGH blocks rather than silent skips.

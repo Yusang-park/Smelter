@@ -99,28 +99,6 @@ function extractExplicitHarnessCommand(prompt) {
   };
 }
 
-const FIX_PATTERNS = [
-  /\bfix\b/i,
-  /\bcorrect(?:ion)?\b/i,
-  /\bpatch\b/i,
-  /\bresolve\b/i,
-  /\bdirect correction\b/i,
-  /버그|고쳐|수정|해결해|오류|에러/,
-];
-
-const INVESTIGATE_PATTERNS = [
-  /\bcheck\b/i,
-  /\binvestigate\b/i,
-  /\binspect\b/i,
-  /\bdiagnose\b/i,
-  /\bverify\b/i,
-  /\blook into\b/i,
-  /\btriage\b/i,
-  /\bdebug\b/i,
-  /\broot cause\b/i,
-  /분석|조사|확인해|살펴봐|진단/,
-];
-
 // Internal map: mode-classifier emits mode ids (enum in state-schema MODES), but
 // detector contract speaks dash-cased command names (matches file names in
 // commands/ and keys in COMMAND_CONFIG below).
@@ -133,37 +111,85 @@ const MODE_TO_COMMAND = {
   implement: 'implement',
 };
 
-// Legacy helper retained for scripts/test-keyword-detector.mjs compatibility and
-// as a tight fallback when mode-classifier returns its `default:*` trigger. The
-// canonical classifier is now `scripts/mode-classifier.mjs` — see wireup below.
-function legacyPatternMatch(prompt) {
-  const text = String(prompt || '').trim();
-  if (!text) return null;
-  const hasFix = FIX_PATTERNS.some((pattern) => pattern.test(text));
-  const hasInvestigate = INVESTIGATE_PATTERNS.some((pattern) => pattern.test(text));
-  if (hasFix) {
-    return { name: 'fix', args: '', hint: 'bug', matched: 'local:fix', source: 'magic' };
+// Prior versions carried `FIX_PATTERNS` + `INVESTIGATE_PATTERNS` + a
+// `legacyPatternMatch` helper used when `ruleClassify` returned `default:*`.
+// In v2.4.9 the LLM is the sole natural-language classifier. No regex fallback.
+// If `ruleClassify` throws (LLM outage, malformed response, etc.), the caller
+// treats it as "no classification" and the prompt flows through unseeded.
+
+// Claude Code assistant-transcript markers. A prompt dominated by these is
+// almost certainly the user pasting a prior session log to ask about it, not
+// a real work request — the classifier would otherwise misfire on stray
+// `fix:`/`Stop hook error:` tokens and seed a spurious /fix chain.
+//
+// Threshold is "≥2 distinct pattern hits" (NOT line-percentage) — simple,
+// deterministic, and tolerant of short prompts where any percentage clause
+// would be unstable. A single incidental `fix:` mention cannot reach two
+// distinct markers.
+const TRANSCRIPT_PATTERNS = [
+  /^\s*⏺/m,                                   // assistant-bullet marker
+  /^\s*⎿/m,                                   // tool-result connector
+  /^\s*Stop hook (?:error|feedback)\b/mi,
+  /Ran \d+ stop hooks?/i,
+  /\[(?:master|main)\s+[0-9a-f]{7,40}\]/i,    // git-commit banner
+];
+
+export function isTranscriptPaste(text) {
+  const s = String(text || '');
+  if (!s.trim()) return false;
+  let hits = 0;
+  for (const re of TRANSCRIPT_PATTERNS) {
+    if (re.test(s)) {
+      hits++;
+      if (hits >= 2) return true;
+    }
   }
-  if (hasInvestigate) {
-    return { name: 'investigate', args: '', hint: null, matched: 'local:investigate', source: 'magic' };
-  }
-  return null;
+  return false;
 }
 
-export function detectNaturalLanguageCommand(prompt) {
+// Strip ANSI escape sequences and C0/C1 control characters before emitting
+// user-controlled text to stderr — an attacker-shaped prompt could otherwise
+// move the cursor / clear the screen / inject bell chars via printTag.
+function sanitizeForLog(text, max = 80) {
+  return String(text ?? '')
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, '')
+    .replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+    .slice(0, max);
+}
+
+export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sessionId = '' } = {}) {
   const text = String(prompt || '').trim();
   if (!text) return null;
 
-  const classification = ruleClassify(text);
-  const trigger = classification.trigger || '';
-  const entryCommand = MODE_TO_COMMAND[classification.mode];
-
-  // Classifier's safe default fires when no rule matched. Defer to the legacy
-  // bi-pattern matcher so broad English verbs (\bcheck\b, \bdebug\b, \bresolve\b)
-  // retained by FIX_PATTERNS / INVESTIGATE_PATTERNS keep routing as they did.
-  if (trigger.startsWith('default:') || !entryCommand) {
-    return legacyPatternMatch(text);
+  // Transcript-paste heuristic: a prompt dominated by Claude Code transcript
+  // markers (≥2 distinct patterns) is passed through without mode seeding.
+  // Rollback lever: set SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 to disable.
+  if (process.env.SMELTER_SKIP_TRANSCRIPT_HEURISTIC !== '1' && isTranscriptPaste(text)) {
+    return { passthrough: true, matched: 'transcript-paste', source: 'passthrough' };
   }
+
+  // LLM classifier is the sole natural-language router (v2.4.9). On failure
+  // the error propagates — treat that as "no classification" in main() so the
+  // prompt flows through without state seeding. No regex fallback.
+  let classification;
+  try {
+    classification = ruleClassify(text, { cwd, sessionId });
+  } catch {
+    return null;
+  }
+  if (!classification) return null;
+  const trigger = classification.trigger || '';
+
+  // Passthrough — pure shell / git ops bail out entirely. MUST run BEFORE any
+  // `MODE_TO_COMMAND[mode]` lookup because passthrough classifications return
+  // `mode: null`, and indexing `MODE_TO_COMMAND[null]` would read an inherited
+  // property (e.g. `null.toString`) on a malformed map.
+  if (classification.passthrough === true) {
+    return { passthrough: true, matched: trigger, source: 'passthrough' };
+  }
+
+  const entryCommand = MODE_TO_COMMAND[classification.mode];
+  if (!entryCommand) return null;
 
   const chain = Array.isArray(classification.chained_modes) && classification.chained_modes.length >= 2
     ? classification.chained_modes
@@ -527,7 +553,13 @@ async function main() {
 
     // (2) Deterministic natural-language routing for high-confidence prompts
     if (!detected) {
-      detected = detectNaturalLanguageCommand(prompt);
+      detected = detectNaturalLanguageCommand(prompt, { cwd: directory, sessionId });
+      if (detected?.passthrough === true) {
+        // Pure shell / git op — no workflow mode, no state seeding.
+        printTag(`Passthrough: ${sanitizeForLog(detected.matched)}`);
+        console.log(JSON.stringify({ continue: true }));
+        return;
+      }
       if (detected) {
         printTag(`Magic Keyword: Local classified command`);
       }

@@ -312,3 +312,174 @@ test('R14: allow E2E pass claim when effect_evidence is populated', () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('R16: block current_stage=done write when workflow-human-check has no pass event', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-team-code-review' });
+    state.events = [
+      { skill: 'workflow-coding', result: 'pass' },
+      { skill: 'workflow-agent-review', result: 'pass' },
+    ];
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/demo.state.json'),
+        content: '{"current_stage": "done"}',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    const r16 = hits.find(h => h.rule === 'R16');
+    assert.ok(r16, 'R16 must fire when current_stage=done is set without workflow-human-check pass');
+    assert.equal(r16.severity, 'CRITICAL');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R16: allow current_stage=done when workflow-human-check has a pass event', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-human-check' });
+    state.events = [
+      { skill: 'workflow-coding', result: 'pass' },
+      { skill: 'workflow-human-check', result: 'pass' },
+    ];
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/demo.state.json'),
+        content: '{"current_stage": "done"}',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R16'), undefined, 'R16 must NOT fire when human-check pass exists');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R16: allow current_stage=done when user_decision=complete is already recorded', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-human-check' });
+    state.user_decision = 'complete';
+    const input = {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/demo.state.json'),
+        old_string: '"current_stage": "workflow-human-check"',
+        new_string: '"current_stage": "done"',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R16'), undefined, 'R16 must NOT fire when user_decision=complete');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R16: do not fire when mode does not include workflow-human-check (e.g., /verify)', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({
+      current_stage: 'workflow-verify',
+      allowed_skills: ['workflow-verify'],
+    });
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/demo.state.json'),
+        content: '{"current_stage": "done"}',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R16'), undefined, 'R16 must NOT fire in /verify-only mode');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R17: block completion-claim prose in results.md when human-check has not passed', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    state.events = [{ skill: 'workflow-coding', result: 'pass' }];
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/results.md'),
+        content: '# Results\n\nBug fixed. Task complete.\n',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    const r17 = hits.find(h => h.rule === 'R17');
+    assert.ok(r17, 'R17 must fire on "bug fixed / task complete" before human-check pass');
+    assert.equal(r17.severity, 'HIGH');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R17: allow completion-claim prose after human-check pass event', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-human-check' });
+    state.events = [{ skill: 'workflow-human-check', result: 'pass' }];
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/results.md'),
+        content: '# Results\n\nBug fixed. All tests passing, we are done.\n',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R17'), undefined, 'R17 must NOT fire after human-check pass');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R17: do not fire on plan.md edits (plan is a pre-impl artifact, not a completion claim)', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-tasker' });
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/plan.md'),
+        content: '## Goal\nTask complete when the bug is fixed.\n',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R17'), undefined, 'R17 must NOT fire on plan.md edits');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R17: do not fire on code / test files', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, 'src/foo.ts'),
+        content: '// Bug fixed here\nexport const x = 1;',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R17'), undefined, 'R17 must NOT fire on src/ code edits');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
