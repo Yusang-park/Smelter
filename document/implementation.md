@@ -495,3 +495,19 @@ Totals: 14/14 workflow-* skills ported (text), 2 new watchdog rules with 7 new t
 Not imported (intentional): Visual companion (browser-based UI, conflicts with file-based memory principle), "1% chance must invoke skill" rule (mode-classifier already routes), TodoWrite forcing function (Smelter explicitly disables Claude Code task tools), worktree enforcement (Smelter's .smt/ state already provides session isolation).
 
 Observation period: re-run prior failing scenario (sheet-limit auth leak fix that stopped at `workflow-coding`) and verify the chain continues autonomously to `workflow-human-check`. R16/R17 now reject the state-level and prose-level manifestations of premature completion, so regressions should surface as explicit CRITICAL/HIGH blocks rather than silent skips.
+
+## Phase 24 — Keyword-detector silent-skip fixes (v2.4.11)
+
+User report: "keyword detector too loose, no mode entered." Investigation traced the symptom to a cluster of classifier-path defects rather than a classifier-sensitivity problem. Layer 3 actually returned the correct mode — it just failed to reach state seeding.
+
+- [x] P24-1. **Cache trigger normalization** — `scripts/lib/subagent-classifier.mjs::classifyMode` previously cached the Haiku-raw trigger (e.g. `"imperative:repair"`) verbatim. `isValidModeCacheEntry` required a `llm:`/`stub:` prefix, so every cache entry was rejected on read and each prompt round-tripped the Haiku subprocess. Write-side now normalizes: if the trigger already carries `llm:` or `stub:`, keep it; otherwise prepend `llm:`.
+- [x] P24-2. **Avoid double Haiku round trip** — `scripts/keyword-detector.mjs::seedWorkflowState` called `classifyMode` a second time to extract surface fields (target_type/exempt/skip_brainstorm), even though `detectNaturalLanguageCommand` had just classified the same prompt. With the P24-1 cache defect, the second call was an uncached Haiku invocation that could time out at 20 s and silently fail under the outer `try/catch {}`. `detectNaturalLanguageCommand` now forwards the full `classification` object in its return shape, and `seedWorkflowState` accepts it via a new `preClassification` parameter (fallback path preserved for callers that do not have it).
+- [x] P24-3. **`think` banner** — `MODE_LABELS` in `keyword-detector.mjs` gained a `think: 'THINK MODE'` entry. Previously a `think` classification entered mode state silently; operators observed "no mode entered" because the banner never printed.
+- [x] P24-4. **Trigger double-prefix** — `scripts/mode-classifier.mjs::classify` unconditionally prepended `llm:` to the trigger on return, producing `llm:llm:…` after P24-1's write-side normalization. The wrapper now respects an existing `llm:`/`stub:` prefix and only normalizes raw triggers that slipped through.
+
+Verification (live hook invocation via stdin, fresh `.smt/` dirs):
+- `버그 고쳐줘` → FIX MODE banner, `state.json` seeded with `mode=fix target_type=bug_fix`, trigger `llm:imperative:repair` (single prefix).
+- `새 기능 설계해` → THINK MODE banner, `state.json` seeded with `mode=think`.
+- Repeat of the same prompt in the same session returns immediately (cache hit), no Haiku subprocess spawn.
+
+Tests: `scripts/keyword-detector.test.mjs` + `scripts/mode-classifier.test.mjs` 32/32 green (no test changes needed — existing coverage exercises the corrected paths).

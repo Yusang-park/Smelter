@@ -225,6 +225,13 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
     matched: trigger,
     source: 'magic',
     chained_modes: chain,
+    // Forward the full LLM classification so seedWorkflowState does NOT need
+    // to re-invoke classifyMode to recover surface fields. The second Haiku
+    // round trip was the actual cause of silent state-seed failures: on
+    // timeout the outer try/catch swallowed the throw and `.state.json` was
+    // never written, so the agent observed "mode banner printed but no mode
+    // actually active."
+    classification,
   };
 }
 
@@ -351,7 +358,7 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
   } catch { return { create: true, reason: 'pointer-parse-error' }; }
 }
 
-function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic') {
+function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic', preClassification = null) {
   const mode = COMMAND_TO_MODE[commandName];
   if (!mode) return; // cancel, queue — utility commands, not v2 workflow modes
 
@@ -466,17 +473,31 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
         if (source === 'slash') {
           rawSurface = parseSlashArgs(commandName, args);
         } else if (source === 'magic') {
-          try {
-            const classification = classifyMode(prompt, { cwd: directory, sessionId });
-            if (classification && classification.passthrough !== true) {
-              rawSurface = {
-                schema_version: classification.schema_version,
-                target_type: classification.target_type ?? null,
-                exempt: classification.exempt ?? null,
-                skip_brainstorm: classification.skip_brainstorm === true,
-              };
-            }
-          } catch {}
+          // Prefer the pre-classified surface from detectNaturalLanguageCommand
+          // so we do NOT round-trip Haiku a second time per prompt. A second
+          // classifyMode call here was the silent-failure path: on timeout the
+          // outer try/catch swallowed the throw and `.state.json` was never
+          // written, leaving the mode banner but no actual workflow state.
+          if (preClassification && preClassification.passthrough !== true) {
+            rawSurface = {
+              schema_version: preClassification.schema_version,
+              target_type: preClassification.target_type ?? null,
+              exempt: preClassification.exempt ?? null,
+              skip_brainstorm: preClassification.skip_brainstorm === true,
+            };
+          } else {
+            try {
+              const classification = classifyMode(prompt, { cwd: directory, sessionId });
+              if (classification && classification.passthrough !== true) {
+                rawSurface = {
+                  schema_version: classification.schema_version,
+                  target_type: classification.target_type ?? null,
+                  exempt: classification.exempt ?? null,
+                  skip_brainstorm: classification.skip_brainstorm === true,
+                };
+              }
+            } catch {}
+          }
         }
 
         const merged = mergeSurface(rawSurface, modeCfg);
@@ -554,10 +575,10 @@ function clearActiveFeature(directory, sessionId) {
   tryUnlink(join(directory, '.smt', 'active_task'));
 }
 
-function activateHarnessState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic') {
+function activateHarnessState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic', classification = null) {
   const config = COMMAND_CONFIG[commandName];
   if (!config) return;
-  seedWorkflowState(directory, commandName, prompt, sessionId, args, chainedModes, source);
+  seedWorkflowState(directory, commandName, prompt, sessionId, args, chainedModes, source, classification);
 }
 
 function createSkillInvocation(skillName, originalPrompt, args = '', hint = null) {
@@ -721,13 +742,14 @@ async function main() {
     }
 
     // Harness commands — activate state
-    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '', detected.chained_modes || null, detected.source || 'magic');
+    activateHarnessState(directory, detected.name, prompt, sessionId, detected.args || '', detected.chained_modes || null, detected.source || 'magic', detected.classification || null);
     if (tracer) {
       try { tracer.recordModeChange(directory, sessionId, 'none', detected.name); } catch {}
     }
 
     // MODE banner (once per session per command)
     const MODE_LABELS = {
+      think: 'THINK MODE',
       plan: 'PLAN MODE',
       build: 'BUILD MODE',
       fix: 'FIX MODE',

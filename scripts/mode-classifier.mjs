@@ -126,7 +126,13 @@ export function classify(input, { cwd = process.cwd(), sessionId = '' } = {}) {
   const result = {
     schema_version: llm.schema_version ?? 2,
     mode: llm.mode,
-    trigger: typeof llm.trigger === 'string' && llm.trigger ? `llm:${llm.trigger}` : `llm:${llm.mode}`,
+    // subagent-classifier already normalizes trigger with `llm:`/`stub:` prefix
+    // before caching. Re-prefixing here produced doubled `llm:llm:...` banners
+    // (visible in the Magic Keyword log line). Respect the prefix if already
+    // present; only add it for raw triggers that slipped through unnormalized.
+    trigger: typeof llm.trigger === 'string' && llm.trigger
+      ? (/^(llm:|stub:)/.test(llm.trigger) ? llm.trigger : `llm:${llm.trigger}`)
+      : `llm:${llm.mode}`,
     overridden: false,
     target_type: isPassthrough ? null : (llm.target_type ?? null),
     exempt: isPassthrough ? null : (llm.exempt ?? null),

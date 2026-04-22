@@ -442,12 +442,18 @@ export function classifyMode(prompt, { cwd = process.cwd(), sessionId = '' } = {
     ? { schema_version: CACHE_SCHEMA_VERSION, target_type: null, exempt: null, skip_brainstorm: false }
     : validateSurfaceFields(parsed);
 
+  // Normalize trigger to carry `llm:` provenance prefix so cached entries pass
+  // `isValidModeCacheEntry` on subsequent reads. Without this, Haiku's raw
+  // trigger (e.g. "imperative:repair") is stored verbatim, the validator
+  // rejects it as non-whitelisted, and every classify call round-trips Haiku.
+  const rawTrigger = typeof parsed.trigger === 'string' && parsed.trigger ? parsed.trigger : parsed.mode;
+  const normalizedTrigger = /^(llm:|stub:)/.test(rawTrigger) ? rawTrigger : `llm:${rawTrigger}`;
   const result = {
     schema_version: CACHE_SCHEMA_VERSION,
     mode: parsed.mode,
     chained_modes: chainedModes,
     passthrough: parsed.passthrough === true,
-    trigger: typeof parsed.trigger === 'string' ? parsed.trigger : `llm:${parsed.mode}`,
+    trigger: normalizedTrigger,
     target_type: surface.target_type,
     exempt: surface.exempt,
     skip_brainstorm: surface.skip_brainstorm,
