@@ -54,6 +54,7 @@ resetModelToSonnet();
 const codex = run(['--codex', '--version']);
 assert.equal(codex.mode, 'codex');
 assert.deepEqual(codex.passthrough, ['--version']);
+assert.equal(codex.childEnvPreview.CLAUDE_CONFIG_DIR, join(tempHome, '.claude'));
 // ANTHROPIC_BASE_URL must NOT be in settings.json — it's only injected into child process env
 assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL, undefined);
 // CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is set only in wrapper's child process env, not in settings.json
@@ -86,7 +87,7 @@ const codexPreserveClaude = run(['--codex', '--version']);
 assert.equal(codexPreserveClaude.activeModel, 'gpt-5.4', 'codex window without prior codex selection should use default model');
 
 resetModelToSonnet();
-const plain = run(['--version']);
+const plain = run(['--claude', '--version']);
 assert.equal(plain.mode, 'claude');
 assert.deepEqual(plain.passthrough, ['--version']);
 assert.equal(savedSettings ? JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL : undefined, undefined);
@@ -96,6 +97,30 @@ const forcedClaude = run(['--codex', '--claude', '--version']);
 assert.equal(forcedClaude.mode, 'claude');
 assert.deepEqual(forcedClaude.passthrough, ['--version']);
 assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL, undefined);
+
+const inheritedCodexEnv = JSON.parse(
+  execFileSync('node', [wrapper, '--claude', '--version'], {
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      SMELTER_WRAPPER_TEST: '1',
+      CODEX_MODE: '1',
+      SMELTER_MODEL_MODE: 'codex',
+      SMELTER_ACTIVE_MODEL: 'gpt-5.4',
+      CLAUDE_CONFIG_DIR: join(tempHome, '.claude-codex'),
+      ANTHROPIC_BASE_URL: 'http://127.0.0.1:3099',
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+    encoding: 'utf8',
+  }),
+);
+assert.equal(inheritedCodexEnv.mode, 'claude');
+assert.equal(inheritedCodexEnv.childEnvPreview.SMELTER_MODEL_MODE, 'claude');
+assert.equal(inheritedCodexEnv.childEnvPreview.CODEX_MODE, undefined);
+assert.equal(inheritedCodexEnv.childEnvPreview.SMELTER_ACTIVE_MODEL, undefined);
+assert.equal(inheritedCodexEnv.childEnvPreview.CLAUDE_CONFIG_DIR, undefined);
+assert.equal(inheritedCodexEnv.childEnvPreview.ANTHROPIC_BASE_URL, undefined);
+assert.equal(inheritedCodexEnv.childEnvPreview.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, undefined);
 
 resetModelToSonnet();
 const hudCacheDir = join(tempHome, '.claude', 'hud', 'task-summary');

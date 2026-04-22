@@ -38,18 +38,18 @@ function readProjectModelMode() {
 }
 
 function inferClassifierModelFromProcessMode() {
-  if (process.env.CODEX_MODE === '1' || process.env.SMELTER_MODEL_MODE === 'codex') return 'codex';
   if (process.env.SMELTER_MODEL_MODE === 'claude') return 'claude';
+  if (process.env.SMELTER_MODEL_MODE === 'codex') return 'codex';
+  if (process.env.CODEX_MODE === '1') return 'codex';
   const cfgMode = readConfiguredCodexMode();
   return cfgMode || null;
 }
 
 function readMainModel() {
-  if (process.env.SMELTER_ACTIVE_MODEL) return process.env.SMELTER_ACTIVE_MODEL;
-
   const modeMode = inferClassifierModelFromProcessMode();
-  if (modeMode === 'codex') return readProjectModelMode() || 'gpt-5.4';
   if (modeMode === 'claude') return 'sonnet';
+  if (process.env.SMELTER_ACTIVE_MODEL) return process.env.SMELTER_ACTIVE_MODEL;
+  if (modeMode === 'codex') return readProjectModelMode() || 'gpt-5.4';
 
   const projectMode = readProjectModelMode();
   if (projectMode) return projectMode;
@@ -344,7 +344,8 @@ Trigger: one-line reason.
 
 Examples:
 - "버그 고쳐줘" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"imperative:repair","target_type":"bug_fix","exempt":null,"skip_brainstorm":false}
-- "오타 고쳐" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:typo","target_type":"typo","exempt":{"tdd":true,"e2e":true},"skip_brainstorm":false}
+- "오타 고쳐" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:text","target_type":"text","exempt":{"tdd":true,"e2e":true},"skip_brainstorm":false}
+- "버튼 색깔 바꿔" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:design","target_type":"design","exempt":{"tdd":true,"e2e":false},"skip_brainstorm":false}
 - "덧붙여서 추가해" → {"schema_version":2,"mode":"implement","chained_modes":null,"passthrough":false,"trigger":"imperative:extend","target_type":"extend_existing","exempt":null,"skip_brainstorm":true}
 - "새 기능 설계해" → {"schema_version":2,"mode":"think","chained_modes":null,"passthrough":false,"trigger":"imperative:design-new","target_type":null,"exempt":null,"skip_brainstorm":false}
 - "이 함수 어떻게 동작해?" → {"schema_version":2,"mode":"investigate","chained_modes":null,"passthrough":false,"trigger":"interrogative:how-question","target_type":null,"exempt":null,"skip_brainstorm":false}

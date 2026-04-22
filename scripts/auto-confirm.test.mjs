@@ -188,8 +188,13 @@ test('prompt biases toward continue on conditional / question / remaining-work p
 test('prompt HARD RULE treats single-path next step as continue', () => {
   const p = buildClassifierPrompt('hello');
   assert.match(p, /HARD RULE/);
-  assert.match(p, /single concrete next step/i);
-  assert.match(p, /NOT.*branching/i);
+  assert.match(p, /concrete next step/i);
+});
+test('prompt BRANCHING-CHOICE RULE forces continue with autopick on A/B options', () => {
+  const p = buildClassifierPrompt('hello');
+  assert.match(p, /BRANCHING-CHOICE RULE/);
+  assert.match(p, /STILL return continue/i);
+  assert.match(p, /pick the highest-confidence option/i);
 });
 
 // ----------------------------------------------------------------------------
@@ -249,10 +254,19 @@ test('stub trimmed whitespace + trailing newline accepted', () => {
 // ----------------------------------------------------------------------------
 section('pickSubAgentModel (haiku default, codex mini under codex)');
 // ----------------------------------------------------------------------------
-test('default returns settings-derived model', () => {
-  delete process.env.CODEX_MODE;
-  delete process.env.SMELTER_MODEL_MODE;
-  assert.equal(pickSubAgentModel(), 'gpt-5.4-mini');
+test('pickSubAgentModel honors codex env signal and falls back to haiku without it', () => {
+  const priorCodex = process.env.CODEX_MODE;
+  const priorMode = process.env.SMELTER_MODEL_MODE;
+  try {
+    process.env.CODEX_MODE = '1';
+    delete process.env.SMELTER_MODEL_MODE;
+    assert.equal(pickSubAgentModel(), 'gpt-5.4-mini');
+    delete process.env.CODEX_MODE;
+    assert.equal(pickSubAgentModel(), 'haiku');
+  } finally {
+    if (priorCodex === undefined) delete process.env.CODEX_MODE; else process.env.CODEX_MODE = priorCodex;
+    if (priorMode === undefined) delete process.env.SMELTER_MODEL_MODE; else process.env.SMELTER_MODEL_MODE = priorMode;
+  }
 });
 test('CODEX_MODE=1 env returns gpt-5.4-mini', () => {
   process.env.CODEX_MODE = '1';
@@ -713,6 +727,44 @@ test('continue action with codex sub-agent model emits haiku hint', () => {
   const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
   const text = buildPromptInjection({ action: 'continue', reason: 'asked permission' }, s, { subAgentModel: 'haiku' });
   assert.match(text, /haiku/);
+});
+test('continue with multi_choice questionShape appends NO-CHOICE autopick directive', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection(
+    { action: 'continue', reason: 'asked permission' },
+    s,
+    { subAgentModel: 'sonnet', questionShape: 'multi_choice' },
+  );
+  assert.match(text, /\[NO-CHOICE POLICY\]/);
+  assert.match(text, /Pick the single highest-confidence option/i);
+  assert.match(text, /execute it via tools immediately/i);
+});
+test('continue with yes_no questionShape appends NO-CHOICE directive', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection(
+    { action: 'continue', reason: 'asked permission' },
+    s,
+    { subAgentModel: 'sonnet', questionShape: 'yes_no' },
+  );
+  assert.match(text, /\[NO-CHOICE POLICY\]/);
+});
+test('continue with shape=none does NOT append NO-CHOICE directive (no false positive)', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const text = buildPromptInjection(
+    { action: 'continue', reason: 'asked permission' },
+    s,
+    { subAgentModel: 'sonnet', questionShape: 'none' },
+  );
+  assert.doesNotMatch(text, /\[NO-CHOICE POLICY\]/);
+});
+test('enter_skill / advance / chain_advance do NOT append NO-CHOICE directive (continue-only)', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
+  const enter = buildPromptInjection(
+    { action: 'enter_skill', reason: 'r', payload: { skill: 'workflow-coding' } },
+    s,
+    { questionShape: 'multi_choice' },
+  );
+  assert.doesNotMatch(enter, /\[NO-CHOICE POLICY\]/);
 });
 test('enter_skill action embeds sub-agent model hint', () => {
   const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
@@ -1192,7 +1244,7 @@ test('active state + classifier stub → continue → exit 2 + queue with sub_ag
       JSON.stringify({ slug: 'p', session_id: sessionId }),
     );
     const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: '진행할까요?' });
-    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER_CMD: stub } });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER_CMD: stub, CODEX_MODE: '1' } });
     assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}`);
     const out = JSON.parse(res.stdout);
     assert.equal(out.decision, 'block');

@@ -209,6 +209,95 @@ test('classifyMode rejects poisoned cache entry with non-whitelisted trigger', a
   }
 });
 
+// ---------------------------------------------------------------------------
+// Phase 24 — trigger normalization on cache write (P24-1).
+// Without llm:/stub: prefix, isValidModeCacheEntry rejects the entry on read
+// and every classify call round-trips the subprocess.
+// ---------------------------------------------------------------------------
+test('P24-1: raw trigger gets llm: prefix on cache write', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mc-'));
+  try {
+    const stateDir = join(dir, '.smt', 'state');
+    mkdirSync(stateDir, { recursive: true });
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'imperative:repair', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classifyMode } = await freshImport();
+    const r = classifyMode('고쳐줘', { cwd: dir, sessionId: 'p24-1' });
+    assert.equal(r.trigger, 'llm:imperative:repair', 'raw trigger must carry llm: prefix');
+
+    const cachePath = join(stateDir, 'mode-classifier-cache.json');
+    const cache = JSON.parse(readFileSync(cachePath, 'utf-8'));
+    const entry = Object.values(cache).find((v) => v && typeof v === 'object' && v.mode);
+    assert.ok(entry, 'cache entry must exist');
+    assert.match(entry.trigger, /^(llm:|stub:)/, 'cached trigger must start with llm:/stub: so it passes the validator');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('P24-1: existing llm: prefix is preserved, not doubled', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mc-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'llm:already-prefixed', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classifyMode } = await freshImport();
+    const r = classifyMode('prompt', { cwd: dir, sessionId: 'p24-1b' });
+    assert.equal(r.trigger, 'llm:already-prefixed', 'must not double-prefix');
+    assert.doesNotMatch(r.trigger, /^llm:llm:/);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('P24-1: cache hit on second call — no re-invocation (counter stays at 1)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mc-'));
+  try {
+    const counterPath = join(dir, 'counter.txt');
+    writeFileSync(counterPath, '0');
+    const stub = mkStub(dir, `import { readFileSync, writeFileSync } from 'node:fs';
+      export function classifyMode() {
+        const n = parseInt(readFileSync(${JSON.stringify(counterPath)}, 'utf-8'), 10) + 1;
+        writeFileSync(${JSON.stringify(counterPath)}, String(n));
+        return { mode: 'fix', trigger: 'imperative:repair', chained_modes: null };
+      }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classifyMode } = await freshImport();
+    classifyMode('same-prompt', { cwd: dir, sessionId: 'p24-1c' });
+    classifyMode('same-prompt', { cwd: dir, sessionId: 'p24-1c' });
+    const calls = parseInt(readFileSync(counterPath, 'utf-8'), 10);
+    assert.equal(calls, 1, 'cache normalization must make second call a cache hit');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('classifier model selection ignores stale Codex active model in explicit Claude mode', async () => {
+  const prevMode = process.env.SMELTER_MODEL_MODE;
+  const prevActiveModel = process.env.SMELTER_ACTIVE_MODEL;
+  const prevCodexMode = process.env.CODEX_MODE;
+  try {
+    process.env.SMELTER_MODEL_MODE = 'claude';
+    process.env.SMELTER_ACTIVE_MODEL = 'gpt-5.4';
+    process.env.CODEX_MODE = '1';
+    const { selectClassifierModel } = await freshImport();
+    assert.equal(selectClassifierModel(), 'haiku');
+  } finally {
+    if (prevMode === undefined) delete process.env.SMELTER_MODEL_MODE;
+    else process.env.SMELTER_MODEL_MODE = prevMode;
+    if (prevActiveModel === undefined) delete process.env.SMELTER_ACTIVE_MODEL;
+    else process.env.SMELTER_ACTIVE_MODEL = prevActiveModel;
+    if (prevCodexMode === undefined) delete process.env.CODEX_MODE;
+    else process.env.CODEX_MODE = prevCodexMode;
+  }
+});
+
 await runAll();
 console.log('');
 console.log(`subagent-mode-classifier: ${passed} passed, ${failed} failed`);

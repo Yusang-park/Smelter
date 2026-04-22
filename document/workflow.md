@@ -331,10 +331,13 @@ v3.1 cut 4 mid-reviews × 1 round per `/fix` run; v3.2 cuts 3 additional rounds 
 
 ### 4-2. fix (`/fix`) — absorbs former `simple_fix`
 
-**pipeline**: `fix` (8 skills) by default; `fix_simple` (4 skills) for `typo`/`dialogue`; `upgrade_required` for `extend_existing`/`new_feature`/`refactor`/`migration` (escalate to `/implement` or `/think`).
+**pipeline**: `fix` (8 skills) by default; `fix_simple` (4 skills) pinned to `target_type ∈ {text, design}`; `upgrade_required` for `extend_existing`/`new_feature`/`refactor`/`migration` (escalate to `/implement` or `/think`).
 **defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
 **entry**: `workflow-investigate`.
-**surface exemption**: magic keywords `css` / `style` / `텍스트` / `i18n` / `typo` / `dialogue` set `exempt.tdd=true` (typo/dialogue also set `exempt.e2e=true`). This replaces the v2 `simple_fix` mode.
+**surface exemption (v3.3)**: `fix_simple` is entered via exactly two target_types.
+- `text` (텍스트 수정) — magic keywords `typo` / `오타` / `dialogue` / `대화` / `text` / `텍스트` / `copy` / `i18n` → `target_type=text`, `exempt={tdd:true, e2e:true}`.
+- `design` (디자인 수정) — magic keywords `css` / `style` / `design` / `디자인` → `target_type=design`, `exempt={tdd:true, e2e:false}` (visual surface keeps e2e).
+This replaces the v2 `simple_fix` mode and the v3.2 `typo`/`dialogue` enum.
 **review rounds**: mode override — all mid-pipeline reviews at **1 round**, `workflow-e2e-review` at **2 rounds**, `workflow-human-check` at **3 rounds** (user gate).
 **terminal**: `workflow-human-check` — **mandatory, cannot be skipped** (§8 human review).
 
@@ -767,7 +770,7 @@ Recursion is prevented by setting `SMT_CLASSIFIER=1` on the spawned sub-agent's 
 Sub-agent model selection (`pickSubAgentModel`):
 - Default = `sonnet`.
 - `~/.smt/config.json.codexMode === true`, env `CODEX_MODE=1`, or env `SMELTER_MODEL_MODE=codex` → `haiku` (mini) for the Codex CLI runtime.
-- `SMELTER_MODEL_MODE=claude` (set by the claude wrapper for non-codex sessions) forces the queued sub-agent back to `sonnet`.
+- `SMELTER_MODEL_MODE=claude` (set by the claude wrapper for non-codex sessions) forces the queued sub-agent back to `sonnet`, even if stale Codex env like `SMELTER_ACTIVE_MODEL=gpt-*` is still present.
 
 The queued payload includes `sub_agent_model` so the next-turn agent's continuation work uses the same model.
 
@@ -806,7 +809,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 ```
 
 `codexMode: true` (or env `CODEX_MODE=1` / `SMELTER_MODEL_MODE=codex`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime. `scripts/session-start-smt.mjs` also syncs the current model-mode env into `~/.smt/config.json.codexMode` at session start so Stop/UserPromptSubmit hooks can read a stable codex flag. The same SessionStart hook now injects Caveman from vendored upstream skill content at `skills/caveman/SKILL.md`, replacing the old inline concise prompt string.
-`claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` (and clear `CODEX_MODE`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session. For concurrent codex/claude isolation the wrapper injects `CLAUDE_CONFIG_DIR=~/.claude` into the codex child; the Claude binary then reads `~/.claude/.claude-<sha8(NFC(dir))>.json` instead of the global `~/.claude.json`. `applyCodexMode()` writes codex `additionalModelOptionsCache` only to that scoped file, never the global one — plain `claude` windows (which bypass the wrapper) always see a clean global picker. `~/.claude/` remains the shared config dir for settings/agents/commands/hooks. Codex child exit only runs a legacy-global `clearModelCache()` safety net; the scoped file stays populated so a concurrent second codex window isn't disrupted when the first exits (every codex launch writes the same constant `CODEX_MODEL_OPTIONS`).
+`claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` and actively clear inherited Codex-only env (`CODEX_MODE`, `SMELTER_ACTIVE_MODEL`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session. For concurrent codex/claude isolation the wrapper injects `CLAUDE_CONFIG_DIR=~/.claude` into the codex child; this keeps session history and `--resume` shared with plain Claude while the Claude binary reads `~/.claude/.claude-<sha8(NFC(dir))>.json` instead of the global `~/.claude.json` for Codex model cache. `applyCodexMode()` writes codex `additionalModelOptionsCache` only to that scoped file, never the global one — plain `claude` windows (which bypass the wrapper) always see a clean global picker. `~/.claude/` remains the shared config dir for settings/agents/commands/hooks. Codex child exit only runs a legacy-global `clearModelCache()` safety net; the scoped file stays populated so a concurrent second codex window isn't disrupted when the first exits (every codex launch writes the same constant `CODEX_MODEL_OPTIONS`).
 
 Hook timeouts and env vars:
 - `hooks/hooks.json` Stop hook timeout = 120 s (raised from 45 s in v2.4.10 to give the folded single-hook enough budget for one inner classifier round-trip plus state I/O; the inner classifier call is capped at 10 s via `STAGE_CLASSIFIER_TIMEOUT_MS` so a hung sub-agent cannot consume the full budget).
@@ -1256,7 +1259,7 @@ agents/
 | Mode upgrade | Always user-gated; any direction. |
 | brainstorm ↔ investigate | Bidirectional (reshape edge). |
 | Implement brainstorm | `depth: light` shared skill. |
-| Fix routing (CSS/typo/text) | **Auto-classifier first** (pattern match); `/fix` + magic keyword (`css`/`typo`/`i18n`/`dialogue`) sets `exempt.tdd` instead of dedicated mode. |
+| Fix routing (text/design) | **Auto-classifier first** (pattern match); `/fix` + magic keyword → `target_type ∈ {text, design}` → `fix_simple` pipeline (only these two surfaces route there). |
 | State store | `<task>.state.json` (JSON, per-task). |
 | Event history in context | Last 5 events. |
 | TDD verification | `test_cycles` RED entry required. |

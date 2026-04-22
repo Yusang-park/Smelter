@@ -275,6 +275,50 @@ section('Layer 2 — SMT_CLASSIFIER_NO_PASSTHROUGH=1 kill switch');
 }
 
 // ---------------------------------------------------------------------------
+section('Phase 24 — Trigger prefix handling (P24-4)');
+// ---------------------------------------------------------------------------
+// Regression: subagent-classifier normalizes cache trigger with `llm:` prefix,
+// and this wrapper used to unconditionally prepend `llm:` again, producing
+// `llm:llm:imperative:repair` in the Magic Keyword banner.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-p24-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'llm:imperative:repair', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('고쳐줘', { cwd: dir, sessionId: 'p24-4' });
+    assert('P24-4: no double llm: prefix', /^llm:llm:/.test(r.trigger), false);
+    assert('P24-4: single llm: prefix preserved', r.trigger, 'llm:imperative:repair');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-p24b-'));
+  try {
+    // Legacy path: a stub (or old cache entry) that somehow returns a raw
+    // trigger without any prefix — wrapper must still add exactly one `llm:`.
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'raw-no-prefix', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('prompt', { cwd: dir, sessionId: 'p24-4b' });
+    // subagent-classifier normalizes to `llm:raw-no-prefix` on write; wrapper
+    // must leave it as-is (already prefixed after normalization).
+    assert('P24-4: raw trigger normalized exactly once', r.trigger, 'llm:raw-no-prefix');
+    assert('P24-4: still no double prefix', /^llm:llm:/.test(r.trigger), false);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log('\nFailures:');

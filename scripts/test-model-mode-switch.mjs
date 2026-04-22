@@ -3,17 +3,28 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
-const settingsPath = '/Users/yusang/smelter/settings.json';
 const tempHome = mkdtempSync(join(tmpdir(), 'model-mode-switch-home-'));
 const tempCwd = mkdtempSync(join(tmpdir(), 'model-mode-switch-cwd-'));
-const claudeJsonPath = join(tempHome, '.claude.json');
+const claudeDir = join(tempHome, '.claude');
+const scopedHash = createHash('sha256').update(tempCwd.normalize('NFC')).digest('hex').slice(0, 8);
+const claudeJsonPath = join(claudeDir, `.claude-${scopedHash}.json`);
 const stateDir = join(tempCwd, '.smt', 'state');
 const statePath = join(stateDir, 'model-mode.json');
-const savedSettings = readFileSync(settingsPath, 'utf8');
+const settingsPath = join(claudeDir, 'settings.json');
+const savedEnv = {
+  HOME: process.env.HOME,
+  CLAUDE_CODEX_SETTINGS_PATH: process.env.CLAUDE_CODEX_SETTINGS_PATH,
+};
 
 mkdirSync(stateDir, { recursive: true });
+mkdirSync(claudeDir, { recursive: true });
 writeFileSync(claudeJsonPath, JSON.stringify({ bootstrap: true }) + '\n');
+writeFileSync(settingsPath, JSON.stringify({ env: {}, model: 'sonnet' }) + '\n');
+
+process.env.HOME = tempHome;
+process.env.CLAUDE_CODEX_SETTINGS_PATH = settingsPath;
 
 const { CODEX_MODEL_OPTIONS } = await import('./lib/codex-models.mjs');
 const {
@@ -21,10 +32,12 @@ const {
   applyClaudeMode,
   buildModelModeState,
   writeJsonFile,
+  getCodexConfigDir,
+  getCodexClaudeJsonPath,
 } = await import('./set-model-mode.mjs');
 
 try {
-  let settings = JSON.parse(savedSettings);
+  let settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
   settings.env ??= {};
   settings.model = 'sonnet';
 
@@ -39,7 +52,7 @@ try {
     ? claudeJson.additionalModelOptionsCache
     : [...CODEX_MODEL_OPTIONS];
 
-  assert.equal(settings.model, 'sonnet', 'expected Codex mode not to overwrite global Claude model');
+  assert.equal(settings.model, undefined, 'expected Codex mode not to persist a shared Claude model override');
   assert.equal(settings.env.ANTHROPIC_BASE_URL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined);
@@ -54,8 +67,10 @@ try {
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   assert.equal(state.mode, 'codex');
   assert.equal(state.model, 'Codex gpt-5.4');
+  assert.equal(getCodexConfigDir(tempHome), claudeDir, 'codex config dir should share ~/.claude for session history');
+  assert.equal(getCodexClaudeJsonPath(tempCwd, tempHome), claudeJsonPath, 'codex model cache should live in scoped ~/.claude/.claude-<hash>.json');
 
-  settings = JSON.parse(savedSettings);
+  settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
   settings.env ??= {};
   settings.model = 'sonnet';
   applyClaudeMode(settings, tempCwd);
@@ -65,7 +80,7 @@ try {
   settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
   claudeJson = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
 
-  assert.equal(settings.model, 'sonnet', 'expected Claude mode to preserve global Claude model');
+  assert.equal(settings.model, undefined, 'expected Claude mode not to persist a shared Claude model override');
   assert.equal(settings.env.ANTHROPIC_BASE_URL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, undefined);
   assert.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined);
@@ -74,5 +89,8 @@ try {
 
   console.log('model mode switch test passed');
 } finally {
-  writeFileSync(settingsPath, savedSettings);
+  if (savedEnv.HOME === undefined) delete process.env.HOME;
+  else process.env.HOME = savedEnv.HOME;
+  if (savedEnv.CLAUDE_CODEX_SETTINGS_PATH === undefined) delete process.env.CLAUDE_CODEX_SETTINGS_PATH;
+  else process.env.CLAUDE_CODEX_SETTINGS_PATH = savedEnv.CLAUDE_CODEX_SETTINGS_PATH;
 }

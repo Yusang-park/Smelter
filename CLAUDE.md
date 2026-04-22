@@ -43,7 +43,7 @@ Mode state lives in `.smt/features/<slug>/task/<task>.state.json`. Mode / skill 
 
 **Auto-Confirm:** `scripts/auto-confirm.mjs` runs on every Stop event; it drops the main agent's last message + pending tasks into `.smt/state/auto-confirm-queue.json`, which `scripts/auto-confirm-consumer.mjs` injects on the next UserPromptSubmit. Gate: `~/.smt/config.json → { "autoConfirm": true }` (default on). Disable: set `autoConfirm: false`. To cancel: `/cancel [hard]`. To redirect after current work finishes without interrupting: `/queue <intent>` (utility command at `commands/queue.md`).
 
-**Transient-Error Auto-Retry:** `scripts/tool-retry.mjs` auto-retries ripgrep timeout, file-modified, rg flag-parse errors. Retry cap: 3.
+**Transient-Error Auto-Retry:** `scripts/tool-retry.mjs` auto-retries ripgrep timeout, file-modified, file-not-read-before-Write/Edit, rg flag-parse errors. Retry cap: 3.
 
 **Iron Laws:** 8 non-negotiables. See `document/workflow.md` §0. Summary: never stop after failure; no evasion; no self-failure; no retry (producer-chain routing instead); file is truth; workflow whitelist is user decision; independent queues with shared sessions and specialist agents; scoped testing.
 
@@ -104,6 +104,15 @@ Before marking ANY task complete:
 - [ ] `workflow-human-check` approved
 
 **If ANY unchecked → CONTINUE WORKING.** (Iron Law #1)
+
+## No-Choice Policy
+
+**Never present the user with A/B branching choices.** Pick the highest-confidence path (strongest evidence, safest blast radius, fewest assumptions) and execute it via tools. State the pick + reason in ONE line, then act.
+
+- Forbidden phrasings: "어느 쪽 선호하시나요?", "A) ... B) ... 어떻게 진행할까요?", "Option 1 ... Option 2 ... which?", "원하시면 ... 또는 ..."
+- Allowed: terse rhetorical "할까요?" with one obvious answer (auto-confirmed as continue).
+- Halt ONLY for: credentials/secrets, irreversible destructive ops awaiting explicit confirmation, requirements where ANY pick would be a guess.
+- A judgement call is not a blocker — make the call. The auto-confirm hook injects an autopick directive if you slip; do not rely on it.
 
 ## Code Navigation (Serena MCP)
 

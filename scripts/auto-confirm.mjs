@@ -92,8 +92,9 @@ export function buildClassifierPrompt(lastMessage) {
     `  - uses conditional-offer phrasing: "원하면", "원하시면", "하시려면", "말씀해 주시면", "if you want", "if desired", "let me know if", "want me to", "shall I", "바로 ~한다", "다음 작업", "next:", "계속하려면", OR\n` +
     `  - uses question-offer phrasing with a single clear answer: "만들까요", "할까요", "수정할까요", "이어갈까요", "지금 실행", "지금 실행?", "여전히 지금 실행", "바로 실행할까요", "진행할까요", "proceed now?", "run it now?", "execute?", OR\n` +
     `  - describes remaining work: "남은 건 / 남은 작업은 / 이것도 마찬가지 / what remains / still need to / only X left / just need to".\n\n` +
-    `HARD RULE: If the message names a single concrete next step AND does NOT present the user with multiple branching options (no A/B choice, no "which should I do", no ambiguous fork requiring user input), return continue. A rhetorical question like "만들까요?" / "shall I?" with only one obvious answer is NOT a branching choice — return continue.\n\n` +
-    `Choose action=halt only when the message is clearly a terminal final answer / completed report / pure summary with no forward-looking proposal, OR when explicitly blocked on external user decision (credentials, destructive confirmation, ambiguous requirement requiring user input).\n\n` +
+    `HARD RULE: If the message names a concrete next step, return continue. A rhetorical question like "만들까요?" / "shall I?" with only one obvious answer is NOT a branching choice — return continue.\n\n` +
+    `BRANCHING-CHOICE RULE: If the message presents the user with multiple options ("A/B", "어느 쪽", "which should I do", numbered alternatives, "원하시면 ... 또는 ..."), STILL return continue. The downstream injection will instruct the agent to pick the highest-confidence option and execute autonomously without re-asking the user. A/B choice is NOT a halt condition — only truly external blockers are.\n\n` +
+    `Choose action=halt ONLY when the message is BOTH (a) a terminal final answer / completed report / pure summary with no forward-looking proposal, AND (b) genuinely blocked on external info that no reasoning could resolve: credentials/secrets, irreversible-destructive confirmation already imminent, or a requirement so ambiguous that ANY pick would be a guess.\n\n` +
     `When in doubt between continue and halt, pick continue.\n\n` +
     `Message:\n"""\n${lastMessage}\n"""`;
 }
@@ -702,7 +703,23 @@ export function formatMandatoryInjection({ skill, direction, subAgentModel, stat
   return lines.join('\n');
 }
 
-export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet', lastAssistantText = '' } = {}) {
+// Build the autopick directive appended to `continue` injections when the
+// assistant's last message presented a branching choice (multi_choice /
+// yes_no / open_question shapes). Tells the agent to pick the highest-
+// confidence option and execute silently — never re-present the choice.
+export function buildAutopickDirective(questionShape) {
+  if (!INTERACTIVE_QUESTION_SHAPES.has(questionShape)) return '';
+  const lines = [
+    '',
+    '[NO-CHOICE POLICY]',
+    'Your previous message presented the user with branching options. Do NOT re-present them.',
+    'Pick the single highest-confidence option (the one with the strongest evidence / safest blast radius / fewest assumptions), state in ONE line which you picked and why, then execute it via tools immediately.',
+    'Only halt for genuinely external blockers (credentials, irreversible destructive ops awaiting confirmation). A judgement call is not a blocker — make the call.',
+  ];
+  return lines.join('\n');
+}
+
+export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet', lastAssistantText = '', questionShape = 'none' } = {}) {
   const header = `[auto-confirm] ${decision.reason}`;
 
   switch (decision.action) {
@@ -785,6 +802,7 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
     case 'session_wrap':
       return `${header}\nTask complete. Write session/YYYY-MM-DD.md log and terminate.`;
     case 'continue': {
+      const autopick = buildAutopickDirective(questionShape);
       const next = state ? pickNextStage(state) : null;
       if (next) {
         const block = formatMandatoryInjection({
@@ -794,9 +812,9 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
           state,
           lastAssistantText,
         });
-        return `${header}\nAssistant asked permission to proceed. Auto-confirmed.\n${block}`;
+        return `${header}\nAssistant asked permission to proceed. Auto-confirmed.\n${block}${autopick}`;
       }
-      return `${header}\nAssistant asked permission to proceed. Auto-confirmed: yes, continue.\nSpawn the next step via a sub-agent using model='${subAgentModel}'.`;
+      return `${header}\nAssistant asked permission to proceed. Auto-confirmed: yes, continue.\nSpawn the next step via a sub-agent using model='${subAgentModel}'.${autopick}`;
     }
     case 'halt':
     case 'no_state':
@@ -1023,7 +1041,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   }
 
-  const injection = buildPromptInjection(decision, state, { subAgentModel, lastAssistantText });
+  const injection = buildPromptInjection(decision, state, { subAgentModel, lastAssistantText, questionShape });
 
   // 'session_wrap' is terminal — current_stage is already 'done'. Re-injecting
   // "write session log" on every Stop creates an infinite loop because the
