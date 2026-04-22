@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { setModelMode, CODEX_PROXY_PORT } from './set-model-mode.mjs';
+import { setModelMode, clearModelCache, getCodexConfigDir, getCodexClaudeJsonPath, CODEX_PROXY_PORT } from './set-model-mode.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -144,6 +144,11 @@ async function main() {
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${CODEX_PROXY_PORT}`,
     // Skip bootstrap so it doesn't overwrite our additionalModelOptionsCache injection
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    // Redirect Claude Code to the codex-scoped config file so its cached
+    // additionalModelOptionsCache + projects state stay isolated from plain
+    // `claude` windows that read ~/.claude.json. Uses ~/.claude as the dir
+    // so settings/agents/commands/hooks remain shared.
+    CLAUDE_CONFIG_DIR: getCodexConfigDir(),
   } : {
     // Restore defaults — unset any codex overrides inherited from parent env
     CODEX_MODE: '',
@@ -162,7 +167,25 @@ async function main() {
     env: filteredEnv,
   });
 
+  // One-time legacy-global cleanup: zero ~/.claude.json:additionalModelOptionsCache
+  // in case a pre-isolation codex run left options there. Harmless no-op on
+  // clean systems. We intentionally do NOT clear the scoped codex file —
+  // other codex windows may still be running and re-reading it, and the
+  // next codex launch will overwrite it with the same CODEX_MODEL_OPTIONS
+  // anyway, so leaving it populated is the safe steady state.
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned || mode !== 'codex') return;
+    cleaned = true;
+    try { clearModelCache(); } catch { /* best effort */ }
+  };
+  process.on('exit', cleanup);
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => { cleanup(); });
+  }
+
   child.on('exit', (code, signal) => {
+    cleanup();
     if (signal) {
       process.kill(process.pid, signal);
       return;

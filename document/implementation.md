@@ -10,7 +10,38 @@ updated: 2026-04-21
 > Source of truth: `document/workflow.md`.
 > Principle: sequential execution, respect dependencies, no omissions.
 
+## Release v3.1.1 — 2026-04-22
+
+Patch release. Headline: **Review Evidence Verifier** — closes the hallucinated-anchor loop where `workflow-*-review` skills could emit fail verdicts citing non-existent file:line anchors, routing indefinitely to `workflow-coding`.
+
+Contents:
+- Review evidence verifier hook (`scripts/review-evidence-verifier.mjs`) + 10 unit + 12 E2E scenarios.
+- Evidence Integrity clauses in 5 fail-routing review skills + `document/workflow.md` §9-4.
+- Auto-confirm classifier continue-bias + review-fail routing hardening (prevents pass-advance when prose verdict is fail).
+- Session state staleness guard (`ACTIVE_STATE_MAX_AGE_MS`).
+- Caveman integration correction — vendored upstream skill source, codex-mode propagation to sub-agents / statusline HUD.
+- Model-mode switch test fix (`scripts/test-model-mode-switch.mjs` — reset path assertion setup).
+- Surface extraction helper + state schema updates (`scripts/lib/surface-extraction.mjs`, `scripts/state-schema.mjs`).
+
+Files changed: see git log for this release.
+
 ## Phase v3.1 — `/fix` speed/quality balance (2026-04-22)
+
+### Review Evidence Verifier (2026-04-22)
+
+- [x] `scripts/review-evidence-verifier.mjs` — new PostToolUse(`Edit|Write`) hook. When a review artifact (`*_review.md` / `*-review.md`) is written with a `fail` verdict, every symptom must be grounded in a strict anchor `**Evidence:** `path:line[-line]` "quote"`. Hook resolves path (abs or cwd-relative), checks line bounds, and asserts the normalized quote appears in the cited line/range. On any violation: `decision: block` with a path-specific reason. `fail` verdict with zero anchors is also blocked.
+- [x] `scripts/review-evidence-verifier.test.mjs` — 10 real-subprocess E2E cases (stdin JSON → stdout JSON).
+- [x] `hooks/hooks.json` + `settings.json` — registered under PostToolUse matcher `Edit|Write`.
+- [x] Evidence Integrity section appended to 5 fail-routing review skills: `workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`, `workflow-e2e-review`, `workflow-team-code-review`. `workflow-brainstorm-review` is exempt (reshape edges, not producer chain).
+- [x] `document/workflow.md` §9-4 — canonical rule specification + grandfathering note.
+
+### Auto-confirm classifier + review-fail routing hardening (2026-04-22)
+
+- [x] `scripts/auto-confirm.mjs::buildClassifierPrompt` — continue-biased with explicit pattern list: conditional ("원하면", "if you want"), question-offer ("만들까요", "할까요", "지금 실행?", "proceed now?"), remaining-work ("남은 건", "what remains"). HARD RULE: single concrete next step without branching options → always continue.
+- [x] `AUTO_CONFIRM_STUCK_THRESHOLD` lowered from 3 → 2. Same signature repeated twice escapes with yellow stderr warning.
+- [x] `detectReviewVerdict` + `detectReviewFailCause` helpers added. `decide()` stage_complete branch for `*-review` skills now routes via `route-on-fail` when the prose verdict is `fail` instead of blindly advancing via `pickNextStage`.
+- [x] `scripts/skill-stage-transition.mjs` — PostToolUse:Skill pass-event auto-write now reads the review artifact and writes `result: 'fail'` + `cause` when the artifact declares a fail verdict. Closes the path where `decide()` would see `last.result === 'pass'` and advance forward despite the actual fail verdict.
+- [x] `findActiveTaskState` — mtime-fallback staleness guard (`ACTIVE_STATE_MAX_AGE_MS = 1h`). Casual-chat sessions no longer pick up abandoned state.json files from prior workflow runs.
 
 ### Caveman integration correction (2026-04-22)
 
@@ -22,6 +53,7 @@ updated: 2026-04-21
 - [x] Hardened `scripts/keyword-detector.mjs` so an LLM `passthrough:true` hint is overridden when the current session already has an active, non-terminal workflow pointer. This preserves Smelter continuation in codex windows instead of silently dropping the session out of workflow mode. Transcript-paste passthrough remains exempt.
 - [x] Fixed multi-window mode bleed by making `scripts/claude-wrapper.mjs` inject `SMELTER_MODEL_MODE=codex` (+ `CODEX_MODE=1`) for codex launches and `SMELTER_MODEL_MODE=claude` for regular launches, so `scripts/lib/subagent-classifier.mjs` can resolve model family from session env before shared state files.
 - [x] Fixed `scripts/statusline-hud.mjs` to prefer Codex mode label over raw stdin `display_name` in Codex windows, so HUD shows `Codex ...` instead of leaking plain `gpt-5.4`.
+- [x] Fixed concurrent codex/claude window bleed via `CLAUDE_CONFIG_DIR` scoping. `scripts/set-model-mode.mjs::applyCodexMode()` now writes `additionalModelOptionsCache` to the codex-scoped file `~/.claude/.claude-<sha8(NFC(dir))>.json` (matches the Claude binary's `gS()` resolver), and `scripts/claude-wrapper.mjs` injects `CLAUDE_CONFIG_DIR=~/.claude` into the codex child so Claude Code reads that scoped file instead of the global `~/.claude.json`. Plain `claude` windows (no wrapper, no env) keep reading the global file which is never mutated → concurrent codex/claude windows are fully isolated. `~/.claude/` remains the shared dir for settings/agents/commands/hooks. Codex child exit only runs a legacy-global `clearModelCache()` safety net; the scoped file is intentionally left populated so a concurrent second codex window isn't disrupted when the first exits (every codex launch writes the same constant `CODEX_MODEL_OPTIONS`, so stale is indistinguishable from fresh). Plain `claude` through the wrapper also no longer clears the scoped file for the same reason.
 
 
 User reported: brainstorm→review cycle + tasker + reshape → `/fix` takes longer than `/implement` (inverted). v3.1 balances speed and quality by (a) collapsing the three split YAML configs into one unified file, (b) adding target-type pipeline dispatch in `/fix`, (c) reducing mid-pipeline review rounds from 3 to 2, and (d) enforcing workflow-human-check before `git commit`.
@@ -373,7 +405,7 @@ Totals: `auto-confirm.test.mjs` 110/110 (3 new + 1 tightened). Hook E2E: 2/2 sce
 Replaces the bilingual regex `RULES` table, `classifyChain`, paste-sanitizer (`firstSentence`), and the HARD/SOFT reject lists inside `scripts/mode-classifier.mjs` with an OAuth-authenticated Claude CLI call (`classifyMode` in `scripts/lib/subagent-classifier.mjs`, scaffolded as Stage 1 under the same feature). The new `classify(input, { cwd, sessionId })` runs four ordered layers — explicit slash, pure shell/git passthrough, LLM, safe fallback — so deterministic paths stay in regex and contextual language work goes to the model.
 
 - [x] R1. **Four-layer classifier** — Layer 1 (`EXPLICIT_COMMANDS`) and Layer 2 (`PASSTHROUGH_PATTERNS`, tightened to `$`-anchored full-input matches) preserve deterministic short-circuits. Layer 3 invokes `classifyMode` via `execFileSync` (synchronous — `keyword-detector.mjs::main` is sync-coupled) and threads `{ cwd, sessionId }` so per-session cache isolation holds. Layer 4 reacts to LLM failure with interrogative-then-`fix` fallback.
-- [x] R2. **Deletions** — `RULES` (6 blocks, ~120 lines), `PASSTHROUGH_HARD_REJECT`, `PASSTHROUGH_SOFT_REJECT`, `CHAIN_ACTION_MAP`, `CHAIN_CONNECTIVES`, `classifyChain`, `firstSentence`, and the pre-LLM interrogative rule are removed. Only `EXPLICIT_COMMANDS`, `PASSTHROUGH_PATTERNS`, `classifyMagicKeywords`, `DEFAULT_MODE`, and `MODES_WHITELIST` remain as module-local constants.
+- [x] R2. **Deletions** — `RULES` (6 blocks, ~120 lines), `PASSTHROUGH_HARD_REJECT`, `PASSTHROUGH_SOFT_REJECT`, `CHAIN_ACTION_MAP`, `CHAIN_CONNECTIVES`, `classifyChain`, `firstSentence`, and the pre-LLM interrogative rule are removed. Only `EXPLICIT_COMMANDS`, `PASSTHROUGH_PATTERNS`, `DEFAULT_MODE`, and `MODES_WHITELIST` remain as module-local constants. `classifyMagicKeywords` was removed in v3.2; surface extraction now lives in `scripts/lib/surface-extraction.mjs` (natural-language path via `classifyMode`, slash-arg path via `parseSlashArgs`).
 - [x] R3. **Caller wire-up** — `scripts/keyword-detector.mjs::detectNaturalLanguageCommand` now accepts `{ cwd, sessionId }` and forwards them to `classify`, so `scripts/lib/subagent-classifier.mjs` can key its per-session `mode-classifier-cache.json` without falling back to `process.cwd()` + empty session. `legacyPatternMatch` is retained as a belt-and-suspenders fallback for `default:*` triggers (LLM parse failure chain).
 - [x] R4. **Test harness** — introduces `scripts/lib/__fixtures__/mode-classifier-stub.mjs`, a prompt-lookup-table stub (no regex) wired into three test files via `SMELTER_MODE_CLASSIFIER_MODULE`:
     - `scripts/mode-classifier.test.mjs` — 37 cases covering all four layers plus magic-keywords + empty input + LLM-throw fallback (RED→GREEN).

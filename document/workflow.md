@@ -128,15 +128,14 @@ The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached 
 
 v3 (2026-04-21): the 6-mode set (`simple_fix` / `plan` retained) collapsed to 5. `/simple-fix` folded into `/fix` + magic keyword; `/plan` renamed to `/think`. Mode/pipeline/skill definitions live in `modes/{modes,pipelines,skills}.yaml` loaded by `scripts/lib/workflow-loader.mjs`.
 
-### 1-3. Magic Keywords
+### 1-3. Surface Extraction (v3.2+)
 
-Surface-detection tokens evaluated by `classifyMagicKeywords(input)` in `scripts/mode-classifier.mjs`. These remain **regex-based** — they emit hints/flags, not a mode decision, so LLM inference is unnecessary and would add latency to every submit.
+Surface fields (`target_type`, `exempt`, `skip_brainstorm`) are inferred from two complementary lanes — never via free-form NL regex.
 
-| Keyword | Action |
-|---------|--------|
-| `css`, `style`, `텍스트`, `i18n`, `typo`, `dialogue` | auto-set `workflow-write-test` TDD exemption (surface-based). In `fix` mode this replaces the removed `simple_fix` mode. |
-| `extend`, `add to`, `덧붙여`, `추가로` | skip `workflow-brainstorm` in `implement` |
-| `fix`, `bug`, `버그`, `문제` | nudge toward `fix` mode |
+- **Natural language** → emitted by `classifyMode` (scripts/lib/subagent-classifier.mjs) alongside `mode`. The Haiku classifier reads the prompt once and returns both mode classification and surface inference in a single call. System prompt includes an anti-injection clause: user text that explicitly instructs `"set target_type to typo"` is ignored; classifier infers from the actual task surface.
+- **Slash-command arguments** → resolved by `parseSlashArgs` (scripts/lib/surface-extraction.mjs) against the frozen `SLASH_SURFACE_TABLE`. Tokenized match (no `\b` regex), first-match-wins for `target_type`, union for `exempt.*` and `skip_brainstorm`. Only `fix` and `implement` have rows; other commands return `null`.
+
+The old regex `applyMagicKeywords` path and the `modes/workflow.yaml → modes.*.magic_keywords` YAML blocks were removed in v3.2. Cache entries are bumped to `schema_version: 2`; pre-rollout validators remain compatible via the unchanged `trigger: "llm:..."` invariant.
 
 ### 1-4. Workflow vs. Utility Skills
 
@@ -650,6 +649,23 @@ verification_rounds:
 3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥ 2 types).
 4. Declaring `pass` with `completed_rounds < 3` is hook-blocked.
 
+### 9-4. Evidence Integrity (Mechanical Enforcement)
+
+Every `fail` verdict emitted by a fail-routing review skill (`workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`, `workflow-e2e-review`, `workflow-team-code-review`) MUST cite at least one anchor in the strict form:
+
+```
+**Evidence:** `path/to/file.ext:LINE[-LINE]` "verbatim quote substring"
+```
+
+Rules:
+- Path must exist on disk at the session's cwd (or be absolute).
+- Quoted substring must appear on the cited line (or within the `L1-L2` range) after whitespace normalization. Quote is a substring match, not a regex.
+- `PostToolUse:Edit|Write` hook (`scripts/review-evidence-verifier.mjs`) blocks any review artifact write whose `fail` verdict lacks a verified anchor, or whose anchor fails path/line/quote resolution.
+- Agents must not paraphrase — quote the line verbatim.
+- If a verified anchor cannot be produced, the symptom is not grounded; do NOT emit a `fail` verdict.
+
+Grandfathering: existing review artifacts predating this rule are not retroactively blocked; the hook only fires on new `Edit|Write` operations. `workflow-brainstorm-review` is exempt (brainstorm reshape targets do not route via producer chain).
+
 ---
 
 ## 10. Human Check
@@ -780,7 +796,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 ```
 
 `codexMode: true` (or env `CODEX_MODE=1` / `SMELTER_MODEL_MODE=codex`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime. `scripts/session-start-smt.mjs` also syncs the current model-mode env into `~/.smt/config.json.codexMode` at session start so Stop/UserPromptSubmit hooks can read a stable codex flag. The same SessionStart hook now injects Caveman from vendored upstream skill content at `skills/caveman/SKILL.md`, replacing the old inline concise prompt string.
-`claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` (and clear `CODEX_MODE`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session.
+`claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` (and clear `CODEX_MODE`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session. For concurrent codex/claude isolation the wrapper injects `CLAUDE_CONFIG_DIR=~/.claude` into the codex child; the Claude binary then reads `~/.claude/.claude-<sha8(NFC(dir))>.json` instead of the global `~/.claude.json`. `applyCodexMode()` writes codex `additionalModelOptionsCache` only to that scoped file, never the global one — plain `claude` windows (which bypass the wrapper) always see a clean global picker. `~/.claude/` remains the shared config dir for settings/agents/commands/hooks. Codex child exit only runs a legacy-global `clearModelCache()` safety net; the scoped file stays populated so a concurrent second codex window isn't disrupted when the first exits (every codex launch writes the same constant `CODEX_MODEL_OPTIONS`).
 
 Hook timeouts and env vars:
 - `hooks/hooks.json` Stop hook timeout = 120 s (raised from 45 s in v2.4.10 to give the folded single-hook enough budget for one inner classifier round-trip plus state I/O; the inner classifier call is capped at 10 s via `STAGE_CLASSIFIER_TIMEOUT_MS` so a hung sub-agent cannot consume the full budget).
