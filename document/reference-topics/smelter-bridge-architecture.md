@@ -171,7 +171,7 @@ level: 3
 ### 상태 파일 위치
 
 ```
-{worktree}/.omc/state/
+{worktree}/.smt/bridge/state/
 ├── ralph-state.json
 ├── ultrawork-state.json
 ├── autopilot-state.json
@@ -233,7 +233,7 @@ bridge/mcp-server.cjs → src/mcp/omc-tools-server.ts
 [사용자 입력]
      ↓ UserPromptSubmit 훅
 [keyword-detector.mjs]
-  ├─ 키워드 감지 → SKILL.md 주입 + .omc/state/*.json 생성
+  ├─ 키워드 감지 → SKILL.md 주입 + .smt/bridge/state/*.json 생성
      ↓ Claude 오케스트레이터 (CLAUDE.md 기반)
 [스킬 지시에 따라 Task() 호출]
      ↓ SubagentStart 훅

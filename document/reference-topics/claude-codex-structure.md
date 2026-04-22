@@ -26,7 +26,7 @@ source_count: 1
 | 슬래시 커맨드 | `~/.claude/commands/*.md` | (skills에 통합) |
 | 훅 설정 | `~/.claude/hooks/hooks.json` | `~/.codex/hooks.json` |
 | 메인 설정 | `~/.claude/settings.json` | `~/.codex/config.toml` |
-| 세션 메모리 | `.omc/notepad.md` (프로젝트별) | `~/.codex/memories/*.md` |
+| 세션 메모리 | `.smt/notepad.md` (프로젝트별) | `~/.codex/memories/*.md` |
 
 ---
 
@@ -46,7 +46,7 @@ source_count: 1
 | `scripts/` | 훅 자동화 스크립트 | hooks.json에서 호출하는 JS/shell 스크립트 |
 | `settings.json` | 하네스 메인 설정 | 권한, 플러그인, MCP 허용 목록 |
 | `settings.local.json` | 로컬 머신 오버라이드 | 같은 스키마; settings.json보다 우선 |
-| `.omc-config.json` | OMC 런타임 설정 | 기본 실행 모드, 모델 라우팅, 에이전트 팀 |
+| `.smelter-config.json` | Smelter Bridge 런타임 설정 | 기본 실행 모드, 모델 라우팅, 에이전트 팀 |
 | `hud/` | 상태줄 스크립트 | settings.json에서 참조하는 `omc-hud.mjs` |
 | `mcp-configs/` | MCP 서버 프리셋 | `mcp-setup` 스킬에서 사용 |
 | `plugins/` | 설치된 플러그인 에셋 | 마켓플레이스 플러그인 바이너리 및 설정 |
@@ -108,7 +108,7 @@ You are a senior software architect...
 - DB: PostgreSQL + Redis
 - API 스타일: REST + tRPC 혼용
 ```
-에이전트별로 세션 간 기억 유지. Claude는 프로젝트별 `.omc/notepad.md`로 유사 기능 제공.
+에이전트별로 세션 간 기억 유지. Claude는 프로젝트별 `.smt/notepad.md`로 유사 기능 제공.
 
 ---
 
@@ -120,8 +120,8 @@ You are a senior software architect...
 | `./AGENTS.md` | ✅ | ✅ | **양쪽 동시 인식** — 하나로 두 도구 제어 |
 | `./.claude/settings.json` | ✅ | ❌ | 프로젝트별 Claude 설정 |
 | `./.codex/skills/` | ❌ | ✅ | 프로젝트 스코프 스킬 (전역 심링크) |
-| `./.omc/notepad.md` | ✅ | ❌ | OMC 세션 메모 |
-| `./.omc/project-memory.json` | ✅ | ❌ | OMC 영속 프로젝트 메모리 |
+| `./.smt/notepad.md` | ✅ | ❌ | Smelter Bridge 세션 메모 |
+| `./.smt/project-memory.json` | ✅ | ❌ | Smelter Bridge 영속 프로젝트 메모리 |
 
 > **핵심:** `./AGENTS.md` 하나로 Claude Code와 Codex CLI 양쪽을 동시에 제어 가능.
 

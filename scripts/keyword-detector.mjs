@@ -29,12 +29,13 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { clearCancel } from './lib/cancel-signal.mjs';
 import { propagateHardCancel, propagateQueueCancel } from './cancel-propagator.mjs';
-import { classifyPrompt } from './lib/subagent-classifier.mjs';
+import { classifyPrompt, classifyMode } from './lib/subagent-classifier.mjs';
 import { classify as ruleClassify } from './mode-classifier.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
 import { writeFeatureSummary } from './lib/feature-summary.mjs';
 import { createInitialState, writeState } from './state-schema.mjs';
 import { getMode as getV3Mode, loadWorkflowConfig, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
+import { parseSlashArgs, mergeSurface } from './lib/surface-extraction.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -350,62 +351,6 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
   } catch { return { create: true, reason: 'pointer-parse-error' }; }
 }
 
-/**
- * applyMagicKeywords — scan the prompt for keys listed in modeCfg.magic_keywords
- * and apply each key's `set: {...}` to the state. Returns a summary of what was
- * applied (specifically `target_type`) so the caller can drive pipeline selection.
- *
- * Each magic keyword entry shape (from modes/workflow.yaml):
- *   typo: { set: { exempt.tdd: true, exempt.e2e: true, target_type: 'typo' } }
- *
- * Dotted keys under `set.exempt` are applied to state.exempt.*;
- * flat keys like `target_type` / `skip_brainstorm` are applied to state.<key>.
- *
- * @param {string} prompt
- * @param {object} modeCfg — output of loadModeConfig (workflow-loader getMode shape)
- * @param {object} state — mutable machineState being seeded
- * @returns {{ target_type?: string, skip_brainstorm?: boolean, matched: string[] }}
- */
-function applyMagicKeywords(prompt, modeCfg, state) {
-  const applied = { matched: [] };
-  const text = String(prompt || '');
-  const magic = modeCfg?.magic_keywords;
-  if (!text || !magic || typeof magic !== 'object') return applied;
-
-  for (const [keyword, spec] of Object.entries(magic)) {
-    // Case-insensitive match on whole prompt. For ASCII keywords use
-    // word-boundary `\b` (prevents `typography` matching `typo`). For non-ASCII
-    // keywords (CJK: 텍스트, 덧붙여, 추가로) `\b` fails because CJK chars are
-    // not in \w, so fall back to plain substring match. Multi-word keys (`add
-    // to`) still work via word boundary on the outer edges.
-    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const isAscii = /^[\x00-\x7F]+$/.test(keyword);
-    const re = isAscii
-      ? new RegExp(`\\b${escaped}\\b`, 'i')
-      : new RegExp(escaped, 'i');
-    if (!re.test(text)) continue;
-    applied.matched.push(keyword);
-    const set = spec?.set;
-    if (!set || typeof set !== 'object') continue;
-
-    for (const [k, v] of Object.entries(set)) {
-      if (k.startsWith('exempt.')) {
-        const sub = k.slice('exempt.'.length);
-        state.exempt = { ...(state.exempt ?? {}), [sub]: v };
-      } else if (k === 'target_type') {
-        state.target_type = v;
-        applied.target_type = v;
-      } else if (k === 'skip_brainstorm') {
-        applied.skip_brainstorm = Boolean(v);
-      } else {
-        state[k] = v;
-      }
-    }
-  }
-
-  return applied;
-}
-
 function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic') {
   const mode = COMMAND_TO_MODE[commandName];
   if (!mode) return; // cancel, queue — utility commands, not v2 workflow modes
@@ -511,23 +456,45 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
           machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
         }
 
-        // v3.1 — apply magic_keywords from the prompt: exempt flags, target_type,
-        // skip_brainstorm. This is what wires the `/fix typo ...` → target_type=typo
-        // → minimal-pipeline path that prior versions declared but never executed.
-        const magicApplied = applyMagicKeywords(prompt, modeCfg, machineState);
+        // v3.2 — Two-lane surface extraction:
+        //   - Lane A (slash command args): deterministic parseSlashArgs (regex-free
+        //     tokenization). Only 'fix' and 'implement' have rows; others return null.
+        //   - Lane B (natural language): classifyMode already emitted surface fields
+        //     alongside mode in Layer 3; re-resolve via session cache (free hit).
+        //   - Lane C (Haiku fallback / unknown): null surface → default_exempt only.
+        let rawSurface = null;
+        if (source === 'slash') {
+          rawSurface = parseSlashArgs(commandName, args);
+        } else if (source === 'magic') {
+          try {
+            const classification = classifyMode(prompt, { cwd: directory, sessionId });
+            if (classification && classification.passthrough !== true) {
+              rawSurface = {
+                schema_version: classification.schema_version,
+                target_type: classification.target_type ?? null,
+                exempt: classification.exempt ?? null,
+                skip_brainstorm: classification.skip_brainstorm === true,
+              };
+            }
+          } catch {}
+        }
 
-        // v3.1 — if target_type_dispatch is set and we now have a target_type
-        // (from magic keyword), resolve the runtime pipeline via selectPipeline.
-        // Otherwise fall back to the mode's default allowed_skills.
+        const merged = mergeSurface(rawSurface, modeCfg);
+        machineState.target_type = merged.target_type;
+        machineState.exempt = merged.exempt;
+        machineState.skip_brainstorm = merged.skip_brainstorm;
+
+        // v3.1 — if target_type_dispatch is set and surface extraction produced a
+        // target_type, resolve the runtime pipeline via selectPipeline. Otherwise
+        // fall back to the mode's default allowed_skills.
         let resolvedAllowedSkills = modeCfg?.allowed_skills ?? [];
-        if (modeCfg?.target_type_dispatch && magicApplied.target_type) {
+        if (modeCfg?.target_type_dispatch && merged.target_type) {
           try {
             const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
-            const pipelineName = v3SelectPipeline(mode, { target_type: magicApplied.target_type }, cfg);
+            const pipelineName = v3SelectPipeline(mode, { target_type: merged.target_type }, cfg);
             if (pipelineName && pipelineName !== 'upgrade_required' && cfg.pipelines[pipelineName]) {
               resolvedAllowedSkills = [...cfg.pipelines[pipelineName]];
-              machineState.target_type = magicApplied.target_type;
-              printTag(`Pipeline: ${pipelineName} (target_type=${magicApplied.target_type})`);
+              printTag(`Pipeline: ${pipelineName} (target_type=${merged.target_type})`);
             }
           } catch (err) {
             printTag(`Pipeline resolution failed: ${err.message}`);

@@ -91,12 +91,12 @@ function killTrackedProcesses(directory) {
  */
 function clearLegacyState(directory, sessionId = '') {
   const cleared = [];
-  const omcStateDir = join(directory, '.omc', 'state');
+  const omcStateDir = join(directory, '.smt', 'state');
   const legacyFiles = ['persistent-state.json'];
   for (const file of legacyFiles) {
     const path = join(omcStateDir, file);
     if (existsSync(path)) {
-      try { unlinkSync(path); cleared.push(`.omc/state/${file}`); } catch { /* skip */ }
+      try { unlinkSync(path); cleared.push(`.smt/state/${file}`); } catch { /* skip */ }
     }
   }
   // Stop-hook loop counters — same hash derivation as auto-confirm.mjs. Both

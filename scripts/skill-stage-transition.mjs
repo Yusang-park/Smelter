@@ -27,6 +27,7 @@ import { join, dirname, basename, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeState, appendEvent, markComplete } from './state-schema.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
+import { detectReviewVerdict, detectReviewFailCause } from './auto-confirm.mjs';
 import { loadWorkflowConfig, getMode as getV3Mode, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
 import yaml from 'js-yaml';
 
@@ -223,12 +224,33 @@ function main() {
     // without a canonical artifact (workflow-coding / workflow-write-test)
     // must produce their own pass event via separate mechanisms.
     const alreadyHasPass = (state.events || []).some(e => e.skill === skill && e.result === 'pass');
-    if (artifactExists && !alreadyHasPass) {
+    const alreadyHasFail = (state.events || []).some(e => e.skill === skill && e.result === 'fail');
+    if (artifactExists && !alreadyHasPass && !alreadyHasFail) {
       if (!Array.isArray(state.events)) state.events = [];
-      state.events.push({
-        t: now, skill, result: 'pass', declarer: 'hook',
+      // Review-skill verdict inspection: for *-review artifacts the stage's
+      // canonical output is the verdict itself. If the review artifact
+      // declares 'fail', the hook must write a fail event — NOT pass — so
+      // decide()'s route-on-fail branch routes back to the upstream
+      // producer instead of pickNextStage advancing forward.
+      const isReviewSkill = /-review$/.test(skill);
+      let result = 'pass';
+      let cause = null;
+      if (isReviewSkill) {
+        try {
+          const artifactText = readFileSync(artifactPath, 'utf-8');
+          const verdict = detectReviewVerdict(artifactText);
+          if (verdict === 'fail') {
+            result = 'fail';
+            cause = detectReviewFailCause(artifactText);
+          }
+        } catch { /* unreadable artifact → treat as pass (legacy behavior) */ }
+      }
+      const event = {
+        t: now, skill, result, declarer: 'hook',
         evidence: { type: 'file_present', path: artifactPath },
-      });
+      };
+      if (cause) event.cause = cause;
+      state.events.push(event);
     }
 
     // v3.1 — post-investigate pipeline re-selection for target_type_dispatch modes.

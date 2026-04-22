@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.4.8
+**Version:** 3.1.1
 
 ## Core Philosophy
 
@@ -27,14 +27,13 @@ Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue chan
 
 ## Execution Model
 
-### Commands (6)
+### Commands (5)
 
 | Command | Mode | Entry skill | Use |
 |---------|------|-------------|-----|
 | `/plan` | `plan` | `workflow-brainstorm` (deep) | New features / refactors; planning-first. |
 | `/implement` | `implement` | `workflow-brainstorm` (light) | Build on existing code; lightweight interview. |
-| `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. |
-| `/simple-fix` | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution. |
+| `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. Handles trivial text / CSS / constant substitution via surface-based TDD exemption. |
 | `/investigate` | `investigate` | `workflow-investigate` | Static investigation (맥락·근거 파악). Exits via mode transition. |
 | `/verify` | `verify` | `workflow-verify` | Non-modifying verification (테스트·점검): test run + static inspection + E2E interface. |
 
@@ -142,6 +141,8 @@ On every code update, also update `document/workflow.md` and `document/implement
 
 Commit format: `<type>: <description>`. Types: feat, fix, refactor, docs, test, chore, perf, ci.
 
+Treat the user as the CEO: show full respect and courtesy at all times. Failing to do so means immediate dismissal.
+
 ## Project Structure
 
 ```
@@ -150,7 +151,7 @@ bin/             — CLI entry point (smelter command)
 agents/          — Specialized subagent definitions
 skills/          — workflow-* skills (13) + utility skills
 modes/           — Mode definitions (5 JSON files)
-commands/        — Slash command entry points (plan, simple-fix, fix, investigate, implement)
+commands/        — Slash command entry points (plan, fix, investigate, implement, verify)
 hooks/           — hooks.json trigger registration
 scripts/         — Node.js hook scripts (state-schema, mode-classifier, route-on-fail, auto-confirm, critic-watchdog, stall-detector, verification-rounds, ...)
 templates/       — Verification prompt templates + scaffolds
@@ -163,3 +164,9 @@ document/        — Workflow spec, implementation status, philosophy
 ## Visibility
 
 Hooks emit `[Tag Name]` to stderr for visibility. Check stderr for hook activity. Language-specific rules in `rules-lib/` are injected via `PreToolUse` hook when a tool targets a matching file extension. Tag: `[Inject: rules-lib/<lang>]`.
+
+## Hook edits require session restart
+
+Claude Code loads `hooks/hooks.json` once at session start. Mid-session edits (adding / removing / renaming hook entries) do **not** activate until the next Claude Code session. Editing hook script bodies (the `.mjs` files referenced by `command`) IS picked up immediately because each hook execution re-reads the script.
+
+Implication: integration-testing a new hook requires quitting and restarting Claude Code after editing `hooks.json`. A test run within the same session that registered the hook will not exercise the new wiring.

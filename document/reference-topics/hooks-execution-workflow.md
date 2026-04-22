@@ -37,7 +37,7 @@ source_count: 12
 
 ### 1-A. `session-start.mjs` (timeout: 5s)
 
-OMC 플러그인의 메인 세션 초기화 스크립트.
+Smelter Bridge 플러그인의 메인 세션 초기화 스크립트.
 
 **입력:** stdin으로 JSON 수신 → `{ cwd, session_id, ... }`
 
@@ -45,15 +45,15 @@ OMC 플러그인의 메인 세션 초기화 스크립트.
 
 1. **버전 드리프트 감지** (`detectVersionDrift`)
    - `CLAUDE_PLUGIN_ROOT/package.json` 에서 플러그인 버전 읽기
-   - `~/.claude/.omc-version.json` 에서 npm 패키지 버전 읽기
-   - `~/.claude/CLAUDE.md` 에서 `<!-- OMC:VERSION:x.x.x -->` 마커 파싱
-   - 세 버전이 불일치하면 `[OMC VERSION DRIFT DETECTED]` 경고 메시지 생성
-   - `~/.claude/.omc/update-state.json` 캐시로 동일 드리프트 중복 알림 방지
+   - `~/.claude/.smelter-version.json` 에서 npm 패키지 버전 읽기
+   - `~/.claude/CLAUDE.md` 에서 `<!-- Smelter Bridge:VERSION:x.x.x -->` 마커 파싱
+   - 세 버전이 불일치하면 `[Smelter Bridge VERSION DRIFT DETECTED]` 경고 메시지 생성
+   - `~/.claude/.smt/update-state.json` 캐시로 동일 드리프트 중복 알림 방지
 
 2. **npm 레지스트리 업데이트 체크** (`checkNpmUpdate`)
-   - `~/.claude/.omc/update-check.json` 캐시 확인 (24시간 TTL)
+   - `~/.claude/.smt/update-check.json` 캐시 확인 (24시간 TTL)
    - 캐시 만료 시 `registry.npmjs.org/oh-my-claude-sisyphus/latest` fetch (2초 타임아웃)
-   - 새 버전 존재 시 `[OMC UPDATE AVAILABLE]` 메시지 생성
+   - 새 버전 존재 시 `[Smelter Bridge UPDATE AVAILABLE]` 메시지 생성
 
 3. **HUD 설치 상태 확인** (`checkHudInstallation`)
    - `~/.claude/hud/omc-hud.mjs` 또는 `sisyphus-hud.mjs` 존재 확인
@@ -62,16 +62,16 @@ OMC 플러그인의 메인 세션 초기화 스크립트.
    - 미설치 시 `[Sisyphus] HUD not configured` system-reminder 주입
 
 4. **Ralph 상태 복원** (`ralphState`)
-   - `{project}/.omc/state/persistent-state.json` 읽기
+   - `{project}/.smt/bridge/state/persistent-state.json` 읽기
    - `active === true` 이면 `[RALPH LOOP RESTORED]` 메시지 (반복 횟수 포함)
 
 5. **미완료 Todo 감지**
-   - 프로젝트 로컬만 스캔: `{project}/.omc/todos.json`, `{project}/.claude/todos.json`
+   - 프로젝트 로컬만 스캔: `{project}/.smt/todos.json`, `{project}/.claude/todos.json`
    - ⚠️ `~/.claude/todos/` 글로벌 디렉토리는 의도적으로 스캔하지 않음 (issue #354)
    - 미완료 항목 존재 시 `[PENDING TASKS DETECTED]` 메시지
 
 6. **Notepad Priority Context 주입**
-   - `{project}/.omc/notepad.md` 에서 `## Priority Context` 섹션 파싱
+   - `{project}/.smt/notepad.md` 에서 `## Priority Context` 섹션 파싱
    - HTML 주석 제거 후 실제 내용이 있으면 `<notepad-context>` 태그로 주입
    - 이 컨텍스트는 컴팩션 이후에도 유지되는 핵심 정보
 
@@ -141,8 +141,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - 자연어 질문이나 메타 대화는 감지하지 않음
 
 3. **상태 파일 생성** (`activateHarnessState`)
-   - 모든 감지 커맨드에 대해 `{project}/.omc/state/harness-state.json` 생성
-   - `/ralph`일 때만 `{project}/.omc/state/persistent-state.json` 추가 생성
+   - 모든 감지 커맨드에 대해 `{project}/.smt/bridge/state/harness-state.json` 생성
+   - `/ralph`일 때만 `{project}/.smt/bridge/state/persistent-state.json` 추가 생성
    - `persistent-state.json`에는 `selection_query`가 포함될 수 있음
 
 4. **Flow Trace 기록** (best-effort)
@@ -170,8 +170,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - 실패 시: 인라인 폴백 (비재귀 + 인메모리 캐시)
 
 2. **스킬 파일 탐색** (`findSkillFiles`)
-   - 프로젝트 스킬: `{project}/.omc/skills/*.md` (높은 우선순위)
-   - 글로벌 스킬: `~/.omc/skills/*.md`
+   - 프로젝트 스킬: `{project}/.smt/skills/*.md` (높은 우선순위)
+   - 글로벌 스킬: `~/.smt/skills/*.md`
    - 레거시 스킬: `~/.claude/skills/omc-learned/*.md`
    - 심볼릭 링크 해석 → 중복 파일 제거 (`realpathSync`)
 
@@ -224,7 +224,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 1. **도구명 추출** — `tool_name` 또는 `toolName` 필드
 
 2. **Todo 상태 조회** (`getTodoStatus`)
-   - 프로젝트 로컬 `{project}/.omc/todos.json`, `{project}/.claude/todos.json` 확인
+   - 프로젝트 로컬 `{project}/.smt/todos.json`, `{project}/.claude/todos.json` 확인
    - `[N active, M pending]` 형태의 상태 문자열 생성
    - ⚠️ 글로벌 `~/.claude/todos/` 는 스캔하지 않음 (issue #354)
 
@@ -245,7 +245,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 
 5. **Task/Agent 스폰 시 특수 처리** (`generateAgentSpawnMessage`)
    - `toolInput`에서 `subagent_type`, `model`, `description`, `run_in_background` 추출
-   - `{project}/.omc/state/subagent-tracking.json`에서 현재 실행 중인 에이전트 수 조회
+   - `{project}/.smt/bridge/state/subagent-tracking.json`에서 현재 실행 중인 에이전트 수 조회
    - 예시 출력: `[2 active, 1 pending] Spawning agent: executor (sonnet) [BACKGROUND] | Task: Fix auth | Active agents: 3`
 
 **출력:** `{ continue: true, hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: "[상태] 리마인더" } }`
@@ -295,7 +295,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - 세션별로 `tool_counts`, `last_tool`, `total_calls`, `updated_at` 추적
 
 2. **Bash 히스토리 기록** (Bash 도구만)
-   - `~/.claude/.omc-config.json` 에서 `bashHistory` 설정 확인 (기본값: 활성)
+   - `~/.claude/.smelter-config.json` 에서 `bashHistory` 설정 확인 (기본값: 활성)
    - 활성화 시 실행된 명령을 `~/.bash_history` 에 append
    - `#`으로 시작하는 주석 명령은 skip
 
@@ -333,7 +333,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 
 **실행:**
 1. `dist/hooks/subagent-tracker/index.js` → `processSubagentStart(data)` 호출
-2. `{project}/.omc/state/subagent-tracking.json` 에 에이전트 등록
+2. `{project}/.smt/bridge/state/subagent-tracking.json` 에 에이전트 등록
    - `{ agent_type, status: "running", started_at, description }`
 3. `total_spawned` 카운터 증가
 4. Flow trace에 에이전트 시작 이벤트 기록
@@ -604,7 +604,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 
 ```
 {project}/
-├── .omc/
+├── .smt/
 │   ├── state/
 │   │   ├── harness-state.json        ← keyword-detector.mjs가 현재 command 상태 기록
 │   │   └── subagent-tracking.json    ← subagent-tracker.mjs가 읽고 쓰기
@@ -619,9 +619,9 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 │
 ~/.claude/
 │   ├── .session-stats.json           ← post-tool-verifier.mjs가 읽고 쓰기
-│   ├── .omc/update-state.json        ← session-start.mjs가 드리프트 알림 캐시
-│   └── .omc/update-check.json        ← session-start.mjs가 npm 업데이트 캐시
+│   ├── .smt/update-state.json        ← session-start.mjs가 드리프트 알림 캐시
+│   └── .smt/update-check.json        ← session-start.mjs가 npm 업데이트 캐시
 │
-~/.omc/
+~/.smt/
 │   └── skills/*.md                   ← skill-injector.mjs가 글로벌 스킬 탐색
 ```

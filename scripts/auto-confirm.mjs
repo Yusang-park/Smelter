@@ -51,7 +51,7 @@ const INTERACTIVE_QUESTION_SHAPES = new Set(['multi_choice', 'yes_no', 'open_que
 // signature (slug:mode:stage:action) this many consecutive times, the CLI
 // entry halts instead of queueing another identical continuation. Prevents
 // auto-confirm from churning in lockstep with a non-advancing state.
-export const AUTO_CONFIRM_STUCK_THRESHOLD = 3;
+export const AUTO_CONFIRM_STUCK_THRESHOLD = 2;
 // Loop counter entries older than this are considered stale and reset on
 // next bump, regardless of signature.
 export const AUTO_CONFIRM_STUCK_MAX_AGE_MS = 30 * 60 * 1000;
@@ -85,12 +85,15 @@ export function buildClassifierPrompt(lastMessage) {
   return `You classify whether Claude should continue automatically after a stop hook.\n\n` +
     `Return EXACTLY one line of JSON and nothing else:\n` +
     `{"action":"continue"|"halt","reason":"<short reason>"}\n\n` +
-    `Default is continue. Choose action=continue when the assistant:\n` +
+    `Choose action=continue when the assistant:\n` +
     `  - explicitly asks permission to proceed, OR\n` +
     `  - offers immediate next work (even conditionally), OR\n` +
     `  - names a concrete next step / file / command to run next, OR\n` +
-    `  - uses conditional-offer phrasing such as "원하면", "원하시면", "하시려면", "말씀해 주시면", "if you want", "if desired", "let me know if", "want me to", "shall I", "바로 ~한다", "다음 작업", "next:", "계속하려면".\n\n` +
-    `Only choose action=halt when the message is clearly a terminal final answer / completed report / pure summary with no forward-looking proposal, OR when it is explicitly blocked on external user decision (credentials, destructive confirmation, ambiguous requirement).\n\n` +
+    `  - uses conditional-offer phrasing: "원하면", "원하시면", "하시려면", "말씀해 주시면", "if you want", "if desired", "let me know if", "want me to", "shall I", "바로 ~한다", "다음 작업", "next:", "계속하려면", OR\n` +
+    `  - uses question-offer phrasing with a single clear answer: "만들까요", "할까요", "수정할까요", "이어갈까요", "지금 실행", "지금 실행?", "여전히 지금 실행", "바로 실행할까요", "진행할까요", "proceed now?", "run it now?", "execute?", OR\n` +
+    `  - describes remaining work: "남은 건 / 남은 작업은 / 이것도 마찬가지 / what remains / still need to / only X left / just need to".\n\n` +
+    `HARD RULE: If the message names a single concrete next step AND does NOT present the user with multiple branching options (no A/B choice, no "which should I do", no ambiguous fork requiring user input), return continue. A rhetorical question like "만들까요?" / "shall I?" with only one obvious answer is NOT a branching choice — return continue.\n\n` +
+    `Choose action=halt only when the message is clearly a terminal final answer / completed report / pure summary with no forward-looking proposal, OR when explicitly blocked on external user decision (credentials, destructive confirmation, ambiguous requirement requiring user input).\n\n` +
     `When in doubt between continue and halt, pick continue.\n\n` +
     `Message:\n"""\n${lastMessage}\n"""`;
 }
@@ -301,8 +304,19 @@ export function findActiveTaskState(cwd, sessionId) {
       } catch {}
     }
   }
+  // Staleness guard: without a session pointer, a stale state.json from a
+  // prior workflow run would otherwise bleed into an unrelated casual chat
+  // session and force workflow directives. Require the fallback state.json
+  // to be recent (edited within the last hour) to count as "active".
+  if (latest && Date.now() - latestMtime > ACTIVE_STATE_MAX_AGE_MS) return null;
   return latest;
 }
+
+// A task state.json older than this, when discovered only via mtime fallback
+// (no session pointer), is treated as stale and ignored. One hour is long
+// enough to survive a lunch break but short enough that a week-old abandoned
+// workflow does not inject directives into today's casual chat.
+export const ACTIVE_STATE_MAX_AGE_MS = 60 * 60 * 1000;
 
 // Detect a mode-transition signal in the assistant's last message.
 // Returns one of: exact mode name, '*' for a generic gate signal, '' when none.
@@ -516,6 +530,32 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     });
     if (verdict && verdict.verdict === 'complete') {
       const artifact = statePath ? canonicalArtifactPath(statePath, state.current_stage) : null;
+
+      // Review-skill fail routing: when the completed stage is a *-review and
+      // its prose verdict is 'fail', route back via route-on-fail to the
+      // upstream producer. Without this, pickNextStage advances forward into
+      // the next review, ignoring the review's own fail verdict.
+      const isReviewStage = /-review$/.test(state.current_stage || '');
+      const reviewVerdict = isReviewStage ? detectReviewVerdict(lastAssistantText) : null;
+      if (isReviewStage && reviewVerdict === 'fail') {
+        const syntheticEvent = {
+          skill: state.current_stage,
+          result: 'fail',
+          cause: detectReviewFailCause(lastAssistantText),
+        };
+        const r = route({ event: syntheticEvent, state });
+        if (r.reason === 'whitelist_violation') {
+          return { action: 'request_mode_upgrade', reason: r.info, payload: r };
+        }
+        if (r.target) {
+          return {
+            action: 'enter_skill',
+            reason: `review fail verdict → producer chain: ${r.reason}`,
+            payload: { skill: r.target, direction: 'back' },
+          };
+        }
+      }
+
       // Fresh-snapshot note: same pre-transition snapshot read at Stop entry.
       // The classifier just verified the current_stage is complete in prose;
       // pickNextStage selects the next allowed skill based on that snapshot,
@@ -558,6 +598,40 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
 export function detectRiskKeyword(text) {
   if (!text) return false;
   return RISK_KEYWORDS.some(k => text.includes(k));
+}
+
+// Detect explicit pass/fail verdict in review-skill prose.
+// Returns 'pass' | 'fail' | null. Prefers the last occurrence so mid-text
+// mentions ("pass criteria not met") don't mask the authoritative verdict.
+export function detectReviewVerdict(text) {
+  if (!text || typeof text !== 'string') return null;
+  const re = /(?:^|\n|\s)(?:final\s+)?verdict\s*(?::|=|\n+)\s*[`*"']?(pass|fail)\b/gi;
+  let m;
+  let last = null;
+  while ((m = re.exec(text)) !== null) last = m[1].toLowerCase();
+  return last;
+}
+
+// Pull a fail-cause keyword from review prose so route-on-fail can branch
+// via onFailByCase. Returns null when no known cause is named — route() then
+// uses onFailDefault.
+export function detectReviewFailCause(text) {
+  if (!text || typeof text !== 'string') return null;
+  const causes = [
+    ['artifact_missing', /artifact[_\s-]*missing|missing\s+artifact|no\s+artifact/i],
+    ['file_absent', /file[_\s-]*absent|file\s+not\s+found/i],
+    ['insufficient_scenario', /insufficient[_\s-]*scenario|thin\s+scenario|scenario\s+coverage/i],
+    ['mocked_interface', /mocked[_\s-]*interface|mocks?\s+on\s+the\s+interface/i],
+    ['assertion', /assertion[_\s-]*fail|assert(?:ion)?\s+failed/i],
+    ['typecheck', /type[_\s-]*check|tsc\s+(?:error|fail)/i],
+    ['build', /build[_\s-]*fail|compile[_\s-]*error/i],
+    ['test_run', /test[_\s-]*run|test\s+failed/i],
+    ['tdd_cycle', /tdd[_\s-]*cycle|red\s+cycle/i],
+    ['scope_mismatch', /scope[_\s-]*mismatch/i],
+    ['lint', /\blint\b/i],
+  ];
+  for (const [name, re] of causes) if (re.test(text)) return name;
+  return null;
 }
 
 // Format the MANDATORY workflow-step injection block. Called when the next

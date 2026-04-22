@@ -23,7 +23,7 @@ $ARGUMENTS
 | Existing-feature behavior change | yes if user-visible | required |
 | New logic | yes if interface | required |
 
-Trivial text/CSS changes should use `/simple-fix` instead. If the classifier routed here but the change is trivial, `workflow-investigate-review` may propose **downgrade to `simple_fix`**.
+Trivial text/CSS/i18n/config-only changes stay in `/fix` but get surface-based TDD exemption (see `document/workflow.md` §7-4). `workflow-investigate` records `target_type` + `exempt` flags so downstream stages skip TDD/E2E when appropriate.
 
 ## Magic-keyword branches
 

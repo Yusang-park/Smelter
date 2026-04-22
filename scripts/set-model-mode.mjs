@@ -145,7 +145,7 @@ export function applyClaudeMode(settings, cwd = process.cwd()) {
   // Do NOT touch the codex-scoped file — a concurrent codex window may be
   // running and re-reading it. Claude mode reads the global file only.
   clearModelCache();
-  removeIfExists(join(cwd, '.omc', 'state', 'codex-state.json'));
+  removeIfExists(join(cwd, '.smt', 'state', 'codex-state.json'));
 }
 
 export function readSettings() {

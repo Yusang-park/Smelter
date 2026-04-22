@@ -268,7 +268,7 @@ ONLY transition to plan generation when user says:
 
 ## Plan Structure
 
-Generate plan to: `.omc/plans/{name}.md`
+Generate plan to: `.smt/plans/{name}.md`
 
 Include:
 - Context (Original Request, Interview Summary, Research Findings)
@@ -311,7 +311,7 @@ After plan is saved, display:
 ```
 ## Plan Summary
 
-**Plan saved to:** `.omc/plans/{name}.md`
+**Plan saved to:** `.smt/plans/{name}.md`
 
 **Scope:**
 - [X tasks] across [Y files]
@@ -345,7 +345,7 @@ Options:
 
 1. **MUST NOT** begin implementation without explicit user confirmation
 2. **MUST NOT** spawn executor agents until user confirms
-3. **MUST NOT** modify any files (except `.omc/*.md`) until confirmed
+3. **MUST NOT** modify any files (except `.smt/*.md`) until confirmed
 4. **MUST** display the confirmation prompt after saving plan
 5. **MUST** wait for user response before proceeding
 
@@ -355,7 +355,7 @@ Options:
 User: "plan the new API"
 Planner: [Conducts interview, gathers requirements]
 User: "make it into a work plan"
-Planner: [Saves plan to .omc/plans/new-api.md]
+Planner: [Saves plan to .smt/plans/new-api.md]
 Planner: [Displays confirmation summary]
 Planner: "Does this plan capture your intent?"
 User: "looks good, proceed"
@@ -374,7 +374,7 @@ Your plan is ready for execution.
 Run: `/smelter:start-work {plan-name}`
 
 This will:
-1. Load the plan from `.omc/plans/{plan-name}.md`
+1. Load the plan from `.smt/plans/{plan-name}.md`
 2. Spawn executor agents for each task
 3. Track progress until completion
 ```

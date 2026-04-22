@@ -7,11 +7,11 @@ import { join } from 'node:path';
 
 const tempRoot = mkdtempSync(join(tmpdir(), 'smelter-statusline-'));
 const cwd = join(tempRoot, 'project');
-const stateDir = join(cwd, '.omc', 'state');
+const stateDir = join(cwd, '.smt', 'state');
 const smtStateDir = join(cwd, '.smt', 'state');
 const smtFeaturesDir = join(cwd, '.smt', 'features');
 const tempHome = join(tempRoot, 'home');
-const legacyModelModePath = join(tempHome, '.omc', 'state', 'model-mode.json');
+const legacyModelModePath = join(tempHome, '.smt', 'state', 'model-mode.json');
 const projectModelModePath = join(smtStateDir, 'model-mode.json');
 const claudeJsonPath = join(tempHome, '.claude.json');
 const hadExistingMode = existsSync(legacyModelModePath);
@@ -24,7 +24,7 @@ if (hadExistingMode) {
 mkdirSync(stateDir, { recursive: true });
 mkdirSync(smtStateDir, { recursive: true });
 mkdirSync(smtFeaturesDir, { recursive: true });
-mkdirSync(join(tempHome, '.omc', 'state'), { recursive: true });
+mkdirSync(join(tempHome, '.smt', 'state'), { recursive: true });
 
 function writeProjectModelMode(mode) {
   writeFileSync(

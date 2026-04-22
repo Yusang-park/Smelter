@@ -238,7 +238,7 @@ async function main() {
 
   const home = homedir();
   const modelModeState = readJsonFile(join(cwd, '.smt', 'state', 'model-mode.json'))
-    ?? readJsonFile(join(home, '.omc', 'state', 'model-mode.json'));
+    ?? readJsonFile(join(home, '.smt', 'state', 'model-mode.json'));
   const inCodexMode = modelModeState?.mode === 'codex'
     || process.env.SMELTER_MODEL_MODE === 'codex';
 
@@ -388,11 +388,11 @@ async function main() {
 
   // Additional mode badges
   const ultraworkActive =
-    isActiveState(join(cwd, '.omc', 'state', 'ultrawork-state.json')) ||
-    isActiveState(join(home, '.omc', 'state', 'ultrawork-state.json'));
+    isActiveState(join(cwd, '.smt', 'state', 'ultrawork-state.json')) ||
+    isActiveState(join(home, '.smt', 'state', 'ultrawork-state.json'));
   const ecomodeActive =
-    isActiveState(join(cwd, '.omc', 'state', 'ecomode-state.json')) ||
-    isActiveState(join(home, '.omc', 'state', 'ecomode-state.json'));
+    isActiveState(join(cwd, '.smt', 'state', 'ecomode-state.json')) ||
+    isActiveState(join(home, '.smt', 'state', 'ecomode-state.json'));
 
   const extraBadges = [];
   if (ultraworkActive) extraBadges.push('ULTRAWORK');

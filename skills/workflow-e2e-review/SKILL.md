@@ -170,3 +170,17 @@ Do NOT:
 - Skip to `workflow-human-check` — team review must run first
 - Stop after pass, report "E2E review complete", or ask "shall I continue?"
 - Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
+
+## Evidence Integrity (Mechanical Enforcement)
+
+Every `fail` verdict MUST cite at least one anchor in the strict form:
+
+**Evidence:** `path/to/file.ext:LINE[-LINE]` "verbatim quote substring"
+
+Rules:
+- The path must exist on disk at this session's cwd.
+- The quoted substring must appear on the cited line (or within the range).
+- Quote is a substring match after whitespace normalization — not a regex.
+- A `PostToolUse` hook (`scripts/review-evidence-verifier.mjs`) blocks writes that violate these rules.
+- Do not paraphrase — quote the line verbatim.
+- If you cannot produce a verified anchor, the symptom is not grounded; do not emit a fail verdict.

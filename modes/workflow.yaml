@@ -261,15 +261,10 @@ modes:
     team_hints:
       workflow-coding: fix
       workflow-tasker: light
-    magic_keywords:
-      css:      { set: { exempt.tdd: true,  exempt.e2e: false } }
-      style:    { set: { exempt.tdd: true,  exempt.e2e: false } }
-      텍스트:    { set: { exempt.tdd: true,  exempt.e2e: false } }
-      i18n:     { set: { exempt.tdd: true,  exempt.e2e: false } }
-      typo:     { set: { exempt.tdd: true,  exempt.e2e: true, target_type: typo    } }
-      오타:      { set: { exempt.tdd: true,  exempt.e2e: true, target_type: typo    } }   # Korean: typo
-      dialogue: { set: { exempt.tdd: true,  exempt.e2e: true, target_type: dialogue } }
-      대화:      { set: { exempt.tdd: true,  exempt.e2e: true, target_type: dialogue } }   # Korean: dialogue
+    # Surface fields (target_type, exempt, skip_brainstorm) are emitted by
+    # `classifyMode` in `scripts/lib/subagent-classifier.mjs` (natural language)
+    # and by `parseSlashArgs` in `scripts/lib/surface-extraction.mjs` (slash args).
+    # YAML-declared `magic_keywords` removed in v3.2.
     transitions:
       upgrade_to: [implement, think]
       downgrade_to: []
@@ -285,14 +280,7 @@ modes:
       workflow-brainstorm: light
       workflow-tasker: light
       workflow-coding: implement
-    magic_keywords:
-      extend:   { set: { skip_brainstorm: true } }
-      add to:   { set: { skip_brainstorm: true } }
-      덧붙여:    { set: { skip_brainstorm: true } }
-      추가로:    { set: { skip_brainstorm: true } }
-      css:      { set: { exempt.tdd: true, exempt.e2e: false } }
-      style:    { set: { exempt.tdd: true, exempt.e2e: false } }
-      i18n:     { set: { exempt.tdd: true, exempt.e2e: false } }
+    # See fix mode comment re: surface fields. YAML magic_keywords removed in v3.2.
     transitions:
       upgrade_to: [think]
       downgrade_to: [fix]

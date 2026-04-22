@@ -168,3 +168,17 @@ Do NOT:
 - Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
 
 If the surface is in `exempt_if_surface: [style, typography, typo, dialogue]`, the mode's configuration may route directly to `workflow-team-code-review`. Otherwise `workflow-e2e` is mandatory.
+
+## Evidence Integrity (Mechanical Enforcement)
+
+Every `fail` verdict MUST cite at least one anchor in the strict form:
+
+**Evidence:** `path/to/file.ext:LINE[-LINE]` "verbatim quote substring"
+
+Rules:
+- The path must exist on disk at this session's cwd.
+- The quoted substring must appear on the cited line (or within the range).
+- Quote is a substring match after whitespace normalization — not a regex.
+- A `PostToolUse` hook (`scripts/review-evidence-verifier.mjs`) blocks writes that violate these rules.
+- Do not paraphrase — quote the line verbatim.
+- If you cannot produce a verified anchor, the symptom is not grounded; do not emit a fail verdict.

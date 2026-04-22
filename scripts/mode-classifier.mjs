@@ -119,32 +119,22 @@ export function classify(input, { cwd = process.cwd(), sessionId = '' } = {}) {
     && llm.chained_modes.every((m) => MODES_WHITELIST.includes(m))
     ? llm.chained_modes
     : null;
+  // Passthrough bypasses workflow seeding entirely, so surface fields carry
+  // no routing signal. Null them so downstream consumers that ignore
+  // `passthrough` and read surface directly still see a consistent shape.
+  const isPassthrough = llm.passthrough === true;
   const result = {
+    schema_version: llm.schema_version ?? 2,
     mode: llm.mode,
     trigger: typeof llm.trigger === 'string' && llm.trigger ? `llm:${llm.trigger}` : `llm:${llm.mode}`,
     overridden: false,
+    target_type: isPassthrough ? null : (llm.target_type ?? null),
+    exempt: isPassthrough ? null : (llm.exempt ?? null),
+    skip_brainstorm: !isPassthrough && llm.skip_brainstorm === true,
   };
   if (chain) result.chained_modes = chain;
-  if (llm.passthrough === true) result.passthrough = true;
+  if (isPassthrough) result.passthrough = true;
   return result;
-}
-
-// classifyMagicKeywords — independent of the classifier. Surface-detection
-// hints for TDD exemption + implement-brainstorm skip. Retained verbatim.
-export function classifyMagicKeywords(input) {
-  if (!input || typeof input !== 'string') return { surface: [], hints: [] };
-  const surface = [];
-  const hints = [];
-
-  if (/(?:\bcss\b|\bstyle\b|\bi18n\b|\btypo\b|\bdialogue\b|텍스트|번역|문구|오타)/i.test(input)) {
-    surface.push('style_or_text');
-    hints.push('exempt.tdd=true');
-  }
-  if (/(?:\bextend\b|\badd to\b|덧붙여|추가로)/i.test(input)) {
-    hints.push('skip_brainstorm_in_implement');
-  }
-
-  return { surface, hints };
 }
 
 // CLI entry
@@ -152,8 +142,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const input = process.argv.slice(2).join(' ') || readFileSync('/dev/stdin', 'utf-8').trim();
   try {
     const r = classify(input);
-    const mk = classifyMagicKeywords(input);
-    console.log(JSON.stringify({ ...(r || { mode: null, trigger: 'empty-input' }), magic: mk }, null, 2));
+    console.log(JSON.stringify(r || { mode: null, trigger: 'empty-input' }, null, 2));
   } catch (err) {
     console.error(JSON.stringify({ error: String(err?.message || err) }));
     process.exit(1);

@@ -92,6 +92,7 @@ export function createInitialState({ taskId, mode, chainedModes = [] }) {
     target_type: null,
     surface: [],
     exempt: { tdd: false, e2e: false },
+    skip_brainstorm: false,
     team_runtime: {},
     events: [],
     scenarios: [],
@@ -141,6 +142,11 @@ export function validate(state) {
 
   if (!Array.isArray(state.surface)) push('surface', 'must be array');
   if (!state.exempt || typeof state.exempt !== 'object') push('exempt', 'must be object');
+
+  // skip_brainstorm — additive-optional (Smelter v3.2+). Absence allowed for back-compat.
+  if (state.skip_brainstorm !== undefined && typeof state.skip_brainstorm !== 'boolean') {
+    push('skip_brainstorm', 'must be boolean when present');
+  }
 
   if (!state.team_runtime || typeof state.team_runtime !== 'object') push('team_runtime', 'must be object');
   else for (const [skill, cfg] of Object.entries(state.team_runtime)) {

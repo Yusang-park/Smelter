@@ -57,6 +57,7 @@ try {
 
   settings = JSON.parse(savedSettings);
   settings.env ??= {};
+  settings.model = 'sonnet';
   applyClaudeMode(settings, tempCwd);
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   writeJsonFile(claudeJsonPath, { additionalModelOptionsCache: [] });

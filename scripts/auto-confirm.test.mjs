@@ -38,6 +38,9 @@ import {
   buildStageCompletionPrompt,
   canonicalArtifactPath,
   shouldRunStageCompletionClassifier,
+  detectReviewVerdict,
+  detectReviewFailCause,
+  ACTIVE_STATE_MAX_AGE_MS,
 } from './auto-confirm.mjs';
 
 import { createInitialState, writeState } from './state-schema.mjs';
@@ -168,8 +171,25 @@ test('prompt instructs JSON continue/halt output', () => {
 });
 test('prompt describes explicit proceed-vs-halt contract', () => {
   const p = buildClassifierPrompt('hello');
-  assert.match(p, /explicitly asking permission/i);
-  assert.match(p, /final answers, summaries/i);
+  assert.match(p, /explicitly asks permission/i);
+  assert.match(p, /final answer|completed report|pure summary/i);
+});
+test('prompt biases toward continue on conditional / question / remaining-work phrasing', () => {
+  const p = buildClassifierPrompt('hello');
+  assert.match(p, /원하면/);
+  assert.match(p, /if you want/i);
+  assert.match(p, /만들까요/);
+  assert.match(p, /남은 건/);
+  assert.match(p, /지금 실행/);
+  assert.match(p, /진행할까요/);
+  assert.match(p, /proceed now/i);
+  assert.match(p, /when in doubt.*continue/i);
+});
+test('prompt HARD RULE treats single-path next step as continue', () => {
+  const p = buildClassifierPrompt('hello');
+  assert.match(p, /HARD RULE/);
+  assert.match(p, /single concrete next step/i);
+  assert.match(p, /NOT.*branching/i);
 });
 
 // ----------------------------------------------------------------------------
@@ -1043,8 +1063,8 @@ test('sessionId present + no per-session pointer MUST NOT use mtime fallback (cr
 // ----------------------------------------------------------------------------
 section('H3: stuck-loop guard (signature counter + threshold escape)');
 // ----------------------------------------------------------------------------
-test('H3: threshold constant is 3', () => {
-  assert.equal(AUTO_CONFIRM_STUCK_THRESHOLD, 3);
+test('H3: threshold constant is 2', () => {
+  assert.equal(AUTO_CONFIRM_STUCK_THRESHOLD, 2);
 });
 test('H3: autoConfirmSignature composes slug/mode/stage/completedCount', () => {
   // Post-fold (Fix #3): signature is now completedCount-based, not action-based.
@@ -1521,6 +1541,111 @@ test('Stop hook on terminal stage (workflow-human-check) emits halt not block', 
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(stubDir, { recursive: true, force: true });
+  }
+});
+
+// ----------------------------------------------------------------------------
+section('Review-skill verdict detection + fail routing');
+// ----------------------------------------------------------------------------
+test('detectReviewVerdict finds "Verdict\\n\\nfail"', () => {
+  assert.equal(detectReviewVerdict('Verdict\n\nfail\n\nRoute:'), 'fail');
+});
+test('detectReviewVerdict finds "Verdict: fail"', () => {
+  assert.equal(detectReviewVerdict('Final Verdict: fail'), 'fail');
+});
+test('detectReviewVerdict finds "verdict = fail"', () => {
+  assert.equal(detectReviewVerdict('- verdict = fail'), 'fail');
+});
+test('detectReviewVerdict finds pass', () => {
+  assert.equal(detectReviewVerdict('Verdict\n\npass'), 'pass');
+});
+test('detectReviewVerdict returns null when absent', () => {
+  assert.equal(detectReviewVerdict('No verdict here, just prose.'), null);
+});
+test('detectReviewVerdict prefers last occurrence', () => {
+  assert.equal(detectReviewVerdict('Verdict: pass in round 1. Final verdict: fail.'), 'fail');
+});
+test('detectReviewFailCause picks insufficient_scenario', () => {
+  assert.equal(detectReviewFailCause('Missing Cases: insufficient scenario coverage.'), 'insufficient_scenario');
+});
+test('detectReviewFailCause picks artifact_missing', () => {
+  assert.equal(detectReviewFailCause('artifact_missing detected for this stage'), 'artifact_missing');
+});
+test('detectReviewFailCause returns null on unknown', () => {
+  assert.equal(detectReviewFailCause('generic prose'), null);
+});
+test('decide: review stage_complete with fail verdict routes back via producer chain', () => {
+  const state = baseState({ mode: 'implement', current_stage: 'workflow-e2e-review' });
+  state.allowed_skills = ['workflow-coding', 'workflow-e2e', 'workflow-e2e-review'];
+  const lastMessage = [
+    '3-round review done.',
+    'Verdict\n\nfail',
+    'Route: workflow-coding',
+    'insufficient scenario coverage on CLI surface.',
+  ].join('\n');
+  const d = decide({
+    state,
+    lastAssistantText: lastMessage,
+    statePath: '/tmp/nope.state.json',
+    stageClassifier: () => ({ verdict: 'complete', summary: 'review done' }),
+    questionShape: 'statement',
+  });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.direction, 'back');
+  assert.equal(d.payload.skill, 'workflow-coding');
+  assert.match(d.reason, /review fail verdict/);
+});
+test('decide: review stage_complete with pass verdict advances forward', () => {
+  const state = baseState({ mode: 'implement', current_stage: 'workflow-e2e-review' });
+  state.allowed_skills = ['workflow-coding', 'workflow-e2e', 'workflow-e2e-review', 'workflow-human-check'];
+  state.completed_stages = ['workflow-coding', 'workflow-e2e'];
+  const lastMessage = 'All rounds pass. Verdict: pass';
+  const d = decide({
+    state,
+    lastAssistantText: lastMessage,
+    statePath: '/tmp/nope.state.json',
+    stageClassifier: () => ({ verdict: 'complete', summary: 'review done' }),
+    questionShape: 'statement',
+  });
+  assert.equal(d.action, 'stage_complete');
+});
+
+// ----------------------------------------------------------------------------
+section('findActiveTaskState staleness guard (casual-chat protection)');
+// ----------------------------------------------------------------------------
+test('ACTIVE_STATE_MAX_AGE_MS is exported (1 hour default)', () => {
+  assert.equal(typeof ACTIVE_STATE_MAX_AGE_MS, 'number');
+  assert.ok(ACTIVE_STATE_MAX_AGE_MS >= 10 * 60 * 1000);
+});
+test('findActiveTaskState mtime-fallback rejects state older than threshold', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'smt-stale-'));
+  try {
+    const slug = 'legacy';
+    const taskDir = join(dir, '.smt', 'features', slug, 'task');
+    mkdirSync(taskDir, { recursive: true });
+    const statePath = join(taskDir, `${slug}.state.json`);
+    writeFileSync(statePath, '{}', 'utf-8');
+    const stale = (Date.now() - (ACTIVE_STATE_MAX_AGE_MS + 60_000)) / 1000;
+    utimesSync(statePath, stale, stale);
+    // No sessionId, no pointer — fallback kicks in but should see stale.
+    const found = findActiveTaskState(dir, '');
+    assert.equal(found, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('findActiveTaskState mtime-fallback accepts recent state', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'smt-fresh-'));
+  try {
+    const slug = 'active';
+    const taskDir = join(dir, '.smt', 'features', slug, 'task');
+    mkdirSync(taskDir, { recursive: true });
+    const statePath = join(taskDir, `${slug}.state.json`);
+    writeFileSync(statePath, '{}', 'utf-8');
+    const found = findActiveTaskState(dir, '');
+    assert.equal(found, statePath);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

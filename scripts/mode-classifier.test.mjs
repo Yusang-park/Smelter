@@ -209,21 +209,8 @@ section('Empty / nullish inputs — return null, no classification');
 }
 
 // ---------------------------------------------------------------------------
-section('classifyMagicKeywords — surface detection retained');
-// ---------------------------------------------------------------------------
-{
-  const { classifyMagicKeywords } = await freshImport();
-  const css = classifyMagicKeywords('change button css color');
-  assert('css surface', css.surface, ['style_or_text']);
-  assert('css hint', css.hints.includes('exempt.tdd=true'), true);
-
-  const ext = classifyMagicKeywords('extend this feature');
-  assert('extend hint', ext.hints.includes('skip_brainstorm_in_implement'), true);
-
-  const empty = classifyMagicKeywords('');
-  assert('empty magic kw', empty, { surface: [], hints: [] });
-}
-
+// classifyMagicKeywords section removed in v3.2 — surface extraction now
+// lives in scripts/lib/surface-extraction.mjs (see surface-extraction.test.mjs).
 // ---------------------------------------------------------------------------
 section('Layer 1 — word boundary: /fixture must NOT match /fix');
 // ---------------------------------------------------------------------------
