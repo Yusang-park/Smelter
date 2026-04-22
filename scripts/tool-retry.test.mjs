@@ -95,6 +95,25 @@ function runHook(payload, cwd) {
   console.log('  case file-modified (short form) OK');
 }
 
+// Fixture: file-not-read (Write before Read) → block with Read-first hint
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's1',
+    tool_name: 'Write',
+    tool_input: { file_path: '/Users/yusang/OpenHands/LICENSE', content: 'MIT' },
+    tool_output: { error: 'File has not been read yet. Read it first before writing to it.', exit_code: 1 },
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block', 'file-not-read should block');
+  assert.match(out.reason, /\[Auto-Retry: File not read before Write\/Edit\]/);
+  assert.match(out.reason, /Read\(/);
+  assert.match(out.reason, /\/Users\/yusang\/OpenHands\/LICENSE/, 'instruction must include file_path');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read OK');
+}
+
 // Fixture: rg flag-parse → wrap in bash -c
 {
   const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));

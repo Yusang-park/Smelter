@@ -109,7 +109,7 @@ Mode-unrestricted (Iron Law #6). Two shipped:
 | `PreToolUse`         | `rule-injector.mjs`                  | Language-scoped rule injection (`rules-lib/<lang>`)                 |
 | `PermissionRequest: Bash` | `permission-handler.mjs`        | Bash permission policy                                              |
 | `PostToolUse`        | `post-tool-verifier.mjs`             | General post-tool verification                                      |
-| `PostToolUse`        | `tool-retry.mjs`                     | Transient-error retry (ripgrep timeout, file-modified, flag-parse)  |
+| `PostToolUse`        | `tool-retry.mjs`                     | Transient-error retry (ripgrep timeout, file-modified, file-not-read, flag-parse) |
 | `PostToolUse: Edit\|Write\|Bash` | `critic-watchdog.mjs`    | Pattern E Layer 1 — 10 Iron-Law rules, CRITICAL=exit 2 (block)      |
 | `SubagentStart`      | `subagent-tracker.mjs start`         | Sub-agent lifecycle tracking                                        |
 | `SubagentStop`       | `subagent-tracker.mjs stop`          | Sub-agent lifecycle tracking                                        |

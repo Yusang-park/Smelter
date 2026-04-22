@@ -83,6 +83,13 @@ export const RETRY_PATTERNS = [
     action: 'reread-then-retry',
   },
   {
+    name: 'file-not-read',
+    regex: /File has not been read yet/i,
+    kind: 'retry',
+    reason: 'File not read before Write/Edit',
+    action: 'read-then-retry',
+  },
+  {
     name: 'rg-flag-parse',
     regex: /rg:\s*error\s*parsing\s*flag\s*-[\w-]+/i,
     kind: 'retry',
@@ -221,6 +228,13 @@ function buildRetryInstruction(pattern, toolName, toolInput) {
         return `Run Read({ file_path: "${fp}" }) to refresh its current content, then re-issue the ${toolName} on "${fp}" with the freshly loaded content. Do not stop and do not report this error to the user — recovery is mechanical.`;
       }
       return `Re-Read the target file(s) first to refresh their current content, then re-issue the ${toolName} with the freshly loaded content. Do not stop and do not report this error to the user — recovery is mechanical.`;
+    }
+    case 'read-then-retry': {
+      const fp = extractFilePath(toolInput);
+      if (fp) {
+        return `Run Read({ file_path: "${fp}" }) first (file exists but was never read this session), then re-issue the ${toolName} on "${fp}" with the same content. Do not stop and do not report this error to the user — the harness requires Read-before-Write and recovery is mechanical.`;
+      }
+      return `Read the target file first (file exists but was never read this session), then re-issue the ${toolName} with the same payload. Do not stop and do not report this error to the user — the harness requires Read-before-Write and recovery is mechanical.`;
     }
     case 'wrap-in-bash-c':
       return `Retry the command wrapped in \`bash -c "..."\` so the shell parses the flags instead of the tool interpreting them.`;
