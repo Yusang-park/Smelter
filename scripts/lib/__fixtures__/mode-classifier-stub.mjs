@@ -9,11 +9,11 @@
  * passthrough, target_type, exempt, skip_brainstorm }.
  */
 
-const surfaceTypo = { target_type: 'typo', exempt: { tdd: true, e2e: true }, skip_brainstorm: false };
-const surfaceCss  = { target_type: null, exempt: { tdd: true, e2e: false }, skip_brainstorm: false };
-const surfaceExt  = { target_type: 'extend_existing', exempt: null, skip_brainstorm: true };
-const surfaceBug  = { target_type: 'bug_fix', exempt: null, skip_brainstorm: false };
-const surfaceNone = { target_type: null, exempt: null, skip_brainstorm: false };
+const surfaceText   = { target_type: 'text', exempt: { tdd: true, e2e: true }, skip_brainstorm: false };
+const surfaceDesign = { target_type: 'design', exempt: { tdd: true, e2e: false }, skip_brainstorm: false };
+const surfaceExt    = { target_type: 'extend_existing', exempt: null, skip_brainstorm: true };
+const surfaceBug    = { target_type: 'bug_fix', exempt: null, skip_brainstorm: false };
+const surfaceNone   = { target_type: null, exempt: null, skip_brainstorm: false };
 
 const LOOKUP = Object.freeze({
   // chain tests
@@ -33,9 +33,9 @@ const LOOKUP = Object.freeze({
   '이거 이어서': { mode: 'fix', chained_modes: null, ...surfaceBug },
 
   // surface-detection scenarios
-  '텍스트 수정해줘': { mode: 'fix', chained_modes: null, ...surfaceCss },
-  'css 색깔 바꿔': { mode: 'fix', chained_modes: null, ...surfaceCss },
-  '오타 고쳐': { mode: 'fix', chained_modes: null, ...surfaceTypo },
+  '텍스트 수정해줘': { mode: 'fix', chained_modes: null, ...surfaceText },
+  'css 색깔 바꿔': { mode: 'fix', chained_modes: null, ...surfaceDesign },
+  '오타 고쳐': { mode: 'fix', chained_modes: null, ...surfaceText },
   '이거 안 돌아가': { mode: 'fix', chained_modes: null, ...surfaceBug },
   'fix the login error': { mode: 'fix', chained_modes: null, ...surfaceBug },
   '파악해줘': { mode: 'investigate', chained_modes: null, ...surfaceNone },

@@ -63,7 +63,7 @@ export const EFFECT_EVIDENCE_TYPE_ENUM = Object.freeze([
 
 export const TARGET_TYPE_ENUM = Object.freeze([
   'new_feature', 'refactor', 'extend_existing', 'migration', 'bug_fix',
-  'typo', 'dialogue',   // v3.1 — surface-based types set by magic keyword; route to `minimal` pipeline
+  'text', 'design',   // v3.3 — surface-based types; route to `fix_simple` pipeline (텍스트 수정 / 디자인 수정)
 ]);
 
 export const PATTERNS = Object.freeze(['A', 'B', 'C', 'D', 'E']);

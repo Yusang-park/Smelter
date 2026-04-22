@@ -9,17 +9,21 @@
  *
  * SurfaceFields = {
  *   schema_version: 2,
- *   target_type: 'typo'|'dialogue'|'bug_fix'|'extend_existing'|null,
+ *   target_type: 'text'|'design'|'bug_fix'|'extend_existing'|null,
  *   exempt: {tdd: boolean, e2e: boolean} | null,
  *   skip_brainstorm: boolean,
  * }
+ *
+ * v3.3: `text` (텍스트 수정 — typo / copy / dialogue / i18n) and `design`
+ * (디자인 수정 — CSS / style / typography) are the ONLY two target_types that
+ * route to `fix_simple`. Former `typo`/`dialogue` values collapsed into `text`.
  */
 
 import { printTag } from './yellow-tag.mjs';
 
 export const SURFACE_SCHEMA_VERSION = 2;
 
-const VALID_TARGET_TYPES = new Set(['typo', 'dialogue', 'bug_fix', 'extend_existing']);
+const VALID_TARGET_TYPES = new Set(['text', 'design', 'bug_fix', 'extend_existing']);
 
 /**
  * SLASH_SURFACE_TABLE — ordered rows for parseSlashArgs.
@@ -33,24 +37,27 @@ const VALID_TARGET_TYPES = new Set(['typo', 'dialogue', 'bug_fix', 'extend_exist
  * - `exempt.tdd`/`exempt.e2e`/`skip_brainstorm`: union (once true, stays true).
  */
 export const SLASH_SURFACE_TABLE = Object.freeze([
-  // fix: typo / plural / Korean
-  { command: 'fix', tokens: ['typo'],     set: { target_type: 'typo', exempt: { tdd: true, e2e: true } } },
-  { command: 'fix', tokens: ['typos'],    set: { target_type: 'typo', exempt: { tdd: true, e2e: true } } },
-  { command: 'fix', tokens: ['오타'],      set: { target_type: 'typo', exempt: { tdd: true, e2e: true } } },
-  // fix: dialogue
-  { command: 'fix', tokens: ['dialogue'], set: { target_type: 'dialogue', exempt: { tdd: true, e2e: true } } },
-  { command: 'fix', tokens: ['대화'],      set: { target_type: 'dialogue', exempt: { tdd: true, e2e: true } } },
-  // fix: style/i18n (tdd-only)
-  { command: 'fix', tokens: ['css'],      set: { exempt: { tdd: true } } },
-  { command: 'fix', tokens: ['style'],    set: { exempt: { tdd: true } } },
-  { command: 'fix', tokens: ['텍스트'],    set: { exempt: { tdd: true } } },
-  { command: 'fix', tokens: ['i18n'],     set: { exempt: { tdd: true } } },
+  // fix: text edits (텍스트 수정) — typo / copy / dialogue / i18n
+  { command: 'fix', tokens: ['typo'],     set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['typos'],    set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['오타'],      set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['dialogue'], set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['대화'],      set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['text'],     set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['텍스트'],    set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['copy'],     set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  { command: 'fix', tokens: ['i18n'],     set: { target_type: 'text', exempt: { tdd: true, e2e: true } } },
+  // fix: design edits (디자인 수정) — CSS / style / typography
+  { command: 'fix', tokens: ['css'],      set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['style'],    set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['design'],   set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['디자인'],    set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
   // implement: extend
   { command: 'implement', tokens: ['extend'],   set: { skip_brainstorm: true } },
   { command: 'implement', tokens: ['add','to'], set: { skip_brainstorm: true } },
   { command: 'implement', tokens: ['덧붙여'],    set: { skip_brainstorm: true } },
   { command: 'implement', tokens: ['추가로'],    set: { skip_brainstorm: true } },
-  // implement: style/i18n
+  // implement: style/i18n — exempt tdd only; /implement never routes to fix_simple
   { command: 'implement', tokens: ['css'],   set: { exempt: { tdd: true } } },
   { command: 'implement', tokens: ['style'], set: { exempt: { tdd: true } } },
   { command: 'implement', tokens: ['i18n'],  set: { exempt: { tdd: true } } },

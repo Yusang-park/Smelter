@@ -29,25 +29,25 @@ async function mod() {
 
 // ─────────────────────────────── parseSlashArgs ────────────────────────────────
 
-test('TDD-1 parseSlashArgs(fix, "typo foo") → target_type=typo + both exempts [happy]', async () => {
+test('TDD-1 parseSlashArgs(fix, "typo foo") → target_type=text + both exempts [happy]', async () => {
   const { parseSlashArgs } = await mod();
   const r = parseSlashArgs('fix', 'typo foo');
-  assert.equal(r.target_type, 'typo');
+  assert.equal(r.target_type, 'text');
   assert.deepEqual(r.exempt, { tdd: true, e2e: true });
 });
 
 test('TDD-2 parseSlashArgs(fix, "typos correct these") plural form matches [happy]', async () => {
   const { parseSlashArgs } = await mod();
   const r = parseSlashArgs('fix', 'typos correct these');
-  assert.equal(r.target_type, 'typo');
+  assert.equal(r.target_type, 'text');
 });
 
 test('TDD-3 parseSlashArgs(fix, "typo and also css fix") first-wins + union [edge]', async () => {
   const { parseSlashArgs } = await mod();
   const r = parseSlashArgs('fix', 'typo and also css fix');
-  assert.equal(r.target_type, 'typo');              // first-match-wins
-  assert.equal(r.exempt.tdd, true);                 // union with css row
-  assert.equal(r.exempt.e2e, true);                 // kept from typo row (union not overwrite)
+  assert.equal(r.target_type, 'text');              // first-match-wins (text before design)
+  assert.equal(r.exempt.tdd, true);                 // union with css (design) row
+  assert.equal(r.exempt.e2e, true);                 // kept from text row (union not overwrite)
 });
 
 test('TDD-4 parseSlashArgs(fix, "") → null [boundary]', async () => {
@@ -71,7 +71,25 @@ test('TDD-6 parseSlashArgs(implement, "add-to auth") punctuation-joined matches 
 test('TDD-7 parseSlashArgs(fix, "오타 있음") space-separated Korean matches [happy]', async () => {
   const { parseSlashArgs } = await mod();
   const r = parseSlashArgs('fix', '오타 있음');
-  assert.equal(r.target_type, 'typo');
+  assert.equal(r.target_type, 'text');
+});
+
+test('parseSlashArgs(fix, "디자인 바꿔") Korean design keyword → target_type=design [happy]', async () => {
+  const { parseSlashArgs, mergeSurface } = await mod();
+  const r = parseSlashArgs('fix', '디자인 바꿔');
+  assert.equal(r.target_type, 'design');
+  assert.equal(r.exempt.tdd, true);
+  // parseSlashArgs sets e2e only via union (true stays true); design row's e2e=false
+  // is inherited via mergeSurface against mode default_exempt.
+  const merged = mergeSurface(r, { default_exempt: { tdd: false, e2e: false } });
+  assert.equal(merged.exempt.e2e, false);
+});
+
+test('parseSlashArgs(fix, "css tweak") → target_type=design [happy]', async () => {
+  const { parseSlashArgs } = await mod();
+  const r = parseSlashArgs('fix', 'css tweak');
+  assert.equal(r.target_type, 'design');
+  assert.equal(r.exempt.tdd, true);
 });
 
 test('TDD-8 parseSlashArgs(fix, "오타는 수정") particle-attached → null (parity) [edge]', async () => {
@@ -91,10 +109,10 @@ test('parseSlashArgs(fix, null) no-crash [error]', async () => {
   assert.equal(parseSlashArgs('fix', null), null);
 });
 
-test('parseSlashArgs(fix, "dialogue copy") → target_type=dialogue [happy]', async () => {
+test('parseSlashArgs(fix, "dialogue copy") → target_type=text (dialogue collapsed into text) [happy]', async () => {
   const { parseSlashArgs } = await mod();
   const r = parseSlashArgs('fix', 'dialogue copy');
-  assert.equal(r.target_type, 'dialogue');
+  assert.equal(r.target_type, 'text');
 });
 
 test('parseSlashArgs(implement, "extend the auth module") → skip_brainstorm [happy]', async () => {
@@ -125,7 +143,7 @@ test('TDD-10 validateSurfaceFields drops non-boolean exempt values [error]', asy
 
 test('validateSurfaceFields missing schema_version drops all surface [error]', async () => {
   const { validateSurfaceFields } = await mod();
-  const r = validateSurfaceFields({ mode: 'fix', target_type: 'typo', exempt: { tdd: true } });
+  const r = validateSurfaceFields({ mode: 'fix', target_type: 'text', exempt: { tdd: true } });
   assert.equal(r.target_type, null);
   assert.equal(r.exempt, null);
   assert.equal(r.skip_brainstorm, false);
@@ -135,10 +153,18 @@ test('validateSurfaceFields with valid v2 input passes through [happy]', async (
   const { validateSurfaceFields } = await mod();
   const r = validateSurfaceFields({
     mode: 'fix', schema_version: 2,
-    target_type: 'typo', exempt: { tdd: true, e2e: true }, skip_brainstorm: false,
+    target_type: 'text', exempt: { tdd: true, e2e: true }, skip_brainstorm: false,
   });
-  assert.equal(r.target_type, 'typo');
+  assert.equal(r.target_type, 'text');
   assert.deepEqual(r.exempt, { tdd: true, e2e: true });
+});
+
+test('validateSurfaceFields drops legacy typo/dialogue [error]', async () => {
+  const { validateSurfaceFields } = await mod();
+  for (const legacy of ['typo', 'dialogue']) {
+    const r = validateSurfaceFields({ mode: 'fix', schema_version: 2, target_type: legacy });
+    assert.equal(r.target_type, null, `legacy target_type ${legacy} must be dropped`);
+  }
 });
 
 // ─────────────────────────────── mergeSurface ──────────────────────────────────
@@ -170,11 +196,11 @@ test('mergeSurface returns fresh object (immutability) [edge]', async () => {
 
 // ─────────────────────────────── integration ───────────────────────────────────
 
-test('parse → validate → merge chain for /fix typo [integration]', async () => {
+test('parse → validate → merge chain for /fix typo → text [integration]', async () => {
   const { parseSlashArgs, mergeSurface } = await mod();
   const parsed = parseSlashArgs('fix', 'typo bar');
   const merged = mergeSurface(parsed, { default_exempt: { tdd: false, e2e: false } });
-  assert.equal(merged.target_type, 'typo');
+  assert.equal(merged.target_type, 'text');
   assert.equal(merged.exempt.tdd, true);
   assert.equal(merged.exempt.e2e, true);
 });

@@ -121,7 +121,7 @@ The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached 
 | Mode | Entry skill | Pipeline | Purpose |
 |------|-------------|----------|---------|
 | `think` | `workflow-brainstorm` (deep) | `planning_only` | Ideation & planning. No code changes. Produces `brainstorm.md` + `tasks.md`. |
-| `fix` | `workflow-investigate` | `no_brainstorm` | Bug / logic repair. Surface-based TDD exemption for CSS/typo/i18n via magic keyword. |
+| `fix` | `workflow-investigate` | `no_brainstorm` | Bug / logic repair. `target_type ∈ {text, design}` routes to `fix_simple`; everything else (`bug_fix`) stays on the 8-skill `fix` pipeline. |
 | `implement` | `workflow-brainstorm` (light) | `full` | Feature development on existing code. |
 | `investigate` | `workflow-investigate` | `investigate_only` | Static read only (맥락·근거 파악). Exits via mode transition. |
 | `verify` | `workflow-verify` | `verify_only` | Non-modifying verification (test run + static inspection + real-interface E2E). |
@@ -132,7 +132,7 @@ v3 (2026-04-21): the 6-mode set (`simple_fix` / `plan` retained) collapsed to 5.
 
 Surface fields (`target_type`, `exempt`, `skip_brainstorm`) are inferred from two complementary lanes — never via free-form NL regex.
 
-- **Natural language** → emitted by `classifyMode` (scripts/lib/subagent-classifier.mjs) alongside `mode`. The Haiku classifier reads the prompt once and returns both mode classification and surface inference in a single call. System prompt includes an anti-injection clause: user text that explicitly instructs `"set target_type to typo"` is ignored; classifier infers from the actual task surface.
+- **Natural language** → emitted by `classifyMode` (scripts/lib/subagent-classifier.mjs) alongside `mode`. The Haiku classifier reads the prompt once and returns both mode classification and surface inference in a single call. System prompt includes an anti-injection clause: user text that explicitly instructs `"set target_type to text"` is ignored; classifier infers from the actual task surface.
 - **Slash-command arguments** → resolved by `parseSlashArgs` (scripts/lib/surface-extraction.mjs) against the frozen `SLASH_SURFACE_TABLE`. Tokenized match (no `\b` regex), first-match-wins for `target_type`, union for `exempt.*` and `skip_brainstorm`. Only `fix` and `implement` have rows; other commands return `null`.
 
 The old regex `applyMagicKeywords` path and the `modes/workflow.yaml → modes.*.magic_keywords` YAML blocks were removed in v3.2. Cache entries are bumped to `schema_version: 2`; pre-rollout validators remain compatible via the unchanged `trigger: "llm:..."` invariant.
@@ -231,7 +231,7 @@ Validated invariants:
 On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/implement`, `/verify`), `scripts/keyword-detector.mjs` writes `.smt/features/<slug>/task/<slug>.state.json` using `state-schema.createInitialState()` plus `allowed_skills` loaded from `modes/<mode>.json`, and also writes a `.smt/state/active_task` pointer. **`current_stage` is intentionally seeded as `null`** — the agent must invoke the mode's entry workflow skill to advance. Combined with R12 (critic-watchdog), this enforces the canonical skill-entry workflow. The legacy `workflow.json` in `.smt/features/<slug>/state/` is retained for backward compatibility but `.state.json` is now the enforcement source of truth.
 
 **Gate enforcement stack** (v2.4.2 harness-integrity):
-1. `scripts/pre-tool-enforcer.mjs` — PreToolUse Write/Edit guard on `.state.json` path. Agents cannot directly mutate state. Escape hatch `SMT_HOOK_WRITE=1` reserved for future hook scripts.
+1. `scripts/pre-tool-enforcer.mjs` — PreToolUse Write/Edit guard on `.state.json` path. Agents cannot directly mutate state. Escape hatch `SMT_HOOK_WRITE=1` reserved for future hook scripts. Also enforces the **commit gate** for `mode ∈ {fix, implement}`: a Bash `git commit` is blocked unless the active state shows any of three pass shapes — `events[]` contains `{skill:'workflow-human-check', result:'pass'}`, `completed_stages` includes `workflow-human-check`, or `current_stage === 'done'`. The third (terminal-state) shape is the drift-tolerant fallback so a skill that only wrote `current_stage=done` without emitting a pass event still clears the gate.
 2. `scripts/skill-stage-transition.mjs` — PostToolUse `Skill` matcher. Invoking an allowed workflow skill auto-writes the pass event + updates `current_stage` + (for non-deferred skills) appends `completed_stages`. Deferred skills (`workflow-e2e`, `workflow-human-check`, `workflow-agent-review`, `workflow-team-code-review`, `workflow-verify`, `workflow-e2e-review`) set `current_stage` only.
 3. `scripts/state-validator.mjs` — `validateEvidenceIntegrity()` wired into `state-schema.writeState()`. Every `completed_stages` entry must have a pass event with existing `evidence.path`. Forged stages throw.
 4. `critic-watchdog.mjs` R13 — Bash-based bypass defense-in-depth. Skipped when `SMT_HOOK_WRITE=1`.
@@ -289,7 +289,7 @@ v3 collapsed the six-mode set to **five**. v3.1 unifies all configuration into a
 | `full` | 13 (brainstorm → ... → human-check) | `/implement` default (new_feature / refactor / migration / bug_fix) |
 | `extend_light` | 9 (investigate → ... → human-check, no brainstorm, no tasker-review, no team-code-review) | `/implement` when `target_type: extend_existing` (via `extend` magic keyword) |
 | `fix` | 8 (investigate → investigate-review → write-test → coding → agent-review → e2e → e2e-review → human-check) | `/fix` default for all `bug_fix` |
-| `fix_simple` | 4 (investigate → coding → e2e → human-check) | `/fix` for `typo` / `dialogue` |
+| `fix_simple` | 4 (investigate → coding → e2e → human-check) | `/fix` for `text` (텍스트 수정) and `design` (디자인 수정) — the only two surfaces that route here |
 | `planning_only` | 6 | `/think` |
 | `investigate_only` | 2 | `/investigate` |
 | `verify_only` | 4 | `/verify` |
@@ -302,7 +302,7 @@ v3.2 removes the scope-dependent `medium` pipeline: all `/fix` bug_fix runs take
 
 | mode | target_type | pipeline |
 |------|-------------|----------|
-| `/fix` | `typo` / `dialogue` | `fix_simple` |
+| `/fix` | `text` / `design` | `fix_simple` |
 | `/fix` | `bug_fix` | `fix` |
 | `/fix` | `extend_existing` | `upgrade_required` → escalate to `/implement` |
 | `/fix` | `new_feature` / `refactor` / `migration` | `upgrade_required` → escalate to `/implement` or `/think` |
@@ -851,6 +851,14 @@ Interactive workflow skills (`workflow-brainstorm`, `workflow-investigate`, `wor
 `hasSkillInvocationSinceLastUserText` (in `scripts/lib/transcript-reader.mjs`) anchors on the last `role: 'user'` entry carrying a `type: 'text'` part (so Claude Code's user-role `tool_result` envelopes do not mistakenly cut the current turn's tool loop out of the window). Success is gated on a matching `tool_result` with `is_error !== true`; platform-rejected invocations do NOT register. The helper is fail-closed — missing `transcript_path`, oversize files, and parse exceptions all return `false`, preserving the pre-v2.4.8 `entry_not_started` block.
 
 Paired with this, `auto-confirm.mjs::decide` now accepts `questionShape` and suppresses the `spawn_sub_tasker` branch when the last assistant message matches `multi_choice`, `yes_no`, or `open_question` (`classifyQuestionShape` applies a conservative bullet-line requirement so rhetorical `?`-ending prose still triggers risk-keyword routing). The shape gate is inserted AFTER the halt conditions (`workflow-human-check`, `_awaiting_mode_upgrade`, investigate-review pass halt, `done`) so those pauses remain authoritative.
+
+### 11-5b. No-Choice Policy & Autopick Directive
+
+The classifier prompt (`buildClassifierPrompt`) and the `continue` injection branch (`buildPromptInjection` + `buildAutopickDirective`) jointly enforce the no-choice policy:
+
+1. **Classifier**: when the assistant's last message presents branching options ("A/B", "어느 쪽", numbered alternatives, "원하시면 ... 또는 ..."), the classifier is instructed to STILL return `continue` rather than `halt`. A/B presentation is no longer a halt condition — only credentials, irreversible-destructive-confirmation, and unresolvable ambiguity halt.
+2. **Injection**: when the `continue` decision fires AND `questionShape` is `multi_choice` / `yes_no` / `open_question`, `buildPromptInjection` appends a `[NO-CHOICE POLICY]` block instructing the agent to (a) pick the highest-confidence option (strongest evidence, safest blast radius, fewest assumptions), (b) state the pick + one-line reason, (c) execute it via tools immediately. The directive is `continue`-only — `enter_skill` / `advance` / `chain_advance` injections do not append it because those branches already name an explicit next skill.
+3. **Behavior anchor**: `CLAUDE.md` (project) carries a top-level "No-Choice Policy" so the main agent does not rely on the hook's safety-net injection. The hook is the backstop for slip-ups, not the primary mechanism.
 
 ### 11-6. Stall Detection & Internal Resolution Cascade
 

@@ -128,9 +128,9 @@ test('selectPipeline: fix without target_type uses default (fix)', () => {
   assert.equal(selectPipeline('fix', {}), 'fix');
 });
 
-test('selectPipeline: fix + typo / dialogue → fix_simple', () => {
-  assert.equal(selectPipeline('fix', { target_type: 'typo' }), 'fix_simple');
-  assert.equal(selectPipeline('fix', { target_type: 'dialogue' }), 'fix_simple');
+test('selectPipeline: fix + text / design → fix_simple (v3.3: only these two surfaces)', () => {
+  assert.equal(selectPipeline('fix', { target_type: 'text' }), 'fix_simple');
+  assert.equal(selectPipeline('fix', { target_type: 'design' }), 'fix_simple');
 });
 
 test('selectPipeline: fix + bug_fix → fix regardless of scope', () => {
@@ -158,7 +158,7 @@ test('selectPipeline: fix + new_feature / refactor / migration → upgrade_requi
 });
 
 test('selectPipeline: non-dispatching modes always return declared pipeline', () => {
-  assert.equal(selectPipeline('think', { target_type: 'typo' }), 'planning_only');
+  assert.equal(selectPipeline('think', { target_type: 'text' }), 'planning_only');
   assert.equal(selectPipeline('investigate', {}), 'investigate_only');
   assert.equal(selectPipeline('verify', {}), 'verify_only');
 });

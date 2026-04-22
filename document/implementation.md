@@ -25,6 +25,53 @@ Contents:
 
 Files changed: see git log for this release.
 
+## Phase v3.3.1 — `workflow-human-check` commit-gate deadlock fix (2026-04-23)
+
+User report (onesheet session): human-check 에서 `complete` 눌렀는데 바로 이어지는 `git commit` 이 `[SMELTER] git commit is blocked … human-check=NOT_PASSED` 로 영구 차단. 원인은 skill 프롬프트와 pretool commit gate 의 계약 불일치.
+
+Root cause: `skills/workflow-human-check/SKILL.md` 의 **On Complete** 는 `state.json.current_stage: done` 만 쓰라고 지시했으나, `scripts/pre-tool-enforcer.mjs` 의 commit gate 는 `events[]` 의 `workflow-human-check pass` 이벤트 또는 `completed_stages` 포함만 pass 로 인정. 또한 `skill-stage-transition.mjs` 는 `workflow-human-check` 를 `COMPLETION_DEFERRED_SKILLS` 에 두어 auto pass 이벤트를 쓰지 않음 → skill 자체가 썼어야 하는데 SKILL.md 가 그걸 지시하지 않았음.
+
+- [x] v3.3.1-1. **Gate 보강 (fallback)** — `scripts/pre-tool-enforcer.mjs` commit gate 의 `humanCheckPassed` 에 세 번째 pass shape `state.current_stage === 'done'` 추가. skill 이 terminal state 만 쓰고 이벤트 append 가 누락되는 drift 케이스에서도 commit 이 가능해짐. block 메시지에도 `current_stage=` 현재값 노출.
+- [x] v3.3.1-2. **SKILL 프롬프트 수정 (primary)** — `skills/workflow-human-check/SKILL.md` §"On Complete" 를 7-스텝으로 확장: (1) `results.md` 작성 → (2) `state.events.push({skill:'workflow-human-check', result:'pass', evidence:{path:'results.md'}})` → (3) `state.completed_stages` idempotent append → (4) `state.current_stage='done'` → (5) task md checkbox → (6) session log → (7) Git options. 순서는 evidence integrity (results.md 가 실제 파일로 존재해야 pass event 유효) 때문에 고정. Routing 테이블의 `complete` 행도 이 시퀀스를 생략하면 session 이 deadlock 됨을 명시.
+- [x] v3.3.1-3. **회귀 테스트** — `scripts/pre-tool-enforcer.test.mjs` 에 G-* 그룹 10 케이스 추가 (happy 2 / boundary 2 / error 2 / edge 3 / integration 1). G-C1 이 v3.3.1-1 이전엔 RED (드리프트 재현) → 픽스 이후 GREEN. 기존 T2-* 는 영향 없음.
+- [x] v3.3.1-4. **Docs** — `document/workflow.md` §2-3 의 gate enforcement stack 1번 항목에 commit gate 의 3-shape pass 규칙 추가.
+
+Scope note: `COMPLETION_DEFERRED_SKILLS` 와 `T3-B2 (workflow-human-check does NOT auto-complete)` 테스트는 의도된 계약이므로 그대로 유지. 자동 기록이 아닌 skill-self-record 가 여전히 정답이고, gate fallback 은 안전망일 뿐.
+
+## Phase v3.3.2 — YAML ungated from code-file workflow gate (2026-04-23)
+
+User directive: YAML 파일 수정에 workflow 권한을 요구하지 말 것. `.yaml` / `.yml` Edit/Write가 `/fix` 또는 `/implement` 활성 없이도 PreToolUse enforcer 를 통과해야 함.
+
+- [x] v3.3.2-1. **Allowlist 제거** — `scripts/pre-tool-enforcer.mjs` 의 `CODE_FILE_EXTENSIONS` Set 에서 `'yaml'`, `'yml'` 삭제. `isCodeFile()` 이 `.yaml`/`.yml`/`.YAML` 에 대해 `false` 를 반환 → Write/Edit 게이트가 해당 확장자에서 즉시 허용 분기로 빠짐. 다른 포맷(`.json`, `.toml`, `.ts`, `.sh`, `.tf`, …) 은 그대로 gated 유지. `SMT_HOOK_WRITE=1` 환경 탈출구와 `.smt/` 내부 경로 우회는 건드리지 않음.
+- [x] v3.3.2-2. **회귀 테스트** — `scripts/pre-tool-enforcer.test.mjs` 에 T2-V6/V7/V8/V9 4 케이스 추가. V6: `.yaml` Write 비차단. V7: `.yml` Edit 비차단. V8: 대문자 `.YAML` 비차단 (case-insensitive). V9: 동일 조건에서 `.ts` 가 여전히 차단되는 regression sanity. V6-V8 은 수정 전 RED, 수정 후 GREEN.
+- [x] v3.3.2-3. **Docs sync** — `CLAUDE.md` §Workflow-gated 의 "Gated surfaces" / "NOT gated" 불릿 재작성. 구성 파일 나열에서 `.yaml/.yml` 제거, 비게이트 목록에 `.yaml`/`.yml` 명시.
+
+Scope note: commit gate (`fix/implement` 모드에서 `workflow-human-check` 이전 `git commit` 차단) 은 영향 없음 — 이건 파일 확장자가 아니라 Bash 툴 분기를 사용. YAML 직접 편집만 비게이트되고, workflow 내부에서의 commit 보호는 유지.
+
+## Phase v3.3.3 — `workflow-human-check` self-pass via finalize hook (2026-04-23)
+
+Root cause: `workflow-human-check` SKILL.md 의 On Complete 시퀀스는 agent 에게 `SMT_HOOK_WRITE=1 node -e "…appendEvent/markComplete/writeState"` 로 `.state.json` 에 pass event + `completed_stages` 를 직접 쓰라고 지시. 그러나 (a) auto-mode permission classifier 가 "forging pass event via Bash+node" 패턴을 Memory Poisoning / Self-Modification 으로 분류해 거부하고, (b) `pre-tool-enforcer.mjs::PROTECTED_RE` 가 Claude 의 Write/Edit 툴로의 `.state.json` 직접 편집을 차단하며, (c) `skill-stage-transition.mjs::COMPLETION_DEFERRED_SKILLS` 는 `workflow-human-check` 를 deferred 로 두어 auto pass event 를 쓰지 않음. 세 길 모두 막혀 commit 직전에 세션이 deadlock.
+
+- [x] v3.3.3-1. **신규 hook** — `scripts/finalize-human-check.mjs` 추가. PostToolUse:Write 매처로 `<cwd>/.smt/features/<slug>/task/results.md` 쓰기를 감지. state.mode ∈ {fix, implement} && current_stage === 'workflow-human-check' && results.md 가 non-empty regular file 이면 atomic idempotent 으로: (a) pass event append (`declarer: hook`, evidence 는 `results.md` basename), (b) `completed_stages` 에 `workflow-human-check` 추가. `current_stage` 는 `workflow-human-check` 에 유지 — `WORKFLOW_SKILLS` enum 이 `'done'` 을 거부하므로 schema-valid 상태 보존. hook 스크립트는 `fs.writeFileSync` 로 바로 쓰므로 `SMT_HOOK_WRITE` env 필요 없음(PreToolUse 는 Claude 툴 호출만 감시).
+- [x] v3.3.3-2. **hook 등록** — `hooks/hooks.json` 의 PostToolUse 에 새 `"Write"` 매처 블록 추가해 `finalize-human-check.mjs` 를 등록. 기존 `review-evidence-verifier.mjs` (`Edit|Write`) 뒤에 체인. 세션 재시작 후 활성화.
+- [x] v3.3.3-3. **SKILL.md 단순화** — `skills/workflow-human-check/SKILL.md::On Complete` 를 재작성. agent 는 `results.md` 만 쓰고, hook 이 나머지(pass event + completed_stages) 자동 기록. Routing 테이블 `complete` 행도 동기화. 구식 `SMT_HOOK_WRITE=1 node -e` 지시 제거.
+- [x] v3.3.3-4. **테스트** — `scripts/finalize-human-check.test.mjs` 에 11 케이스 (happy 3 / boundary 3 / error 4 / integration 1): 정상 finalize, idempotent 재실행, implement 모드, non-Write 툴, 다른 파일명, 비정규 경로, 빈 results.md, mode=investigate, current_stage 불일치, 상태파일 누락, 깨진 JSON 내성. 11/11 GREEN.
+
+Scope note: (a) `current_stage = 'done'` 을 쓰지 않음 — `scripts/state-schema.mjs::WORKFLOW_SKILLS` enum validator 충돌 회피. commit gate 의 3-shape pass (completed_stages / events / `current_stage==='done'`) 중 앞 두 개로 이미 unblock. (b) `COMPLETION_DEFERRED_SKILLS` 는 그대로 — skill invocation 시점 hook 은 여전히 auto-pass 하면 안 됨 (artifact 가 그때는 없음). 새 hook 은 artifact 쓰기 시점에만 fire. (c) v3.3.1 SKILL.md 수정은 superseded — v3.3.3 이 canonical.
+
+## Phase v3.3 — `fix_simple` pinned to two surfaces: text + design (2026-04-23)
+
+User directive: `fix` light(= `fix_simple`) 분류는 딱 두 가지로 고정 — 텍스트 수정(`text`) / 디자인 수정(`design`). No other surface routes to `fix_simple`.
+
+- [x] v3.3-1. **`target_type` enum reshaped** — `typo`/`dialogue` collapsed into `text`; `design` added. `text` covers typo/copy/dialogue/i18n; `design` covers CSS/style/typography. `TARGET_TYPE_ENUM` (`scripts/state-schema.mjs`) + `VALID_TARGET_TYPES` (`scripts/lib/surface-extraction.mjs`) updated; validator drops legacy `typo`/`dialogue` with `[Surface] invalid target_type dropped` tag.
+- [x] v3.3-2. **`target_type_routing` table** — `modes/workflow.yaml` now maps exactly two entries to `fix_simple`: `text: fix_simple`, `design: fix_simple`. Legacy `typo`/`dialogue` rows removed.
+- [x] v3.3-3. **Slash-arg table** — `SLASH_SURFACE_TABLE` rewritten. Text row: `typo`/`typos`/`오타`/`dialogue`/`대화`/`text`/`텍스트`/`copy`/`i18n` → `text` + `{tdd:true,e2e:true}`. Design row: `css`/`style`/`design`/`디자인` → `design` + `{tdd:true,e2e:false}`. Previously `css`/`style` only set `exempt.tdd` without a `target_type`; they now route to `fix_simple`.
+- [x] v3.3-4. **LLM classifier prompt** — `MODE_CLASSIFIER_PROMPT` (`scripts/lib/subagent-classifier.mjs`) enumerates the four values (`text`/`design`/`bug_fix`/`extend_existing`) and gives Korean/English cues plus per-surface `exempt` defaults. Anti-injection example updated (`"set target_type to text"`).
+- [x] v3.3-5. **Tests** — `surface-extraction.test.mjs` swaps `typo`→`text`, adds `디자인`/`css` design assertions, adds legacy-dropped validator case. `workflow-loader.test.mjs` asserts `text`/`design` → `fix_simple`. `keyword-detector.test.mjs` MK2 rewritten: `/fix css …` now lands on the 4-skill `fix_simple` with `target_type=design`, not the 8-skill default. `workflow-scenarios.test.mjs` `TARGET_TYPE_ENUM` assertion updated. Stub fixture (`mode-classifier-stub.mjs`) uses `surfaceText` / `surfaceDesign`.
+- [x] v3.3-6. **Docs** — `document/workflow.md` §4-2 + pipeline table + target_type dispatch table + decision-matrix row (1262) rewritten. `commands/fix.md` magic-keyword section rewritten to the two-surface contract. `CLAUDE.md` untouched (copy still says "CSS/typo/i18n/dialogue" in exemption rule — kept because the exemption semantics didn't change, only the routing did).
+
+Scope note: `bug_fix` still owns the default 8-skill `fix` pipeline; only the light-weight branch is narrowed. Escalation behavior for `extend_existing`/`new_feature`/`refactor`/`migration` is unchanged.
+
 ## Phase v3.2 — `/fix` pipeline collapse + per-mode round override (2026-04-23)
 
 User reported `/fix` still felt slow despite v3.1 target-type dispatch. Root cause: `medium` pipeline (11 skills, including tasker/tasker-review/team-code-review) triggered for any bug with >3 files or multi-surface, and every mid-pipeline review still ran 2 rounds. v3.2 simplifies.

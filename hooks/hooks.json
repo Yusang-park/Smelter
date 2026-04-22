@@ -136,6 +136,16 @@
         ]
       },
       {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/finalize-human-check.mjs\"",
+            "timeout": 3
+          }
+        ]
+      },
+      {
         "matcher": "Skill",
         "hooks": [
           {

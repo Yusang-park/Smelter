@@ -165,6 +165,18 @@ document/        — Workflow spec, implementation status, philosophy
 
 Hooks emit `[Tag Name]` to stderr for visibility. Check stderr for hook activity. Language-specific rules in `rules-lib/` are injected via `PreToolUse` hook when a tool targets a matching file extension. Tag: `[Inject: rules-lib/<lang>]`.
 
+## Workflow-gated code modifications (v3.3)
+
+Every **code-file** Edit/Write must run inside an active `/fix` or `/implement` workflow. Enforced at PreToolUse by `scripts/pre-tool-enforcer.mjs` — a block returns with the phrase `[SMELTER] Raw <tool> of code file is blocked`.
+
+- **Gated surfaces (code)**: extension in the CODE_FILE_EXTENSIONS allowlist — source (`.ts/.tsx/.js/.jsx/.mjs/.cjs/.py/.go/.rs/...`), configs (`.json/.jsonc/.toml`), shell (`.sh/.bash/...`), UI (`.vue/.svelte/.astro`), style (`.css/.scss/...`), markup (`.html/.xml`), IaC (`.tf/.tfvars`).
+- **NOT gated (docs + YAML)**: `.md`, `.txt`, `.rst`, `.yaml`, `.yml`, and any file without a recognized code extension. Doc and YAML edits may run without a workflow.
+- **Fast-path "quick fixes"** (trivial text / design changes) also count — route through `/fix` with `target_type ∈ {text, design}` → `fix_simple` (4-skill lite pipeline, `workflow-human-check` still required).
+- **Escape hatch**: hook scripts that legitimately write state via `fs.writeFileSync` set `SMT_HOOK_WRITE=1` in env (unchanged).
+- **Bypass attempts are blocked**: direct writes to `.smt/*.state.json` or forging pass events in `.state.json` via Bash+node are refused (protected-path rule + permission denial).
+
+If you hit the block, invoke `/fix <short description>` (or natural-language that the mode classifier routes to fix/implement), then retry the edit.
+
 ## Hook edits require session restart
 
 Claude Code loads `hooks/hooks.json` once at session start. Mid-session edits (adding / removing / renaming hook entries) do **not** activate until the next Claude Code session. Editing hook script bodies (the `.mjs` files referenced by `command`) IS picked up immediately because each hook execution re-reads the script.

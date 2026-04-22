@@ -16,7 +16,8 @@
  *   new feature / 새 기능 / design first             -> plan (planning-first)
  *   extend / add to / 덧붙여                         -> implement (brainstorm skipped)
  *   fix / bug / 버그                                 -> fix (E2E forced for interface surface)
- *   style / typo / 텍스트 / 색상 / i18n              -> simple-fix (TDD exemption hint)
+ *   typo / dialogue / 텍스트 / copy / i18n           -> fix (target_type=text  → fix_simple)
+ *   css / style / design / 디자인                    -> fix (target_type=design → fix_simple)
  *   verify / validate / 검증 / 점검                  -> verify
  *   analyze / investigate / 파악 / 분석              -> investigate
  *   cancel / stop                                    -> cancel

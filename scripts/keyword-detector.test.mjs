@@ -377,7 +377,7 @@ test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async (
 // prompt falls through to the default fix pipeline.
 // ---------------------------------------------------------------------------
 
-test('MK1 /fix typo ... → target_type=typo, fix_simple pipeline (4 skills), TDD+E2E exempt', async () => {
+test('MK1 /fix typo ... → target_type=text, fix_simple pipeline (4 skills), TDD+E2E exempt', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-typo-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-typo', prompt: '/fix typo 오타 하나 있어요' });
@@ -388,20 +388,20 @@ test('MK1 /fix typo ... → target_type=typo, fix_simple pipeline (4 skills), TD
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
 
     assert.equal(state.mode, 'fix');
-    assert.equal(state.target_type, 'typo', 'magic keyword `typo` must set target_type');
+    assert.equal(state.target_type, 'text', 'magic keyword `typo` must set target_type=text (v3.3)');
     assert.deepEqual(
       state.allowed_skills,
       ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
-      'typo must resolve to fix_simple pipeline (4 skills)',
+      'text must resolve to fix_simple pipeline (4 skills)',
     );
-    assert.equal(state.exempt?.tdd, true, 'typo must set exempt.tdd');
-    assert.equal(state.exempt?.e2e, true, 'typo must set exempt.e2e');
+    assert.equal(state.exempt?.tdd, true, 'text must set exempt.tdd');
+    assert.equal(state.exempt?.e2e, true, 'text must set exempt.e2e');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
-test('MK2 /fix css ... → exempt.tdd=true, pipeline unchanged (target_type unset → default fix)', async () => {
+test('MK2 /fix css ... → target_type=design, fix_simple pipeline (4 skills), tdd exempt + e2e kept (v3.3)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-css-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-css', prompt: '/fix css 버튼 색상 좀 바꿔줘' });
@@ -412,19 +412,14 @@ test('MK2 /fix css ... → exempt.tdd=true, pipeline unchanged (target_type unse
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
 
     assert.equal(state.mode, 'fix');
-    assert.equal(state.exempt?.tdd, true, 'css must set exempt.tdd');
-    assert.equal(state.exempt?.e2e, false, 'css must NOT exempt e2e (visual surface)');
-    // css does not set target_type, so target_type stays null and the mode's
-    // default pipeline (fix, 8 skills) is used.
-    assert.equal(state.target_type, null, 'css must not set target_type');
-    assert.equal(
-      state.allowed_skills.length,
-      8,
-      `css must keep default fix pipeline (8 skills); got ${state.allowed_skills.length}`,
+    assert.equal(state.target_type, 'design', 'css must set target_type=design (v3.3)');
+    assert.equal(state.exempt?.tdd, true, 'design must set exempt.tdd');
+    assert.equal(state.exempt?.e2e, false, 'design must NOT exempt e2e (visual surface)');
+    assert.deepEqual(
+      state.allowed_skills,
+      ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
+      'design must resolve to fix_simple pipeline (4 skills)',
     );
-    assert.ok(state.allowed_skills.includes('workflow-investigate-review'), 'fix must include investigate-review');
-    assert.ok(!state.allowed_skills.includes('workflow-tasker'), 'fix must NOT include tasker');
-    assert.ok(!state.allowed_skills.includes('workflow-team-code-review'), 'fix must NOT include team-code-review');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

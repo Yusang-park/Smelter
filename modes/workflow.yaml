@@ -229,8 +229,11 @@ target_type_routing:
   #   - /fix + extend_existing → upgrade_required (route user to /implement)
   #   - /implement + extend_existing → extend_light (honors the routing entry)
   #   - /implement without target_type → mode's declared pipeline (full)
-  typo: fix_simple
-  dialogue: fix_simple
+  #
+  # v3.3: fix_simple is pinned to exactly two surfaces — text edits (텍스트 수정) and
+  # design edits (디자인 수정). Everything else routes elsewhere.
+  text: fix_simple                  # 텍스트 수정: typo / copy / dialogue / i18n
+  design: fix_simple                # 디자인 수정: CSS / style / typography
   bug_fix: fix                      # all scopes — /fix default, no upgrade gates
   extend_existing: extend_light     # /implement branch; /fix blocks with upgrade_required
   new_feature: upgrade_required     # /fix → escalate to /implement or /think

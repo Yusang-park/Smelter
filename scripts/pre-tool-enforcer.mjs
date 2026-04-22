@@ -178,6 +178,85 @@ function main() {
       }
     }
 
+    // --- v3.3: Force code-file Edit/Write through a Smelter workflow ---
+    // User directive (2026-04-23): every CODE file modification, no matter
+    // how trivial, must run inside an active /fix or /implement workflow so
+    // workflow-human-check is always the terminal gate. Raw agent edits that
+    // bypass the pipeline are blocked here at PreToolUse.
+    //
+    // Scope (v3.3 clarification): CODE files only. Docs/plain-text
+    // (.md / .txt / .rst) and files without a recognized code extension are
+    // NOT subject to this gate. The intent is to stop behavior-changing edits
+    // from running without review — docs are a separate lane.
+    //
+    // Bypass rules:
+    //   - `.smt/` internals → handled by the protected-state rule above;
+    //     other `.smt/` writes are hook / workflow bookkeeping.
+    //   - SMT_HOOK_WRITE=1 → hook-script escape hatch (unchanged).
+    //   - active state.mode ∈ {fix, implement} → allowed.
+    //   - non-code file extension → allowed.
+    //   - Everything else → blocked with guidance to seed a workflow first.
+    const CODE_FILE_EXTENSIONS = new Set([
+      'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
+      'py', 'go', 'rs', 'rb', 'php', 'pl',
+      'java', 'kt', 'kts', 'scala', 'groovy',
+      'c', 'cc', 'cpp', 'cxx', 'h', 'hh', 'hpp', 'hxx',
+      'swift', 'm', 'mm',
+      'sh', 'bash', 'zsh', 'fish',
+      'sql', 'prisma', 'graphql', 'gql',
+      'toml', 'json', 'jsonc',
+      'vue', 'svelte', 'astro',
+      'css', 'scss', 'sass', 'less',
+      'html', 'htm', 'xml',
+      'tf', 'tfvars',
+      'lua', 'r', 'jl', 'dart', 'ex', 'exs', 'erl', 'clj', 'cljs',
+    ]);
+    function isCodeFile(path) {
+      if (!path) return false;
+      const base = String(path).split(/[\/\\]/).pop() || '';
+      const dot = base.lastIndexOf('.');
+      if (dot <= 0) return false;
+      return CODE_FILE_EXTENSIONS.has(base.slice(dot + 1).toLowerCase());
+    }
+
+    if (process.env.SMT_HOOK_WRITE !== '1' && (toolName === 'Write' || toolName === 'Edit')) {
+      const toolInputData = data.tool_input || data.toolInput || {};
+      const filePath = String(toolInputData.file_path || toolInputData.filePath || '');
+      const isInternalSmtPath = /[\/\\]\.smt[\/\\]/.test(filePath);
+      if (!isInternalSmtPath && isCodeFile(filePath)) {
+        const smtState = sessionId
+          ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(directory, '.smt', 'state', 'active-feature.json');
+        let allowedMode = null;
+        try {
+          if (existsSync(smtState)) {
+            const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
+            if (pointer?.slug) {
+              const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
+              if (existsSync(statePath)) {
+                const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+                if (state?.mode === 'fix' || state?.mode === 'implement') {
+                  allowedMode = state.mode;
+                }
+              }
+            }
+          }
+        } catch {}
+        if (!allowedMode) {
+          printTag(`Block: ${toolName} code file requires active /fix or /implement workflow`);
+          console.log(JSON.stringify({
+            decision: 'block',
+            reason: `[SMELTER] Raw ${toolName} of code file is blocked: ${filePath}\n` +
+              `All code-file modifications — including trivial text / design edits within code — must run inside a Smelter /fix or /implement workflow so workflow-human-check is the terminal gate.\n` +
+              `Required action: invoke \`/fix <description>\` (or a natural-language prompt the mode classifier routes to fix/implement) to seed state, then re-issue the ${toolName}.\n` +
+              `Docs (.md / .txt / .rst) are NOT gated by this rule — only code files.\n` +
+              `Iron Law #1 — never complete without workflow-human-check. fix_simple (target_type=text/design) also counts as a workflow run.`,
+          }));
+          return;
+        }
+      }
+    }
+
     // --- v3.1: Block `git commit` before workflow-human-check (fix/implement modes) ---
     // When a code-modifying workflow is active and workflow-human-check has not
     // produced a pass event, agents must not commit. Human review is the last
@@ -218,11 +297,19 @@ function main() {
                 if (needsHumanCheck) {
                   const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
                   const events = Array.isArray(state.events) ? state.events : [];
+                  // Three pass shapes the skill may produce on `complete`:
+                  //   (a) events[] carries a workflow-human-check pass event,
+                  //   (b) completed_stages includes workflow-human-check (legacy),
+                  //   (c) current_stage === 'done' (terminal-state fallback).
+                  // Accepting (c) keeps the gate usable when the skill wrote the
+                  // documented terminal state but the pass-event append drifts
+                  // out of SKILL.md — the commit must not become unreachable.
                   const humanCheckPassed = completed.includes('workflow-human-check') ||
-                    events.some(e => e?.skill === 'workflow-human-check' && e?.result === 'pass');
+                    events.some(e => e?.skill === 'workflow-human-check' && e?.result === 'pass') ||
+                    state.current_stage === 'done';
                   if (!humanCheckPassed) {
                     blockReason = `[SMELTER] git commit is blocked: ${state.mode} mode requires workflow-human-check to pass before commit.\n` +
-                      `Current state: mode=${state.mode}, completed_stages=[${completed.join(', ')}], human-check=NOT_PASSED.\n` +
+                      `Current state: mode=${state.mode}, completed_stages=[${completed.join(', ')}], current_stage=${state.current_stage ?? '(none)'}, human-check=NOT_PASSED.\n` +
                       `Invoke workflow-human-check to present artifacts (screenshots, diffs, test output) to the user and obtain a pass verdict.\n` +
                       `Iron Law: Iron Law #5 — human review is the final file-verifiable gate for code-modifying modes.`;
                   }

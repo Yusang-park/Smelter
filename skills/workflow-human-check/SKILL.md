@@ -173,11 +173,24 @@ Create an `active_feedback` entry:
 
 ## On Complete (wrap up)
 
-1. `state.json.current_stage: done`
-2. Task md checkbox `[x]`
-3. Append to `session/YYYY-MM-DD.md` log
-4. Write `results.md` (video, log, branch, PR)
-5. Perform Git options
+The skill only needs to produce `results.md`. The PostToolUse:Write hook `scripts/finalize-human-check.mjs` watches for `results.md` written under a canonical task directory AND the active state's `current_stage === 'workflow-human-check'` AND `mode ∈ {fix, implement}`, and then atomically:
+
+- appends a `workflow-human-check` pass event (`declarer: "hook"`, `evidence.path: results.md`) to `state.events`;
+- appends `workflow-human-check` to `state.completed_stages`;
+- bumps `updated_at`.
+
+Both shapes released by the hook are commit-gate-pass shapes in `pre-tool-enforcer.mjs`, so the subsequent `git commit` is allowed without any further agent action. The hook is idempotent, fail-closed, and never blocks the write.
+
+Steps the skill still runs by hand:
+
+1. Write `results.md` (video, log, branch, PR) — this is the evidence the pass event cites. Must be non-empty.
+2. Task md checkbox `[x]`.
+3. Append to `session/YYYY-MM-DD.md` log.
+4. Perform Git options.
+
+Step 1 is the only load-bearing one — the hook observes that write and finalizes state for you. The earlier "SMT_HOOK_WRITE=1 node -e appendEvent+markComplete+writeState" dance is obsolete (and was blocked by the auto-mode permission classifier in practice).
+
+Note on `current_stage`: the state schema's `WORKFLOW_SKILLS` enum does not include the literal `"done"`, so the hook deliberately leaves `current_stage` at `"workflow-human-check"` after finalization. The commit gate's `current_stage === 'done'` branch in `scripts/pre-tool-enforcer.mjs` is a belt-and-suspenders fallback for states authored by future writers that bypass the validator — not a path this skill or the finalize hook take.
 
 ## Full regression
 
@@ -187,7 +200,7 @@ Only on explicit user request: run full `pnpm test` / `npx playwright test`.
 
 | Decision | Next action |
 |----------|-------------|
-| `complete` | Write `results.md`, update `state.json.current_stage: done`, append session log, perform Git options — then halt |
+| `complete` | Run the **On Complete** sequence above: write `results.md` (the finalize-human-check hook auto-writes the pass event + `completed_stages` from there), check the task md box, append the session log, then Git options. Halt after. |
 | `rework` | Create `active_feedback` entry, route to user-specified `target_skill` (default `workflow-coding`) |
 | `hold` | Set `state.json.status: blocked` — then halt |
 | `upgrade` | Transition mode (e.g., `simple_fix → fix`), re-enter appropriate entry skill |

@@ -601,10 +601,10 @@ section('SCENARIO 12 — State-schema consistency with spec');
   test('VERIFICATION_FOCUS_ENUM matches current schema', () => {
     assert.deepEqual([...VERIFICATION_FOCUS_ENUM].sort(), ['contradiction', 'edge_case', 'effect_verification', 'omission']);
   });
-  test('TARGET_TYPE_ENUM matches tasker §3 output spec (v3.1 adds typo/dialogue for magic-keyword dispatch)', () => {
+  test('TARGET_TYPE_ENUM matches tasker §3 output spec (v3.3: text/design replace typo/dialogue for fix_simple dispatch)', () => {
     assert.deepEqual(
       [...TARGET_TYPE_ENUM].sort(),
-      ['bug_fix', 'dialogue', 'extend_existing', 'migration', 'new_feature', 'refactor', 'typo'],
+      ['bug_fix', 'design', 'extend_existing', 'migration', 'new_feature', 'refactor', 'text'],
     );
   });
   test('EVIDENCE_TYPE_ENUM includes file_present (used in §2-2 example)', () => {

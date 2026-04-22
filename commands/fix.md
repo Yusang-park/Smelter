@@ -2,7 +2,7 @@
 
 Run the `fix` mode on $ARGUMENTS. Use for bug fixes, regressions, and logic-flow changes that require investigation before the repair.
 
-Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (8 skills); `fix_simple` (4 skills) for typo/dialogue. Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/think`.
+Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (8 skills); `fix_simple` (4 skills) routes to exactly two surfaces — `text` (텍스트 수정) and `design` (디자인 수정). Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/think`.
 
 ## Task
 $ARGUMENTS
@@ -12,7 +12,7 @@ $ARGUMENTS
 1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: fix` and default pipeline `fix`.
 2. Entry skill is `workflow-investigate`. No shortcut to coding.
 3. `fix` flow (default): investigate → investigate-review → write-test → coding → agent-review → e2e → e2e-review → human-check. No tasker, no team-code-review.
-4. `fix_simple` flow (typo/dialogue): investigate → coding → e2e → human-check.
+4. `fix_simple` flow (only `target_type ∈ {text, design}`): investigate → coding → e2e → human-check.
 5. `workflow-agent-review` uses Pattern B (code-reviewer + security-reviewer).
 
 ## Review rounds — /fix mode override
@@ -35,8 +35,11 @@ Trivial text/CSS/i18n/config-only changes stay in `/fix` but get surface-based T
 
 ## Magic-keyword branches
 
-- `fix` / `bug` / `버그` / `문제` → E2E forced on for interface surface
-- Magic keywords `css` / `style` / `텍스트` / `i18n` in `/fix` context do NOT auto-exempt TDD (logic change implied). Author may explicitly mark surface.
+- `fix` / `bug` / `버그` / `문제` → `target_type=bug_fix` → default `fix` pipeline (E2E forced on for interface surface)
+- `typo` / `dialogue` / `text` / `텍스트` / `copy` / `i18n` → `target_type=text` → `fix_simple` (tdd + e2e exempt)
+- `css` / `style` / `design` / `디자인` → `target_type=design` → `fix_simple` (tdd exempt; e2e kept for visual check)
+
+`fix_simple` is pinned to exactly these two surfaces (`text`, `design`). No other target_type routes there.
 
 ## Iron Law
 
