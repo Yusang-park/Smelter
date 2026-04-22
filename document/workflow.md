@@ -286,32 +286,41 @@ v3 collapsed the six-mode set to **five**. v3.1 unifies all configuration into a
 
 | Pipeline | Skills | Used by |
 |---|---|---|
-| `full` | 13 (brainstorm → ... → human-check) | `/implement` |
-| `medium` | 11 (investigate → ... → human-check, no brainstorm) | `/fix` for `extend_existing` or complex `bug_fix` (>3 files or multi-surface) |
-| `light` | 8 (no tasker, no team-code-review) | `/fix` for simple `bug_fix` (≤3 files, single surface) |
-| `minimal` | 4 (investigate → coding → e2e → human-check) | `/fix` for `typo` / `dialogue` |
+| `full` | 13 (brainstorm → ... → human-check) | `/implement` default (new_feature / refactor / migration / bug_fix) |
+| `extend_light` | 9 (investigate → ... → human-check, no brainstorm, no tasker-review, no team-code-review) | `/implement` when `target_type: extend_existing` (via `extend` magic keyword) |
+| `fix` | 8 (investigate → investigate-review → write-test → coding → agent-review → e2e → e2e-review → human-check) | `/fix` default for all `bug_fix` |
+| `fix_simple` | 4 (investigate → coding → e2e → human-check) | `/fix` for `typo` / `dialogue` |
 | `planning_only` | 6 | `/think` |
 | `investigate_only` | 2 | `/investigate` |
 | `verify_only` | 4 | `/verify` |
 
-### v3.1 target_type dispatch (`/fix` only)
+v3.2 removes the scope-dependent `medium` pipeline: all `/fix` bug_fix runs take `fix` regardless of file count / surface count, and `extend_existing` routes out of `/fix` to `/implement + extend_light`.
 
-`workflow-investigate` determines `target_type` + scope (file_count, surface_count). `workflow-loader.selectPipeline()` picks the appropriate pipeline:
+### v3.2 target_type dispatch (`/fix` and `/implement`)
 
-- `typo` / `dialogue` → `minimal`
-- `bug_fix` simple (≤3 files, single surface) → `light`
-- `bug_fix` complex OR `extend_existing` → `medium`
-- `new_feature` / `refactor` / `migration` → `upgrade_required` (prompt user to switch to `/implement` or `/think`)
+`workflow-investigate` determines `target_type`. `workflow-loader.selectPipeline()` picks the pipeline with mode-specific gating:
 
-Prevents the tasker-overhead problem where trivial fixes ran the full 11-skill chain.
+| mode | target_type | pipeline |
+|------|-------------|----------|
+| `/fix` | `typo` / `dialogue` | `fix_simple` |
+| `/fix` | `bug_fix` | `fix` |
+| `/fix` | `extend_existing` | `upgrade_required` → escalate to `/implement` |
+| `/fix` | `new_feature` / `refactor` / `migration` | `upgrade_required` → escalate to `/implement` or `/think` |
+| `/implement` | `extend_existing` | `extend_light` |
+| `/implement` | any other / none | `full` (declared default) |
 
-### v3.1 verification rounds
+Prevents the tasker-overhead problem where trivial fixes ran the full chain, and avoids the dual-mode confusion where `/fix + extend_existing` silently pulled in a heavy pipeline.
 
-`workflow.yaml.verification_rounds` separates mid-pipeline reviews from terminal gates:
-- `mid_pipeline: 2` — `workflow-brainstorm-review`, `workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`. Rounds: omission + contradiction (edge-case dropped for speed).
+### v3.2 verification rounds
+
+`workflow.yaml.verification_rounds` separates mid-pipeline reviews from terminal gates, with per-mode overrides:
+- `mid_pipeline: 2` — `workflow-brainstorm-review`, `workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`. Rounds: omission + contradiction.
 - `terminal: 3` — `workflow-e2e-review` (visual verification), `workflow-team-code-review` (95% consensus), `workflow-human-check`.
+- `mode_overrides.fix` — all reviews drop to **1 round** (omission only), except `workflow-e2e-review` (2 rounds: omission + edge_case) and `workflow-human-check` (3, user gate).
 
-v3 ran every review at 3 rounds; v3.1 cuts 4 mid-reviews × 1 round per `/fix` run in the common path.
+Resolver: `getVerificationRounds(skill, modeName?, cfg?)` checks `mode_overrides[mode][skill] → mode_overrides[mode].default → skills[skill].rounds bucket → mid_pipeline`.
+
+v3.1 cut 4 mid-reviews × 1 round per `/fix` run; v3.2 cuts 3 additional rounds from the common `/fix` flow by dropping all mid-pipeline reviews to 1 round.
 
 ### 4-1. think (`/think`) — was `/plan`
 
@@ -322,18 +331,19 @@ v3 ran every review at 3 rounds; v3.1 cuts 4 mid-reviews × 1 round per `/fix` r
 
 ### 4-2. fix (`/fix`) — absorbs former `simple_fix`
 
-**pipeline**: `no_brainstorm` (investigate → ... → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check).
+**pipeline**: `fix` (8 skills) by default; `fix_simple` (4 skills) for `typo`/`dialogue`; `upgrade_required` for `extend_existing`/`new_feature`/`refactor`/`migration` (escalate to `/implement` or `/think`).
 **defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
 **entry**: `workflow-investigate`.
 **surface exemption**: magic keywords `css` / `style` / `텍스트` / `i18n` / `typo` / `dialogue` set `exempt.tdd=true` (typo/dialogue also set `exempt.e2e=true`). This replaces the v2 `simple_fix` mode.
+**review rounds**: mode override — all mid-pipeline reviews at **1 round**, `workflow-e2e-review` at **2 rounds**, `workflow-human-check` at **3 rounds** (user gate).
 **terminal**: `workflow-human-check` — **mandatory, cannot be skipped** (§8 human review).
 
 ### 4-3. implement (`/implement`)
 
-**pipeline**: `full` (13 skills — brainstorm → ... → human-check).
+**pipeline**: `full` (13 skills — brainstorm → ... → human-check) by default; `extend_light` (9 skills — no brainstorm, no brainstorm-review, no tasker-review, no team-code-review) for `target_type: extend_existing`.
 **defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
 **entry**: `workflow-brainstorm` with `depth: light`.
-`extend` / `add to` / `덧붙여` magic keywords set `skip_brainstorm: true`.
+`extend` / `add to` / `덧붙여` magic keywords set `target_type: extend_existing`, which — via target-type dispatch — routes to `extend_light` (brainstorm skipped because it's not in the pipeline).
 **resume**: when entered after `/think`, pre-existing `brainstorm.md` / `tasks.md` cause `nextSkill()` to skip straight to `workflow-write-test` (file-driven routing from superpowers).
 **terminal**: `workflow-human-check` — **mandatory**.
 

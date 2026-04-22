@@ -13,9 +13,9 @@
  *   - scanFeatureArtifacts(featureDir)
  *   - resolveSkipFromArtifacts(mode, artifacts, cfg?)
  *   - resolveCommandAlias(slash, cfg?)
- *   - selectPipeline(mode, { target_type, file_count, surface_count }, cfg?)
- *     → v3.1 target-type dispatch for /fix mode
- *   - getVerificationRounds(skill, cfg?) → 2 or 3 per skill's `rounds` bucket
+ *   - selectPipeline(mode, { target_type }, cfg?)
+ *     → v3.2 target-type dispatch for /fix and /implement
+ *   - getVerificationRounds(skill, modeName?, cfg?) → round count with mode overrides
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -116,12 +116,16 @@ export function getMode(name, cfg = loadWorkflowConfig()) {
 /**
  * selectPipeline — resolve a pipeline name for a mode at runtime.
  *
- * For modes with `target_type_dispatch: true` (currently only /fix), walk the
- * target_type_routing table. Simple types map to pipeline strings; complex
- * types (like bug_fix) may have scope-dependent upgrades.
+ * Walks the target_type_routing table for modes with `target_type_dispatch: true`
+ * (/fix and /implement as of v3.2). The table is a simple string map; mode-specific
+ * gates apply on top:
+ *   - /fix + extend_existing → upgrade_required (route user to /implement)
+ *   - /implement + no target_type → declared pipeline (full)
+ *   - /implement + extend_existing → extend_light
  *
  * @param {string} modeName
- * @param {{target_type?: string, file_count?: number, surface_count?: number}} scope
+ * @param {{target_type?: string}} scope — file_count/surface_count ignored in v3.2
+ *                                          (scope-based upgrades removed with medium).
  * @param {object} cfg
  * @returns {string|'upgrade_required'} pipeline name or escalation sentinel
  */
@@ -133,25 +137,26 @@ export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig())
   if (!m.target_type_dispatch) return m.pipeline;
 
   const targetType = scope.target_type;
-  // No target_type yet (pre-investigate) → use mode's default.
+  // No target_type yet (pre-investigate) → use mode's default pipeline.
   if (!targetType) return m.pipeline;
+
+  // Mode-specific gate: /fix forwards extend_existing to /implement.
+  if (modeName === 'fix' && targetType === 'extend_existing') return 'upgrade_required';
+
+  // Mode-specific gate: /implement only honors extend_existing → extend_light.
+  // The other target_types (new_feature/refactor/migration/bug_fix) are what
+  // /implement is built for — stay on the declared pipeline (full).
+  if (modeName === 'implement') {
+    if (targetType === 'extend_existing') return 'extend_light';
+    return m.pipeline;
+  }
 
   const route = cfg.target_type_routing[targetType];
   if (!route) return m.pipeline;
 
-  // Simple string mapping: typo → minimal, extend_existing → medium, etc.
+  // v3.2: routing table is a string map. Scope-dependent upgrades removed when
+  // `medium` was retired.
   if (typeof route === 'string') return route;
-
-  // Scope-dependent routing (e.g., bug_fix): default + upgrade rules.
-  if (typeof route === 'object' && route.default) {
-    const upgrade = route.upgrade_to_medium_when ?? {};
-    const fileCountGt = upgrade.file_count_gt ?? Infinity;
-    const surfaceCountGt = upgrade.surface_count_gt ?? Infinity;
-
-    if ((scope.file_count ?? 0) > fileCountGt) return 'medium';
-    if ((scope.surface_count ?? 0) > surfaceCountGt) return 'medium';
-    return route.default;
-  }
 
   return m.pipeline;
 }
@@ -163,14 +168,33 @@ export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig())
 /**
  * getVerificationRounds — resolve the round count for a review skill.
  *
- * Skill's `rounds` field references a bucket in verification_rounds
- * (`mid_pipeline` → 2, `terminal` → 3). Default mid_pipeline when unset.
+ * Resolution order (highest precedence first):
+ *   1. mode_overrides[mode][skill] — per-skill override for the current mode
+ *   2. mode_overrides[mode].default — mode-wide default override
+ *   3. skills[skill].rounds bucket → verification_rounds[bucket] (global default)
+ *   4. verification_rounds.mid_pipeline (final fallback)
+ *
+ * The `modeName` parameter is optional; when omitted, mode overrides are skipped
+ * and the global bucket is used (legacy behavior).
+ *
+ * @param {string} skill
+ * @param {string|null} [modeName] — current workflow mode, e.g. 'fix', 'implement'
+ * @param {object} [cfg] — loaded workflow config
+ * @returns {number} round count (≥1)
  */
-export function getVerificationRounds(skill, cfg = loadWorkflowConfig()) {
+export function getVerificationRounds(skill, modeName = null, cfg = loadWorkflowConfig()) {
+  const vr = cfg.verification_rounds ?? {};
+  const modeOverrides = vr.mode_overrides?.[modeName] ?? null;
+
+  if (modeOverrides) {
+    if (Object.prototype.hasOwnProperty.call(modeOverrides, skill)) return modeOverrides[skill];
+    if (Object.prototype.hasOwnProperty.call(modeOverrides, 'default')) return modeOverrides.default;
+  }
+
   const skillDef = cfg.skills[skill];
-  if (!skillDef) return cfg.verification_rounds.mid_pipeline;
+  if (!skillDef) return vr.mid_pipeline ?? 2;
   const bucket = skillDef.rounds ?? 'mid_pipeline';
-  return cfg.verification_rounds[bucket] ?? cfg.verification_rounds.mid_pipeline;
+  return vr[bucket] ?? vr.mid_pipeline ?? 2;
 }
 
 // ---------------------------------------------------------------------------

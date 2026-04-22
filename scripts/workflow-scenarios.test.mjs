@@ -92,13 +92,13 @@ function failEvent(skill, cause, { severity, reshape_target } = {}) {
 
 function fixModeState(overrides = {}) {
   const s = createInitialState({ taskId: 'scn', mode: 'fix' });
+  // v3.2: /fix default is fix (8 skills) — no tasker, no team-code-review.
   s.allowed_skills = [
     'workflow-investigate', 'workflow-investigate-review',
-    'workflow-tasker', 'workflow-tasker-review',
     'workflow-write-test', 'workflow-coding',
     'workflow-agent-review',
     'workflow-e2e', 'workflow-e2e-review',
-    'workflow-team-code-review', 'workflow-human-check',
+    'workflow-human-check',
   ];
   return Object.assign(s, overrides);
 }
@@ -113,6 +113,22 @@ function planModeState() {
   return s;
 }
 
+// Full /implement pipeline state — used by generic producer-chain tests that
+// need tasker / team-code-review in allowed_skills (absent from fix).
+function fullPipelineState(overrides = {}) {
+  const s = createInitialState({ taskId: 'full-scn', mode: 'implement' });
+  s.allowed_skills = [
+    'workflow-brainstorm', 'workflow-brainstorm-review',
+    'workflow-investigate', 'workflow-investigate-review',
+    'workflow-tasker', 'workflow-tasker-review',
+    'workflow-write-test', 'workflow-coding',
+    'workflow-agent-review',
+    'workflow-e2e', 'workflow-e2e-review',
+    'workflow-team-code-review', 'workflow-human-check',
+  ];
+  return Object.assign(s, overrides);
+}
+
 function withTempState(initialState, fn) {
   const dir = mkdtempSync(join(tmpdir(), 'scn-'));
   const path = join(dir, 't.state.json');
@@ -121,22 +137,20 @@ function withTempState(initialState, fn) {
 }
 
 // ============================================================================
-section('SCENARIO 1 — Full fix-mode workflow, 11 skills end-to-end, zero halts');
+section('SCENARIO 1 — Full fix-mode workflow, 8 skills end-to-end (fix), zero halts');
 // ============================================================================
 // The most important test: every stage of a real fix-mode run produces a
 // forward-motion decision. Only the final human-check marks terminal.
+// v3.2: /fix default pipeline is fix (8 skills) — no tasker, no team-code-review.
 {
   const order = [
     'workflow-investigate',
     'workflow-investigate-review',
-    'workflow-tasker',
-    'workflow-tasker-review',
     'workflow-write-test',
     'workflow-coding',
     'workflow-agent-review',
     'workflow-e2e',
     'workflow-e2e-review',
-    'workflow-team-code-review',
     'workflow-human-check',
   ];
 
@@ -151,16 +165,16 @@ section('SCENARIO 1 — Full fix-mode workflow, 11 skills end-to-end, zero halts
     });
   }
 
-  test('after workflow-team-code-review pass → advance, never halt before human-check', () => {
-    const s = fixModeState({ current_stage: 'workflow-team-code-review', completed_stages: order.slice(0, 10) });
-    s.events = [passEvent('workflow-team-code-review')];
+  test('after workflow-e2e-review pass → advance, never halt before human-check', () => {
+    const s = fixModeState({ current_stage: 'workflow-e2e-review', completed_stages: order.slice(0, 7) });
+    s.events = [passEvent('workflow-e2e-review')];
     const d = decide({ state: s, lastAssistantText: '' });
     assert.equal(d.action, 'advance');
   });
 
   test('human-check awaiting (last event not pass) → halt (legitimate, §11-4)', () => {
     const s = fixModeState({ current_stage: 'workflow-human-check' });
-    s.events = [failEvent('workflow-team-code-review', 'review_reject')];
+    s.events = [failEvent('workflow-e2e-review', 'review_reject')];
     const d = decide({ state: s, lastAssistantText: 'presenting to user' });
     assert.equal(d.action, 'halt', 'human-check awaiting is the ONLY legitimate halt here');
   });
@@ -200,7 +214,9 @@ section('SCENARIO 2 — Producer chain exhaustive (every fail branch has a targe
   ];
   for (const { skill, cause, expected } of cases) {
     test(`${skill} fail(${cause}) → routes to ${expected}`, () => {
-      const state = fixModeState();
+      // Use full-pipeline state so every producer target is whitelisted; the
+      // route() logic under test is mode-agnostic.
+      const state = fullPipelineState();
       const r = route({ event: failEvent(skill, cause), state });
       assert.equal(r.target, expected, `expected ${expected}, got ${r.target} (reason: ${r.reason})`);
     });
@@ -213,23 +229,25 @@ section('SCENARIO 2 — Producer chain exhaustive (every fail branch has a targe
     assert.equal(r.target, 'workflow-brainstorm');
   });
 
+  // team-code-review tests use full-pipeline state (tasker + team-code-review
+  // whitelisted); the severity → producer-target mapping is mode-agnostic.
   test('workflow-team-code-review CRITICAL → workflow-tasker (redesign)', () => {
-    const state = fixModeState();
+    const state = fullPipelineState();
     const r = route({ event: failEvent('workflow-team-code-review', 'scope_mismatch', { severity: 'CRITICAL' }), state });
     assert.equal(r.target, 'workflow-tasker');
   });
   test('workflow-team-code-review HIGH → workflow-tasker', () => {
-    const state = fixModeState();
+    const state = fullPipelineState();
     const r = route({ event: failEvent('workflow-team-code-review', 'scope_mismatch', { severity: 'HIGH' }), state });
     assert.equal(r.target, 'workflow-tasker');
   });
   test('workflow-team-code-review MEDIUM → workflow-coding', () => {
-    const state = fixModeState();
+    const state = fullPipelineState();
     const r = route({ event: failEvent('workflow-team-code-review', 'scope_mismatch', { severity: 'MEDIUM' }), state });
     assert.equal(r.target, 'workflow-coding');
   });
   test('workflow-team-code-review LOW → null target but pass-equivalent (logged to Risks, continue)', () => {
-    const state = fixModeState();
+    const state = fullPipelineState();
     const r = route({ event: failEvent('workflow-team-code-review', 'scope_mismatch', { severity: 'LOW' }), state });
     assert.equal(r.target, null);
     assert.equal(r.reason, 'low_severity_pass');
@@ -789,7 +807,8 @@ section('SCENARIO 16 — Implement/verify/fail/replan/re-implement/re-verify cyc
   });
 
   test('16-B coding scope_mismatch → route back to tasker → re-plan → re-coding', () => {
-    const s = fixModeState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'] });
+    // scope_mismatch routes back to tasker, which only exists in full/extend_light.
+    const s = fullPipelineState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'] });
     s.events = [failEvent('workflow-coding', 'scope_mismatch')];
     const r1 = decide({ state: s, lastAssistantText: '' });
     assert.equal(r1.action, 'enter_skill');
@@ -853,7 +872,8 @@ section('SCENARIO 16 — Implement/verify/fail/replan/re-implement/re-verify cyc
   });
 
   test('16-F tasker-review fail → tasker → pass → continue, no deadlock', () => {
-    const s = fixModeState({ current_stage: 'workflow-tasker-review', completed_stages: ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker'] });
+    // tasker-review only exists in full pipeline; fix skips tasker entirely.
+    const s = fullPipelineState({ current_stage: 'workflow-tasker-review', completed_stages: ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker'] });
     s.events = [failEvent('workflow-tasker-review', 'scope_mismatch')];
     const r1 = decide({ state: s, lastAssistantText: '' });
     assert.equal(r1.payload.skill, 'workflow-tasker');

@@ -2,18 +2,26 @@
 
 Run the `fix` mode on $ARGUMENTS. Use for bug fixes, regressions, and logic-flow changes that require investigation before the repair.
 
-Backed by `modes/fix.json`. Allowed workflow skills: investigate, tasker, write-test, coding, agent-review, e2e, review skills, human-check.
+Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (8 skills); `fix_simple` (4 skills) for typo/dialogue. Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/think`.
 
 ## Task
 $ARGUMENTS
 
 ## Protocol
 
-1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: fix`.
+1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: fix` and default pipeline `fix`.
 2. Entry skill is `workflow-investigate`. No shortcut to coding.
-3. Flow: investigate → investigate-review → tasker → tasker-review → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check.
-4. Review skills run **Multi-Pass Verification** (3 rounds: omission / contradiction / edge_case, per spec §9-3).
-5. `workflow-agent-review` uses Pattern B (code-reviewer + security-reviewer) by default — set by `modes/fix.json`.
+3. `fix` flow (default): investigate → investigate-review → write-test → coding → agent-review → e2e → e2e-review → human-check. No tasker, no team-code-review.
+4. `fix_simple` flow (typo/dialogue): investigate → coding → e2e → human-check.
+5. `workflow-agent-review` uses Pattern B (code-reviewer + security-reviewer).
+
+## Review rounds — /fix mode override
+
+- All mid-pipeline reviews: **1 round** (omission only). Scope is narrow; terminal gates catch escapes.
+- `workflow-e2e-review`: **2 rounds** (preserves visual + edge_case checks).
+- `workflow-human-check`: **3 rounds** (user gate, unchanged).
+
+Configured under `modes/workflow.yaml → verification_rounds.mode_overrides.fix`.
 
 ## Surface-based exemption
 

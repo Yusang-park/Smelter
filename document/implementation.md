@@ -25,6 +25,26 @@ Contents:
 
 Files changed: see git log for this release.
 
+## Phase v3.2 — `/fix` pipeline collapse + per-mode round override (2026-04-23)
+
+User reported `/fix` still felt slow despite v3.1 target-type dispatch. Root cause: `medium` pipeline (11 skills, including tasker/tasker-review/team-code-review) triggered for any bug with >3 files or multi-surface, and every mid-pipeline review still ran 2 rounds. v3.2 simplifies.
+
+- [x] v3.2-1. **`medium` pipeline removed + /fix pipelines renamed.** `/fix` collapses to two pipelines: `fix` (8 skills, all `bug_fix` regardless of scope) and `fix_simple` (4, typo/dialogue — renamed from `minimal` for clarity). `extend_existing`/`new_feature`/`refactor`/`migration` all return `upgrade_required` for `/fix` → escalate.
+- [x] v3.2-2. **`extend_light` pipeline added** for `/implement + target_type: extend_existing`. 9 skills: investigate → investigate-review → tasker → write-test → coding → agent-review → e2e → e2e-review → human-check. Brainstorm family + tasker-review + team-code-review dropped because the existing feature defines scope and Pattern B agent-review suffices at this scale.
+- [x] v3.2-3. **Per-mode round override** — `verification_rounds.mode_overrides.fix: { default: 1, workflow-e2e-review: 2, workflow-human-check: 3 }`. `getVerificationRounds(skill, modeName?, cfg?)` signature extended; modeName lookup takes precedence over bucket default. Non-/fix modes unchanged (mid=2, terminal=3).
+- [x] v3.2-4. **`selectPipeline` simplified** — scope-dependent `upgrade_to_medium_when` branch deleted. `target_type_routing` is now a string map. Mode gates: `/fix + extend_existing → upgrade_required`; `/implement + extend_existing → extend_light`; `/implement + others → full`.
+- [x] v3.2-5. **`modes.implement.target_type_dispatch: true`** — enables /implement to honor extend_existing routing. Other target_types stay on declared `full` pipeline.
+- [x] v3.2-6. **Tests** — `workflow-loader.test.mjs` rewritten to cover fix/extend_light/medium-removal/per-mode rounds (33 tests). `keyword-detector.test.mjs` MK2/MK3 updated to assert 8-skill fix instead of 11-skill medium. `workflow-scenarios.test.mjs` SCENARIO 1 + fixModeState helper switched to fix order; new `fullPipelineState` helper for generic producer-chain tests that need tasker/team-code-review whitelisting.
+- [x] v3.2-7. **Docs** — `document/workflow.md` §3.2/§3.2.1/§3.2.2/§4-2/§4-3 updated. `commands/fix.md` + `commands/implement.md` rewritten to reflect new pipelines + /fix round override.
+
+### Expected time savings (common `/fix bug_fix` path)
+
+| v3.1 medium (complex) | v3.2 fix | Savings |
+|-----------------------|----------------|---------|
+| 11 skills × mid rounds (4 × 2) + terminal (3 × 3) | 8 skills × mid rounds (3 × 1) + terminal (2 × 3 + 1 × 2) | ~40% fewer review rounds; tasker + tasker-review + team-code-review eliminated. |
+
+---
+
 ## Phase v3.1 — `/fix` speed/quality balance (2026-04-22)
 
 ### Review Evidence Verifier (2026-04-22)
@@ -59,7 +79,7 @@ Files changed: see git log for this release.
 User reported: brainstorm→review cycle + tasker + reshape → `/fix` takes longer than `/implement` (inverted). v3.1 balances speed and quality by (a) collapsing the three split YAML configs into one unified file, (b) adding target-type pipeline dispatch in `/fix`, (c) reducing mid-pipeline review rounds from 3 to 2, and (d) enforcing workflow-human-check before `git commit`.
 
 - [x] v3.1-1. **Unified config** → `modes/workflow.yaml` (single file). Deleted the v3 split (`modes/skills.yaml`, `modes/pipelines.yaml`, `modes/modes.yaml`).
-- [x] v3.1-2. **Target-type dispatch** — `selectPipeline(mode, {target_type, file_count, surface_count})` in `workflow-loader.mjs`. `/fix` picks pipeline at runtime: `typo`/`dialogue` → `minimal` (4 skills), simple `bug_fix` → `light` (8 skills), complex `bug_fix` / `extend_existing` → `medium` (11 skills). `new_feature`/`refactor`/`migration` → `upgrade_required` (escalate to `/implement` or `/think`). Cuts tasker overhead on trivial fixes.
+- [x] v3.1-2. **Target-type dispatch** — `selectPipeline(mode, {target_type, file_count, surface_count})` in `workflow-loader.mjs`. `/fix` picks pipeline at runtime: `typo`/`dialogue` → `minimal` (4 skills), simple `bug_fix` → `light` (8 skills), complex `bug_fix` / `extend_existing` → `medium` (11 skills). `new_feature`/`refactor`/`migration` → `upgrade_required` (escalate to `/implement` or `/think`). Cuts tasker overhead on trivial fixes. **Superseded by v3.2** — see below.
 - [x] v3.1-3. **Verification round split** — `verification_rounds: { mid_pipeline: 2, terminal: 3 }` in `workflow.yaml`. Mid reviews (brainstorm-review, investigate-review, tasker-review, agent-review) drop to 2 rounds (omission + contradiction; edge-case dropped for speed). Terminal reviews (e2e-review, team-code-review, human-check) stay at 3 rounds. `min_verification_rounds: 2` in 4 SKILL.md files; 3 kept in e2e-review and team-code-review.
 - [x] v3.1-4. **`getVerificationRounds(skill)` helper** in `workflow-loader.mjs` — reads skill's `rounds` bucket field from `workflow.yaml`. Default `mid_pipeline`.
 - [x] v3.1-5. **Commit gate** — `pre-tool-enforcer.mjs` PreToolUse:Bash rule: when command starts with `git commit` AND state.mode ∈ {fix, implement} AND workflow-human-check not passed → block with clear reason. Closes queued bug: agent committing before human-check.
@@ -511,3 +531,5 @@ Verification (live hook invocation via stdin, fresh `.smt/` dirs):
 - Repeat of the same prompt in the same session returns immediately (cache hit), no Haiku subprocess spawn.
 
 Tests: `scripts/keyword-detector.test.mjs` + `scripts/mode-classifier.test.mjs` 32/32 green (no test changes needed — existing coverage exercises the corrected paths).
+
+- [x] P24-5. **Hook timeout vs Haiku budget** — `hooks/hooks.json` UserPromptSubmit `keyword-detector.mjs` had `timeout: 5` (5 s). `lib/subagent-classifier.mjs::TIMEOUT_MS` for the Haiku subprocess is 20 s. Any ambiguous Korean prompt where Haiku took longer than 5 s (empirically common) got SIGKILL'd mid-classification → hook produced no output → Claude Code continued without state seeding. Short prompts (<5 s round trip) routed fine; longer ones silently dropped. Session cache evidence: only **one** Haiku classification (`passthrough: true`) landed in `mode-classifier-cache.json` across an entire multi-turn debugging session, and its hash matched none of the user's messages — the rest were killed before cache write. Raised `timeout` to `20` so the hook budget covers the classifier. Reflection: requires Claude Code session restart to take effect (hooks.json loaded once at session start per CLAUDE.md).

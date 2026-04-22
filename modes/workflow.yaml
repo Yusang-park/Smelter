@@ -17,9 +17,19 @@ schema_version: "3.1.0"
 # Terminal gates (visual E2E + multi-agent consensus + human) keep 3 rounds.
 # Mid-pipeline reviews drop to 2 rounds — omission + contradiction are the load-bearing
 # passes; edge-case is the one most often false-positive on simple bug fixes.
+#
+# v3.2 — /fix mode override. Every review in /fix runs 1 round by default, since the
+# fix scope is narrow and terminal e2e + human gates catch escapes. The sole exception
+# is workflow-e2e-review (visual + edge-case preserved as 2 rounds). human-check is a
+# user gate, not a round count — keep at 3 for symmetry.
 verification_rounds:
   mid_pipeline: 2       # brainstorm-review, investigate-review, tasker-review, agent-review
   terminal: 3           # e2e-review, team-code-review, human-check
+  mode_overrides:
+    fix:
+      default: 1                    # all reviews in /fix pipelines use 1 round
+      workflow-e2e-review: 2        # exception: preserves visual + edge_case verification
+      workflow-human-check: 3       # user gate unchanged
 
 # -----------------------------------------------------------------------------
 # Skill registry — per-skill team patterns and agents (workflow-* only).
@@ -147,26 +157,31 @@ pipelines:
     - workflow-team-code-review
     - workflow-human-check
 
-  # Medium — extend_existing, complex bug_fix (>3 files / multi-surface). 11 skills.
-  # Identical to legacy "no_brainstorm" but renamed for target-type clarity.
-  medium:
+  # fix — default /fix pipeline (all bug_fix regardless of scope). 8 skills —
+  # investigate-review retained as a cheap sanity gate; tasker + tasker-review +
+  # team-code-review dropped because /fix scope is narrow enough that scoped
+  # agent-review + terminal e2e-review + human-check suffice. v3.2: /fix now has
+  # only two pipelines (`fix` and `fix_simple`); the former `medium`/`light` split
+  # is gone (complex bug_fix rides the same `fix` path; /implement handles
+  # extensions via extend_light).
+  fix:
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-write-test
+    - workflow-coding
+    - workflow-agent-review
+    - workflow-e2e
+    - workflow-e2e-review
+    - workflow-human-check
+
+  # extend_light — /implement branch for extend_existing. 9 skills — full pipeline
+  # minus brainstorm + brainstorm-review (existing feature defines scope), minus
+  # tasker-review (tasker is scoped enough for extensions), minus team-code-review
+  # (Pattern B agent-review suffices at this scale).
+  extend_light:
     - workflow-investigate
     - workflow-investigate-review
     - workflow-tasker
-    - workflow-tasker-review
-    - workflow-write-test
-    - workflow-coding
-    - workflow-agent-review
-    - workflow-e2e
-    - workflow-e2e-review
-    - workflow-team-code-review
-    - workflow-human-check
-
-  # Light — simple bug_fix (≤3 files, single surface). 8 skills — skip tasker+tasker-review
-  # (no decomposition needed) and team-code-review (agent-review suffices for scoped fix).
-  light:
-    - workflow-investigate
-    - workflow-investigate-review
     - workflow-write-test
     - workflow-coding
     - workflow-agent-review
@@ -174,9 +189,10 @@ pipelines:
     - workflow-e2e-review
     - workflow-human-check
 
-  # Minimal — typo / dialogue / pure-copy change. 4 skills — TDD exempt, no tasker,
-  # no review phases that verify logic (copy changes have no logic).
-  minimal:
+  # fix_simple — typo / dialogue / pure-copy change. 4 skills — TDD exempt, no
+  # tasker, no review phases that verify logic (copy changes have no logic).
+  # v3.2: renamed from `minimal` so /fix has only `fix` and `fix_simple`.
+  fix_simple:
     - workflow-investigate
     - workflow-coding
     - workflow-e2e
@@ -208,27 +224,18 @@ pipelines:
 # determines target_type + file_count + surface.
 # -----------------------------------------------------------------------------
 target_type_routing:
-  # target_type → pipeline. Scope signals (file_count, surface_count) refine.
-  typo: minimal
-  dialogue: minimal
-
-  # bug_fix: scope-dependent. Default light; upgrade to medium when complex.
-  # Upgrade rule: file_count > 3 OR surface_count > 1 → medium.
-  bug_fix:
-    default: light
-    upgrade_to_medium_when:
-      file_count_gt: 3
-      surface_count_gt: 1
-
-  # extend_existing = adding functionality on top of existing code.
-  # Per user direction: this is "new 기능" level — medium pipeline (full pipeline
-  # minus brainstorm, since the existing feature defines scope).
-  extend_existing: medium
-
-  # These escalate to think/implement. /fix with one of these declared → upgrade prompt.
-  new_feature: upgrade_required   # escalate user to /implement or /think
-  refactor: upgrade_required      # escalate user to /implement or /think
-  migration: upgrade_required     # escalate user to /think
+  # target_type → pipeline (simple string mapping; scope-based upgrades removed in v3.2).
+  # /fix and /implement share this table; selectPipeline() applies mode-specific gating:
+  #   - /fix + extend_existing → upgrade_required (route user to /implement)
+  #   - /implement + extend_existing → extend_light (honors the routing entry)
+  #   - /implement without target_type → mode's declared pipeline (full)
+  typo: fix_simple
+  dialogue: fix_simple
+  bug_fix: fix                      # all scopes — /fix default, no upgrade gates
+  extend_existing: extend_light     # /implement branch; /fix blocks with upgrade_required
+  new_feature: upgrade_required     # /fix → escalate to /implement or /think
+  refactor: upgrade_required        # /fix → escalate to /implement or /think
+  migration: upgrade_required       # /fix → escalate to /think
 
 # -----------------------------------------------------------------------------
 # Mode definitions — thin composition.
@@ -254,7 +261,7 @@ modes:
     entry_skill: workflow-investigate
     # Runtime pipeline selection via target_type_routing. Default pipeline used until
     # target_type is determined by workflow-investigate output.
-    pipeline: medium              # default (safest) — may shrink or upgrade at runtime
+    pipeline: fix                 # v3.2 default; fix_simple for typo/dialogue, upgrade_required for extend/new_feature/refactor/migration
     target_type_dispatch: true    # v3.1: workflow-loader picks pipeline after investigate
     read_only: false
     default_exempt: { tdd: false, e2e: false }
@@ -270,10 +277,13 @@ modes:
       downgrade_to: []
 
   implement:
-    description: Feature development. Lightweight brainstorm + full pipeline.
+    description: Feature development. Lightweight brainstorm + full pipeline, or extend_light when the change is an extension of existing code.
     entry_skill: workflow-brainstorm
     entry_params: { workflow-brainstorm: { depth: light } }
     pipeline: full
+    # v3.2: /implement also target-type dispatches, but only to honor extend_existing
+    # → extend_light. Other target_types use the mode's declared `full` pipeline.
+    target_type_dispatch: true
     read_only: false
     default_exempt: { tdd: false, e2e: false }
     team_hints:

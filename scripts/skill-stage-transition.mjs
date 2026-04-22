@@ -258,8 +258,9 @@ function main() {
     // may declare target_type + file_count + surface. If the mode declares
     // target_type_dispatch, we re-run selectPipeline with those signals and, if
     // the resulting pipeline differs from the current allowed_skills, re-write
-    // state.allowed_skills. This closes the gap where non-magic-keyword /fix
-    // flows stayed on the default `medium` pipeline regardless of scope.
+    // state.allowed_skills. This closes the gap where non-magic-keyword flows
+    // stayed on the mode's default pipeline regardless of target_type. v3.2
+    // extends this to /implement for extend_existing → extend_light.
     if (skill === 'workflow-investigate-review' || skill === 'workflow-tasker') {
       try {
         const artifactForScope = skill === 'workflow-tasker' ? 'tasks.md' : 'investigation.md';
@@ -288,7 +289,7 @@ function main() {
                 const newSkills = [...cfg.pipelines[newPipeline]];
                 const cur = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
                 // Preserve already-completed stages even if they're not in the new
-                // pipeline (e.g., tasker ran under medium; light doesn't include it).
+                // pipeline (e.g., tasker ran under full; extend_light drops tasker-review).
                 // This is a one-way narrowing: remaining stages may shrink, but the
                 // audit trail of what already ran stays complete.
                 const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];

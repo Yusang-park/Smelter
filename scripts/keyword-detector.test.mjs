@@ -372,12 +372,12 @@ test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async (
 
 // ---------------------------------------------------------------------------
 // Magic-keyword → target_type → pipeline dispatch (v3.1).
-// Verifies `/fix typo ...` resolves to the minimal pipeline, `/fix css ...`
+// Verifies `/fix typo ...` resolves to the fix_simple pipeline, `/fix css ...`
 // sets TDD exemption without shrinking the pipeline, and an unmatched /fix
-// prompt falls through to the default medium pipeline.
+// prompt falls through to the default fix pipeline.
 // ---------------------------------------------------------------------------
 
-test('MK1 /fix typo ... → target_type=typo, minimal pipeline (4 skills), TDD+E2E exempt', async () => {
+test('MK1 /fix typo ... → target_type=typo, fix_simple pipeline (4 skills), TDD+E2E exempt', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-typo-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-typo', prompt: '/fix typo 오타 하나 있어요' });
@@ -392,7 +392,7 @@ test('MK1 /fix typo ... → target_type=typo, minimal pipeline (4 skills), TDD+E
     assert.deepEqual(
       state.allowed_skills,
       ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
-      'typo must resolve to minimal pipeline (4 skills)',
+      'typo must resolve to fix_simple pipeline (4 skills)',
     );
     assert.equal(state.exempt?.tdd, true, 'typo must set exempt.tdd');
     assert.equal(state.exempt?.e2e, true, 'typo must set exempt.e2e');
@@ -401,7 +401,7 @@ test('MK1 /fix typo ... → target_type=typo, minimal pipeline (4 skills), TDD+E
   }
 });
 
-test('MK2 /fix css ... → exempt.tdd=true, pipeline unchanged (target_type unset → default medium)', async () => {
+test('MK2 /fix css ... → exempt.tdd=true, pipeline unchanged (target_type unset → default fix)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-css-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-css', prompt: '/fix css 버튼 색상 좀 바꿔줘' });
@@ -415,20 +415,22 @@ test('MK2 /fix css ... → exempt.tdd=true, pipeline unchanged (target_type unse
     assert.equal(state.exempt?.tdd, true, 'css must set exempt.tdd');
     assert.equal(state.exempt?.e2e, false, 'css must NOT exempt e2e (visual surface)');
     // css does not set target_type, so target_type stays null and the mode's
-    // default pipeline (medium, 11 skills) is used.
+    // default pipeline (fix, 8 skills) is used.
     assert.equal(state.target_type, null, 'css must not set target_type');
     assert.equal(
       state.allowed_skills.length,
-      11,
-      `css must keep default medium pipeline (11 skills); got ${state.allowed_skills.length}`,
+      8,
+      `css must keep default fix pipeline (8 skills); got ${state.allowed_skills.length}`,
     );
-    assert.ok(state.allowed_skills.includes('workflow-tasker'), 'medium pipeline must include tasker');
+    assert.ok(state.allowed_skills.includes('workflow-investigate-review'), 'fix must include investigate-review');
+    assert.ok(!state.allowed_skills.includes('workflow-tasker'), 'fix must NOT include tasker');
+    assert.ok(!state.allowed_skills.includes('workflow-team-code-review'), 'fix must NOT include team-code-review');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
-test('MK3 /fix 버그 ... with no magic keyword → default medium pipeline, no exemption', async () => {
+test('MK3 /fix 버그 ... with no magic keyword → default fix pipeline, no exemption', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-none-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-none', prompt: '/fix 로그인 버그 고쳐줘' });
@@ -444,9 +446,89 @@ test('MK3 /fix 버그 ... with no magic keyword → default medium pipeline, no 
     assert.equal(state.exempt?.e2e, false);
     assert.equal(
       state.allowed_skills.length,
-      11,
-      `unmatched /fix must use default medium pipeline (11 skills); got ${state.allowed_skills.length}`,
+      8,
+      `unmatched /fix must use default fix pipeline (8 skills); got ${state.allowed_skills.length}`,
     );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 24 — classification forwarding, THINK banner, no double Haiku call.
+// ---------------------------------------------------------------------------
+
+test('P24-2a detectNaturalLanguageCommand returns full classification object', () => {
+  const result = detectNaturalLanguageCommand('버그 고쳐줘');
+  assert.equal(result?.name, 'fix');
+  assert.ok(result?.classification, 'classification field must be forwarded');
+  assert.equal(result.classification.mode, 'fix');
+  assert.equal(result.classification.target_type, 'bug_fix');
+  // Non-passthrough case: wrapper omits the field rather than setting it to
+  // false (see mode-classifier.mjs). Assert it is NOT true — that is what the
+  // forward-path consumers rely on.
+  assert.notEqual(result.classification.passthrough, true);
+});
+
+test('P24-2b seedWorkflowState uses forwarded classification — no second stub call', async () => {
+  // Counter stub: every invocation bumps a file so the test can assert exactly
+  // one classify pass even though keyword-detector.mjs previously called
+  // classifyMode twice (once in detect, once in seedWorkflowState surface).
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-p24-2b-'));
+  const counterPath = join(cwd, 'classify-calls.txt');
+  const stubPath = join(cwd, 'counter-stub.mjs');
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(counterPath, '0');
+  writeFileSync(stubPath, `
+    import { readFileSync, writeFileSync } from 'node:fs';
+    export function classifyMode(prompt) {
+      const n = parseInt(readFileSync(${JSON.stringify(counterPath)}, 'utf-8'), 10) + 1;
+      writeFileSync(${JSON.stringify(counterPath)}, String(n));
+      return {
+        schema_version: 2,
+        mode: 'fix',
+        chained_modes: null,
+        passthrough: false,
+        trigger: 'llm:imperative:repair',
+        target_type: 'bug_fix',
+        exempt: null,
+        skip_brainstorm: false,
+      };
+    }
+  `, 'utf-8');
+  try {
+    const input = JSON.stringify({ cwd, session_id: 'p24-2b', prompt: 'some-bug-prompt' });
+    const result = spawnSync(process.execPath, [SCRIPT_PATH], {
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: stubPath },
+    });
+    assert.equal(result.status, 0, `stderr=${result.stderr}`);
+    const { readFileSync } = await import('node:fs');
+    const calls = parseInt(readFileSync(counterPath, 'utf-8'), 10);
+    assert.equal(calls, 1, `classifyMode must be called exactly once per prompt; got ${calls}`);
+
+    const stateFile = findStateFile(cwd);
+    assert.ok(stateFile, 'state.json must be seeded');
+    const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    assert.equal(state.mode, 'fix', 'forwarded classification must seed mode');
+    assert.equal(state.target_type, 'bug_fix', 'forwarded surface must reach state.json');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('P24-3 THINK MODE banner emitted for think classification', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-p24-3-'));
+  try {
+    const input = JSON.stringify({ cwd, session_id: 'p24-3', prompt: '설계해줘' });
+    const result = spawnSync(process.execPath, [SCRIPT_PATH], {
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: CLASSIFIER_STUB_PATH },
+    });
+    assert.equal(result.status, 0);
+    assert.match(result.stderr, /THINK MODE/, `THINK MODE tag must appear in stderr; got ${result.stderr}`);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
