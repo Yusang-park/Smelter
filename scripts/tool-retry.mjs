@@ -127,10 +127,35 @@ export function isBenignGrepNoMatch(data) {
     : false;
 }
 
+/**
+ * Returns only the error/message fields — NOT stdout — so patterns that
+ * should fire on genuine tool errors don't trigger on incidental text
+ * (e.g. a commit message echoed back in Bash stdout).
+ */
+export function extractErrorOnly(data) {
+  const out = data.tool_output || data.toolOutput || data.output || {};
+  const resp = data.tool_response || data.toolResponse || {};
+  return gatherText(
+    out.error, out.message, out.stderr,
+    resp.error, resp.message, resp.stderr,
+    data.error, data.message,
+  );
+}
+
+const FILE_WRITER_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit)$/i;
+
 export function classifyError(text, exitCode, toolName, data = {}) {
   if (!text && exitCode !== 1) return null;
+  const errorText = extractErrorOnly(data);
   for (const p of RETRY_PATTERNS) {
     if (p.name === 'grep-no-match') continue; // handled below with stricter gate
+    if (p.name === 'file-not-read') {
+      // Gate: only file-writer tools, and phrase must be in error/stderr
+      // (not stdout) so echoed text in Bash output doesn't trigger it.
+      if (!toolName || !FILE_WRITER_TOOLS.test(toolName)) continue;
+      if (!p.regex.test(errorText)) continue;
+      return p;
+    }
     if (p.regex.test(text)) return p;
   }
   // grep-no-match: exit 1 + empty output + benign/absent stderr only

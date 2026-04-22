@@ -95,6 +95,38 @@ function runHook(payload, cwd) {
   console.log('  case file-modified (short form) OK');
 }
 
+// NEGATIVE: Bash stdout echoing the phrase (e.g. commit msg back-echo) must NOT trigger
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's-neg',
+    tool_name: 'Bash',
+    tool_input: { command: 'git commit -m "fix: File has not been read yet bug"' },
+    tool_output: { stdout: '[main abc123] fix: File has not been read yet bug\n', exit_code: 0 },
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.continue, true, 'Bash stdout echo must not trigger file-not-read');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read Bash-echo (negative) OK');
+}
+
+// NEGATIVE: Write tool but phrase only in stdout (not error) — still must NOT fire
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's-neg2',
+    tool_name: 'Write',
+    tool_input: { file_path: '/tmp/x.md', content: 'x' },
+    tool_output: { stdout: 'File has not been read yet', exit_code: 0 },
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.continue, true, 'stdout-only phrase must not trigger even on Write');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read stdout-only (negative) OK');
+}
+
 // Fixture: file-not-read (Write before Read) → block with Read-first hint
 {
   const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
