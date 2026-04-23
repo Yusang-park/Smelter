@@ -100,6 +100,24 @@ function generateToolDescription(toolName, toolInput) {
   }
 }
 
+// Resolve the unscoped `active-feature.json` pointer ONLY when it carries
+// the explicit seeder-asymmetry marker `session_id === ''`. The seeder
+// writes the unscoped file whenever sessionId is empty at seed time
+// (workflow-state-seeder.mjs:241-247); the stored `session_id` field is
+// always the empty string in that path. Any other unscoped pointer is
+// treated as stale cross-session state (see PLAN-C4 session-isolation
+// invariant) and ignored here — returning `null` tells the caller that
+// no fallback pointer is available.
+function resolveUnscopedFallback(directory) {
+  const ptrPath = join(directory, '.smt', 'state', 'active-feature.json');
+  if (!existsSync(ptrPath)) return null;
+  try {
+    const ptr = JSON.parse(readFileSync(ptrPath, 'utf-8'));
+    if (ptr && ptr.session_id === '') return ptrPath;
+  } catch {}
+  return null;
+}
+
 function main() {
   printTag('Pre Tool Enforcer');
   try {
@@ -113,30 +131,44 @@ function main() {
     try { data = JSON.parse(input); } catch {}
     const sessionId = data.session_id || data.sessionId || '';
 
-    // --- Block native EnterPlanMode when Smelter workflow is active ---
-    // Smelter's /plan + step-3-interview gate OWNS planning. Native plan mode is redundant
-    // and breaks file-based memory.
+    // --- Block native EnterPlanMode only during Smelter /think (planning) ---
+    // Smelter's /think → workflow-brainstorm (depth: deep) OWNS planning. Native
+    // plan mode during /think is redundant and breaks file-based memory.
+    // Other modes (/fix, /implement, /investigate, /verify) MAY legitimately use
+    // native plan mode — do not block them.
+    // Fail-open: malformed / missing / command-less workflow.json allows the tool.
     if (toolName === 'ExitPlanMode' || toolName === 'EnterPlanMode') {
-      // Check only the session-scoped pointer — a stale global pointer from
-      // another session must not block this session's native plan mode.
-      const smtState = sessionId
+      // Prefer the session-scoped pointer. Fall back to the unscoped pointer
+      // ONLY when it carries the explicit seeder-asymmetry marker
+      // `session_id === ''` — the seeder writes the unscoped file whenever
+      // sessionId is empty at seed time (workflow-state-seeder.mjs:241-247).
+      // Any other unscoped pointer (missing session_id or non-empty sid from
+      // another session) is treated as stale cross-session state and
+      // ignored — preserving the session-isolation invariant in PLAN-C4.
+      const smtStateScoped = sessionId
         ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
         : join(directory, '.smt', 'state', 'active-feature.json');
-      let hasActiveWorkflow = false;
+      const smtState = existsSync(smtStateScoped)
+        ? smtStateScoped
+        : resolveUnscopedFallback(directory, sessionId);
+      let isThinkMode = false;
       try {
-        if (existsSync(smtState)) {
+        if (smtState && existsSync(smtState)) {
           const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
           if (pointer?.slug) {
             const statePath = join(directory, '.smt', 'features', pointer.slug, 'state', 'workflow.json');
-            hasActiveWorkflow = existsSync(statePath);
+            if (existsSync(statePath)) {
+              const wf = JSON.parse(readFileSync(statePath, 'utf-8'));
+              isThinkMode = wf?.command === 'think';
+            }
           }
         }
       } catch {}
-      if (hasActiveWorkflow) {
-        printTag(`Block: ${toolName} (Smelter workflow active)`);
+      if (isThinkMode) {
+        printTag(`Block: ${toolName} (Smelter /think active)`);
         console.log(JSON.stringify({
           decision: 'block',
-          reason: `[SMELTER] Native plan mode (${toolName}) is blocked while Smelter workflow is active. Smelter's own 10-step workflow engine (/plan → step-3-interview gate) handles planning. Use \`/plan <idea>\` to enter Smelter's planning workflow, or continue the current workflow by following the injected step prompt.`,
+          reason: `[SMELTER] Native plan mode (${toolName}) is blocked during Smelter /think. The workflow-brainstorm skill (depth: deep) is the planning engine for /think — use it instead of native plan mode. To start a new planning session use \`/think <idea>\`; otherwise follow the injected step prompt for the current workflow.`,
         }));
         return;
       }
@@ -178,6 +210,60 @@ function main() {
       }
     }
 
+    // --- Block writes to unknown-slug .smt/features/ paths (divergence guard) ---
+    // Closes the state↔artifact divergence bug: if an agent creates / writes
+    // into `.smt/features/<X>/...` where X doesn't match the active-feature
+    // pointer's slug, the resulting artifacts become orphaned (state machine
+    // keeps tracking the pointer's slug while artifacts accumulate under X).
+    // Guard enforces single-slug-per-session via pre-tool check on Write/Edit
+    // and Bash mkdir.
+    if (process.env.SMT_HOOK_WRITE !== '1') {
+      const toolInputData = data.tool_input || data.toolInput || {};
+      const candidatePaths = [];
+      if (toolName === 'Write' || toolName === 'Edit') {
+        const p = String(toolInputData.file_path || toolInputData.filePath || '');
+        if (p) candidatePaths.push(p);
+      } else if (toolName === 'Bash') {
+        const cmd = String(toolInputData.command || '');
+        // Extract target paths from mkdir, touch, mv, cp. Keep it simple —
+        // match anything that contains `.smt/features/` so the guard is
+        // conservative by default.
+        const m = cmd.match(/\.smt[\/\\]features[\/\\][^\s\/\\'"]+/g);
+        if (m) candidatePaths.push(...m);
+      }
+      for (const raw of candidatePaths) {
+        const match = raw.match(/[\/\\]?\.smt[\/\\]features[\/\\]([^\/\\]+)/);
+        if (!match) continue;
+        const targetSlug = match[1];
+        // Resolve active pointer — scoped first, seeder-asymmetry-marked
+        // unscoped as fallback. See resolveUnscopedFallback for the
+        // isolation rule (only pointer.session_id === '' is honored).
+        const ptrScoped = sessionId
+          ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(directory, '.smt', 'state', 'active-feature.json');
+        const ptrPath = existsSync(ptrScoped)
+          ? ptrScoped
+          : resolveUnscopedFallback(directory, sessionId);
+        let activeSlug = null;
+        try {
+          if (ptrPath && existsSync(ptrPath)) {
+            const ptr = JSON.parse(readFileSync(ptrPath, 'utf-8'));
+            activeSlug = ptr?.slug || null;
+          }
+        } catch { /* fall through — no active slug */ }
+        if (activeSlug && targetSlug !== activeSlug) {
+          printTag(`Block: divergence guard (target=${targetSlug}, active=${activeSlug})`);
+          console.log(JSON.stringify({
+            decision: 'block',
+            reason: `[SMELTER] ${toolName} targets .smt/features/${targetSlug}/ but the active-feature slug is ${activeSlug}.\n` +
+              `All task artifacts must live under .smt/features/${activeSlug}/ to keep state and artifacts in sync.\n` +
+              `If you need a new feature, start a new /fix or /implement session — do NOT mkdir a parallel features/ dir within this session.`,
+          }));
+          return;
+        }
+      }
+    }
+
     // --- v3.3: Force code-file Edit/Write through a Smelter workflow ---
     // User directive (2026-04-23): every CODE file modification, no matter
     // how trivial, must run inside an active /fix or /implement workflow so
@@ -204,7 +290,12 @@ function main() {
       'swift', 'm', 'mm',
       'sh', 'bash', 'zsh', 'fish',
       'sql', 'prisma', 'graphql', 'gql',
-      'toml', 'json', 'jsonc',
+      // json/jsonc intentionally ungated (v3.3.6) — declarative configs
+      // (package.json, tsconfig.json, plugin.json, etc.) are parallel to
+      // YAML and should not require a /fix workflow for trivial edits.
+      // Protected state files under .smt/ are blocked separately by
+      // PROTECTED_RE regardless of this list.
+      'toml',
       'vue', 'svelte', 'astro',
       'css', 'scss', 'sass', 'less',
       'html', 'htm', 'xml',
@@ -224,12 +315,18 @@ function main() {
       const filePath = String(toolInputData.file_path || toolInputData.filePath || '');
       const isInternalSmtPath = /[\/\\]\.smt[\/\\]/.test(filePath);
       if (!isInternalSmtPath && isCodeFile(filePath)) {
-        const smtState = sessionId
+        // Resolve workflow pointer — scoped first, seeder-asymmetry-marked
+        // unscoped as fallback. See resolveUnscopedFallback for the
+        // isolation rule (only pointer.session_id === '' is honored).
+        const smtStateScoped = sessionId
           ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
           : join(directory, '.smt', 'state', 'active-feature.json');
+        const smtState = existsSync(smtStateScoped)
+          ? smtStateScoped
+          : resolveUnscopedFallback(directory, sessionId);
         let allowedMode = null;
         try {
-          if (existsSync(smtState)) {
+          if (smtState && existsSync(smtState)) {
             const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
             if (pointer?.slug) {
               const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
@@ -357,16 +454,40 @@ function main() {
       }
     }
 
-    // --- Normal flow: tool description only ---
+    // --- Normal flow: tool description + optional Read-first reminder ---
+    // Prevention for the Claude Code harness error:
+    //   "File has not been read yet. Read it first before writing to it."
+    // The harness rejects Write/Edit of any file not Read in the current
+    // session. We inject a reminder into additionalContext whenever Write/Edit
+    // targets an EXISTING on-disk file so the agent Reads first instead of
+    // hitting the validation error. New-file writes (path does not exist)
+    // carry no reminder — there is nothing to Read.
     const toolInput = data.toolInput || data.tool_input || null;
     const desc = generateToolDescription(toolName, toolInput);
 
-    if (desc) {
+    let readFirstReminder = '';
+    if (toolName === 'Write' || toolName === 'Edit') {
+      const ti = toolInput || {};
+      const fp = String(ti.file_path || ti.filePath || '');
+      if (fp) {
+        try {
+          if (existsSync(fp)) {
+            readFirstReminder = `Read-first reminder: "${fp}" already exists on disk. The Claude Code harness rejects ${toolName} of a file that was not Read in this session with "File has not been read yet". If you have not Read this file yet in the current session, issue Read({ file_path: "${fp}" }) before the ${toolName}. New-file writes (path does not exist) do not need this.`;
+          }
+        } catch {}
+      }
+    }
+
+    const contextParts = [];
+    if (desc) contextParts.push(desc);
+    if (readFirstReminder) contextParts.push(readFirstReminder);
+
+    if (contextParts.length > 0) {
       console.log(JSON.stringify({
         continue: true,
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext: desc
+          additionalContext: contextParts.join('\n')
         }
       }));
     } else {

@@ -14,7 +14,7 @@
  */
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +46,14 @@ const COMMAND_TO_MODE = Object.freeze({
   verify: 'verify',
 });
 
+// Modes that do not mutate code. Used to detect when a user/agent escalates
+// from exploration to execution. Reusing a verify/investigate/think state
+// under Skill(fix|implement) leaves state.mode at the read-only value, and
+// pre-tool-enforcer's code-file gate would then block every subsequent edit
+// — the deadlock this branch fixes.
+const READONLY_MODES = Object.freeze(new Set(['verify', 'investigate', 'think']));
+const WRITE_MODES = Object.freeze(new Set(['fix', 'implement']));
+
 const LEADING_FILLER_TOKENS = new Set([
   'a','an','the','is','are','was','were','be','been','being','do','does','did',
   'for','to','of','in','on','at','by','with','from','as','about','into','onto',
@@ -71,22 +79,25 @@ function stripSystemPreamble(text) {
   return out.trim();
 }
 
-export function deriveSlug(prompt) {
-  const raw = (prompt || '').toString().trim();
-  const stripped = stripSystemPreamble(raw);
-  const base = (stripped || raw).slice(0, 120).toLowerCase();
-
-  const tokens = base
-    .replace(/[^a-z0-9가-힣\s-]+/g, ' ')
-    .split(/[\s-]+/)
-    .filter(Boolean);
-
-  while (tokens.length > 1 && LEADING_FILLER_TOKENS.has(tokens[0])) tokens.shift();
-
-  const slug = tokens.join('-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
-  if (slug) return slug;
-  const suffix = randomBytes(3).toString('hex');
-  return `feature-${Date.now().toString(36)}-${suffix}`;
+export function deriveSlug(_prompt) {
+  // UUID-fixed slug: always return `feature-<uuid>`. Previously this function
+  // derived a descriptive slug from the prompt text, but that caused a
+  // state↔artifact divergence bug: the seeder would create a state.json under
+  // the prompt-derived slug, while the agent would naturally work under a
+  // different descriptive slug (created via mkdir), leaving the state machine
+  // tracking a path that had no artifacts. See
+  // `.smt/features/fix-investigate-stage-completion-loop/task/investigation.md`
+  // for the full divergence analysis.
+  //
+  // Fixing the slug to a UUID means:
+  //   - the seeder's slug is non-meaningful (so agents have no incentive to
+  //     invent their own descriptive alternative)
+  //   - the active-feature pointer always points at a real state+artifact dir
+  //   - no surprising re-slug when a different prompt carries the same
+  //     descriptive intent
+  //
+  // Prompt is intentionally unused; kept as a parameter for API compatibility.
+  return `feature-${randomUUID()}`;
 }
 
 function writeAtomic(path, content) {
@@ -114,6 +125,22 @@ export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, 
     const state = JSON.parse(readFileSync(statePath, 'utf-8'));
     if (Array.isArray(state.completed_stages) && state.completed_stages.includes('workflow-human-check')) {
       return { create: true, reason: 'prior-completed' };
+    }
+    // Mode-upgrade: the agent escalated from a read-only exploration mode
+    // (verify/investigate/think) to a write mode (fix/implement). Reusing
+    // would leave state.mode at the read-only value, and pre-tool-enforcer
+    // would then block every code Edit/Write. Create a fresh feature so the
+    // new state.mode matches the command.
+    //
+    // Gated on source==='skill-tool' only. Natural-language follow-ups
+    // (source==='magic') must stay reuse: a user sending a second Korean
+    // prompt after a Korean exploration prompt still intends the same
+    // feature even if the mode classifier routes the follow-up to a
+    // different mode. Slash commands never reach this line — the earlier
+    // slash-command branch returns create:true unconditionally.
+    const requestedMode = COMMAND_TO_MODE[commandName];
+    if (source === 'skill-tool' && requestedMode && WRITE_MODES.has(requestedMode) && READONLY_MODES.has(state.mode)) {
+      return { create: true, reason: 'mode-upgrade' };
     }
     return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath, state };
   } catch {
@@ -320,7 +347,13 @@ export function seedWorkflowState({
     }, null, 2));
 
     return { slug, statePath, pointerPath, reused: false };
-  } catch {
+  } catch (err) {
+    // Previously a bare `catch { return null; }` silently swallowed every
+    // mkdir/writeAtomic/writeState failure. Downstream guards (pre-tool-enforcer
+    // code-file gate) then blocked every Edit/Write for the rest of the session
+    // with no upstream cause to diagnose. Emit a single-line diagnostic via the
+    // existing log helper; control flow (return null) is unchanged.
+    log(`State seed failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }

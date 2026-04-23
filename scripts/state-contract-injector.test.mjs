@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -38,37 +38,43 @@ function parse(s) { return JSON.parse(s); }
 
 // ── Happy path ─────────────────────────────────────────────────────────────
 test('H1: workflow-tasker-review skill invocation injects contract', () => {
-  const r = run({ tool_name: 'Skill', tool_input: { skill: 'workflow-tasker-review' } });
-  assert.equal(r.status, 0);
-  const out = parse(r.stdout);
-  assert.equal(out.continue, true);
-  assert.equal(out.hookSpecificOutput.hookEventName, 'PreToolUse');
-  assert.match(out.hookSpecificOutput.additionalContext, /Smelter state-write contract/);
-  assert.match(out.hookSpecificOutput.additionalContext, /You do NOT write `\.state\.json` directly/);
-  assert.match(out.hookSpecificOutput.additionalContext, /finalize-human-check/);
+  const cwd = makeTempCwd();
+  try {
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-tasker-review' } }, cwd);
+    assert.equal(r.status, 0);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+    assert.equal(out.hookSpecificOutput.hookEventName, 'PreToolUse');
+    assert.match(out.hookSpecificOutput.additionalContext, /Smelter state-write contract/);
+    assert.match(out.hookSpecificOutput.additionalContext, /You do NOT write `\.state\.json` directly/);
+    assert.match(out.hookSpecificOutput.additionalContext, /finalize-human-check/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
 test('H2: every workflow-* skill name triggers injection', () => {
-  for (const skill of [
-    'workflow-investigate',
-    'workflow-investigate-review',
-    'workflow-tasker',
-    'workflow-tasker-review',
-    'workflow-write-test',
-    'workflow-coding',
-    'workflow-agent-review',
-    'workflow-e2e',
-    'workflow-e2e-review',
-    'workflow-team-code-review',
-    'workflow-human-check',
-    'workflow-brainstorm',
-    'workflow-brainstorm-review',
-    'workflow-verify',
-  ]) {
-    const r = run({ tool_name: 'Skill', tool_input: { skill } });
-    const out = parse(r.stdout);
-    assert.ok(out.hookSpecificOutput?.additionalContext, `${skill} must receive injection`);
-  }
+  const cwd = makeTempCwd();
+  try {
+    for (const skill of [
+      'workflow-investigate',
+      'workflow-investigate-review',
+      'workflow-tasker',
+      'workflow-tasker-review',
+      'workflow-write-test',
+      'workflow-coding',
+      'workflow-agent-review',
+      'workflow-e2e',
+      'workflow-e2e-review',
+      'workflow-team-code-review',
+      'workflow-human-check',
+      'workflow-brainstorm',
+      'workflow-brainstorm-review',
+      'workflow-verify',
+    ]) {
+      const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill } }, cwd);
+      const out = parse(r.stdout);
+      assert.ok(out.hookSpecificOutput?.additionalContext, `${skill} must receive injection`);
+    }
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
 // ── Boundary ───────────────────────────────────────────────────────────────
@@ -267,11 +273,238 @@ test('I2: seeded state.json passes state-schema.mjs validate()', async () => {
 
 // ── Integration ────────────────────────────────────────────────────────────
 test('I1: contract enumerates the three blocked write paths the agent must not attempt', () => {
-  const r = run({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' } });
-  const ctx = parse(r.stdout).hookSpecificOutput.additionalContext;
-  assert.match(ctx, /pre-tool-enforcer\.mjs/);
-  assert.match(ctx, /classifier rejects/);
-  assert.match(ctx, /COMPLETION_DEFERRED_SKILLS/);
-  // Workflow-human-check finalize hook is named so the agent knows the legitimate path.
-  assert.match(ctx, /finalize-human-check\.mjs/);
+  const cwd = makeTempCwd();
+  try {
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' } }, cwd);
+    const ctx = parse(r.stdout).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /pre-tool-enforcer\.mjs/);
+    assert.match(ctx, /classifier rejects/);
+    assert.match(ctx, /COMPLETION_DEFERRED_SKILLS/);
+    // Workflow-human-check finalize hook is named so the agent knows the legitimate path.
+    assert.match(ctx, /finalize-human-check\.mjs/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// ── Chain enforcement (skill-delegation-enforcement) ──────────────────────
+// PreToolUse:Skill must block workflow-* skill invocations that skip ahead
+// in the declared pipeline chain. Allowed moves from current_stage X:
+//   1. X itself (idempotent re-entry)
+//   2. NEXT_SKILL_ON_PASS[X] (forward)
+//   3. workflow-human-check (user-escape, always callable)
+//   4. Producer of X on fail-route (events[last]={skill:X,result:'fail'})
+// All other workflow-* targets → { continue: false, stopReason: string }.
+
+function seedState(cwd, sessionId, {
+  mode = 'fix',
+  current_stage = null,
+  events = [],
+  completed_stages = [],
+  allowed_skills = [
+    'workflow-investigate','workflow-investigate-review',
+    'workflow-write-test','workflow-coding',
+    'workflow-agent-review','workflow-e2e','workflow-e2e-review','workflow-human-check',
+  ],
+} = {}) {
+  const slug = 'ce-test-slug';
+  const featureDir = join(cwd, '.smt', 'features', slug, 'task');
+  mkdirSync(featureDir, { recursive: true });
+  mkdirSync(join(cwd, '.smt', 'state'), { recursive: true });
+  const state = {
+    schema_version: '2.4.1',
+    task_id: slug,
+    mode,
+    chained_modes: [],
+    allowed_skills,
+    current_stage,
+    completed_stages,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    target_type: null,
+    surface: [],
+    exempt: { tdd: false, e2e: false },
+    skip_brainstorm: false,
+    team_runtime: {},
+    events,
+    scenarios: [],
+    test_cycles: [],
+    active_feedback: [],
+    sub_tasks: [],
+  };
+  writeFileSync(join(featureDir, `${slug}.state.json`), JSON.stringify(state, null, 2));
+  const ptrName = sessionId ? `active-feature-${sessionId}.json` : 'active-feature.json';
+  writeFileSync(join(cwd, '.smt', 'state', ptrName), JSON.stringify({ slug, task: slug }));
+  return { slug, statePath: join(featureDir, `${slug}.state.json`) };
+}
+
+test('CE1 happy: current=workflow-investigate, skill=workflow-investigate-review → allow', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE1', { current_stage: 'workflow-investigate' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-investigate-review' }, session_id: 'sess-CE1' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE2 happy: current=workflow-write-test, skill=workflow-coding → allow', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE2', { current_stage: 'workflow-write-test' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE2' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE3 boundary: current=workflow-investigate, skill=workflow-investigate (re-entry) → allow', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE3', { current_stage: 'workflow-investigate' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-investigate' }, session_id: 'sess-CE3' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE4 boundary: current_stage=null → allow (no chain yet)', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE4', { current_stage: null });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE4' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE5 error: current=workflow-investigate, skill=workflow-coding (skip) → BLOCK', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE5', { current_stage: 'workflow-investigate' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE5' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false, 'chain skip must block');
+    assert.match(
+      out.hookSpecificOutput?.permissionDecisionReason || out.stopReason || '',
+      /chain|workflow-investigate-review|expected/i,
+      'block reason must name the expected next skill'
+    );
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE6 error: current=workflow-tasker, skill=workflow-e2e (multi-skip) → BLOCK', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE6', {
+      mode: 'implement',
+      current_stage: 'workflow-tasker',
+      allowed_skills: [
+        'workflow-brainstorm','workflow-brainstorm-review',
+        'workflow-investigate','workflow-investigate-review',
+        'workflow-tasker','workflow-tasker-review',
+        'workflow-write-test','workflow-coding',
+        'workflow-agent-review','workflow-e2e','workflow-e2e-review',
+        'workflow-team-code-review','workflow-human-check',
+      ],
+    });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-e2e' }, session_id: 'sess-CE6' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false, 'multi-stage skip must block');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE7 edge: workflow-human-check is always callable (user-escape)', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE7', { current_stage: 'workflow-investigate' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-human-check' }, session_id: 'sess-CE7' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true, 'human-check must always pass');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE8 edge: command skill (fix) is not chain-gated even with active state', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE8', { current_stage: 'workflow-investigate' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'fix', args: 'foo' }, session_id: 'sess-CE8' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true, 'command skills bypass chain check');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE9 edge: fail-route — review failed, back to producer allowed', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE9', {
+      current_stage: 'workflow-investigate-review',
+      events: [{ t: new Date().toISOString(), skill: 'workflow-investigate-review', result: 'fail', declarer: 'hook' }],
+    });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-investigate' }, session_id: 'sess-CE9' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true, 'producer-route on last-event-fail must allow backward move');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE10 integration: block payload — continue=false + descriptive stopReason', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE10', { current_stage: 'workflow-investigate' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-agent-review' }, session_id: 'sess-CE10' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false);
+    const reason = out.stopReason || out.hookSpecificOutput?.permissionDecisionReason || '';
+    assert.ok(reason.length > 0, 'block must carry a reason');
+    assert.match(reason, /workflow-investigate-review/, 'reason must name the expected next skill');
+    assert.match(reason, /workflow-investigate/, 'reason must name current stage');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE11 edge: state pointer missing → chain check skipped (no false block)', () => {
+  const cwd = makeTempCwd();
+  try {
+    // No seedState call → no pointer, no state.json.
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE11' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true, 'absent state must not cause block');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE12 edge: review pass event — forward to next in chain allowed', () => {
+  const cwd = makeTempCwd();
+  try {
+    // After investigate-review passes, next is workflow-tasker in /implement, workflow-write-test in /fix.
+    seedState(cwd, 'sess-CE12', {
+      current_stage: 'workflow-investigate-review',
+      events: [{ t: new Date().toISOString(), skill: 'workflow-investigate-review', result: 'pass', declarer: 'hook' }],
+    });
+    // /fix pipeline skips tasker → next is workflow-write-test per posttool-terminal-state-gate.
+    // But posttool-terminal-state-gate uses workflow-tasker as next. For a mode-agnostic gate,
+    // either target should pass; use workflow-tasker here to match the current NEXT_SKILL_ON_PASS map.
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-tasker' }, session_id: 'sess-CE12' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CLF1 (classifier-skip log): SMELTER_CLASSIFIER_SUBPROCESS=1 emits a stderr warn before early-return', () => {
+  // state-contract-injector.mjs:124-130 silently early-returns when the
+  // re-entrancy guard fires. If an unrelated wrapper leaks this env var the
+  // seed is skipped without any trace. Fix: emit a stderr line so the
+  // inheritance bug is diagnosable. Early-return semantics (continue:true)
+  // must NOT change.
+  const cwd = makeTempCwd();
+  try {
+    const r = runWithCwd(
+      { tool_name: 'Skill', tool_input: { skill: 'workflow-investigate' }, session_id: 'sess-CLF1' },
+      cwd,
+      { SMELTER_CLASSIFIER_SUBPROCESS: '1' },
+    );
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true, 'early-return contract (continue:true) unchanged');
+    assert.match(
+      r.stderr,
+      /classifier.subprocess|re.entrancy|SMELTER_CLASSIFIER_SUBPROCESS/i,
+      `expected classifier-skip diagnostic on stderr; got: ${JSON.stringify(r.stderr)}`,
+    );
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -37,12 +37,20 @@ test('SL1: seedWorkflowState creates state.json, pointer, plan.md', async () => 
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL2: deriveSlug strips leading filler, caps length, falls back on empty', async () => {
+test('SL2: deriveSlug always returns UUID-fixed slug regardless of prompt', async () => {
   const { deriveSlug } = await import(MODULE);
-  assert.equal(deriveSlug('the is in at for bug description'), 'bug-description');
-  assert.match(deriveSlug('   '), /^feature-/, 'whitespace-only → synthetic slug');
-  const long = deriveSlug('a '.repeat(100) + 'meaningful description here');
-  assert.ok(long.length <= 50, `slug capped to 50 chars, got ${long.length}`);
+  const UUID_SLUG = /^feature-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  // All prompts — meaningful, whitespace-only, empty, repetitive — must yield
+  // UUID-fixed slugs. Text-derived slugging was removed to prevent the
+  // state↔artifact divergence bug (agent descriptive slug vs seeder slug).
+  assert.match(deriveSlug('the is in at for bug description'), UUID_SLUG);
+  assert.match(deriveSlug('   '), UUID_SLUG);
+  assert.match(deriveSlug(''), UUID_SLUG);
+  assert.match(deriveSlug('meaningful description here'), UUID_SLUG);
+  // Each invocation returns a distinct slug.
+  const a = deriveSlug('same prompt');
+  const b = deriveSlug('same prompt');
+  assert.notEqual(a, b, 'two calls produce distinct UUIDs');
 });
 
 test('SL3: shouldCreateNewFeature — skill-tool source REUSES live pointer', async () => {
@@ -109,4 +117,128 @@ test('SL6 (error): invalid commandName returns null without throwing', async () 
     });
     assert.equal(r, null, 'unknown command → null (cancel/queue-like)');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SL8–SL14 — mode-upgrade branch: read-only state (verify/investigate/think)
+// under Skill(fix|implement) must reseed as write-mode, not silently reuse.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('SL8 (happy): verify state + Skill(fix) → mode-upgrade creates new', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    seedWorkflowState({ directory: cwd, commandName: 'verify', args: 'check output', sessionId: 'sl8', source: 'skill-tool' });
+    const d = shouldCreateNewFeature(cwd, 'sl8', 'now fix it', 'skill-tool', 'fix');
+    assert.equal(d.create, true, 'verify→fix must upgrade, not reuse');
+    assert.equal(d.reason, 'mode-upgrade');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL9 (happy): think state + Skill(implement) → mode-upgrade creates new', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    seedWorkflowState({ directory: cwd, commandName: 'think', args: 'brainstorm caching', sessionId: 'sl9', source: 'skill-tool' });
+    const d = shouldCreateNewFeature(cwd, 'sl9', 'build it', 'skill-tool', 'implement');
+    assert.equal(d.create, true, 'think→implement must upgrade');
+    assert.equal(d.reason, 'mode-upgrade');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL10 (boundary): fix state + Skill(fix) → stays reuse (idempotency)', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'first bug', sessionId: 'sl10', source: 'skill-tool' });
+    const d = shouldCreateNewFeature(cwd, 'sl10', 'second turn', 'skill-tool', 'fix');
+    assert.equal(d.create, false, 'same-mode must reuse');
+    assert.ok(d.reuseSlug);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL11 (boundary): fix state + Skill(implement) → stays reuse (cross write-mode not upgraded)', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'first bug', sessionId: 'sl11', source: 'skill-tool' });
+    const d = shouldCreateNewFeature(cwd, 'sl11', 'now build a feature', 'skill-tool', 'implement');
+    assert.equal(d.create, false, 'cross write-mode stays reuse — user must explicit new-feature');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL12 (edge): verify state with completed human-check → prior-completed wins over mode-upgrade', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const r = seedWorkflowState({ directory: cwd, commandName: 'verify', args: 'check', sessionId: 'sl12', source: 'skill-tool' });
+    // Simulate finished feature on disk — shouldCreateNewFeature reads raw JSON,
+    // so bypass writeState's watchdog (not the code path under test) with fs.writeFileSync.
+    const state = JSON.parse(readFileSync(r.statePath, 'utf-8'));
+    state.completed_stages = ['workflow-human-check'];
+    writeFileSync(r.statePath, JSON.stringify(state, null, 2));
+    const d = shouldCreateNewFeature(cwd, 'sl12', 'now fix a new bug', 'skill-tool', 'fix');
+    assert.equal(d.create, true);
+    assert.equal(d.reason, 'prior-completed', 'prior-completed takes precedence over mode-upgrade');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL13 (integration): seedWorkflowState verify→fix e2e — new slug + state.mode=fix on disk', async () => {
+  const { seedWorkflowState } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const v = seedWorkflowState({ directory: cwd, commandName: 'verify', args: 'check first', sessionId: 'sl13', source: 'skill-tool' });
+    const f = seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'fix second', sessionId: 'sl13', source: 'skill-tool' });
+    assert.notEqual(f.slug, v.slug, 'mode-upgrade must produce a different slug');
+    assert.notEqual(f.reused, true, 'upgrade path must not return reused:true');
+    const state = JSON.parse(readFileSync(f.statePath, 'utf-8'));
+    assert.equal(state.mode, 'fix', 'new state.mode must be fix, not verify');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL14 (error): unknown upgrade target mode (investigate→investigate via Skill(investigate)) stays on existing create:true reason', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    seedWorkflowState({ directory: cwd, commandName: 'investigate', args: 'probe', sessionId: 'sl14', source: 'skill-tool' });
+    const d = shouldCreateNewFeature(cwd, 'sl14', 'probe again', 'skill-tool', 'investigate');
+    // investigate-command-reseed was pre-existing; mode-upgrade must not shadow it.
+    assert.equal(d.create, true);
+    assert.equal(d.reason, 'investigate-command-reseed', 'existing investigate-reseed precedence preserved');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL15 (catch-path log): seedWorkflowState emits a log line when the create path throws', async () => {
+  // Catch at workflow-state-seeder.mjs:350-352 previously swallowed every
+  // error silently, so downstream enforcer blocks had no upstream diagnostic.
+  // After the fix, the catch must emit a `State seed failed:` line via the
+  // existing log helper (workflow-state-seeder.mjs:197).
+  const { seedWorkflowState } = await import(MODULE);
+  const cwd = tmp();
+  // Force mkdirSync inside the create path to throw: place a regular file at
+  // `.smt` so any `mkdirSync('<cwd>/.smt/state', { recursive: true })` fails
+  // with ENOTDIR.
+  writeFileSync(join(cwd, '.smt'), 'blocker');
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  const captured = [];
+  process.stderr.write = (chunk) => { captured.push(String(chunk)); return true; };
+  try {
+    const r = seedWorkflowState({
+      directory: cwd,
+      commandName: 'fix',
+      args: 'force failure',
+      sessionId: 'sl15',
+      source: 'skill-tool',
+    });
+    assert.equal(r, null, 'create-path failure must still return null (control flow unchanged)');
+    const combined = captured.join('');
+    assert.match(
+      combined,
+      /State seed failed/i,
+      `expected stderr to contain 'State seed failed:' diagnostic; got: ${JSON.stringify(combined)}`,
+    );
+  } finally {
+    process.stderr.write = originalWrite;
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
