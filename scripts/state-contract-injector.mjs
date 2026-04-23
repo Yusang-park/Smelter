@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+/**
+ * state-contract-injector.mjs — PreToolUse:Skill hook.
+ *
+ * Closes the long-standing contract gap: many workflow-* SKILL.md files
+ * imply (or used to outright instruct) that the agent should append pass
+ * events / completed_stages / current_stage transitions to `.state.json`
+ * directly. In practice three layers refuse:
+ *   1. `pre-tool-enforcer.mjs::PROTECTED_RE` blocks Claude Write/Edit on
+ *      `.smt/**\/*.state.json`.
+ *   2. The auto-mode permission classifier rejects the
+ *      `SMT_HOOK_WRITE=1 node -e "appendEvent(...)"` workaround as
+ *      Memory Poisoning.
+ *   3. `skill-stage-transition.mjs::COMPLETION_DEFERRED_SKILLS` defers
+ *      auto-pass for review / e2e / human-check skills.
+ *
+ * Net effect for the agent: state mutation is invisible from its tools'
+ * perspective. The skill scripts + dedicated PostToolUse hooks
+ * (skill-stage-transition.mjs, finalize-human-check.mjs, etc.) handle
+ * every legitimate state write through fs.writeFileSync, which is exempt
+ * from PreToolUse interception.
+ *
+ * This hook injects that contract verbatim as additionalContext into
+ * every `Skill(workflow-*)` invocation, so the agent stops looping on
+ * "I should write the pass event next" and instead proceeds immediately
+ * to the skill's named artifact + the next required skill.
+ *
+ * Behavior:
+ *   - Trigger: PreToolUse, tool_name === 'Skill', tool_input.skill matches
+ *     /^workflow-/.
+ *   - Output: JSON
+ *       { continue: true,
+ *         hookSpecificOutput: {
+ *           hookEventName: 'PreToolUse',
+ *           additionalContext: '<contract reminder>'
+ *         } }
+ *   - Never blocks; never errors fatally.
+ *
+ * Activation: requires Claude Code session restart after registering in
+ * hooks/hooks.json (hook list is loaded once at session start).
+ */
+
+import { readFileSync } from 'node:fs';
+import { seedWorkflowState } from './lib/workflow-state-seeder.mjs';
+import { sanitizeSessionId } from './lib/session-paths.mjs';
+
+const COMMAND_SKILLS = new Set(['fix', 'implement', 'investigate', 'verify', 'think']);
+
+const CONTRACT = [
+  '[Smelter state-write contract]',
+  '',
+  'You do NOT write `.state.json` directly. The protected-path rule in pre-tool-enforcer.mjs',
+  'blocks Write/Edit on those files, and the auto-mode permission classifier rejects the',
+  '`SMT_HOOK_WRITE=1 node -e "appendEvent/markComplete/writeState"` workaround as memory poisoning.',
+  '',
+  'Hook scripts mutate state on your behalf:',
+  '  - skill-stage-transition.mjs (PostToolUse:Skill) — writes pass / fail events for every',
+  '    workflow skill NOT in COMPLETION_DEFERRED_SKILLS once its named artifact',
+  '    (investigation.md, tasks.md, tasks-review.md, etc.) exists on disk. Deferred set:',
+  '    {workflow-verify, workflow-e2e, workflow-e2e-review, workflow-agent-review,',
+  '    workflow-team-code-review, workflow-human-check} — these need the named hook below',
+  '    or self-record by reaching their terminal artifact.',
+  '  - finalize-human-check.mjs (PostToolUse:Write) — when results.md is written under a',
+  '    canonical task dir AND current_stage === workflow-human-check AND mode ∈ {fix, implement},',
+  '    it writes the workflow-human-check pass event + completed_stages append automatically.',
+  '',
+  'What this means for you in this skill invocation:',
+  '  1. Produce the skill\'s named artifact (per its SKILL.md `produces:` field).',
+  '  2. Do NOT attempt to append to state.events, state.completed_stages, or set state.current_stage.',
+  '  3. Do NOT run inline `node -e` / `node --input-type` to touch state.json. The classifier',
+  '     refuses these even with SMT_HOOK_WRITE=1.',
+  '  4. Proceed directly to the skill\'s required next step (per its "Terminal State" section).',
+  '  5. If a stop-hook complaint about "stage incomplete" fires after the artifact exists, the',
+  '     PostToolUse hook write is in flight or deferred — re-invoke the same Skill once and',
+  '     advance; do not loop trying to write state yourself.',
+  '',
+  'workflow-human-check is special: write `results.md` and the finalize hook handles the rest.',
+  'Older SKILL.md sections that instruct manual `appendEvent + markComplete + writeState` are',
+  'obsolete (superseded by v3.3.3 and the related v3.3.2 ungate).',
+].join('\n');
+
+function readStdinJson() {
+  try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
+}
+
+function emit(obj) {
+  process.stdout.write(JSON.stringify(obj));
+}
+
+function main() {
+  try {
+    const input = readStdinJson();
+    if (input.tool_name !== 'Skill') { emit({ continue: true }); return; }
+
+    // Re-entrancy guard — skip every side effect when this hook runs inside
+    // the Haiku classifier subprocess spawned by keyword-detector.mjs.
+    // Without this, Skill invocations issued by the classifier's own
+    // child-process tree would double-seed.
+    if (process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1') {
+      emit({ continue: true });
+      return;
+    }
+
+    const skill = String(input.tool_input?.skill || input.toolInput?.skill || '');
+    const args = String(input.tool_input?.args || input.toolInput?.args || '');
+    const cwd = input.cwd || input.directory || process.cwd();
+    const sessionId = sanitizeSessionId(input.session_id || input.sessionId || '');
+
+    // Branch 1 — command-level skill invoked via the Skill tool.
+    // UserPromptSubmit's keyword-detector never ran, so `.state.json`
+    // would otherwise be missing and pre-tool-enforcer would block
+    // every subsequent code edit. Seed inline, silently.
+    if (COMMAND_SKILLS.has(skill)) {
+      try {
+        seedWorkflowState({
+          directory: cwd,
+          commandName: skill,
+          prompt: '',
+          sessionId,
+          args,
+          source: 'skill-tool',
+          silent: true,
+        });
+      } catch (err) {
+        process.stderr.write(`[state-contract-injector] seed error: ${err.message}\n`);
+      }
+      emit({ continue: true });
+      return;
+    }
+
+    // Branch 2 — workflow-* skill. Inject the state-write contract.
+    if (!/^workflow-/.test(skill)) { emit({ continue: true }); return; }
+
+    emit({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        additionalContext: CONTRACT,
+      },
+    });
+  } catch (err) {
+    process.stderr.write(`[state-contract-injector] self-error: ${err.message}\n`);
+    emit({ continue: true });
+  }
+}
+
+main();

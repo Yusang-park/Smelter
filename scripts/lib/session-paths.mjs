@@ -10,9 +10,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+// 128-char cap prevents pathological-length sessionIds from being used as
+// filename components (DoS + log noise). Aligned with the allow-list used by
+// state-contract-injector.mjs + workflow-state-seeder.mjs which import from
+// this module as the single source of truth.
+const SESSION_ID_ALLOWED = /^[A-Za-z0-9_-]{1,128}$/;
+
 export function sanitizeSessionId(sessionId) {
   if (typeof sessionId !== 'string' || !sessionId) return '';
-  return /^[A-Za-z0-9_-]+$/.test(sessionId) ? sessionId : '';
+  return SESSION_ID_ALLOWED.test(sessionId) ? sessionId : '';
 }
 
 function stateDir(cwd) {
