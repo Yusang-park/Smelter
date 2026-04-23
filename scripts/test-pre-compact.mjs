@@ -25,11 +25,13 @@ function makeProjectDir() {
   return mkdtempSync(join(tmpdir(), 'pre-compact-project-'));
 }
 
-function setMode(projectDir, mode) {
+const TEST_SID = 'test-session-precompact';
+
+function setMode(projectDir, mode, sid = TEST_SID) {
   const stateDir = join(projectDir, '.smt', 'state');
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
-    join(stateDir, 'model-mode.json'),
+    join(stateDir, `model-mode-${sid}.json`),
     JSON.stringify({ mode, updated_at: new Date().toISOString() }) + '\n',
   );
 }
@@ -39,7 +41,10 @@ assert.deepEqual(runPreCompact(claudeProject, { DISABLE_COMPACT: '1' }), { decis
 
 const codexProject = makeProjectDir();
 setMode(codexProject, 'codex');
-assert.notDeepEqual(runPreCompact(codexProject, { DISABLE_COMPACT: '1' }), { decision: 'block' });
+assert.notDeepEqual(
+  runPreCompact(codexProject, { DISABLE_COMPACT: '1', SMELTER_SESSION_ID: TEST_SID }),
+  { decision: 'block' },
+);
 
 const envCodexProject = makeProjectDir();
 assert.notDeepEqual(

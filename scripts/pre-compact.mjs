@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { printTag } from './lib/yellow-tag.mjs';
+import { sanitizeSessionId } from './auto-confirm.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,8 +20,10 @@ function readJsonFile(path) {
 
 function isCodexMode(data) {
   if (process.env.SMELTER_MODEL_MODE === 'codex') return true;
+  const sid = sanitizeSessionId(process.env.SMELTER_SESSION_ID);
+  if (!sid) return false;
   const cwd = data?.cwd || process.cwd();
-  const state = readJsonFile(join(cwd, '.smt', 'state', 'model-mode.json'));
+  const state = readJsonFile(join(cwd, '.smt', 'state', `model-mode-${sid}.json`));
   return state?.mode === 'codex';
 }
 

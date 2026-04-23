@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CODEX_MODEL_OPTIONS } from './lib/codex-models.mjs';
+import { sanitizeSessionId } from './auto-confirm.mjs';
 
 const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
 const MODEL_CACHE_DIR = join(homedir(), '.claude', 'hud', 'last-model');
@@ -237,8 +238,14 @@ async function main() {
   } catch { /* ignore */ }
 
   const home = homedir();
-  const modelModeState = readJsonFile(join(cwd, '.smt', 'state', 'model-mode.json'))
-    ?? readJsonFile(join(home, '.smt', 'state', 'model-mode.json'));
+  // Session-scoped model-mode state: only read if SMELTER_SESSION_ID is set
+  // (wrapper-launched child). Plain claude has no sid → null → env-based
+  // codex detection via `SMELTER_MODEL_MODE === 'codex'` and `stdinModelId`
+  // regex still resolves the mode correctly below.
+  const sid = sanitizeSessionId(process.env.SMELTER_SESSION_ID);
+  const modelModeState = sid
+    ? readJsonFile(join(cwd, '.smt', 'state', `model-mode-${sid}.json`))
+    : null;
   const inCodexMode = modelModeState?.mode === 'codex'
     || process.env.SMELTER_MODEL_MODE === 'codex';
 

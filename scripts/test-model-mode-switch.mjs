@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
 
 const tempHome = mkdtempSync(join(tmpdir(), 'model-mode-switch-home-'));
 const tempCwd = mkdtempSync(join(tmpdir(), 'model-mode-switch-cwd-'));
 const claudeDir = join(tempHome, '.claude');
-const scopedHash = createHash('sha256').update(tempCwd.normalize('NFC')).digest('hex').slice(0, 8);
-const claudeJsonPath = join(claudeDir, `.claude-${scopedHash}.json`);
+const claudeCodexDir = join(tempHome, '.claude-codex');
+const claudeJsonPath = join(claudeCodexDir, '.claude.json');
 const stateDir = join(tempCwd, '.smt', 'state');
-const statePath = join(stateDir, 'model-mode.json');
+const TEST_SESSION_ID = 'test-session-switch';
+const statePath = join(stateDir, `model-mode-${TEST_SESSION_ID}.json`);
 const settingsPath = join(claudeDir, 'settings.json');
 const savedEnv = {
   HOME: process.env.HOME,
@@ -20,11 +20,14 @@ const savedEnv = {
 
 mkdirSync(stateDir, { recursive: true });
 mkdirSync(claudeDir, { recursive: true });
+mkdirSync(claudeCodexDir, { recursive: true });
 writeFileSync(claudeJsonPath, JSON.stringify({ bootstrap: true }) + '\n');
 writeFileSync(settingsPath, JSON.stringify({ env: {}, model: 'sonnet' }) + '\n');
 
 process.env.HOME = tempHome;
 process.env.CLAUDE_CODEX_SETTINGS_PATH = settingsPath;
+const origCwd = process.cwd();
+process.chdir(tempCwd);
 
 const { CODEX_MODEL_OPTIONS } = await import('./lib/codex-models.mjs');
 const {
@@ -41,7 +44,7 @@ try {
   settings.env ??= {};
   settings.model = 'sonnet';
 
-  const activeCodexModel = applyCodexMode(settings);
+  const activeCodexModel = applyCodexMode(settings, TEST_SESSION_ID);
   writeJsonFile(claudeJsonPath, { additionalModelOptionsCache: CODEX_MODEL_OPTIONS });
   writeJsonFile(statePath, buildModelModeState(activeCodexModel));
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
@@ -67,13 +70,13 @@ try {
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   assert.equal(state.mode, 'codex');
   assert.equal(state.model, 'Codex gpt-5.4');
-  assert.equal(getCodexConfigDir(tempHome), claudeDir, 'codex config dir should share ~/.claude for session history');
-  assert.equal(getCodexClaudeJsonPath(tempCwd, tempHome), claudeJsonPath, 'codex model cache should live in scoped ~/.claude/.claude-<hash>.json');
+  assert.equal(getCodexConfigDir(tempHome), claudeCodexDir, 'codex config dir should be isolated at ~/.claude-codex');
+  assert.equal(getCodexClaudeJsonPath(tempHome), claudeJsonPath, 'codex model cache should live at ${CLAUDE_CONFIG_DIR}/.claude.json (non-hashed) to match Claude Code v2.1+ resolver');
 
   settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
   settings.env ??= {};
   settings.model = 'sonnet';
-  applyClaudeMode(settings, tempCwd);
+  applyClaudeMode(settings, tempCwd, TEST_SESSION_ID);
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   writeJsonFile(claudeJsonPath, { additionalModelOptionsCache: [] });
 
@@ -89,6 +92,7 @@ try {
 
   console.log('model mode switch test passed');
 } finally {
+  process.chdir(origCwd);
   if (savedEnv.HOME === undefined) delete process.env.HOME;
   else process.env.HOME = savedEnv.HOME;
   if (savedEnv.CLAUDE_CODEX_SETTINGS_PATH === undefined) delete process.env.CLAUDE_CODEX_SETTINGS_PATH;

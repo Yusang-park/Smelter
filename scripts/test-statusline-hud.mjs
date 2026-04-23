@@ -11,8 +11,9 @@ const stateDir = join(cwd, '.smt', 'state');
 const smtStateDir = join(cwd, '.smt', 'state');
 const smtFeaturesDir = join(cwd, '.smt', 'features');
 const tempHome = join(tempRoot, 'home');
+const TEST_SID = 'test-session-statusline';
 const legacyModelModePath = join(tempHome, '.smt', 'state', 'model-mode.json');
-const projectModelModePath = join(smtStateDir, 'model-mode.json');
+const projectModelModePath = join(smtStateDir, `model-mode-${TEST_SID}.json`);
 const claudeJsonPath = join(tempHome, '.claude.json');
 const hadExistingMode = existsSync(legacyModelModePath);
 const existingMode = hadExistingMode ? readFileSync(legacyModelModePath, 'utf8') : null;
@@ -97,7 +98,7 @@ function runHud(stdinData) {
     {
       input: JSON.stringify({ cwd, ...stdinData }),
       encoding: 'utf8',
-      env: { ...process.env, HUD_DRY_RUN: '1', HOME: tempHome },
+      env: { ...process.env, HUD_DRY_RUN: '1', HOME: tempHome, SMELTER_SESSION_ID: TEST_SID },
     },
   );
 }

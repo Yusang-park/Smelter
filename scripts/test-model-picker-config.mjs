@@ -7,7 +7,8 @@ import { join } from 'node:path';
 const tempHome = mkdtempSync(join(tmpdir(), 'model-picker-config-'));
 const tempCwd = mkdtempSync(join(tmpdir(), 'model-picker-cwd-'));
 const claudeJsonPath = join(tempHome, '.claude.json');
-const modelModeStatePath = join(tempCwd, '.smt', 'state', 'model-mode.json');
+const TEST_SID = 'test-session-picker';
+const modelModeStatePath = join(tempCwd, '.smt', 'state', `model-mode-${TEST_SID}.json`);
 const settingsPath = '/Users/yusang/smelter/settings.json';
 const savedSettings = readFileSync(settingsPath, 'utf8');
 

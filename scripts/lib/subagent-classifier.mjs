@@ -5,29 +5,26 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { validateSurfaceFields, SURFACE_SCHEMA_VERSION } from './surface-extraction.mjs';
+import { sanitizeSessionId } from '../auto-confirm.mjs';
 const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
 const CODEX_SUBAGENT_MODEL = 'gpt-5.4-mini';
 const DEFAULT_SUBAGENT_MODEL = 'haiku';
-const PROJECT_MODEL_MODE_PATH = join(process.cwd(), '.smt', 'state', 'model-mode.json');
-const PROJECT_CONFIG_PATH = join(homedir(), '.smt', 'config.json');
+
+export function getProjectModelModePath(cwd, sessionId) {
+  const sid = sanitizeSessionId(sessionId);
+  if (!sid) return null;
+  return join(cwd, '.smt', 'state', `model-mode-${sid}.json`);
+}
 
 function isCodexModel(model = '') {
   return ['gpt-', 'o3', 'o4', 'codex'].some((prefix) => model.startsWith(prefix));
 }
 
-function readConfiguredCodexMode() {
+export function readProjectModelMode({ cwd = process.cwd(), sessionId } = {}) {
+  const path = getProjectModelModePath(cwd, sessionId);
+  if (!path) return null;
   try {
-    const cfg = JSON.parse(readFileSync(PROJECT_CONFIG_PATH, 'utf8'));
-    if (cfg && typeof cfg.codexMode === 'boolean') return cfg.codexMode ? 'codex' : 'claude';
-  } catch {
-    // fallback to env / file precedence
-  }
-  return null;
-}
-
-function readProjectModelMode() {
-  try {
-    const state = JSON.parse(readFileSync(PROJECT_MODEL_MODE_PATH, 'utf8'));
+    const state = JSON.parse(readFileSync(path, 'utf8'));
     if (state?.mode === 'codex' && typeof state.model === 'string') {
       return state.model.replace(/^Codex\s+/i, '').trim();
     }
@@ -41,17 +38,17 @@ function inferClassifierModelFromProcessMode() {
   if (process.env.SMELTER_MODEL_MODE === 'claude') return 'claude';
   if (process.env.SMELTER_MODEL_MODE === 'codex') return 'codex';
   if (process.env.CODEX_MODE === '1') return 'codex';
-  const cfgMode = readConfiguredCodexMode();
-  return cfgMode || null;
+  return null;
 }
 
 function readMainModel() {
   const modeMode = inferClassifierModelFromProcessMode();
   if (modeMode === 'claude') return 'sonnet';
   if (process.env.SMELTER_ACTIVE_MODEL) return process.env.SMELTER_ACTIVE_MODEL;
-  if (modeMode === 'codex') return readProjectModelMode() || 'gpt-5.4';
+  const sessionId = process.env.SMELTER_SESSION_ID;
+  if (modeMode === 'codex') return readProjectModelMode({ sessionId }) || 'gpt-5.4';
 
-  const projectMode = readProjectModelMode();
+  const projectMode = readProjectModelMode({ sessionId });
   if (projectMode) return projectMode;
 
   try {

@@ -10,11 +10,11 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { sanitizeSessionId } from './auto-confirm.mjs';
 
 const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
 const CODEX_SUBAGENT_MODEL = 'gpt-5.4-mini';
 const DEFAULT_SUBAGENT_MODEL = 'haiku';
-const MODEL_MODE_STATE_PATH = join(process.cwd(), '.smt', 'state', 'model-mode.json');
 const ACTIVE_MODEL_ENV = process.env.SMELTER_ACTIVE_MODEL || '';
 
 const CACHE_DIR = join(homedir(), '.claude', 'hud', 'task-summary');
@@ -26,12 +26,16 @@ function isCodexModel(model = '') {
 
 function readMainModel() {
   if (ACTIVE_MODEL_ENV) return ACTIVE_MODEL_ENV;
-  try {
-    const state = JSON.parse(readFileSync(MODEL_MODE_STATE_PATH, 'utf8'));
-    if (state?.mode === 'codex' && typeof state.model === 'string') {
-      return state.model.replace(/^Codex\s+/i, '').trim();
-    }
-  } catch {}
+  const sid = sanitizeSessionId(process.env.SMELTER_SESSION_ID);
+  if (sid) {
+    try {
+      const statePath = join(process.cwd(), '.smt', 'state', `model-mode-${sid}.json`);
+      const state = JSON.parse(readFileSync(statePath, 'utf8'));
+      if (state?.mode === 'codex' && typeof state.model === 'string') {
+        return state.model.replace(/^Codex\s+/i, '').trim();
+      }
+    } catch {}
+  }
   try {
     const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
     return String(settings.model ?? '');

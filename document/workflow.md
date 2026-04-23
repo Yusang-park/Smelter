@@ -751,7 +751,7 @@ On `complete`: `state.json.current_stage: done`, task md checkboxes `[x]`, appen
 
 | Signal | Next action |
 |--------|-------------|
-| `events[-1].result === pass` + `current_stage` done | **advance to next workflow skill** |
+| `events[-1].result === pass` + (`events[-1].skill === current_stage` OR `current_stage` has a fail event) | **advance to next workflow skill** |
 | `events[-1].result === fail` | **producer-chain routing** |
 | `active_feedback` has `resolved: false` | **re-enter target_skill** |
 | Risk keyword in response text | **spawn sub-tasker → add new task to queue** |
@@ -759,7 +759,14 @@ On `complete`: `state.json.current_stage: done`, task md checkboxes `[x]`, appen
 | `current_stage === workflow-human-check && result === complete` | **wrap session, write session log** |
 | `chained_modes.length > 1` + transition signal | **auto-advance the chain** |
 | `mode_upgrade` requested | user input awaited (only halt) |
+| `decision.action === stage_complete` (classifier prose verdict) | **write hook pass event to `state.events[]`** via `applyProseCompletionPass(state, statePath)` BEFORE signature computation, then queue injection |
 | No state-machine signal | **delegate to lightweight LLM classifier sub-agent** (verdict = `continue` or `halt` — no regex, no fallback) |
+
+**Advance branch guard (Fix A companion):** the advance signal requires `last.skill === current_stage` OR a prior fail event for `current_stage`. Without this guard, a cross-stage pass event (Fix A's hook-written pass for the prior stage while `current_stage` has already advanced via PostToolUse:Skill) would cause `pickNextStage` to skip the current stage entirely. The fail-recovery condition keeps the producer-chain legitimate (e.g., `workflow-coding` fails → `workflow-tasker` re-plans + passes → advance resumes at coding).
+
+**Prose-completion pass-event write (Fix A):** when the stage-completion classifier returns `complete` on prose (no canonical artifact on disk), `skill-stage-transition.mjs` cannot write a pass event because its write is artifact-gated (`evidence.path` required). Without a pass event, `shouldRunStageCompletionClassifier` re-fires on every Stop, and a mode-transition acknowledgement in the agent's response ("User selected /fix") makes the classifier flip to `incomplete`, looping until the stuck-loop guard exits silently. `applyProseCompletionPass(state, statePath)` writes `{skill: current_stage, result: 'pass', declarer: 'hook'}` to `state.events[]` (no `evidence.path`; does NOT advance `completed_stages[]` because `state-validator.mjs:61` early-returns only when `completed_stages` is empty — a prose-completion event lacking `evidence.path` would trip per-stage validation). Idempotent via `alreadyHasPass`; blocked by `alreadyHasFail` (fail is terminal for the session). See `scripts/auto-confirm.mjs:applyProseCompletionPass`.
+
+**Classifier prompt exception clause (Fix B):** `buildStageCompletionPrompt` teaches the classifier to return `complete` for user-selected mode-transition acknowledgements ("User selected /fix", "사용자가 /fix 선택", "review passed", "consensus reached"). Excludes (a) agent speculation ("I think we should go to /fix"), (b) investigation-complete alone ("조사 완료") without user selection, (c) `/fix` as a file path token.
 
 The classifier sub-agent runs `claude -p <classifier-prompt> --model <model>` and outputs exactly one word. The Stop hook acts on that verdict:
 - `continue` → block + queue injection (next turn proceeds)
@@ -809,6 +816,8 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 ```
 
 `codexMode: true` (or env `CODEX_MODE=1` / `SMELTER_MODEL_MODE=codex`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime. `scripts/session-start-smt.mjs` also syncs the current model-mode env into `~/.smt/config.json.codexMode` at session start so Stop/UserPromptSubmit hooks can read a stable codex flag. The same SessionStart hook now injects Caveman from vendored upstream skill content at `skills/caveman/SKILL.md`, replacing the old inline concise prompt string.
+
+**Session-scoped model-mode state (v3.3.7):** the per-session codex indicator lives in `.smt/state/model-mode-${SMELTER_SESSION_ID}.json`, never in a shared `model-mode.json`. The wrapper (`codex-for-claude-code/scripts/claude-wrapper.mjs`) coins `SMELTER_SESSION_ID` via `randomUUID()` (or reuses an inbound value after `sanitizeSessionId` validation) and injects it into the child env. Every reader — `statusline-hud.mjs`, `hud-summary-trigger.mjs`, `scripts/lib/subagent-classifier.mjs`, `pre-compact.mjs` — resolves the same env var, sanitizes it, and short-circuits to the settings/env fallback when it is absent. Plain `claude` sessions have no `SMELTER_SESSION_ID` and therefore never read a state file → concurrent codex + plain claude in the same cwd are isolated by env, not by path. Wrapper pre-launch sweeps the legacy unscoped file (one-time migration) plus `model-mode-*.json` entries older than 24h; normal exit / SIGINT / SIGTERM / SIGHUP unlinks the current session's scoped file. `sanitizeSessionId` (`scripts/auto-confirm.mjs:65`) is the shared contract — regex `/^[A-Za-z0-9_-]+$/`; changing it requires a coordinated consumer review.
 `claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` and actively clear inherited Codex-only env (`CODEX_MODE`, `SMELTER_ACTIVE_MODEL`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session. For concurrent codex/claude isolation the wrapper injects `CLAUDE_CONFIG_DIR=~/.claude` into the codex child; this keeps session history and `--resume` shared with plain Claude while the Claude binary reads `~/.claude/.claude-<sha8(NFC(dir))>.json` instead of the global `~/.claude.json` for Codex model cache. `applyCodexMode()` writes codex `additionalModelOptionsCache` only to that scoped file, never the global one — plain `claude` windows (which bypass the wrapper) always see a clean global picker. `~/.claude/` remains the shared config dir for settings/agents/commands/hooks. Codex child exit only runs a legacy-global `clearModelCache()` safety net; the scoped file stays populated so a concurrent second codex window isn't disrupted when the first exits (every codex launch writes the same constant `CODEX_MODEL_OPTIONS`).
 
 Hook timeouts and env vars:
@@ -890,6 +899,16 @@ Four-level cascade (Levels 1-3 user-silent):
 ```
 
 Each level retries up to 2 times before escalating. Level 2 onward do not reset the stall timer (prevents infinite cascade).
+
+### 11-7. Read-before-Write Prevention & Retry Fallback (v3.3.5)
+
+The Claude Code harness rejects `Write`/`Edit` of any file not `Read` in the current session with the error `File has not been read yet. Read it first before writing to it.`. Two complementary mechanisms keep this error from halting the agent:
+
+**Preventive prompt (PreToolUse, `scripts/pre-tool-enforcer.mjs`)**: whenever the tool is `Write` or `Edit` AND `existsSync(file_path)` is true, the hook appends a `Read-first reminder:` block to `additionalContext` alongside the existing `Writing:`/`Editing:` description. The reminder echoes the exact path, states the harness contract, and explicitly exempts new-file writes. Emitted in the normal (non-block) flow path — block paths (protected-state, v3.3 code-file gate, commit gate) short-circuit first, so the reminder does not leak into block reasons.
+
+**Escalated retry (PostToolUse, `scripts/tool-retry.mjs`)**: the existing `file-not-read` retry pattern stays as attempt 1 (single-line instruction). On `currentCount >= 1` (attempt 2+), `buildRetryInstruction` returns a `FALLBACK (escalated...)` block that enumerates steps (1)…(4) — explicit `Read()` call, Read-verify, re-issue with same payload, spurious-error recovery. The retry-cap (`MAX_RETRIES=3`) is unchanged; only the message content escalates. Attempt 1 keeps the original single-line form so routine recoveries do not bloat context.
+
+The two layers are independent: the preventive prompt fires on every Write/Edit (cheap), the escalated fallback fires only when the retry counter demonstrates the agent did not Read between attempts (expensive message, rare path). Both layers preserve Iron Law #4 (no unbounded retry).
 
 ---
 
