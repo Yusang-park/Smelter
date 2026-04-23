@@ -190,7 +190,7 @@ Steps the skill still runs by hand:
 
 Step 1 is the only load-bearing one — the hook observes that write and finalizes state for you. The earlier "SMT_HOOK_WRITE=1 node -e appendEvent+markComplete+writeState" dance is obsolete (and was blocked by the auto-mode permission classifier in practice).
 
-Note on `current_stage`: the state schema's `WORKFLOW_SKILLS` enum does not include the literal `"done"`, so the hook deliberately leaves `current_stage` at `"workflow-human-check"` after finalization. The commit gate's `current_stage === 'done'` branch in `scripts/pre-tool-enforcer.mjs` is a belt-and-suspenders fallback for states authored by future writers that bypass the validator — not a path this skill or the finalize hook take.
+Note on `current_stage`: the state schema's `WORKFLOW_SKILLS` enum does not include the literal `"done"`, so the finalize hook deliberately leaves `current_stage` at `"workflow-human-check"` after finalization. The commit gate accepts the `completed_stages` entry and/or the `events[]` pass event written by the same hook — no terminal-state sentinel is required (or accepted).
 
 ## Full regression
 

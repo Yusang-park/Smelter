@@ -297,19 +297,17 @@ function main() {
                 if (needsHumanCheck) {
                   const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
                   const events = Array.isArray(state.events) ? state.events : [];
-                  // Three pass shapes the skill may produce on `complete`:
+                  // Two pass shapes produced by finalize-human-check.mjs on
+                  // the user's `complete` click:
                   //   (a) events[] carries a workflow-human-check pass event,
-                  //   (b) completed_stages includes workflow-human-check (legacy),
-                  //   (c) current_stage === 'done' (terminal-state fallback).
-                  // Accepting (c) keeps the gate usable when the skill wrote the
-                  // documented terminal state but the pass-event append drifts
-                  // out of SKILL.md — the commit must not become unreachable.
+                  //   (b) completed_stages includes workflow-human-check.
+                  // Both are written by the same hook, so they coexist in the
+                  // canonical flow. Either alone suffices.
                   const humanCheckPassed = completed.includes('workflow-human-check') ||
-                    events.some(e => e?.skill === 'workflow-human-check' && e?.result === 'pass') ||
-                    state.current_stage === 'done';
+                    events.some(e => e?.skill === 'workflow-human-check' && e?.result === 'pass');
                   if (!humanCheckPassed) {
                     blockReason = `[SMELTER] git commit is blocked: ${state.mode} mode requires workflow-human-check to pass before commit.\n` +
-                      `Current state: mode=${state.mode}, completed_stages=[${completed.join(', ')}], current_stage=${state.current_stage ?? '(none)'}, human-check=NOT_PASSED.\n` +
+                      `Current state: mode=${state.mode}, completed_stages=[${completed.join(', ')}], human-check=NOT_PASSED.\n` +
                       `Invoke workflow-human-check to present artifacts (screenshots, diffs, test output) to the user and obtain a pass verdict.\n` +
                       `Iron Law: Iron Law #5 — human review is the final file-verifiable gate for code-modifying modes.`;
                   }

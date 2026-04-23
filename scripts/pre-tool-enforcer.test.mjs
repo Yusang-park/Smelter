@@ -284,12 +284,18 @@ test('T2-I1: block reason directs agent to invoke skill instead of editing state
 //
 // These tests pin the contract between the `workflow-human-check` skill's
 // `complete` exit and the pretool commit gate. The skill is the only halting
-// point in the pipeline; `complete` must leave state in one of three
+// point in the pipeline; `complete` must leave state in one of two
 // gate-passing shapes:
 //   (a) events[] contains { skill: 'workflow-human-check', result: 'pass' }
-//   (b) completed_stages includes 'workflow-human-check' (legacy form)
-//   (c) current_stage === 'done' (terminal-state fallback)
-// Any of the three unblocks `git commit`. Absent all three, commit is blocked.
+//   (b) completed_stages includes 'workflow-human-check'
+// Either unblocks `git commit`. Absent both, commit is blocked.
+//
+// Policy note: `current_stage === 'done'` is deliberately NOT a pass shape.
+// The state schema's WORKFLOW_SKILLS enum rejects the literal `'done'`, and
+// the finalize-human-check PostToolUse hook deliberately leaves current_stage
+// at `'workflow-human-check'` after finalization. A state whose current_stage
+// is `'done'` can only arrive from a validator-bypassing writer — the gate
+// treats it as suspicious and still blocks.
 // ═══════════════════════════════════════════════════════════════════════════
 
 function seedHumanCheckState(cwd, { mode = 'fix', sessionId = 't-gate', slug = 'feat', completed_stages = [], events = [], current_stage = 'workflow-coding', corrupt = false } = {}) {
@@ -374,16 +380,19 @@ test('G-E2: git commit blocked when mode=implement with empty events/completed a
 });
 
 // ── Edge case ──────────────────────────────────────────────────────────────
-test('G-C1: git commit ALLOWED when current_stage===done even with empty events/completed (NEW fallback)', async () => {
-  // This is the primary regression that the fix closes. If the skill only
-  // wrote current_stage=done (matching SKILL.md On Complete wording) without
-  // appending a pass event, the commit gate formerly blocked forever.
+test('G-C1: git commit BLOCKED when current_stage===done with empty events/completed (done is NOT a pass shape)', async () => {
+  // Policy pin: the schema rejects `'done'` in `current_stage`, and the
+  // finalize-human-check hook deliberately leaves current_stage at
+  // `'workflow-human-check'`. A state arriving with current_stage='done'
+  // bypasses the canonical writer chain; the gate treats it as suspicious
+  // and still blocks unless the events/completed_stages proof is present.
   const cwd = mkdtempSync(join(tmpdir(), 'g-c1-'));
   try {
     const { sessionId } = seedHumanCheckState(cwd, { mode: 'fix', current_stage: 'done' });
     const r = runEnforcer({ cwd, sessionId, toolName: 'Bash', toolInput: { command: 'git commit -m "done"' } });
     const out = parseOut(r.stdout);
-    assert.notEqual(out?.decision, 'block', `expected allow for current_stage=done, got ${JSON.stringify(out)}`);
+    assert.equal(out?.decision, 'block', `expected block for current_stage=done without pass/completed, got ${JSON.stringify(out)}`);
+    assert.match(out.reason, /human-check/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

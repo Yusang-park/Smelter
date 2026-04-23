@@ -354,7 +354,14 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
     const statePath = join(directory, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`);
     if (!existsSync(statePath)) return { create: true, reason: 'state-missing' };
     const state = JSON.parse(readFileSync(statePath, 'utf-8'));
-    if (state.current_stage === 'done') return { create: true, reason: 'prior-done' };
+    // Prior task finished (workflow-human-check recorded as completed) → start a
+    // fresh feature. The canonical terminal shape after finalize-human-check.mjs
+    // is `completed_stages` includes 'workflow-human-check' (see commit gate).
+    // The literal `current_stage === 'done'` is never written — schema rejects
+    // 'done' from WORKFLOW_SKILLS — so that check was dead.
+    if (Array.isArray(state.completed_stages) && state.completed_stages.includes('workflow-human-check')) {
+      return { create: true, reason: 'prior-completed' };
+    }
     return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath, state };
   } catch { return { create: true, reason: 'pointer-parse-error' }; }
 }

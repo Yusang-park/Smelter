@@ -189,6 +189,16 @@ export function buildStageCompletionPrompt({ lastMessage, currentStage, mode }) 
     `Context:\n- mode: ${mode}\n- current_stage: ${currentStage}\n\n` +
     `Read the assistant's final message below and decide whether the work for the CURRENT stage is finished.\n\n` +
     `"Finished" means the stage's canonical output (findings for workflow-investigate, task list for workflow-tasker, etc.) is substantively present in the message. Conversational acknowledgements ("OK I will investigate") do NOT count as finished.\n\n` +
+    `Exception: if the message explicitly acknowledges that the USER selected a next workflow step ` +
+    `(examples: "User selected /fix", "사용자가 /fix 선택", "review passed — proceeding to next", ` +
+    `"investigation done, user chose /fix", "consensus reached on this review", "all rounds ok"), ` +
+    `return {"verdict":"complete","summary":"user-selected transition"} even if the canonical artifact path ` +
+    `is discussed separately. ` +
+    `Do NOT apply this exception to: ` +
+    `(a) agent-speculation phrases like "I think we should go to /fix" or "we may need /fix next"; ` +
+    `(b) investigation-complete statements without explicit user selection, e.g. "조사 완료" or "investigation done" alone; ` +
+    `(c) "/fix" appearing as a file path token (e.g. "fix/auth.ts"). ` +
+    `The exception requires the USER to have explicitly selected the next step.\n\n` +
     `Output EXACTLY one line of JSON, no prose around it:\n` +
     `{"verdict":"complete","summary":"<one-line summary of what the stage produced>"}\n` +
     `OR\n` +
@@ -378,6 +388,38 @@ export function canonicalArtifactPath(statePath, stage) {
   return { basename, absPath };
 }
 
+// Fix A — prose-completion pass-event writer.
+// Called from main() when decide() returns { action: 'stage_complete' }.
+// Writes a { result: 'pass', declarer: 'hook' } entry to state.events[] for the
+// current stage, persisting via writeState. Does NOT advance completed_stages
+// (validateEvidenceIntegrity at state-validator.mjs:61 early-returns only when
+// completed_stages is empty; a prose-completion event lacks evidence.path and
+// would trip per-stage validation if completed_stages were advanced).
+//
+// Idempotent via alreadyHasPass; blocked by alreadyHasFail (a prior fail is
+// terminal for the session — no recovery path in this fix).
+export function applyProseCompletionPass(state, statePath) {
+  if (!state || !statePath) return;
+  const stage = state.current_stage;
+  if (!stage || typeof stage !== 'string') return;
+  const events = Array.isArray(state.events) ? state.events : [];
+  const alreadyHasPass = events.some(e => e && e.skill === stage && e.result === 'pass');
+  const alreadyHasFail = events.some(e => e && e.skill === stage && e.result === 'fail');
+  if (alreadyHasPass || alreadyHasFail) return;
+  if (!Array.isArray(state.events)) state.events = [];
+  state.events.push({
+    t: new Date().toISOString(),
+    skill: stage,
+    result: 'pass',
+    declarer: 'hook',
+  });
+  try {
+    writeState(statePath, state);
+  } catch {
+    process.stderr.write(`\x1b[33m[smelter] auto-confirm · Fix A writeState failed for ${stage}\x1b[0m\n`);
+  }
+}
+
 // Stage-completion detection gate: run the classifier only when
 //   - current_stage is set,
 //   - a lastAssistantText is available,
@@ -458,10 +500,6 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     return { action: 'halt', reason: 'investigate mode user decision required after workflow-investigate-review pass' };
   }
 
-  if (state.current_stage === 'done') {
-    return { action: 'session_wrap', reason: 'task complete, writing session log' };
-  }
-
   if (isSubTaskerOnRisk() && lastAssistantText && detectRiskKeyword(lastAssistantText)
       && !INTERACTIVE_QUESTION_SHAPES.has(questionShape)) {
     return {
@@ -492,7 +530,13 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     }
   }
 
-  if (last && last.result === 'pass') {
+  if (last && last.result === 'pass' && last.skill === (state.current_stage || '')) {
+    // Fix A companion — the advance branch only fires when the last event's
+    // skill matches current_stage. Without this guard, a cross-stage pass event
+    // (e.g. Fix A's hook-written pass for workflow-investigate while
+    // current_stage has advanced to workflow-investigate-review) would
+    // trigger pickNextStage and skip the current stage entirely.
+    //
     // H2 — name the next skill explicitly instead of a vague "advance".
     // pickNextStage honors allowed_skills order + completed_stages so the
     // agent receives an unambiguous target instead of guessing from
@@ -1049,6 +1093,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (decision.action === 'halt' || decision.action === 'no_state' || decision.action === 'session_wrap') {
     clearAutoConfirmLoop(cwd, sessionId);
     process.exit(0);
+  }
+
+  // Fix A — when the stage-completion classifier verdict is 'complete' but the
+  // canonical artifact was produced in prose (no file write), skill-stage-
+  // transition.mjs never writes a pass event (it is artifact-gated). Without a
+  // pass event in state.events[], shouldRunStageCompletionClassifier keeps
+  // firing on every Stop, and if the agent's follow-up is a mode-transition
+  // acknowledgement ("User selected /fix"), the classifier verdict flips to
+  // 'incomplete', looping until the stuck-loop guard exits silently. Persist
+  // the pass event here so subsequent Stop events short-circuit the classifier.
+  // Must run BEFORE autoConfirmSignature so the signature reflects the updated
+  // state; completed_stages is intentionally not advanced (see
+  // applyProseCompletionPass for rationale).
+  if (decision.action === 'stage_complete') {
+    applyProseCompletionPass(state, statePath);
   }
 
   // H3 — stuck-loop guard. If decide() keeps returning an identical signature

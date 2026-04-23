@@ -41,6 +41,7 @@ import {
   detectReviewVerdict,
   detectReviewFailCause,
   ACTIVE_STATE_MAX_AGE_MS,
+  applyProseCompletionPass,
 } from './auto-confirm.mjs';
 
 import { createInitialState, writeState } from './state-schema.mjs';
@@ -406,8 +407,18 @@ test('_awaiting_mode_upgrade flag → halt', () => {
   const d = decide({ state: s, lastAssistantText: '' });
   assert.equal(d.action, 'halt');
 });
-test('current_stage === done → session_wrap', () => {
-  const s = baseState({ current_stage: 'done' });
+test('workflow-human-check completed → session_wrap (canonical terminal shape)', () => {
+  // The canonical terminal shape after finalize-human-check.mjs runs is:
+  // current_stage stays at 'workflow-human-check' AND completed_stages
+  // includes 'workflow-human-check' AND events[] has a workflow-human-check
+  // pass event. decide() already short-circuits this above via the explicit
+  // workflow-human-check branch (see auto-confirm.mjs §workflow-human-check
+  // terminal approval).
+  const s = baseState({
+    current_stage: 'workflow-human-check',
+    completed_stages: ['workflow-human-check'],
+    events: [{ t: new Date().toISOString(), skill: 'workflow-human-check', result: 'pass', declarer: 'hook' }],
+  });
   const d = decide({ state: s, lastAssistantText: '' });
   assert.equal(d.action, 'session_wrap');
 });
@@ -1300,17 +1311,29 @@ test('queue-signal present → exit 2, queue with queued_intent (skips classifie
     rmSync(dir, { recursive: true, force: true });
   }
 });
-test('current_stage=done (session_wrap) → exit 0, no queue (terminal halt)', () => {
+test('workflow-human-check completed (session_wrap) → exit 0, no queue (terminal halt)', () => {
+  // Canonical terminal shape written by finalize-human-check.mjs: current_stage
+  // stays at 'workflow-human-check', completed_stages includes it, and events[]
+  // carries the matching pass event. decide() short-circuits this to
+  // session_wrap via its workflow-human-check terminal-approval branch.
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
   try {
     const featDir = join(dir, '.smt', 'features', 'd', 'task');
     mkdirSync(featDir, { recursive: true });
     const statePath = join(featDir, 'd.state.json');
-    // Bypass writeState's schema validator (which rejects 'done' since it's not
-    // in WORKFLOW_SKILLS) — production paths set current_stage='done' via Edit.
-    const s = baseState({ mode: 'fix', events: [] });
-    s.current_stage = 'done';
-    writeFileSync(statePath, JSON.stringify(s));
+    // results.md must exist on disk for validateEvidenceIntegrity to accept
+    // the completed_stages['workflow-human-check'] entry.
+    writeFileSync(join(featDir, 'results.md'), '# results\n');
+    const s = baseState({
+      mode: 'fix',
+      current_stage: 'workflow-human-check',
+      completed_stages: ['workflow-human-check'],
+      events: [{
+        t: new Date().toISOString(), skill: 'workflow-human-check', result: 'pass',
+        declarer: 'hook', evidence: { type: 'file_present', path: 'results.md' },
+      }],
+    });
+    writeState(statePath, s);
     mkdirSync(join(dir, '.smt'), { recursive: true });
     writeFileSync(join(dir, '.smt', 'active_task'), statePath);
     const payload = JSON.stringify({ cwd: dir, last_assistant_text: 'all done' });
@@ -1696,6 +1719,281 @@ test('findActiveTaskState mtime-fallback accepts recent state', () => {
     writeFileSync(statePath, '{}', 'utf-8');
     const found = findActiveTaskState(dir, '');
     assert.equal(found, statePath);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ----------------------------------------------------------------------------
+section('Fix A: applyProseCompletionPass — pass event write on stage_complete (prose-completion path)');
+// ----------------------------------------------------------------------------
+
+function seedStateOnDisk({ mode = 'fix', current_stage = 'workflow-investigate', events = [], completed_stages = [] } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'smt-fixA-'));
+  const taskDir = join(dir, '.smt', 'features', 'test-task', 'task');
+  mkdirSync(taskDir, { recursive: true });
+  const statePath = join(taskDir, 'test-task.state.json');
+  const s = baseState({ mode, current_stage, events, completed_stages });
+  writeFileSync(statePath, JSON.stringify(s), 'utf-8');
+  return { dir, statePath, state: s };
+}
+
+test('Fix A 1-1: writes pass event when no prior pass event exists', () => {
+  const { dir, statePath, state } = seedStateOnDisk();
+  try {
+    assert.equal(typeof applyProseCompletionPass, 'function', 'applyProseCompletionPass must be exported');
+    applyProseCompletionPass(state, statePath);
+    const passEvents = state.events.filter(e => e.skill === 'workflow-investigate' && e.result === 'pass');
+    assert.equal(passEvents.length, 1, 'exactly one pass event written');
+    assert.equal(passEvents[0].declarer, 'hook', 'declarer marked as hook');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Fix A 1-2: idempotent — pass event already exists, no duplicate written', () => {
+  const { dir, statePath, state } = seedStateOnDisk({ events: [passEvent('workflow-investigate')] });
+  try {
+    const before = state.events.length;
+    applyProseCompletionPass(state, statePath);
+    assert.equal(state.events.length, before, 'no new event added');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Fix A 1-3: fail event exists — pass event NOT written (permanent lockout in session)', () => {
+  const { dir, statePath, state } = seedStateOnDisk({ events: [failEvent('workflow-investigate')] });
+  try {
+    const before = state.events.length;
+    applyProseCompletionPass(state, statePath);
+    assert.equal(state.events.length, before, 'fail event blocks pass write');
+    const passCount = state.events.filter(e => e.skill === 'workflow-investigate' && e.result === 'pass').length;
+    assert.equal(passCount, 0, 'no pass event written');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Fix A 1-4: statePath null — no-op, no crash', () => {
+  const state = baseState({ mode: 'fix', current_stage: 'workflow-investigate' });
+  // Must not throw
+  applyProseCompletionPass(state, null);
+  applyProseCompletionPass(state, undefined);
+  applyProseCompletionPass(null, '/tmp/whatever');
+  assert.equal(state.events.length, 0, 'no event written without state/statePath');
+});
+
+test('Fix A 1-5: after write, shouldRunStageCompletionClassifier returns false (loop broken)', () => {
+  const { dir, statePath, state } = seedStateOnDisk();
+  try {
+    applyProseCompletionPass(state, statePath);
+    const longText = 'a'.repeat(50);
+    assert.equal(shouldRunStageCompletionClassifier(state, longText), false, 'classifier short-circuits after Fix A');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Fix A 1-6: completed_stages NOT advanced (avoids validateEvidenceIntegrity throw)', () => {
+  const { dir, statePath, state } = seedStateOnDisk();
+  try {
+    const beforeLen = state.completed_stages.length;
+    applyProseCompletionPass(state, statePath);
+    assert.equal(state.completed_stages.length, beforeLen, 'completed_stages untouched');
+    assert.ok(!state.completed_stages.includes('workflow-investigate'), 'stage not added to completed_stages');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Fix A 1-7: state persisted to disk before returning (signature-ordering safety)', () => {
+  const { dir, statePath, state } = seedStateOnDisk();
+  try {
+    applyProseCompletionPass(state, statePath);
+    const persisted = JSON.parse(readFileSync(statePath, 'utf-8'));
+    const passOnDisk = (persisted.events || []).filter(e => e.skill === 'workflow-investigate' && e.result === 'pass');
+    assert.equal(passOnDisk.length, 1, 'pass event persisted to disk');
+    assert.equal(passOnDisk[0].declarer, 'hook');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Fix A 1-8: loop-breaking invariant — decide() after Fix A returns advance, not stage_complete again', () => {
+  const { dir, statePath, state } = seedStateOnDisk();
+  try {
+    // First decide() — classifier returns complete → stage_complete
+    const stub = () => ({ verdict: 'complete', summary: 'prose findings' });
+    const longProse = 'Investigation done. Found three root causes in auto-confirm.mjs line 387.';
+    const first = decide({ state, lastAssistantText: longProse, statePath, stageClassifier: stub });
+    assert.equal(first.action, 'stage_complete', 'first decide returns stage_complete');
+
+    // Fix A fires
+    applyProseCompletionPass(state, statePath);
+
+    // Second decide() on same state — last.result === 'pass' AND last.skill === current_stage → advance
+    const second = decide({ state, lastAssistantText: longProse, statePath, stageClassifier: stub });
+    assert.notEqual(second.action, 'stage_complete', 'second decide does not re-fire stage_complete');
+    assert.notEqual(second.action, 'stage_incomplete', 'second decide does not return incomplete');
+    assert.equal(second.action, 'advance', 'second decide returns advance (loop broken)');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ----------------------------------------------------------------------------
+section('Fix A companion: decide() L495 advance branch guard (last.skill === current_stage)');
+// ----------------------------------------------------------------------------
+
+test('Fix A companion 2-1: same-stage pass + current_stage → advance fires (regression test)', () => {
+  // Normal PostToolUse:Skill path: pass event for current_stage
+  const s = baseState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate',
+    events: [passEvent('workflow-investigate')],
+  });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'done',
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: () => ({ verdict: 'unknown', summary: '' }),
+  });
+  assert.equal(d.action, 'advance', 'existing PostToolUse→advance flow preserved');
+});
+
+test('Fix A companion 2-2: cross-stage pass (last.skill !== current_stage) → advance skipped', () => {
+  // After Fix A writes pass for workflow-investigate, agent invokes review skill
+  // → current_stage = 'workflow-investigate-review', but last.skill = 'workflow-investigate'
+  const s = baseState({
+    mode: 'fix',
+    current_stage: 'workflow-investigate-review',
+    events: [passEvent('workflow-investigate')],
+  });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'a'.repeat(50),
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: () => ({ verdict: 'unknown', summary: '' }),
+  });
+  assert.notEqual(d.action, 'advance', 'cross-stage pass does NOT trigger advance');
+});
+
+test('Fix A companion 2-3: null/undefined current_stage → advance branch safely skipped (no crash)', () => {
+  const s = baseState({
+    mode: 'fix',
+    current_stage: null,
+    events: [passEvent('workflow-investigate')],
+  });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'a'.repeat(50),
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: () => ({ verdict: 'unknown', summary: '' }),
+  });
+  // Must not crash and must not return advance (current_stage is null → guard trips)
+  assert.notEqual(d.action, 'advance', 'null current_stage does not trigger advance');
+});
+
+// ----------------------------------------------------------------------------
+section('Fix B: buildStageCompletionPrompt — transition-acknowledgement exception clause');
+// ----------------------------------------------------------------------------
+
+test('Fix B 3-1: prompt contains BOTH "Finished means" rule AND new exception clause (append, not replace)', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'any',
+    currentStage: 'workflow-investigate',
+    mode: 'fix',
+  });
+  // Ordered-substring: Finished-means rule must precede the exception clause
+  const idxFinished = p.indexOf('Finished');
+  const idxException = p.search(/Exception|USER.*selected/i);
+  assert.ok(idxFinished >= 0, 'pre-existing "Finished" rule preserved');
+  assert.ok(idxException >= 0, 'new exception clause present');
+  assert.ok(idxFinished < idxException, '"Finished" rule precedes exception clause (append semantics)');
+});
+
+test('Fix B 3-2: exception clause requires "USER" selection phrasing (uppercased)', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'any',
+    currentStage: 'workflow-investigate',
+    mode: 'fix',
+  });
+  // The clause must use USER (uppercase) to distinguish from agent speculation
+  assert.match(p, /USER/, 'clause uses uppercase USER to emphasize user-selection requirement');
+});
+
+test('Fix B 3-3: exception explicitly excludes agent speculation', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'any',
+    currentStage: 'workflow-investigate',
+    mode: 'fix',
+  });
+  // Clause must name agent-speculation as a counter-example (Do NOT apply...)
+  assert.match(p, /agent[- ]speculation|speculation|I think we should/i, 'agent speculation called out as excluded');
+});
+
+test('Fix B 3-4: exception covers review-stage completion language', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'any',
+    currentStage: 'workflow-investigate-review',
+    mode: 'fix',
+  });
+  // Clause must reference review-stage completion phrasing
+  assert.match(p, /review passed|consensus reached|all rounds/i, 'review-stage language included in examples');
+});
+
+test('Fix B 3-5: exception excludes "/fix" as file path token', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'any',
+    currentStage: 'workflow-investigate',
+    mode: 'fix',
+  });
+  // Clause must warn against matching /fix in file paths
+  assert.match(p, /file path|fix\/auth\.ts|path token/i, 'file-path exclusion present');
+});
+
+test('Fix B 3-6: exception excludes pure Korean investigation-complete without user selection', () => {
+  const p = buildStageCompletionPrompt({
+    lastMessage: 'any',
+    currentStage: 'workflow-investigate',
+    mode: 'fix',
+  });
+  // Clause must reference investigation-complete-alone exclusion
+  assert.match(p, /조사 완료|investigation done|without explicit user selection/i, 'bare investigation-complete excluded');
+});
+
+// ----------------------------------------------------------------------------
+section('Fix A E2E: end-to-end main() flow with disk readback');
+// ----------------------------------------------------------------------------
+
+test('Fix A E2E: full write+readback+idempotency+classifier+completed_stages invariants', () => {
+  const { dir, statePath, state } = seedStateOnDisk();
+  try {
+    // (1) in-memory events gains pass entry
+    applyProseCompletionPass(state, statePath);
+    const memPassCount = state.events.filter(e => e.skill === 'workflow-investigate' && e.result === 'pass').length;
+    assert.equal(memPassCount, 1, '(1) in-memory events has exactly one pass entry');
+
+    // (2) disk-readback — state file on disk contains the pass event
+    const diskState = JSON.parse(readFileSync(statePath, 'utf-8'));
+    const diskPassCount = (diskState.events || []).filter(e => e.skill === 'workflow-investigate' && e.result === 'pass').length;
+    assert.equal(diskPassCount, 1, '(2) disk state file has exactly one pass entry (writeState succeeded)');
+
+    // (3) idempotency — second call does not duplicate in-memory or on disk
+    applyProseCompletionPass(state, statePath);
+    const memAfter = state.events.filter(e => e.skill === 'workflow-investigate' && e.result === 'pass').length;
+    const diskAfter = JSON.parse(readFileSync(statePath, 'utf-8')).events.filter(
+      e => e.skill === 'workflow-investigate' && e.result === 'pass'
+    ).length;
+    assert.equal(memAfter, 1, '(3a) in-memory idempotent');
+    assert.equal(diskAfter, 1, '(3b) disk idempotent');
+
+    // (4) shouldRunStageCompletionClassifier returns false after Fix A
+    assert.equal(shouldRunStageCompletionClassifier(state, 'a'.repeat(50)), false, '(4) classifier short-circuits');
+
+    // (5) completed_stages unchanged from seed (design invariant to avoid validateEvidenceIntegrity throw)
+    assert.equal(state.completed_stages.length, 0, '(5) completed_stages unchanged');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

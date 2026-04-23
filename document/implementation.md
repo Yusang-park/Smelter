@@ -25,6 +25,18 @@ Contents:
 
 Files changed: see git log for this release.
 
+## Phase v3.3.4 — remove dead `current_stage === 'done'` branches (2026-04-23)
+
+After v3.3.3 landed `finalize-human-check.mjs` (which deliberately leaves `current_stage` at `'workflow-human-check'`) and v3.3.1-2 already documented that the schema's `WORKFLOW_SKILLS` enum rejects the literal `'done'`, two source paths that still checked `state.current_stage === 'done'` were unreachable in the canonical flow. They were kept briefly as "belt-and-suspenders" defense, but carrying dead shape signals in the gate/terminal logic misleads future readers and invites accidental re-use. Removed.
+
+- [x] v3.3.4-1. **Commit gate** — `scripts/pre-tool-enforcer.mjs` `humanCheckPassed` OR-disjunction trimmed from 3 shapes to 2 (`events[]` pass OR `completed_stages` includes workflow-human-check). `current_stage=` field dropped from the block-reason template since it carried no signal after the trim. Comment block above the check rewritten to document the 2-shape contract.
+- [x] v3.3.4-2. **Auto-confirm** — `scripts/auto-confirm.mjs` L461-463 `if (state.current_stage === 'done') return { action: 'session_wrap' }` block deleted. The canonical terminal state (current_stage stays at `'workflow-human-check'`, `completed_stages` / pass event set) is already short-circuited by the L439-449 branch — L461 was strictly dominated dead code.
+- [x] v3.3.4-3. **keyword-detector** — `scripts/keyword-detector.mjs:357` `if (state.current_stage === 'done') return { create: true, reason: 'prior-done' }` replaced with `completed_stages.includes('workflow-human-check')` check + `reason: 'prior-completed'`. Same intent ("prior task finished → new feature"), now keyed off the shape `finalize-human-check.mjs` actually writes.
+- [x] v3.3.4-4. **Tests** — `scripts/pre-tool-enforcer.test.mjs` G-C1 repurposed from "allow" to "block" (pins new policy: `current_stage==='done'` alone is NOT a pass shape). G-group header comment trimmed from 3-shape to 2-shape with explicit note that 'done' is rejected. `scripts/auto-confirm.test.mjs` two tests (L409 unit + L1313 subprocess) refactored to seed the canonical shape instead of a synthetic `current_stage='done'`. G-\* 10/10 GREEN, auto-confirm 138 tests GREEN.
+- [x] v3.3.4-5. **Docs** — `document/workflow.md` §2-3 item 1 rewritten: commit gate now documents 2 pass shapes and explicitly states `current_stage==='done'` is NOT accepted. `skills/workflow-human-check/SKILL.md::Note on current_stage` paragraph rewritten — removes the old "belt-and-suspenders fallback" wording, states the gate accepts the two primary shapes only.
+
+Scope note: v3.3.1-1 (fallback introduction) and the second sentence of v3.3.1-4 (3-shape docs) are superseded by this phase. Keeping those entries as historical record rather than editing them in place so the audit trail is preserved.
+
 ## Phase v3.3.1 — `workflow-human-check` commit-gate deadlock fix (2026-04-23)
 
 User report (onesheet session): human-check 에서 `complete` 눌렀는데 바로 이어지는 `git commit` 이 `[SMELTER] git commit is blocked … human-check=NOT_PASSED` 로 영구 차단. 원인은 skill 프롬프트와 pretool commit gate 의 계약 불일치.
@@ -58,6 +70,16 @@ Root cause: `workflow-human-check` SKILL.md 의 On Complete 시퀀스는 agent �
 - [x] v3.3.3-4. **테스트** — `scripts/finalize-human-check.test.mjs` 에 11 케이스 (happy 3 / boundary 3 / error 4 / integration 1): 정상 finalize, idempotent 재실행, implement 모드, non-Write 툴, 다른 파일명, 비정규 경로, 빈 results.md, mode=investigate, current_stage 불일치, 상태파일 누락, 깨진 JSON 내성. 11/11 GREEN.
 
 Scope note: (a) `current_stage = 'done'` 을 쓰지 않음 — `scripts/state-schema.mjs::WORKFLOW_SKILLS` enum validator 충돌 회피. commit gate 의 3-shape pass (completed_stages / events / `current_stage==='done'`) 중 앞 두 개로 이미 unblock. (b) `COMPLETION_DEFERRED_SKILLS` 는 그대로 — skill invocation 시점 hook 은 여전히 auto-pass 하면 안 됨 (artifact 가 그때는 없음). 새 hook 은 artifact 쓰기 시점에만 fire. (c) v3.3.1 SKILL.md 수정은 superseded — v3.3.3 이 canonical.
+
+## Phase v3.3.4 — `state-contract-injector` PreToolUse:Skill prompt injection (2026-04-23)
+
+Symptom: 새 세션마다 agent 가 review / e2e / human-check 스킬 종료 후 "now I should write the pass event" 흐름으로 들어가 `SMT_HOOK_WRITE=1 node -e "...appendEvent..."` 를 시도, classifier 거부 → 재시도 루프. SKILL.md 의 곳곳에 남아 있는 직접 state-write 지시 흔적과 `COMPLETION_DEFERRED_SKILLS` 의 deferred 의미가 agent 한테 implicit. 사용자 지시: "skill 이 state 조작한다고 prompt 로 주입해줘".
+
+- [x] v3.3.4-1. **신규 hook** — `scripts/state-contract-injector.mjs` (PreToolUse:Skill). `tool_input.skill` 가 `workflow-` 로 시작하면 `additionalContext` 로 contract 주입: (1) `.state.json` 직접 쓰기 금지 (PROTECTED_RE), (2) `SMT_HOOK_WRITE=1 node -e` 도 classifier 거부, (3) state mutation 은 `skill-stage-transition.mjs` (artifact 기반) + `finalize-human-check.mjs` (results.md trigger) 가 담당, (4) agent 는 SKILL.md 의 produces artifact 만 만들고 next skill 로 직진, (5) "stage incomplete" stop-hook 불평이 떠도 같은 Skill 재호출 1회로 advance — state 직접 쓰기 시도 금지. workflow-* 가 아닌 skill (caveman, command 스킬 fix/implement/...) 은 no-op. 항상 `{continue:true}` 반환 — 차단 없음.
+- [x] v3.3.4-2. **hook 등록** — `hooks/hooks.json::PreToolUse` 에 새 `"Skill"` 매처 블록 추가해 `state-contract-injector.mjs` 등록. 기존 `*` 매처 (pre-tool-enforcer / pretool-stage-gate / rule-injector) 와 별개로 동작.
+- [x] v3.3.4-3. **테스트** — `scripts/state-contract-injector.test.mjs` 9 cases (happy 2 / boundary 3 / error 3 / integration 1): workflow-tasker-review 주입, 14개 workflow-* skill 전부 주입, caveman/command-skill no-op, 비-Skill tool no-op, 깨진 JSON / 빈 payload fail-open, contract 본문이 차단 경로 3개 + finalize-human-check.mjs 모두 명시적으로 enumerate. 9/9 GREEN. 합산 v3.3.x 신규 suite 합계 33/33 (state-contract 9 + finalize-human-check 13 + pre-tool-enforcer 32 중 신규 4 = 26 신규 GREEN, 기존 8 회귀 영향 없음).
+
+Scope note: 이번 변경은 "agent 동작 가이드" 주입만. 기존 SKILL.md 본문 / 훅 / classifier / enforcer 동작은 변경 없음. 세션 재시작 후 활성화 (hooks.json 변경은 SessionStart 시 1회 로드).
 
 ## Phase v3.3 — `fix_simple` pinned to two surfaces: text + design (2026-04-23)
 
