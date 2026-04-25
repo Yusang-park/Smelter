@@ -14,13 +14,14 @@ import { WORKFLOW_SKILLS } from './state-schema.mjs';
 const PRODUCER_CHAIN = Object.freeze({
   'workflow-brainstorm-review':   { onFail: 'workflow-brainstorm' },
   'workflow-investigate-review':  { onFail: 'workflow-investigate' },
+  'workflow-implementation-plan-review': { onFail: 'workflow-implementation-plan' },
   'workflow-tasker-review':       { onFail: 'workflow-tasker' },
-  'workflow-write-test':          { onFail: 'workflow-tasker' },
+  'workflow-write-test':          { onFail: 'dynamic:planning_producer' },
   'workflow-coding': {
     // branch by cause
     onFailByCase: {
       tdd_cycle:       'workflow-write-test',
-      scope_mismatch:  'workflow-tasker',
+      scope_mismatch:  'dynamic:planning_producer',
       typecheck:       'workflow-coding',  // self-rerun (state differs)
       lint:            'workflow-coding',
       test_run:        'workflow-coding',
@@ -64,8 +65,8 @@ const PRODUCER_CHAIN = Object.freeze({
   'workflow-team-code-review': {
     // branch by severity
     onFailBySeverity: {
-      CRITICAL: 'workflow-tasker',
-      HIGH:     'workflow-tasker',
+      CRITICAL: 'dynamic:planning_producer',
+      HIGH:     'dynamic:planning_producer',
       MEDIUM:   'workflow-coding',
       LOW:      null,  // log to Risks and treat as pass
     },
@@ -79,6 +80,7 @@ const PRODUCER_CHAIN = Object.freeze({
   // origin points: no producer
   'workflow-brainstorm':    { onFail: 'workflow-brainstorm' },   // self-rerun
   'workflow-investigate':   { onFail: 'workflow-investigate' },  // self-rerun
+  'workflow-implementation-plan': { onFail: 'workflow-implementation-plan' },
   'workflow-tasker':        { onFail: 'workflow-tasker' },       // self-rerun
 });
 
@@ -89,6 +91,7 @@ const PRODUCER_CHAIN = Object.freeze({
 const RESHAPE_TARGETS = Object.freeze({
   'workflow-brainstorm-review': ['workflow-brainstorm'],
   'workflow-investigate-review': ['workflow-brainstorm', 'workflow-investigate'],
+  'workflow-implementation-plan-review': ['workflow-implementation-plan', 'workflow-investigate'],
   'workflow-tasker-review': ['workflow-investigate', 'workflow-brainstorm'],
 });
 
@@ -128,12 +131,12 @@ export function route({ event, state, allowedSkills }) {
   if (rule.onFailBySeverity && severity) {
     const target = rule.onFailBySeverity[severity];
     if (target === null) return { target: null, reason: 'low_severity_pass', info: 'logged to Risks, continue' };
-    if (target) return checkWhitelist(target, allowedSkills, 'severity');
+    if (target) return checkWhitelist(resolveDynamicTarget(target, allowedSkills, state), allowedSkills, 'severity');
   }
 
   // cause-based (coding)
   if (rule.onFailByCase && cause && rule.onFailByCase[cause]) {
-    return checkWhitelist(rule.onFailByCase[cause], allowedSkills, 'producer:cause');
+    return checkWhitelist(resolveDynamicTarget(rule.onFailByCase[cause], allowedSkills, state), allowedSkills, 'producer:cause');
   }
 
   // dynamic feedback-based (human-check)
@@ -144,8 +147,15 @@ export function route({ event, state, allowedSkills }) {
   }
 
   // default
-  const target = rule.onFail || rule.onFailDefault;
+  const target = resolveDynamicTarget(rule.onFail || rule.onFailDefault, allowedSkills, state);
   return checkWhitelist(target, allowedSkills, 'producer');
+}
+
+function resolveDynamicTarget(target, allowedSkills, state) {
+  if (target !== 'dynamic:planning_producer') return target;
+  if (allowedSkills.includes('workflow-implementation-plan')) return 'workflow-implementation-plan';
+  if (allowedSkills.includes('workflow-tasker')) return 'workflow-tasker';
+  return state?.mode === 'fix' ? 'workflow-investigate' : 'workflow-coding';
 }
 
 function checkWhitelist(target, allowedSkills, reasonPrefix) {

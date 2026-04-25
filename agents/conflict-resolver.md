@@ -1,7 +1,7 @@
 ---
 name: conflict-resolver
 description: "Dedicated agent invoked when Aggregator declares a merge failure. Analyzes conflict root cause, states decision rationale, and proposes a resolution."
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 tools: [Read, Write, Edit, Grep, Glob, Bash]
 role: conflict_adjudication
@@ -71,7 +71,7 @@ writes: "final consolidated file + state.json.events (conflict_resolved)"
 Allowed only under these conditions:
 - **Information gap**: Cannot adjudicate without further investigation (e.g., external system behavior)
 - **Business decision**: Trade-off that cannot be resolved by technical judgment alone (both sides valid)
-- **Conflicting requirements**: The directives in `plan.md` themselves conflict
+- **Conflicting requirements**: The directives in the active planning artifact conflict
 
 Return:
 ```json

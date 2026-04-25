@@ -1,11 +1,11 @@
 ---
 name: aggregator
 description: "Dedicated integrator of parallel agent outputs. Called after the sync point of Pattern C Parallel Delegation."
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 tools: [Read, Write, Edit, Grep, Glob, Bash]
 role: synthesis
-owns_file: "<varies by skill: investigation.md | plan.md | merged test files | ...>"
+owns_file: "<varies by skill: investigation.md | implementation-plan.md | tasks.md | merged test files | ...>"
 ---
 
 # Aggregator Agent

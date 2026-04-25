@@ -84,7 +84,7 @@ function matchConsecutive(tokens, needle) {
 
 /**
  * parseSlashArgs — deterministic slash-command argument surface extractor.
- * Returns null if command is not scoped (think/investigate/verify) or no row matches.
+  * Returns null if command is not scoped (brainstorm/explore/verify) or no row matches.
  */
 export function parseSlashArgs(commandName, argsString) {
   const tokens = tokenize(argsString);

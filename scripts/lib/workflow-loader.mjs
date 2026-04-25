@@ -14,8 +14,8 @@
  *   - resolveSkipFromArtifacts(mode, artifacts, cfg?)
  *   - resolveCommandAlias(slash, cfg?)
  *   - selectPipeline(mode, { target_type }, cfg?)
- *     → v3.2 target-type dispatch for /fix and /implement
- *   - getVerificationRounds(skill, modeName?, cfg?) → round count with mode overrides
+ *     → v3.2 target-type dispatch for /fix; /implement keeps full in v0.4
+ *   - getVerificationRounds(skill, modeName?, cfg?) → global round count
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -40,7 +40,7 @@ export function loadWorkflowConfig({ root = PLUGIN_ROOT, fresh = false } = {}) {
   const modes = doc.modes ?? {};
   const commandAliases = doc.command_aliases ?? {};
   const targetTypeRouting = doc.target_type_routing ?? {};
-  const verificationRounds = doc.verification_rounds ?? { mid_pipeline: 2, terminal: 3 };
+  const verificationRounds = doc.verification_rounds ?? { rounds: 2 };
   const schemaVersion = doc.schema_version ?? 'unknown';
 
   // Structural validation.
@@ -121,7 +121,7 @@ export function getMode(name, cfg = loadWorkflowConfig()) {
  * gates apply on top:
  *   - /fix + extend_existing → upgrade_required (route user to /implement)
  *   - /implement + no target_type → declared pipeline (full)
- *   - /implement + extend_existing → extend_light
+ *   - /implement + any target_type → declared pipeline (full)
  *
  * @param {string} modeName
  * @param {{target_type?: string}} scope — file_count/surface_count ignored in v3.2
@@ -143,11 +143,9 @@ export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig())
   // Mode-specific gate: /fix forwards extend_existing to /implement.
   if (modeName === 'fix' && targetType === 'extend_existing') return 'upgrade_required';
 
-  // Mode-specific gate: /implement only honors extend_existing → extend_light.
-  // The other target_types (new_feature/refactor/migration/bug_fix) are what
-  // /implement is built for — stay on the declared pipeline (full).
+  // Mode-specific gate: /implement target_type is planning context only.
+  // Existing-feature work still needs the same code-based planning and review.
   if (modeName === 'implement') {
-    if (targetType === 'extend_existing') return 'extend_light';
     return m.pipeline;
   }
 
@@ -162,20 +160,14 @@ export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig())
 }
 
 // ---------------------------------------------------------------------------
-// v3.1 — Verification rounds per skill.
+// v3.1 — Verification rounds.
 // ---------------------------------------------------------------------------
 
 /**
- * getVerificationRounds — resolve the round count for a review skill.
+ * getVerificationRounds — resolve the global round count.
  *
- * Resolution order (highest precedence first):
- *   1. mode_overrides[mode][skill] — per-skill override for the current mode
- *   2. mode_overrides[mode].default — mode-wide default override
- *   3. skills[skill].rounds bucket → verification_rounds[bucket] (global default)
- *   4. verification_rounds.mid_pipeline (final fallback)
- *
- * The `modeName` parameter is optional; when omitted, mode overrides are skipped
- * and the global bucket is used (legacy behavior).
+ * The `modeName` parameter is accepted for API compatibility but intentionally
+ * ignored. Every mode and skill uses the same two-round policy.
  *
  * @param {string} skill
  * @param {string|null} [modeName] — current workflow mode, e.g. 'fix', 'implement'
@@ -184,17 +176,7 @@ export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig())
  */
 export function getVerificationRounds(skill, modeName = null, cfg = loadWorkflowConfig()) {
   const vr = cfg.verification_rounds ?? {};
-  const modeOverrides = vr.mode_overrides?.[modeName] ?? null;
-
-  if (modeOverrides) {
-    if (Object.prototype.hasOwnProperty.call(modeOverrides, skill)) return modeOverrides[skill];
-    if (Object.prototype.hasOwnProperty.call(modeOverrides, 'default')) return modeOverrides.default;
-  }
-
-  const skillDef = cfg.skills[skill];
-  if (!skillDef) return vr.mid_pipeline ?? 2;
-  const bucket = skillDef.rounds ?? 'mid_pipeline';
-  return vr[bucket] ?? vr.mid_pipeline ?? 2;
+  return vr.rounds ?? 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +188,8 @@ const ARTIFACT_TO_SKILL = Object.freeze({
   'brainstorm-review.md': 'workflow-brainstorm-review',
   'investigation.md': 'workflow-investigate',
   'investigation-review.md': 'workflow-investigate-review',
+  'implementation-plan.md': 'workflow-implementation-plan',
+  'implementation-plan-review.md': 'workflow-implementation-plan-review',
   'tasks.md': 'workflow-tasker',
   'tasks-review.md': 'workflow-tasker-review',
 });

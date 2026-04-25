@@ -136,8 +136,8 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - `data.prompt`, `data.message.content`, 또는 `data.parts[].text` 에서 추출
 
 2. **명시적 커맨드 매칭** (`extractExplicitHarnessCommand`)
-   - 허용 커맨드: `/plan`, `/simple-fix`, `/fix`, `/investigate`, `/implement`, `/verify`, `/cancel`, `/queue`
-   - 정규식: `^/(plan|simple-fix|fix|investigate|implement|verify|cancel|queue)\\b` (은퇴된 `build` 토큰은 과거 호환을 위해 정규식에만 잔존하지만 `COMMAND_TO_MODE`에 매핑이 없어 워크플로우 모드로 라우팅되지 않음)
+   - 허용 커맨드: `/brainstorm`, `/fix`, `/explore`, `/implement`, `/verify`, `/dobby`, `/cancel`, `/queue`
+   - 정규식: `^/(brainstorm|fix|explore|implement|verify|dobby|cancel|queue)\\b`; retired workflow commands are not aliases and fail closed.
    - 자연어 질문이나 메타 대화는 감지하지 않음
 
 3. **상태 파일 생성** (`activateHarnessState`)
@@ -150,7 +150,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 
 5. **출력 생성**
    - `[MAGIC KEYWORD: XXX]` 형식의 additionalContext를 만들어 해당 command를 즉시 invoke하도록 지시
-   - 고신뢰 자연어는 deterministic local routing으로 먼저 처리한다. 예: investigative wording → `/plan`, explicit fix wording → `/fix`, mixed `check and fix` → `/fix`
+   - 고신뢰 자연어는 deterministic local routing으로 먼저 처리한다. 예: design/planning wording → `/brainstorm`, read-only analysis wording → `/explore`, explicit fix wording → `/fix`, mixed `check and fix` → `/fix`
    - 나머지 비-slash 프롬프트는 classifier fallback을 사용한다
 
 **출력:** `{ continue: true, hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: "..." } }`
@@ -404,7 +404,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 
 ### 8-B. `stop-stage-enforcer.mjs` (timeout: 120s)
 
-> **Renamed from `stop-e2e.mjs` (v2.4.x).** Primary role: workflow stage-progression guard — block Stop when any workflow mode (`simple_fix` / `fix` / `investigate` / `verify` / `implement` / `plan`) has not reached a terminal stage (`workflow-human-check`, `done`, or the mode's last `allowed_skill`). Active-state resolution and summary resolution are **session-aware** (`findActiveStatePath(cwd, sessionId)` / `getActiveFeatureSummary(cwd, sessionId)`), preferring `.smt/state/active-feature-<sessionId>.json` over the non-scoped pointer to prevent concurrent-session races. The legacy E2E-reminder behavior described below is preserved as a fallback.
+> **Historical note:** `stop-stage-enforcer.mjs` was the v2 stage-progression guard. In v0.4, Stop progression is folded into `auto-confirm.mjs`, and active workflows use the canonical modes (`brainstorm` / `fix` / `explore` / `verify` / `implement` / `dobby`). Active-state resolution and summary resolution are **session-aware** (`findActiveStatePath(cwd, sessionId)` / `getActiveFeatureSummary(cwd, sessionId)`), preferring `.smt/state/active-feature-<sessionId>.json` over the non-scoped pointer to prevent concurrent-session races. The legacy E2E-reminder behavior described below is preserved as a fallback reference.
 
 프론트엔드 변경 사전 필터링 + AI 판단 기반 E2E 위임. 스크립트 단계에서 백엔드/테스트/스크립트 파일을 제외하고, 프론트엔드 변경 + 키워드 매칭된 E2E 테스트만 최소한으로 Claude에 위임한다. 토큰 절약을 위해 관련 없는 변경은 Claude에 전달하지 않는다.
 

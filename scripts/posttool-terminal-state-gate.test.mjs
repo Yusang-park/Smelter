@@ -150,7 +150,16 @@ section('edge case');
     tool_name: 'Agent', tool_input: {}, session_id: SID, cwd: dir,
     turn_tool_uses: [{ tool: 'Agent', returned: true }]
   }, dir, { SMT_TERMINAL_GATE_MODE: 'shadow' });
-  assert('shadow mode → no inject', r.stdout?.hookSpecificOutput?.additionalContext, undefined);
+  assert('removed shadow mode → inject', typeof r.stdout?.hookSpecificOutput?.additionalContext, 'string');
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture(REVIEW);
+  const r = runHook({
+    tool_name: 'Agent', tool_input: {}, session_id: SID, cwd: dir,
+    turn_tool_uses: [{ tool: 'Agent', returned: true }]
+  }, dir);
+  assert('default mode → inject', typeof r.stdout?.hookSpecificOutput?.additionalContext, 'string');
   rmSync(dir, { recursive: true, force: true });
 }
 {

@@ -3,10 +3,10 @@
  * session-end.mjs — SessionEnd hook.
  *
  * Runs the legacy dist-based processor (if present) AND enforces the
- * smelter v2 documentation-sync contract:
+ * smelter v0.4 documentation-sync contract:
  *
- *   1. Command set across tracked md files matches the canonical five-command set
- *      {plan, simple-fix, fix, investigate, implement}.
+ *   1. Command set across tracked md files matches the canonical six-command set
+ *      {brainstorm, fix, explore, verify, implement, dobby}.
  *   2. Magic keyword table in keyword-detector.mjs stays in sync with the
  *      command set.
  *   3. Forbidden legacy references (retired commands and retired terminology) → 0 hits.
@@ -38,11 +38,12 @@ export const TRACKED_MD_FILES = [
 ];
 
 export const TRACKED_COMMAND_FILES = [
-  'commands/plan.md',
-  'commands/simple-fix.md',
+  'commands/brainstorm.md',
   'commands/fix.md',
-  'commands/investigate.md',
+  'commands/explore.md',
+  'commands/verify.md',
   'commands/implement.md',
+  'commands/dobby.md',
 ];
 
 export const TRACKED_CROSS_FILES = [
@@ -61,11 +62,11 @@ export const TRACKED_LEGACY_SCAN = [
   'rules/common/testing.md',
 ];
 
-// Canonical v3 five-command set (workflow modes). /queue is a utility command and intentionally excluded.
-export const EXPECTED_COMMANDS = ['think', 'fix', 'investigate', 'verify', 'implement'];
+// Canonical v0.4 command set. /queue is a utility command and intentionally excluded.
+export const EXPECTED_COMMANDS = ['brainstorm', 'fix', 'explore', 'verify', 'implement', 'dobby'];
 // Retired command names and other legacy terms that must not appear as commands.
-// v3: `plan` and `simple-fix` are v2 legacy, fully removed.
-export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'build', 'tasker', 'feat', 'qa', 'plan', 'simple-fix'];
+// v0.4: `plan`, `simple-fix`, `think`, and the retired investigate command are fully removed.
+export const FORBIDDEN_COMMANDS = ['blueprint', 'todo', 'build', 'tasker', 'feat', 'qa', 'plan', 'simple-fix', 'think', 'investigate'];
 export const FORBIDDEN_LEGACY_PATTERN = /persistent-mode(?:\.cjs|\.mjs|\.sh)?/i;
 export const FORBIDDEN_TASKER_NATIVE_PLAN_PATTERN = /EnterPlanMode|ExitPlanMode|Native Plan File|\[Plan Mode: Enter\]|\[Plan Mode: Exit\]/i;
 
@@ -294,7 +295,10 @@ export function checkDocSync(projectRoot) {
     const content = readFileSafe(abs);
     if (content === null) continue;
     for (const forbidden of FORBIDDEN_COMMANDS) {
-      const re = new RegExp(`\\/${forbidden}\\b`, 'i');
+      // Match slash commands in prose while avoiding file/path references such
+      // as `task/plan.md`. Removed commands must not be routable, but Smelter
+      // still has planning artifact files named `plan.md`.
+      const re = new RegExp(`(^|[^\\w.])\\/${forbidden}(?=$|[\\s,.;:)\\]}])`, 'i');
       if (re.test(content)) {
         issues.push({
           severity: 'error',
@@ -377,18 +381,16 @@ export function checkDocSync(projectRoot) {
     }
   }
 
-  // --- 3. v3 workflow config (three YAML files) must exist ---
+  // --- 3. v0.4 workflow config (single YAML file) must exist ---
   const modesDir = join(projectRoot, 'modes');
-  for (const required of ['modes.yaml', 'pipelines.yaml', 'skills.yaml']) {
-    if (!existsSync(join(modesDir, required))) {
-      issues.push({
-        severity: 'error',
-        file: 'modes/',
-        message: `Missing workflow config: modes/${required}`,
-      });
-    }
+  if (!existsSync(join(modesDir, 'workflow.yaml'))) {
+    issues.push({
+      severity: 'error',
+      file: 'modes/',
+      message: 'Missing workflow config: modes/workflow.yaml',
+    });
   }
-  // v3: legacy modes/*.json must be fully removed.
+  // v0.4: legacy modes/*.json must be fully removed.
   const leftoverJson = listDir(modesDir).filter(f => /\.json$/i.test(f));
   for (const f of leftoverJson) {
     issues.push({
@@ -426,9 +428,7 @@ export function checkDocSync(projectRoot) {
   const kd = readFileSafe(join(projectRoot, 'scripts', 'keyword-detector.mjs'));
   if (kd !== null) {
     for (const cmd of EXPECTED_COMMANDS) {
-      // Match either `command: 'think'` or `think:` (object key in COMMAND_CONFIG)
-      // Match either a quoted-key form `'think': {` or a bare-key form `think: {`
-      // or an explicit `command: 'think'` literal.
+      // Match either `command: '<cmd>'` or `<cmd>:` (object key in COMMAND_CONFIG).
       const pattern = new RegExp(
         `(?:command:\\s*['"]${cmd}['"])`
         + `|(?:^\\s*['"]${cmd}['"]\\s*:\\s*\\{)`

@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const SCRIPT_PATH = join(process.cwd(), 'scripts', 'keyword-detector.mjs');
+const CLASSIFIER_STUB = join(process.cwd(), 'scripts', 'lib', '__fixtures__', 'mode-classifier-stub.mjs');
 
 function runDetector({ cwd, prompt, sessionId = 'test-session' }) {
   const input = JSON.stringify({
@@ -20,6 +21,7 @@ function runDetector({ cwd, prompt, sessionId = 'test-session' }) {
   const result = spawnSync(process.execPath, [SCRIPT_PATH], {
     input,
     encoding: 'utf8',
+    env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: CLASSIFIER_STUB },
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -34,28 +36,28 @@ function readdirSyncSafe(path) {
   try { return readdirSync(path); } catch { return []; }
 }
 
-test('natural language planning phrase routes to /plan', async () => {
+test('natural language planning phrase routes to /brainstorm', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
 
   try {
-    const result = runDetector({ cwd, prompt: 'plan this feature for me' });
+    const result = runDetector({ cwd, prompt: '설계해줘' });
 
     assert.equal(result.continue, true);
-    assert.match(result.hookSpecificOutput.additionalContext, /Skill: plan/);
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: brainstorm/);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
-test('explicit /investigate command routes to investigate skill', async () => {
+test('explicit /explore command routes to explore mode', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
 
   try {
-    const result = runDetector({ cwd, prompt: '/investigate the auth regression' });
+    const result = runDetector({ cwd, prompt: '/explore the auth regression' });
 
     assert.equal(result.continue, true);
-    assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
-    assert.match(result.hookSpecificOutput.additionalContext, /MAGIC KEYWORD: INVESTIGATE/);
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: explore/);
+    assert.match(result.hookSpecificOutput.additionalContext, /MAGIC KEYWORD: EXPLORE/);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -108,24 +110,24 @@ test('/fix seeds .state.json with mode=fix and allowed_skills from modes/workflo
   }
 });
 
-test('natural-language "investigate" routes to /investigate, not /plan', async () => {
+test('natural-language investigate intent routes to /explore, not /brainstorm', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
 
   try {
     const result = runDetector({
       cwd,
-      prompt: 'Assign agent teams to investigate at least three security vulnerabilities each in the backend and frontend',
+      prompt: 'analyze this function',
     });
 
     assert.equal(result.continue, true);
-    assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
-    assert.doesNotMatch(result.hookSpecificOutput.additionalContext, /Skill: plan\b/);
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: explore/);
+    assert.doesNotMatch(result.hookSpecificOutput.additionalContext, /Skill: brainstorm\b/);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
-test('explicit /investigate reseeds mode instead of reusing in-flight fix state', async () => {
+test('explicit /explore reseeds mode instead of reusing in-flight fix state', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-'));
 
   try {
@@ -135,15 +137,15 @@ test('explicit /investigate reseeds mode instead of reusing in-flight fix state'
     const firstState = readJson(firstStatePath);
     assert.equal(firstState.mode, 'fix');
 
-    const result = runDetector({ cwd, prompt: '/investigate why auto-confirm advances incorrectly' });
-    assert.match(result.hookSpecificOutput.additionalContext, /Skill: investigate/);
+    const result = runDetector({ cwd, prompt: '/explore why auto-confirm advances incorrectly' });
+    assert.match(result.hookSpecificOutput.additionalContext, /Skill: explore/);
 
     const taskDirs = readdirSyncSafe(join(cwd, '.smt', 'features'));
-    assert.ok(taskDirs.length >= 2, 'expected investigate to create a fresh feature state');
-    const investigateSlug = taskDirs.find((slug) => slug !== firstSlug);
-    assert.ok(investigateSlug, 'expected a distinct investigate slug');
-    const investigateState = readJson(join(cwd, '.smt', 'features', investigateSlug, 'task', `${investigateSlug}.state.json`));
-    assert.equal(investigateState.mode, 'investigate');
+    assert.ok(taskDirs.length >= 2, 'expected explore to create a fresh feature state');
+    const exploreSlug = taskDirs.find((slug) => slug !== firstSlug);
+    assert.ok(exploreSlug, 'expected a distinct explore slug');
+    const exploreState = readJson(join(cwd, '.smt', 'features', exploreSlug, 'task', `${exploreSlug}.state.json`));
+    assert.equal(exploreState.mode, 'explore');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

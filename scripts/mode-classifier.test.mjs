@@ -53,9 +53,9 @@ section('Layer 1 — Explicit slash commands (no LLM call)');
   const { classify } = await freshImport();
   assert('/fix → fix', classify('/fix login bug').mode, 'fix');
   assert('/fix overridden=true', classify('/fix login bug').overridden, true);
-  assert('/think → think', classify('/think redesign auth').mode, 'think');
+  assert('/brainstorm → brainstorm', classify('/brainstorm redesign auth').mode, 'brainstorm');
   assert('/implement → implement', classify('/implement extend foo').mode, 'implement');
-  assert('/investigate → investigate', classify('/investigate race cond').mode, 'investigate');
+  assert('/explore → explore', classify('/explore race cond').mode, 'explore');
   assert('/verify → verify', classify('/verify suite').mode, 'verify');
   assert('slash trigger prefix', classify('/fix x').trigger.startsWith('command:/fix'), true);
 }
@@ -73,6 +73,33 @@ section('Layer 2 — Passthrough (pure git/shell verb-first only)');
   assert('stash 해 → passthrough', classify('stash 해').passthrough, true);
   assert('passthrough mode=null', classify('git commit').mode, null);
   assert('passthrough trigger prefix', classify('git commit').trigger.startsWith('passthrough:'), true);
+}
+
+// ---------------------------------------------------------------------------
+section('Layer 1 — removed commands are not compatibility aliases');
+// ---------------------------------------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-removed-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { mode: 'fix', trigger: 'removed-command-fell-through', chained_modes: null };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('/think redesign auth', { cwd: dir, sessionId: 'removed1' });
+    assert('/think is fail-closed', r.passthrough, true);
+    assert('/think does not route to a workflow mode', r.mode, null);
+    const inv = classify('/investigate auth flow', { cwd: dir, sessionId: 'removed2' });
+    assert('/investigate is fail-closed', inv.passthrough, true);
+    assert('/investigate does not route to a workflow mode', inv.mode, null);
+    const plan = classify('/plan auth flow', { cwd: dir, sessionId: 'removed3' });
+    assert('/plan is fail-closed', plan.passthrough, true);
+    const simple = classify('/simple-fix copy', { cwd: dir, sessionId: 'removed4' });
+    assert('/simple-fix is fail-closed', simple.passthrough, true);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,13 +150,13 @@ section('Layer 3 — LLM chain emits chained_modes');
   const dir = mkdtempSync(join(tmpdir(), 'mc-chain-'));
   try {
     const stub = mkStub(dir, `export function classifyMode() {
-      return { mode: 'investigate', trigger: 'chain:inv-then-fix', chained_modes: ['investigate','fix'] };
+      return { mode: 'explore', trigger: 'chain:explore-then-fix', chained_modes: ['explore','fix'] };
     }`);
     process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
     const { classify } = await freshImport();
     const r = classify('조사하고 수정해', { cwd: dir, sessionId: 'chain1' });
-    assert('LLM chain primary mode', r.mode, 'investigate');
-    assert('LLM chain chained_modes', r.chained_modes, ['investigate', 'fix']);
+    assert('LLM chain primary mode', r.mode, 'explore');
+    assert('LLM chain chained_modes', r.chained_modes, ['explore', 'fix']);
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });
@@ -143,13 +170,13 @@ section('Layer 3 — LLM passthrough hint flows through');
   const dir = mkdtempSync(join(tmpdir(), 'mc-lookup-'));
   try {
     const stub = mkStub(dir, `export function classifyMode() {
-      return { mode: 'investigate', trigger: 'lookup', chained_modes: null, passthrough: true };
+      return { mode: 'explore', trigger: 'lookup', chained_modes: null, passthrough: true };
     }`);
     process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
     const { classify } = await freshImport();
     const r = classify('workflow-tasker가 뭐야?', { cwd: dir, sessionId: 'look1' });
     assert('LLM lookup passthrough=true', r.passthrough, true);
-    assert('LLM lookup mode=investigate', r.mode, 'investigate');
+    assert('LLM lookup mode=explore', r.mode, 'explore');
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });

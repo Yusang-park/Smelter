@@ -11,7 +11,7 @@
  *  - the turn's tool-use log shows both canonical artifact Write AND
  *    Skill(<nextSkill>) invocation
  *  - a reminder for the same stage was already injected this turn (dedupe)
- *  - SMT_TERMINAL_GATE_MODE=shadow
+ *  - SMT_TERMINAL_GATE_MODE=off
  *
  * Emits Claude Code hook schema:
  *   { hookSpecificOutput: { additionalContext: "<reminder>" } }
@@ -20,6 +20,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, basename } from 'node:path';
 import { resolveActiveState, terminalReminderPath, sanitizeSessionId } from './lib/session-paths.mjs';
+import { nextSkillForState } from './lib/workflow-chain.mjs';
 
 // Canonical artifact basenames + accepted variants per skill. Only review
 // skills have a mandatory artifact. Non-review stages (coding, write-test,
@@ -30,6 +31,8 @@ const SKILL_ARTIFACTS = {
   'workflow-brainstorm-review':   ['brainstorm_review.md', 'brainstorm-review.md'],
   'workflow-investigate':         ['investigation.md'],
   'workflow-investigate-review':  ['investigate_review.md', 'investigation-review.md', 'investigation_review.md'],
+  'workflow-implementation-plan': ['implementation-plan.md'],
+  'workflow-implementation-plan-review': ['implementation-plan-review.md'],
   'workflow-tasker':              ['plan.md', 'tasks.md'],
   'workflow-tasker-review':       ['tasker_review.md', 'tasks-review.md'],
   'workflow-agent-review':        ['agent_review.md', 'agent-review.md'],
@@ -45,28 +48,13 @@ const NO_ARTIFACT_STAGES = new Set([
   'workflow-e2e'
 ]);
 
-const NEXT_SKILL_ON_PASS = {
-  'workflow-brainstorm':          'workflow-brainstorm-review',
-  'workflow-brainstorm-review':   'workflow-investigate',
-  'workflow-investigate':         'workflow-investigate-review',
-  'workflow-investigate-review':  'workflow-tasker',
-  'workflow-tasker':              'workflow-tasker-review',
-  'workflow-tasker-review':       'workflow-write-test',
-  'workflow-write-test':          'workflow-coding',
-  'workflow-coding':              'workflow-agent-review',
-  'workflow-agent-review':        'workflow-e2e',
-  'workflow-e2e':                 'workflow-e2e-review',
-  'workflow-e2e-review':          'workflow-team-code-review',
-  'workflow-team-code-review':    'workflow-human-check'
-};
-
-function stageUnderEnforcement(stage) {
-  return stage in NEXT_SKILL_ON_PASS || SKILL_ARTIFACTS[stage];
+function stageUnderEnforcement(state, stage) {
+  return Boolean(nextSkillForState(state, stage) || SKILL_ARTIFACTS[stage]);
 }
 
 function getMode() {
-  const m = (process.env.SMT_TERMINAL_GATE_MODE || 'shadow').toLowerCase();
-  return ['off', 'shadow', 'enforce'].includes(m) ? m : 'shadow';
+  const m = (process.env.SMT_TERMINAL_GATE_MODE || 'enforce').toLowerCase();
+  return m === 'off' ? 'off' : 'enforce';
 }
 
 function logStderr(tag, obj) {
@@ -159,14 +147,14 @@ function main() {
   if (currentStage == null) emitNoOp();
 
   // All workflow stages with a defined next-skill are under enforcement.
-  if (!stageUnderEnforcement(currentStage)) emitNoOp();
+  if (!stageUnderEnforcement(active.state, currentStage)) emitNoOp();
 
   const turn = extractTurnToolUses(input);
   const agentReturned = agentReturnedThisTurn(turn);
   const hasMutation = turn.some((u) => u.tool === 'Write' || u.tool === 'Edit' || u.tool === 'Bash' || u.tool === 'NotebookEdit');
   if (!agentReturned && !hasMutation && turn.length === 0) emitNoOp(); // nothing to judge
 
-  const nextSkill = NEXT_SKILL_ON_PASS[currentStage];
+  const nextSkill = nextSkillForState(active.state, currentStage);
   const dispatched = nextSkillDispatched(turn, nextSkill);
   // Source-code stages (coding / write-test / e2e) check ONLY next-skill dispatch.
   const skipArtifactCheck = NO_ARTIFACT_STAGES.has(currentStage);
@@ -177,12 +165,6 @@ function main() {
   if (recentlyReminded(cwd, session_id, currentStage)) {
     logStderr('dedupe', { stage: currentStage });
     emitNoOp(); return;
-  }
-
-  if (mode === 'shadow') {
-    logStderr('shadow-would-inject', { stage: currentStage, artifactOk, dispatched });
-    emitNoOp();
-    return;
   }
 
   // Build reminder

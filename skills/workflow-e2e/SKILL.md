@@ -1,6 +1,6 @@
 ---
 name: workflow-e2e
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: src/** built
 produces: "artifacts/ (video, screenshots, logs, trace, io-samples)"
@@ -290,4 +290,4 @@ Do NOT:
 - Stop after artifacts exist, report "E2E passed", or ask "shall I review?"
 - Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
 
-Artifacts on disk alone are not the gate — `workflow-e2e-review` 3-round pass is.
+Artifacts on disk alone are not the gate — `workflow-e2e-review` 2-round pass is.

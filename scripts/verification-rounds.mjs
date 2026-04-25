@@ -1,25 +1,26 @@
 #!/usr/bin/env node
 /**
- * verification-rounds.mjs — Multi-Pass Verification (3-Round) enforcement engine.
+ * verification-rounds.mjs — Multi-Pass Verification (2-Round) enforcement engine.
  *
  * Implements workflow-v2.md section 9-3.
  *
  * Responsibilities:
  *   - Initialize rounds[] for a review skill entering execution.
  *   - Record round results (pass/fail per focus).
- *   - Gate skill-level pass: requires all 3 rounds pass (or min_verification_rounds).
+ *   - Gate skill-level pass: requires both rounds pass.
  *   - Detect evasion: block pass declaration when completed_rounds < required.
  *
  * Principle: no retry, no self-skip. A failed round triggers producer-chain
  * routing (via route-on-fail.mjs) rather than local retry.
  */
 
-import { appendEvent, VERIFICATION_FOCUS_ENUM } from './state-schema.mjs';
+import { appendEvent } from './state-schema.mjs';
 
 // Review skills that MUST run Multi-Pass Verification. Per spec §9-3.
 export const REVIEW_SKILLS_WITH_VERIFICATION = Object.freeze([
   'workflow-brainstorm-review',
   'workflow-investigate-review',
+  'workflow-implementation-plan-review',
   'workflow-tasker-review',
   'workflow-agent-review',
   'workflow-e2e-review',
@@ -29,25 +30,22 @@ export const REVIEW_SKILLS_WITH_VERIFICATION = Object.freeze([
 export const DEFAULT_ROUNDS = Object.freeze([
   { n: 1, focus: 'omission' },
   { n: 2, focus: 'contradiction' },
-  { n: 3, focus: 'edge_case' },
 ]);
+
+export const REQUIRED_ROUNDS = DEFAULT_ROUNDS.length;
 
 export const ROUND_PROMPT_TEMPLATES = Object.freeze({
   omission: 'templates/verification/round-1-omission.md',
   contradiction: 'templates/verification/round-2-contradiction.md',
-  edge_case: 'templates/verification/round-3-edge-case.md',
 });
 
 /**
  * Initialize team_runtime entry for a review skill with round scaffolding.
  * Idempotent: if rounds already initialized, returns existing entry unchanged.
  */
-export function initRounds(state, skill, { pattern = 'A', assignedAgents = [], minRounds = 3 } = {}) {
+export function initRounds(state, skill, { pattern = 'A', assignedAgents = [] } = {}) {
   if (!REVIEW_SKILLS_WITH_VERIFICATION.includes(skill)) {
     throw new Error(`skill does not support Multi-Pass Verification: ${skill}`);
-  }
-  if (minRounds < 1 || minRounds > 3) {
-    throw new Error(`min_verification_rounds out of range [1,3]: ${minRounds}`);
   }
 
   const existing = state.team_runtime?.[skill];
@@ -55,7 +53,7 @@ export function initRounds(state, skill, { pattern = 'A', assignedAgents = [], m
     return existing;
   }
 
-  const rounds = DEFAULT_ROUNDS.slice(0, minRounds).map((r) => ({
+  const rounds = DEFAULT_ROUNDS.map((r) => ({
     n: r.n,
     focus: r.focus,
     result: null,
@@ -70,7 +68,7 @@ export function initRounds(state, skill, { pattern = 'A', assignedAgents = [], m
     pattern,
     assigned_agents: assignedAgents,
     rounds,
-    min_verification_rounds: minRounds,
+    min_verification_rounds: REQUIRED_ROUNDS,
     completed_rounds: 0,
     status: 'pending',
   };
@@ -173,8 +171,8 @@ export function canDeclarePass(state, skill) {
 }
 
 /**
- * On re-entry after upstream fix, reset all rounds. Per spec §9-3:
- * "ALL 3 rounds re-run (not just failed ones)".
+ * On re-entry after upstream fix, reset both rounds. Per spec §9-3:
+ * all rounds re-run, not just failed ones.
  */
 export function resetRounds(state, skill) {
   const entry = state.team_runtime?.[skill];
@@ -191,18 +189,11 @@ export function resetRounds(state, skill) {
 }
 
 /**
- * Evasion detector: warn when same agent type runs 3 consecutive rounds.
- * Pattern A should mix >=2 types per spec §9-3.
+ * Evasion detector retained for API compatibility. With the two-round policy,
+ * there is no third consecutive round to warn about.
  */
 export function detectAgentReuse(state, skill) {
   const entry = state.team_runtime?.[skill];
-  if (!entry?.rounds || entry.rounds.length < 3) return { reused: false };
-  const types = entry.rounds.filter((r) => r.agent_type).map((r) => r.agent_type);
-  if (types.length < 3) return { reused: false };
-  const unique = new Set(types);
-  if (unique.size === 1 && entry.pattern === 'A') {
-    return { reused: true, agent_type: [...unique][0], warning: 'Pattern A should mix >=2 agent types across rounds' };
-  }
   return { reused: false };
 }
 

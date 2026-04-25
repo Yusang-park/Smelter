@@ -1,6 +1,6 @@
 ---
 name: workflow-tasker
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: investigation.md (+brainstorm.md optional)
 produces: tasks.md (+ target_type + team_runtime initial assignment)
@@ -14,7 +14,7 @@ team_template:
 can_delegate_to: [architect, researcher, explore-high]
 gate:
   postcondition:
-    - file_exists: "plan.md"
+    - file_exists: "tasks.md"
     - plan_has_queue: true
     - target_type_set: true
     - team_runtime_populated: true
@@ -30,17 +30,17 @@ Based on investigation results, decides the **plan, queue, and team composition*
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
-**Announce at start:** "I'm using workflow-tasker to produce plan.md + target_type + team_runtime from the investigation."
+**Announce at start:** "I'm using workflow-tasker to produce tasks.md + target_type + team_runtime from the investigation."
 
 ## The Iron Law
 
 ```
-NO IMPLEMENTATION SKILL WITHOUT plan.md + target_type + team_runtime
+NO IMPLEMENTATION SKILL WITHOUT tasks.md + target_type + team_runtime
 ```
 
 `workflow-write-test` and `workflow-coding` both refuse to start if any of the three postconditions is missing. The hook gate is:
 
-- `file_exists: plan.md`
+- `file_exists: tasks.md`
 - `plan_has_queue: true`
 - `target_type_set: true`
 - `team_runtime_populated: true`
@@ -49,7 +49,7 @@ All four must hold. Partial plans do not advance.
 
 ## Three core artifacts
 
-### 1. `plan.md`
+### 1. `tasks.md`
 
 ```markdown
 ## Goal
@@ -89,7 +89,7 @@ Assign a Pattern + agent for each downstream workflow-* skill.
 
 | Thought | Reality |
 |---------|---------|
-| "I know the tasks, why write them in plan.md" | `workflow-write-test` and `workflow-coding` READ plan.md. In-head tasks are invisible to them. |
+| "I know the tasks, why write them in tasks.md" | Downstream implementation reads persisted task artifacts. In-head tasks are invisible to them. |
 | "Team assignment can wait" | `team_runtime` gates pattern selection downstream. An empty field forces Pattern A defaults even when the tasker would have chosen B or C. |
 | "Target type is obvious" | `target_type` drives mode-specific routing (e.g., migration forces extra review). Set it explicitly. |
 | "Queue is too granular" | Bite-sized tasks are the contract with `workflow-coding`. Each queue item maps to a TDD cycle. |
@@ -121,7 +121,7 @@ Goal: Produce plan, target_type, and team_runtime for <feature>
 
 Do NOT:
 - Invoke `workflow-write-test`, `workflow-coding`, or any implementation skill
-- Stop after plan.md is written, report "plan ready", or ask for approval
+- Stop after tasks.md is written, report "tasks ready", or ask for approval
 - Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
 
-The `workflow-tasker-review` 95% consensus + 3-round pass is the only gate that releases downstream execution.
+The `workflow-tasker-review` 95% consensus + 2-round pass is the only gate that releases downstream execution.

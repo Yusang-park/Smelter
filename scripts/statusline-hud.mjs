@@ -249,14 +249,20 @@ async function main() {
   const inCodexMode = modelModeState?.mode === 'codex'
     || process.env.SMELTER_MODEL_MODE === 'codex';
 
-  // Resolve current model label from settings.json (always, both modes)
+  // Resolve current model label from settings.json (always, both modes).
+  // `.claude.json` resolution must honor CLAUDE_CONFIG_DIR — Claude Code v2.1+
+  // reads `${CLAUDE_CONFIG_DIR}/.claude.json` when set, falling back to
+  // `${HOME}/.claude.json` (at the home root, not nested under `.claude/`).
+  // Ignoring the override lets a codex-window tick leak CODEX_MODEL_OPTIONS
+  // into the plain-dir file that plain claude reads.
   const settings = readJsonFile(SETTINGS_PATH);
-  const claudeJson = readJsonFile(join(home, '.claude.json'));
+  const claudeJsonPath = join(process.env.CLAUDE_CONFIG_DIR || home, '.claude.json');
+  const claudeJson = readJsonFile(claudeJsonPath);
   // Self-heal: if in codex mode but cache was cleared by bootstrap, restore it
   if (inCodexMode && Array.isArray(claudeJson?.additionalModelOptionsCache) && claudeJson.additionalModelOptionsCache.length === 0) {
     try {
       claudeJson.additionalModelOptionsCache = CODEX_MODEL_OPTIONS;
-      writeFileSync(join(home, '.claude.json'), JSON.stringify(claudeJson) + '\n');
+      writeFileSync(claudeJsonPath, JSON.stringify(claudeJson) + '\n');
     } catch { /* ignore */ }
   }
 

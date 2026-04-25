@@ -7,7 +7,7 @@
  * STANDALONE SCRIPT - uses compiled bridge bundle from dist/hooks/skill-bridge.cjs
  * Falls back to inline implementation if bundle not available (first run before build)
  *
- * Enhancement in v3.5: Now uses RECURSIVE discovery (skills in subdirectories included)
+ * v0.4 note: bridge mode uses RECURSIVE discovery (skills in subdirectories included)
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';

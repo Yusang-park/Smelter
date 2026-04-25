@@ -33,7 +33,30 @@ test('SL1: seedWorkflowState creates state.json, pointer, plan.md', async () => 
     assert.ok(existsSync(join(cwd, '.smt', 'features', result.slug, 'task', 'plan.md')), 'plan.md seeded');
     const state = JSON.parse(readFileSync(result.statePath, 'utf-8'));
     assert.equal(state.mode, 'fix');
+    assert.equal(state.user_mode, 'fix');
+    assert.equal(state.task_type, 'write');
+    assert.equal(state.step, 'INTENT');
+    assert.deepEqual(state.step_flow, ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
+    assert.deepEqual(state.allowed_actions, ['classify_intent']);
     assert.equal(state.task_id, result.slug);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL1b: seedWorkflowState supports live v0.4 modes explore and dobby', async () => {
+  const { seedWorkflowState } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const inv = seedWorkflowState({ directory: cwd, commandName: 'explore', args: 'probe', sessionId: 'sl1b-a', source: 'skill-tool' });
+    const invState = JSON.parse(readFileSync(inv.statePath, 'utf-8'));
+    assert.equal(invState.user_mode, 'explore');
+    assert.equal(invState.task_type, 'read');
+
+    const dobby = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1b-b', source: 'skill-tool' });
+    const dobbyState = JSON.parse(readFileSync(dobby.statePath, 'utf-8'));
+    assert.equal(dobbyState.user_mode, 'dobby');
+    assert.equal(dobbyState.task_type, 'freeform');
+    assert.equal(dobbyState.step, 'EXECUTE');
+    assert.deepEqual(dobbyState.allowed_actions, ['read', 'write_source', 'run_test']);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
@@ -120,7 +143,7 @@ test('SL6 (error): invalid commandName returns null without throwing', async () 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SL8–SL14 — mode-upgrade branch: read-only state (verify/investigate/think)
+// SL8–SL14 — mode-upgrade branch: read-only state (verify/explore/brainstorm)
 // under Skill(fix|implement) must reseed as write-mode, not silently reuse.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -135,13 +158,13 @@ test('SL8 (happy): verify state + Skill(fix) → mode-upgrade creates new', asyn
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL9 (happy): think state + Skill(implement) → mode-upgrade creates new', async () => {
+test('SL9 (happy): brainstorm state + Skill(implement) → mode-upgrade creates new', async () => {
   const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
   const cwd = tmp();
   try {
-    seedWorkflowState({ directory: cwd, commandName: 'think', args: 'brainstorm caching', sessionId: 'sl9', source: 'skill-tool' });
+    seedWorkflowState({ directory: cwd, commandName: 'brainstorm', args: 'brainstorm caching', sessionId: 'sl9', source: 'skill-tool' });
     const d = shouldCreateNewFeature(cwd, 'sl9', 'build it', 'skill-tool', 'implement');
-    assert.equal(d.create, true, 'think→implement must upgrade');
+    assert.equal(d.create, true, 'brainstorm→implement must upgrade');
     assert.equal(d.reason, 'mode-upgrade');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
@@ -196,15 +219,26 @@ test('SL13 (integration): seedWorkflowState verify→fix e2e — new slug + stat
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL14 (error): unknown upgrade target mode (investigate→investigate via Skill(investigate)) stays on existing create:true reason', async () => {
+test('SL14 (boundary): explore→explore via Skill(explore) keeps explicit reseed precedence', async () => {
   const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
   const cwd = tmp();
   try {
-    seedWorkflowState({ directory: cwd, commandName: 'investigate', args: 'probe', sessionId: 'sl14', source: 'skill-tool' });
-    const d = shouldCreateNewFeature(cwd, 'sl14', 'probe again', 'skill-tool', 'investigate');
-    // investigate-command-reseed was pre-existing; mode-upgrade must not shadow it.
+    seedWorkflowState({ directory: cwd, commandName: 'explore', args: 'probe', sessionId: 'sl14', source: 'skill-tool' });
+    const d = shouldCreateNewFeature(cwd, 'sl14', 'probe again', 'skill-tool', 'explore');
+    // explore-command-reseed must not be shadowed by mode-upgrade.
     assert.equal(d.create, true);
-    assert.equal(d.reason, 'investigate-command-reseed', 'existing investigate-reseed precedence preserved');
+    assert.equal(d.reason, 'explore-command-reseed', 'existing explore-reseed precedence preserved');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL14b (boundary): magic explore during active write workflow reuses sticky feature', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    seedWorkflowState({ directory: cwd, commandName: 'implement', args: 'active build', sessionId: 'sl14b', source: 'magic' });
+    const d = shouldCreateNewFeature(cwd, 'sl14b', '파악해줘', 'magic', 'explore');
+    assert.equal(d.create, false, 'natural-language explore must not reseed while workflow is active');
+    assert.ok(d.reuseSlug);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 

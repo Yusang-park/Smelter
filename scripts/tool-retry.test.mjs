@@ -95,6 +95,43 @@ function runHook(payload, cwd) {
   console.log('  case file-modified (short form) OK');
 }
 
+// Fixture: tool_response delivered as a raw STRING (Claude Code's actual Edit-failure shape).
+// Regression for extractToolResultText treating the string as an object and missing
+// `resp.error` / `resp.stderr`, which caused the retry hook to silently skip.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's-str-resp',
+    tool_name: 'Edit',
+    tool_input: { file_path: '/tmp/doc.md' },
+    tool_response: 'File has been modified since read, either by the user or by a linter.\nRead it again before attempting to write it.',
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block', 'string-shaped tool_response with file-modified must block');
+  assert.match(out.reason, /\[Auto-Retry: File modified/);
+  assert.match(out.reason, /\/tmp\/doc\.md/, 'instruction must include file_path even on string payload');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-modified (string tool_response) OK');
+}
+
+// Fixture: tool_output delivered as a raw STRING (alt payload shape).
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's-str-out',
+    tool_name: 'Edit',
+    tool_input: { file_path: '/tmp/alt.md' },
+    tool_output: 'File has been modified since read, either by the user or by a linter.',
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block', 'string-shaped tool_output with file-modified must block');
+  assert.match(out.reason, /\[Auto-Retry: File modified/);
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-modified (string tool_output) OK');
+}
+
 // NEGATIVE: Bash stdout echoing the phrase (e.g. commit msg back-echo) must NOT trigger
 {
   const dir = mkdtempSync(join(tmpdir(), 'lh-tr-'));
@@ -144,6 +181,24 @@ function runHook(payload, cwd) {
   assert.match(out.reason, /\/Users\/yusang\/OpenHands\/LICENSE/, 'instruction must include file_path');
   rmSync(dir, { recursive: true, force: true });
   console.log('  case file-not-read OK');
+}
+
+// REGRESSION: writer tool names may include a UI suffix like `Write(/abs/path)`.
+// The retry hook must still recognize these as file-writer tools.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-name-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 's-name',
+    tool_name: 'Write(/Users/yusang/Smelter/scripts/lib/yellow-tag.test.mjs)',
+    tool_input: { file_path: '/Users/yusang/Smelter/scripts/lib/yellow-tag.test.mjs', content: 'x' },
+    tool_output: { error: 'File has not been read yet. Read it first before writing to it.', exit_code: 1 },
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block', 'suffixed Write tool_name should still block');
+  assert.match(out.reason, /\[Auto-Retry: File not read before Write\/Edit\]/);
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read suffixed tool_name OK');
 }
 
 // Fixture: rg flag-parse → wrap in bash -c
@@ -396,6 +451,66 @@ function runHook(payload, cwd) {
   assert.notEqual(pidA, pidB, 'precondition: child PIDs differ');
   assert.notEqual(keyA, keyB, 'sid-less keys from distinct PIDs must differ');
   console.log('  case sid-less-distinct-pid OK');
+}
+
+// NEW: file-not-read attempt 1 is the original single-line instruction
+// (no "fallback" / "escalat" phrasing yet) so we don't bloat every call.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-a1-'));
+  const res = runHook({
+    cwd: dir,
+    session_id: 'sess-a1',
+    tool_name: 'Write',
+    tool_input: { file_path: '/tmp/x.ts', content: 'y' },
+    tool_output: { error: 'File has not been read yet', exit_code: 1 },
+  }, dir);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /Attempt 1\/3/);
+  assert.doesNotMatch(out.reason, /fallback|escalat/i, 'attempt 1 must be original instruction, not fallback');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read attempt-1-is-original OK');
+}
+
+// NEW: file-not-read attempt 2 emits a STRONGER fallback instruction
+// distinct from attempt 1.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-fb-'));
+  const payload = {
+    cwd: dir,
+    session_id: 'sess-fb',
+    tool_name: 'Write',
+    tool_input: { file_path: '/tmp/foo.json', content: 'x' },
+    tool_output: { error: 'File has not been read yet. Read it first before writing to it.', exit_code: 1 },
+  };
+  const first  = JSON.parse(runHook(payload, dir).stdout);
+  const second = JSON.parse(runHook(payload, dir).stdout);
+  assert.equal(first.decision, 'block');
+  assert.equal(second.decision, 'block');
+  assert.notEqual(first.reason, second.reason, 'attempt 2 must differ from attempt 1');
+  assert.match(second.reason, /fallback|escalat|step/i, 'attempt 2 must signal escalation');
+  assert.match(second.reason, /\/tmp\/foo\.json/, 'fallback must include file_path');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read fallback-escalation OK');
+}
+
+// NEW: fallback instruction enumerates explicit numbered steps
+{
+  const dir = mkdtempSync(join(tmpdir(), 'lh-tr-steps-'));
+  const payload = {
+    cwd: dir,
+    session_id: 'sess-steps',
+    tool_name: 'Edit',
+    tool_input: { file_path: '/tmp/bar.ts' },
+    tool_output: { error: 'File has not been read yet', exit_code: 1 },
+  };
+  runHook(payload, dir); // burn attempt 1
+  const second = JSON.parse(runHook(payload, dir).stdout);
+  assert.equal(second.decision, 'block');
+  assert.match(second.reason, /\(1\)|Step\s*1/i, 'fallback must include step 1 marker');
+  assert.match(second.reason, /\(2\)|Step\s*2/i, 'fallback must include step 2 marker');
+  rmSync(dir, { recursive: true, force: true });
+  console.log('  case file-not-read fallback-steps OK');
 }
 
 console.log('tool-retry: OK');

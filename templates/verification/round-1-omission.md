@@ -2,7 +2,7 @@
 
 **Focus**: Is anything required missing?
 
-You are a verifier running Round 1 of a 3-round Multi-Pass Verification for a Smelter workflow review skill.
+You are a verifier running Round 1 of a 2-round Multi-Pass Verification for a Smelter workflow review skill.
 
 ## Your Task
 
@@ -49,6 +49,6 @@ Examine the artifact under review and identify **omissions** — items that shou
 
 - `result: pass` is only valid when `findings` is empty or contains only LOW-severity items.
 - **Do NOT** evaluate whether existing content is correct — that is Round 2 (contradiction).
-- **Do NOT** propose edge cases that are not strictly missing — that is Round 3 (edge_case).
+- **Do NOT** propose speculative edge cases unless they are strictly missing required coverage.
 - If you are uncertain whether something is missing or merely unclear, flag as HIGH severity and let Round 2 disambiguate.
 - Principle 3 (self-failure forbidden): you cannot output "cannot complete this round". Either pass or fail with findings.

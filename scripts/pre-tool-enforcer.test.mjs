@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,10 +16,18 @@ const SCRIPT = join(process.cwd(), 'scripts', 'pre-tool-enforcer.mjs');
 
 function runEnforcer({ cwd, toolName, toolInput, sessionId = 't2', env = {} }) {
   const payload = JSON.stringify({ cwd, session_id: sessionId, tool_name: toolName, tool_input: toolInput });
+  // Strip SMT_HOOK_WRITE from the inherited environment — this test suite
+  // pins the enforcer's default (agent-invoked) behavior, where the escape
+  // hatch is NOT set. Leaking the parent env's SMT_HOOK_WRITE=1 (present when
+  // the test runs inside a Smelter hook-driven session) would bypass every
+  // protected-path/code-file/git-commit gate and mask real failures. Callers
+  // that want to exercise the bypass pass `env: { SMT_HOOK_WRITE: '1' }`
+  // explicitly (see T2-C1) — the spread below lets them re-enable it.
+  const { SMT_HOOK_WRITE, ...parentEnv } = process.env;
   const result = spawnSync(process.execPath, [SCRIPT], {
     input: payload,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...parentEnv, ...env },
   });
   return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr };
 }
@@ -33,13 +41,17 @@ function parseOut(stdout) {
 //   .smt/state/active-feature-<sid>.json → {slug}
 //   .smt/features/<slug>/task/<slug>.state.json → {mode}
 // and allows Edit/Write only when mode ∈ {fix, implement}.
-function seedActiveWorkflow(cwd, { sessionId = 't2', slug = 'seed', mode = 'fix' } = {}) {
+function seedActiveWorkflow(cwd, { sessionId = 't2', slug = 'seed', mode = 'fix', task_type = undefined, step = undefined, allowed_actions = undefined } = {}) {
   const stateDir = join(cwd, '.smt', 'state');
   const taskDir = join(cwd, '.smt', 'features', slug, 'task');
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(taskDir, { recursive: true });
   writeFileSync(join(stateDir, `active-feature-${sessionId}.json`), JSON.stringify({ slug }));
-  writeFileSync(join(taskDir, `${slug}.state.json`), JSON.stringify({ mode, completed_stages: [], events: [] }));
+  const state = { mode, completed_stages: [], events: [] };
+  if (task_type !== undefined) state.task_type = task_type;
+  if (step !== undefined) state.step = step;
+  if (allowed_actions !== undefined) state.allowed_actions = allowed_actions;
+  writeFileSync(join(taskDir, `${slug}.state.json`), JSON.stringify(state));
 }
 
 // ── Happy path ─────────────────────────────────────────────────────────────
@@ -51,6 +63,98 @@ test('T2-H1: Write on unrelated code file with active /fix workflow is allowed',
     const out = parseOut(r.stdout);
     assert.ok(out, 'parse output');
     assert.notEqual(out.decision, 'block', `unrelated Write blocked under active fix mode: ${JSON.stringify(out)}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1b: v0.4 task_type overrides legacy mode for code-file write gate', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1b-'));
+  try {
+    seedActiveWorkflow(cwd, { mode: 'fix', task_type: 'read' });
+    const r = runEnforcer({ cwd, toolName: 'Write', toolInput: { file_path: `${cwd}/src/foo.ts`, content: 'x' } });
+    const out = parseOut(r.stdout);
+    assert.equal(out?.decision, 'block', `v0.4 read task_type must block source write even when legacy mode=fix: ${JSON.stringify(out)}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1c: v0.4 write task blocks source edit before EXECUTE step', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1c-'));
+  try {
+    seedActiveWorkflow(cwd, { mode: 'fix', task_type: 'write' });
+    const taskDir = join(cwd, '.smt', 'features', 'seed', 'task');
+    const statePath = join(taskDir, 'seed.state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    Object.assign(state, { user_mode: 'fix', step: 'TEST_DESIGN', allowed_actions: ['read', 'write_test', 'run_test'] });
+    writeFileSync(statePath, JSON.stringify(state));
+
+    const r = runEnforcer({ cwd, toolName: 'Write', toolInput: { file_path: `${cwd}/src/foo.ts`, content: 'x' } });
+    const out = parseOut(r.stdout);
+    assert.equal(out?.decision, 'block', `v0.4 guard must block before EXECUTE: ${JSON.stringify(out)}`);
+    assert.match(out.reason, /step=TEST_DESIGN|v0\.4 guard/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1c2: v0.4 write task allows test file Write during TEST_DESIGN', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1c2-'));
+  try {
+    seedActiveWorkflow(cwd, { mode: 'implement', task_type: 'write' });
+    const taskDir = join(cwd, '.smt', 'features', 'seed', 'task');
+    const statePath = join(taskDir, 'seed.state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    Object.assign(state, { user_mode: 'implement', step: 'TEST_DESIGN', allowed_actions: ['read', 'write_test', 'run_test'] });
+    writeFileSync(statePath, JSON.stringify(state));
+
+    const r = runEnforcer({ cwd, toolName: 'Write', toolInput: { file_path: `${cwd}/scripts/lib/hook-guards.test.mjs`, content: 'x' } });
+    const out = parseOut(r.stdout);
+    assert.notEqual(out?.decision, 'block', `test Write should be allowed during TEST_DESIGN: ${JSON.stringify(out)}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1c3: v0.4 guard blocks workflow artifact writes when write_artifact is not allowed', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-v04-artifact-'));
+  try {
+    seedActiveWorkflow(cwd, { sessionId: 't2-artifact', slug: 'demo', mode: 'fix', task_type: 'write', step: 'TEST_DESIGN', allowed_actions: ['write_test'] });
+    const r = runEnforcer({ cwd, toolName: 'Write', toolInput: { file_path: join(cwd, '.smt/features/demo/task/plan.md') }, sessionId: 't2-artifact' });
+    const out = parseOut(r.stdout);
+    assert.equal(out?.decision, 'block', `artifact write must be blocked outside write_artifact action: ${JSON.stringify(out)}`);
+    assert.match(out.reason, /artifact write not allowed/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1d: v0.4 write task blocks EXECUTE source edit without red test evidence', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1d-'));
+  try {
+    seedActiveWorkflow(cwd, { mode: 'fix', task_type: 'write' });
+    const taskDir = join(cwd, '.smt', 'features', 'seed', 'task');
+    const statePath = join(taskDir, 'seed.state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    Object.assign(state, { user_mode: 'fix', step: 'EXECUTE', allowed_actions: ['read', 'write_source', 'run_test'] });
+    writeFileSync(statePath, JSON.stringify(state));
+
+    const r = runEnforcer({ cwd, toolName: 'Edit', toolInput: { file_path: `${cwd}/src/foo.ts`, old_string: 'a', new_string: 'b' } });
+    const out = parseOut(r.stdout);
+    assert.equal(out?.decision, 'block', `v0.4 guard must require red test evidence: ${JSON.stringify(out)}`);
+    assert.match(out.reason, /red test/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1e: v0.4 write task allows EXECUTE source edit with legacy red test evidence', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1e-'));
+  try {
+    seedActiveWorkflow(cwd, { mode: 'fix', task_type: 'write' });
+    const taskDir = join(cwd, '.smt', 'features', 'seed', 'task');
+    const statePath = join(taskDir, 'seed.state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    Object.assign(state, {
+      user_mode: 'fix',
+      step: 'EXECUTE',
+      allowed_actions: ['read', 'write_source', 'run_test'],
+      test_cycles: [{ action: 'added_case', run_result: 'fail' }],
+    });
+    writeFileSync(statePath, JSON.stringify(state));
+
+    const r = runEnforcer({ cwd, toolName: 'Edit', toolInput: { file_path: `${cwd}/src/foo.ts`, old_string: 'a', new_string: 'b' } });
+    const out = parseOut(r.stdout);
+    assert.notEqual(out?.decision, 'block', `v0.4 guard should allow EXECUTE after red test: ${JSON.stringify(out)}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -155,7 +259,8 @@ test('T2-V1: Write on code file with NO active workflow is blocked (v3.3 gate)',
     assert.ok(out);
     assert.equal(out.decision, 'block', 'code file without workflow must block');
     assert.match(out.reason, /Raw Write of code file/i);
-    assert.match(out.reason, /\/fix|\/implement/);
+    assert.match(out.reason, /Skill\(fix\|implement\|dobby\)/);
+    assert.doesNotMatch(out.reason, /`\/(?:fix|implement|dobby)\s+<description>`/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -170,18 +275,18 @@ test('T2-V2: Write on doc file with NO active workflow is NOT blocked (docs exem
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('T2-V3: Write on code file with mode=investigate is blocked (only fix/implement pass gate)', async () => {
+test('T2-V3: Write on code file with mode=explore is blocked (only fix/implement pass gate)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't2-v3-'));
   try {
-    seedActiveWorkflow(cwd, { mode: 'investigate' });
+    seedActiveWorkflow(cwd, { mode: 'explore' });
     const r = runEnforcer({ cwd, toolName: 'Write', toolInput: { file_path: `${cwd}/src/foo.ts`, content: 'x' } });
     const out = parseOut(r.stdout);
-    assert.equal(out?.decision, 'block', 'investigate mode must NOT allow code edit');
+    assert.equal(out?.decision, 'block', 'explore mode must NOT allow code edit');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
 test('T2-V4: code file with active /implement workflow is allowed', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 't2-v4-'));
+  const cwd = mkdtempSync(join(tmpdir(), 't2-v04-'));
   try {
     seedActiveWorkflow(cwd, { mode: 'implement' });
     const r = runEnforcer({ cwd, toolName: 'Edit', toolInput: { file_path: `${cwd}/src/bar.js`, old_string: 'a', new_string: 'b' } });
@@ -562,8 +667,8 @@ test('G-I1: block reason names workflow-human-check so agent knows the recovery 
 // ════════════════════════════════════════════════════════════════════════════
 // Native plan-mode block — command-aware gate
 // Feature: unconditional-plan-mode-block
-// Rule: block EnterPlanMode/ExitPlanMode ONLY when workflow.json.command === 'think'.
-//       All other Smelter commands (fix, implement, investigate, verify) must
+// Rule: block EnterPlanMode/ExitPlanMode ONLY when workflow.json.command === 'brainstorm'.
+//       All other Smelter commands (fix, implement, explore, verify) must
 //       allow native plan mode. Malformed / missing workflow.json must fail-open.
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -605,20 +710,20 @@ test('PLAN-H2: EnterPlanMode during /implement is ALLOWED', async () => {
 });
 
 // ── Boundary: the only commands that MUST be blocked ──────────────────────
-test('PLAN-B1: EnterPlanMode during /think is BLOCKED', async () => {
+test('PLAN-B1: EnterPlanMode during /brainstorm is BLOCKED', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'plan-b1-'));
   try {
-    const { sessionId } = seedPlanModeScenario(cwd, { command: 'think' });
+    const { sessionId } = seedPlanModeScenario(cwd, { command: 'brainstorm' });
     const r = runEnforcer({ cwd, sessionId, toolName: 'EnterPlanMode', toolInput: {} });
     const out = parseOut(r.stdout);
     assert.equal(out?.decision, 'block', `expected block, got ${JSON.stringify(out)}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('PLAN-B2: ExitPlanMode during /think is BLOCKED', async () => {
+test('PLAN-B2: ExitPlanMode during /brainstorm is BLOCKED', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'plan-b2-'));
   try {
-    const { sessionId } = seedPlanModeScenario(cwd, { command: 'think' });
+    const { sessionId } = seedPlanModeScenario(cwd, { command: 'brainstorm' });
     const r = runEnforcer({ cwd, sessionId, toolName: 'ExitPlanMode', toolInput: {} });
     const out = parseOut(r.stdout);
     assert.equal(out?.decision, 'block', `expected block, got ${JSON.stringify(out)}`);
@@ -657,13 +762,13 @@ test('PLAN-C1: workflow.json missing `command` field → ALLOWED (safe default)'
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('PLAN-C2: EnterPlanMode during /investigate is ALLOWED', async () => {
+test('PLAN-C2: EnterPlanMode during /explore is ALLOWED', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'plan-c2-'));
   try {
-    const { sessionId } = seedPlanModeScenario(cwd, { command: 'investigate' });
+    const { sessionId } = seedPlanModeScenario(cwd, { command: 'explore' });
     const r = runEnforcer({ cwd, sessionId, toolName: 'EnterPlanMode', toolInput: {} });
     const out = parseOut(r.stdout);
-    assert.notEqual(out?.decision, 'block', `expected allow for /investigate; got ${JSON.stringify(out)}`);
+    assert.notEqual(out?.decision, 'block', `expected allow for /explore; got ${JSON.stringify(out)}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -677,7 +782,7 @@ test('PLAN-C3: EnterPlanMode during /verify is ALLOWED', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('PLAN-C4: stale GLOBAL active-feature.json pointing at /think does NOT block when session pointer is absent', async () => {
+test('PLAN-C4: stale GLOBAL active-feature.json pointing at /brainstorm does NOT block when session pointer is absent', async () => {
   // Regression guard for the session-scoped invariant at pre-tool-enforcer.mjs:122-124.
   // The gate must consult ONLY the session-scoped pointer when sessionId is present;
   // a stale global pointer from another session must never leak across sessions.
@@ -689,7 +794,7 @@ test('PLAN-C4: stale GLOBAL active-feature.json pointing at /think does NOT bloc
     mkdirSync(wfDir, { recursive: true });
     // Global pointer only — no active-feature-<sid>.json.
     writeFileSync(join(stateDir, 'active-feature.json'), JSON.stringify({ slug: 'other-sess-feat' }));
-    writeFileSync(join(wfDir, 'workflow.json'), JSON.stringify({ command: 'think', step: 'step-1' }));
+    writeFileSync(join(wfDir, 'workflow.json'), JSON.stringify({ command: 'brainstorm', step: 'step-1' }));
     const r = runEnforcer({ cwd, sessionId: 'fresh-sid', toolName: 'EnterPlanMode', toolInput: {} });
     const out = parseOut(r.stdout);
     assert.notEqual(out?.decision, 'block', `session isolation violated — stale global pointer blocked: ${JSON.stringify(out)}`);
@@ -697,14 +802,14 @@ test('PLAN-C4: stale GLOBAL active-feature.json pointing at /think does NOT bloc
 });
 
 // ── Integration ────────────────────────────────────────────────────────────
-test('PLAN-I1: /think block reason guides agent to Smelter planning engine (brainstorm / think)', async () => {
+test('PLAN-I1: /brainstorm block reason guides agent to Smelter planning engine', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'plan-i1-'));
   try {
-    const { sessionId } = seedPlanModeScenario(cwd, { command: 'think' });
+    const { sessionId } = seedPlanModeScenario(cwd, { command: 'brainstorm' });
     const r = runEnforcer({ cwd, sessionId, toolName: 'EnterPlanMode', toolInput: {} });
     const out = parseOut(r.stdout);
     assert.equal(out?.decision, 'block');
-    assert.match(out.reason, /\/think|workflow-brainstorm|planning/i,
+    assert.match(out.reason, /\/brainstorm|workflow-brainstorm|planning/i,
       `expected planning-engine hint in reason; got: ${out?.reason}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
@@ -767,5 +872,22 @@ test('T2-F2: sid present + scoped absent + unscoped absent → code-file Write i
       'block',
       `no pointer anywhere must still block; got ${JSON.stringify(out)}`,
     );
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-F3: raw code-write block reason does not ask user to type slash commands', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-f3-'));
+  try {
+    const r = runEnforcer({
+      cwd,
+      sessionId: 'abc123',
+      toolName: 'Write',
+      toolInput: { file_path: `${cwd}/scripts/lib/hook-guards.test.mjs`, content: 'x' },
+    });
+    const out = parseOut(r.stdout);
+    assert.equal(out?.decision, 'block');
+    assert.doesNotMatch(out.reason, /Required action: invoke/i);
+    assert.doesNotMatch(out.reason, /`\/(?:fix|implement|dobby)\s+<description>`/);
+    assert.match(out.reason, /agent recovery|Skill\(fix\|implement\|dobby\)/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

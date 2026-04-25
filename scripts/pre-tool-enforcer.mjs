@@ -9,6 +9,7 @@ import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { readCancel } from './lib/cancel-signal.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
+import { evaluateToolUse as evaluateV4ToolUse } from './lib/workflow-v4-guard.mjs';
 
 // Read stdin synchronously — hook scripts receive JSON via pipe, /dev/stdin returns immediately
 function readStdinSync() {
@@ -131,10 +132,10 @@ function main() {
     try { data = JSON.parse(input); } catch {}
     const sessionId = data.session_id || data.sessionId || '';
 
-    // --- Block native EnterPlanMode only during Smelter /think (planning) ---
-    // Smelter's /think → workflow-brainstorm (depth: deep) OWNS planning. Native
-    // plan mode during /think is redundant and breaks file-based memory.
-    // Other modes (/fix, /implement, /investigate, /verify) MAY legitimately use
+    // --- Block native EnterPlanMode only during Smelter /brainstorm (planning) ---
+    // Smelter's /brainstorm → workflow-brainstorm (depth: deep) OWNS planning. Native
+    // plan mode during /brainstorm is redundant and breaks file-based memory.
+    // Other modes (/fix, /implement, /explore, /verify) MAY legitimately use
     // native plan mode — do not block them.
     // Fail-open: malformed / missing / command-less workflow.json allows the tool.
     if (toolName === 'ExitPlanMode' || toolName === 'EnterPlanMode') {
@@ -151,7 +152,7 @@ function main() {
       const smtState = existsSync(smtStateScoped)
         ? smtStateScoped
         : resolveUnscopedFallback(directory, sessionId);
-      let isThinkMode = false;
+      let isBrainstormMode = false;
       try {
         if (smtState && existsSync(smtState)) {
           const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
@@ -159,16 +160,16 @@ function main() {
             const statePath = join(directory, '.smt', 'features', pointer.slug, 'state', 'workflow.json');
             if (existsSync(statePath)) {
               const wf = JSON.parse(readFileSync(statePath, 'utf-8'));
-              isThinkMode = wf?.command === 'think';
+              isBrainstormMode = wf?.command === 'brainstorm';
             }
           }
         }
       } catch {}
-      if (isThinkMode) {
-        printTag(`Block: ${toolName} (Smelter /think active)`);
+      if (isBrainstormMode) {
+        printTag(`Block: ${toolName} (Smelter /brainstorm active)`);
         console.log(JSON.stringify({
           decision: 'block',
-          reason: `[SMELTER] Native plan mode (${toolName}) is blocked during Smelter /think. The workflow-brainstorm skill (depth: deep) is the planning engine for /think — use it instead of native plan mode. To start a new planning session use \`/think <idea>\`; otherwise follow the injected step prompt for the current workflow.`,
+          reason: `[SMELTER] Native plan mode (${toolName}) is blocked during Smelter /brainstorm. The workflow-brainstorm skill (depth: deep) is the planning engine for /brainstorm — use it instead of native plan mode. Agent recovery: invoke Skill(brainstorm) yourself for new planning work, or follow the injected step prompt for the current workflow. Do not ask the user to type a slash command.`,
         }));
         return;
       }
@@ -257,7 +258,7 @@ function main() {
             decision: 'block',
             reason: `[SMELTER] ${toolName} targets .smt/features/${targetSlug}/ but the active-feature slug is ${activeSlug}.\n` +
               `All task artifacts must live under .smt/features/${activeSlug}/ to keep state and artifacts in sync.\n` +
-              `If you need a new feature, start a new /fix or /implement session — do NOT mkdir a parallel features/ dir within this session.`,
+              `If you need a new feature, invoke the appropriate command Skill yourself to seed a new workflow — do NOT mkdir a parallel features/ dir within this session or ask the user to type a slash command.`,
           }));
           return;
         }
@@ -266,7 +267,7 @@ function main() {
 
     // --- v3.3: Force code-file Edit/Write through a Smelter workflow ---
     // User directive (2026-04-23): every CODE file modification, no matter
-    // how trivial, must run inside an active /fix or /implement workflow so
+    // how trivial, must run inside an active write/freeform workflow so
     // workflow-human-check is always the terminal gate. Raw agent edits that
     // bypass the pipeline are blocked here at PreToolUse.
     //
@@ -314,7 +315,8 @@ function main() {
       const toolInputData = data.tool_input || data.toolInput || {};
       const filePath = String(toolInputData.file_path || toolInputData.filePath || '');
       const isInternalSmtPath = /[\/\\]\.smt[\/\\]/.test(filePath);
-      if (!isInternalSmtPath && isCodeFile(filePath)) {
+      const isWorkflowArtifactPath = /[\/\\]\.smt[\/\\]features[\/\\][^\/\\]+[\/\\](?:task|artifacts)[\/\\]/.test(filePath);
+      if (isWorkflowArtifactPath || (!isInternalSmtPath && isCodeFile(filePath))) {
         // Resolve workflow pointer — scoped first, seeder-asymmetry-marked
         // unscoped as fallback. See resolveUnscopedFallback for the
         // isolation rule (only pointer.session_id === '' is honored).
@@ -325,6 +327,7 @@ function main() {
           ? smtStateScoped
           : resolveUnscopedFallback(directory, sessionId);
         let allowedMode = null;
+        let v4TaskType = null;
         try {
           if (smtState && existsSync(smtState)) {
             const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
@@ -332,22 +335,39 @@ function main() {
               const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
               if (existsSync(statePath)) {
                 const state = JSON.parse(readFileSync(statePath, 'utf-8'));
-                if (state?.mode === 'fix' || state?.mode === 'implement') {
+                if (typeof state?.task_type === 'string') {
+                  v4TaskType = state.task_type;
+                  const verdict = evaluateV4ToolUse(state, { toolName, filePath });
+                  if (verdict.decision === 'block') {
+                    printTag(`Block: ${toolName} by v0.4 guard (${verdict.reason})`);
+                    console.log(JSON.stringify({
+                      decision: 'block',
+                      reason: `[SMELTER] v0.4 guard blocked ${toolName} on ${isWorkflowArtifactPath ? 'workflow artifact' : 'code file'}: ${filePath}\n${verdict.reason}`,
+                    }));
+                    return;
+                  }
+                  if (isWorkflowArtifactPath) return;
+                  if (verdict.decision === 'allow' && (state.task_type === 'write' || state.task_type === 'freeform')) {
+                    allowedMode = state.user_mode || state.mode || state.task_type;
+                  }
+                } else if (state?.mode === 'fix' || state?.mode === 'implement' || state?.mode === 'dobby') {
                   allowedMode = state.mode;
                 }
               }
             }
           }
         } catch {}
-        if (!allowedMode) {
-          printTag(`Block: ${toolName} code file requires active /fix or /implement workflow`);
+        if (!allowedMode && !isWorkflowArtifactPath) {
+          const v4Suffix = v4TaskType ? ` Current v0.4 task_type=${v4TaskType}.` : '';
+          printTag(`Block: ${toolName} code file requires active write/freeform workflow`);
           console.log(JSON.stringify({
             decision: 'block',
             reason: `[SMELTER] Raw ${toolName} of code file is blocked: ${filePath}\n` +
-              `All code-file modifications — including trivial text / design edits within code — must run inside a Smelter /fix or /implement workflow so workflow-human-check is the terminal gate.\n` +
-              `Required action: invoke \`/fix <description>\` (or a natural-language prompt the mode classifier routes to fix/implement) to seed state, then re-issue the ${toolName}.\n` +
+              `v0.4 guard requires task_type=write or task_type=freeform for source edits.${v4Suffix}\n` +
+              `All code-file modifications — including trivial text / design edits within code — require an active Smelter write/freeform workflow so workflow-human-check is the terminal gate.\n` +
+              `Agent recovery: invoke Skill(fix|implement|dobby) yourself to seed active state, or continue only after an existing active workflow pointer is present. Do not ask the user to type a slash command. Then re-issue the ${toolName}.\n` +
               `Docs (.md / .txt / .rst) are NOT gated by this rule — only code files.\n` +
-              `Iron Law #1 — never complete without workflow-human-check. fix_simple (target_type=text/design) also counts as a workflow run.`,
+              `Iron Law #1 — never complete without workflow-human-check. Surface-exempt text/design fixes and dobby freeform work also count as workflow runs.`,
           }));
           return;
         }
@@ -390,7 +410,9 @@ function main() {
               if (existsSync(statePath)) {
                 stateFileExists = true;
                 const state = JSON.parse(readFileSync(statePath, 'utf-8'));
-                const needsHumanCheck = state?.mode === 'fix' || state?.mode === 'implement';
+                const needsHumanCheck = typeof state?.task_type === 'string'
+                  ? (state.task_type === 'write' || state.task_type === 'freeform')
+                  : (state?.mode === 'fix' || state?.mode === 'implement' || state?.mode === 'dobby');
                 if (needsHumanCheck) {
                   const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
                   const events = Array.isArray(state.events) ? state.events : [];
@@ -418,7 +440,7 @@ function main() {
           // When pointer ITSELF is unreadable (no workflow active), fall through.
           if (pointerExists) {
             blockReason = `[SMELTER] git commit is blocked: active workflow pointer exists but state is unreadable (${err.message}).\n` +
-              `Either (a) the state is corrupted — run \`/cancel hard\` and restart, or (b) re-invoke workflow-human-check to rebuild.`;
+              `Agent recovery: either invoke Skill(dobby) for manual recovery of corrupted state, or re-invoke workflow-human-check to rebuild. Do not ask the user to type a slash command.`;
           }
         }
         if (blockReason) {

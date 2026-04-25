@@ -4,15 +4,16 @@ type: canonical
 lang: en
 tags: [smelter, workflow, skill-composition, producer-routing, tdd, e2e, auto-confirm]
 status: canonical
-version: 2.4.1
+version: 0.4.0
 created: 2026-04-19
-updated: 2026-04-20
+updated: 2026-04-26
 translations: document/workflow.ko.md
 ---
 
-# Smelter Workflow — Skill-Composition Model
+# Smelter Workflow — v0.4 Contract/FSM Model
 
-> Smelter composes **workflow skills** into modes. Each skill declares a `consumes → produces → gate` contract; on failure the engine routes via **producer chain** — no retries, no evasion, no self-failure.
+> Smelter v0.4 separates **UserMode**, **TaskType**, **Step**, and **Guard**. The LLM proposes intent; the harness owns routing, permissions, transitions, recovery, and verification truth.
+> Live runtime uses v0.4 contract fields for hook enforcement while the existing workflow-skill chain remains as the executor bridge during migration.
 > Only `workflow-*` skills are subject to mode whitelist; utility skills are freely callable.
 
 ---
@@ -89,19 +90,19 @@ The pattern is imported from `obra/superpowers` (brainstorming, using-superpower
 
 Commands are **hints**; the default is **three-layer auto-routing** from natural-language input. Users can invoke explicit slash commands, but when an utterance arrives the classifier assigns a mode at entry.
 
-#### Three-layer classifier (v2.4.9+)
+#### Three-layer classifier (v0.4)
 
 `scripts/mode-classifier.mjs::classify(input, { cwd, sessionId })` runs the layers in order; the first match wins.
 
 | # | Layer | Implementation | Fires when |
 |---|-------|----------------|------------|
-| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table + word-boundary check | prompt starts with `/think`, `/fix`, `/implement`, `/investigate`, or `/verify` followed by EOL, whitespace, `:`, or `-` |
+| 1 | Explicit slash command | `EXPLICIT_COMMANDS` table + word-boundary check | prompt starts with `/brainstorm`, `/fix`, `/implement`, `/explore`, `/verify`, or `/dobby` followed by EOL, whitespace, `:`, or `-` |
 | 2 | Passthrough | `PASSTHROUGH_PATTERNS` (anchored) | entire prompt matches pure git/shell verb-first (e.g. `git commit`, `커밋해`, `push 좀`) |
 | 3 | LLM classifier | `scripts/lib/subagent-classifier.mjs::classifyMode` via OAuth Claude CLI | any remaining natural-language prompt |
 
 The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached per `{sessionId, prompt-hash}` under `.smt/state/mode-classifier-cache.json`. `classifyMode` normalizes the raw trigger with an `llm:` prefix **on write** so subsequent reads pass `isValidModeCacheEntry`'s `llm:`/`stub:` prefix whitelist; without this normalization every call re-invokes Haiku and doubles latency per prompt. The detector also forwards the full classification object into `seedWorkflowState` (via `detectNaturalLanguageCommand`'s return value) to avoid a redundant second Haiku call during surface extraction — the earlier double call could time out and silently skip state seeding, leaving the mode banner printed without an active workflow. If `passthrough === true` but the current session already has an active non-terminal workflow pointer (`.smt/state/active-feature-<sessionId>.json`), `keyword-detector.mjs` overrides the passthrough hint and keeps the turn inside workflow continuation; only explicit transcript-paste passthrough remains exempt.
 
-**Failure policy (v2.4.9)**: if Layer 3 throws (LLM outage, invalid response, or tampered cache dropped by the validator), the error **propagates**. There is no regex fallback. Callers treat a throw or `null` return as "no classification" and skip state seeding — the prompt flows through unseeded.
+**Failure policy:** if Layer 3 throws (LLM outage, invalid response, or tampered cache dropped by the validator), the error **propagates**. There is no regex fallback. Callers treat a throw or `null` return as "no classification" and skip state seeding — the prompt flows through unseeded.
 
 **Empty input** returns `null` (no classification, no exception).
 
@@ -112,7 +113,7 @@ The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached 
 
 **Source of truth**: `scripts/mode-classifier.mjs` — pure module exporting `classify(input, opts)`. `scripts/keyword-detector.mjs` (the UserPromptSubmit hook) imports it at step 2 of command resolution and passes `{ cwd, sessionId }` so per-session LLM-cache isolation holds. On classifier throw, the detector returns `null` and the prompt flows through without state seeding.
 
-**Compound intents (chained modes)**: when the LLM detects a connective-joined chain (e.g., "분석하고 구현해줘" → `[investigate, implement]`), it populates `chained_modes`. `keyword-detector` writes this into `.state.json` at entry; `auto-confirm.decide()` picks it up at the `mode_transition` signal and auto-advances via `consumeNextChainedMode` without a user prompt (`chain_advance`). Entry mode is always `chained_modes[0]`.
+**Compound intents (chained modes)**: when the LLM detects a connective-joined chain (e.g., "분석하고 구현해줘" → `[explore, implement]`), it populates `chained_modes`. `keyword-detector` writes this into `.state.json` at entry; `auto-confirm.decide()` picks it up at the `mode_transition` signal and auto-advances via `consumeNextChainedMode` without a user prompt (`chain_advance`). Entry mode is always `chained_modes[0]`.
 
 **Testing**: set `SMELTER_MODE_CLASSIFIER_MODULE=<path>` to replace Layer 3 with a deterministic stub (see `scripts/lib/__fixtures__/mode-classifier-stub.mjs`). Used by `mode-classifier.test.mjs`, `keyword-detector.test.mjs`, and `workflow-scenarios.test.mjs` SCENARIO 13 so test assertions do not depend on live LLM availability.
 
@@ -120,31 +121,50 @@ The Layer 3 LLM returns `{ mode, chained_modes, passthrough, trigger }`. Cached 
 
 | Mode | Entry skill | Pipeline | Purpose |
 |------|-------------|----------|---------|
-| `think` | `workflow-brainstorm` (deep) | `planning_only` | Ideation & planning. No code changes. Produces `brainstorm.md` + `tasks.md`. |
-| `fix` | `workflow-investigate` | `no_brainstorm` | Bug / logic repair. `target_type ∈ {text, design}` routes to `fix_simple`; everything else (`bug_fix`) stays on the 8-skill `fix` pipeline. |
-| `implement` | `workflow-brainstorm` (light) | `full` | Feature development on existing code. |
-| `investigate` | `workflow-investigate` | `investigate_only` | Static read only (맥락·근거 파악). Exits via mode transition. |
+| `brainstorm` | `workflow-brainstorm` (deep) | `planning_only` | Ideation & planning. No code changes. Produces `brainstorm.md` + `tasks.md`. |
+| `fix` | `workflow-investigate` | `fix` / `fix_simple` | Bug / logic repair. `target_type ∈ {text, design}` routes to `fix_simple`; everything else (`bug_fix`) stays on the 8-skill `fix` pipeline. |
+| `implement` | `workflow-investigate` | `full` | Feature development on existing code with implementation-plan trade-off decisions. |
+| `explore` | `workflow-investigate` | `explore_only` | Static read only (맥락·근거 파악). Exits via mode transition. |
 | `verify` | `workflow-verify` | `verify_only` | Non-modifying verification (test run + static inspection + real-interface E2E). |
+| `dobby` | `workflow-human-check` | `dobby_only` | Explicit no-pipeline escape hatch. Slash-only. |
 
-v3 (2026-04-21): the 6-mode set (`simple_fix` / `plan` retained) collapsed to 5. `/simple-fix` folded into `/fix` + magic keyword; `/plan` renamed to `/think`. Mode/pipeline/skill definitions live in `modes/{modes,pipelines,skills}.yaml` loaded by `scripts/lib/workflow-loader.mjs`.
+v0.4 (2026-04-26): the read-only user mode is `explore` and the slash command is `/explore`; the retired investigate command is not an alias. The planning mode is `brainstorm`; retired think, plan, and simple-fix commands are not aliases.
 
-### 1-3. Surface Extraction (v3.2+)
+#### v0.4 Contract Bridge
+
+Runtime state files keep the established skill-executor fields (`mode`, `allowed_skills`, `current_stage`, `completed_stages`) while also seeding v0.4 contract fields as the permission and step source for live hooks:
+
+| UserMode | TaskType | Step flow |
+|---|---|---|
+| `brainstorm` | `design` | INTENT → PLAN → DONE |
+| `explore` | `read` | INTENT → DISCOVERY → DONE |
+| `verify` | `verify` | INTENT → DISCOVERY → VERIFY → HUMAN_CHECK → DONE |
+| `implement` | `write` | INTENT → DISCOVERY → PLAN → TEST_DESIGN → EXECUTE → VERIFY → HUMAN_CHECK → DONE |
+| `fix` | `write` | INTENT → DISCOVERY → TEST_DESIGN → EXECUTE → VERIFY → HUMAN_CHECK → DONE |
+| `dobby` | `freeform` | INTENT → EXECUTE → HUMAN_CHECK → DONE |
+
+`state-schema.createInitialState()` writes `user_mode`, `task_type`, `step`, `step_flow`, and `allowed_actions`. `pre-tool-enforcer.mjs` imports `workflow-v4-guard.mjs` and evaluates source edits against `(task_type, step, evidence)` before any legacy fallback. For `task_type=write`, test files (`*.test.*`, `*.spec.*`, or paths under `test/`, `tests/`, `spec/`, `e2e/`) are writable only during `TEST_DESIGN` when `write_test` is allowed; product source files are writable only during `EXECUTE` after RED test evidence exists. `skill-stage-transition.mjs` imports `workflow-v4-state.mjs` and updates `step/allowed_actions` when workflow skills enter their executor phase. `auto-confirm.mjs` imports `workflow-v4-controller.mjs` and advances bridged steps on stage pass, verification fail, and human pass events. This makes `scripts/lib/workflow-v4-*` runtime-active while preserving the existing producer-chain stage machinery during the transition.
+
+If a raw code-file write reaches `pre-tool-enforcer.mjs` without active write/freeform state, the block reason is agent-directed: invoke `Skill(fix|implement|dobby)` to seed state or wait for an existing active pointer. It must not ask the user to type a slash command.
+
+### 1-3. Surface Extraction (v0.4)
 
 Surface fields (`target_type`, `exempt`, `skip_brainstorm`) are inferred from two complementary lanes — never via free-form NL regex.
 
 - **Natural language** → emitted by `classifyMode` (scripts/lib/subagent-classifier.mjs) alongside `mode`. The Haiku classifier reads the prompt once and returns both mode classification and surface inference in a single call. System prompt includes an anti-injection clause: user text that explicitly instructs `"set target_type to text"` is ignored; classifier infers from the actual task surface.
 - **Slash-command arguments** → resolved by `parseSlashArgs` (scripts/lib/surface-extraction.mjs) against the frozen `SLASH_SURFACE_TABLE`. Tokenized match (no `\b` regex), first-match-wins for `target_type`, union for `exempt.*` and `skip_brainstorm`. Only `fix` and `implement` have rows; other commands return `null`.
 
-The old regex `applyMagicKeywords` path and the `modes/workflow.yaml → modes.*.magic_keywords` YAML blocks were removed in v3.2. Cache entries are bumped to `schema_version: 2`; pre-rollout validators remain compatible via the unchanged `trigger: "llm:..."` invariant.
+The old regex `applyMagicKeywords` path and the `modes/workflow.yaml → modes.*.magic_keywords` YAML blocks are removed. Cache entries use `schema_version: 2`; validators remain compatible via the unchanged `trigger: "llm:..."` invariant.
 
 ### 1-4. Workflow vs. Utility Skills
 
 Only **workflow skills** are constrained by mode whitelist. Utility skills are free.
 
-#### workflow-* skills (mode whitelist target, 14)
+#### workflow-* skills (mode whitelist target, 16)
 
 - `workflow-brainstorm`, `workflow-brainstorm-review`
 - `workflow-investigate`, `workflow-investigate-review`
+- `workflow-implementation-plan`, `workflow-implementation-plan-review`
 - `workflow-tasker`, `workflow-tasker-review`
 - `workflow-write-test`, `workflow-coding`
 - `workflow-agent-review`
@@ -191,20 +211,23 @@ Characteristics:
 
 ```json
 {
-  "schema_version": "2.4.1",
+  "schema_version": "0.4.0",
   "task_id": "fix-empty-input-bug",
   "mode": "fix",
+  "user_mode": "fix",
+  "task_type": "write",
+  "step": "EXECUTE",
+  "step_flow": ["INTENT", "DISCOVERY", "TEST_DESIGN", "EXECUTE", "VERIFY", "HUMAN_CHECK", "DONE"],
+  "allowed_actions": ["read", "write_source", "run_test"],
   "allowed_skills": [
     "workflow-investigate", "workflow-investigate-review",
-    "workflow-tasker", "workflow-tasker-review",
     "workflow-write-test", "workflow-coding",
     "workflow-agent-review",
     "workflow-e2e", "workflow-e2e-review",
-    "workflow-team-code-review",
     "workflow-human-check"
   ],
   "current_stage": "workflow-coding",
-  "completed_stages": ["workflow-investigate", "workflow-investigate-review", "workflow-tasker", "workflow-tasker-review", "workflow-write-test"],
+  "completed_stages": ["workflow-investigate", "workflow-investigate-review", "workflow-write-test"],
   "chained_modes": [],
   "created_at": "2026-04-19T10:00:00Z",
   "updated_at": "2026-04-19T10:45:00Z",
@@ -220,24 +243,27 @@ Characteristics:
 ```
 
 Validated invariants:
-- `allowed_skills` ⊆ the 14 workflow skills.
+- `allowed_skills` ⊆ the 16 workflow skills.
 - `events[].declarer` ∈ `{hook, user}` (skill-declarer forbidden per Iron Law #3).
 - `events[].cause` ∈ the fixed enum (see §6-3).
-- `team_runtime[skill].rounds[i]` (when present) has `focus` ∈ `{omission, contradiction, edge_case}` and `result` ∈ `{null, pass, fail}`.
+- `team_runtime[skill].rounds[i]` (when present) has `focus` ∈ `{omission, contradiction}` and `result` ∈ `{null, pass, fail}`.
 - `active_feedback[i].target_skill` ∈ workflow skills; `resolved` boolean.
 
 ### 2-3. State initialization
 
-On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/implement`, `/verify`), `scripts/keyword-detector.mjs` writes `.smt/features/<slug>/task/<slug>.state.json` using `state-schema.createInitialState()` plus `allowed_skills` loaded from `modes/<mode>.json`, and also writes a `.smt/state/active_task` pointer. **`current_stage` is intentionally seeded as `null`** — the agent must invoke the mode's entry workflow skill to advance. Combined with R12 (critic-watchdog), this enforces the canonical skill-entry workflow. The legacy `workflow.json` in `.smt/features/<slug>/state/` is retained for backward compatibility but `.state.json` is now the enforcement source of truth.
+On every workflow command (`/brainstorm`, `/fix`, `/explore`, `/implement`, `/verify`, `/dobby`), `scripts/keyword-detector.mjs` writes `.smt/features/<slug>/task/<slug>.state.json` using `state-schema.createInitialState()` plus `allowed_skills` loaded from `modes/workflow.yaml`, and also writes a session-scoped active-feature pointer. Most modes start at `step: INTENT`; `/dobby` is the explicit freeform exception and is seeded at `step: EXECUTE` so direct source edits are allowed before its terminal human-check gate. **`current_stage` is intentionally seeded as `null` or the mode entry skill depending on the seeding path** — the agent must invoke the mode's entry workflow skill to advance the executor bridge where a workflow pipeline exists. Combined with R12 (critic-watchdog), this enforces the canonical skill-entry workflow. The legacy `workflow.json` in `.smt/features/<slug>/state/` is retained for transition diagnostics but `.state.json` is now the enforcement source of truth.
 
-**Gate enforcement stack** (v2.4.2 harness-integrity):
-1. `scripts/pre-tool-enforcer.mjs` — PreToolUse Write/Edit guard on `.state.json` path. Agents cannot directly mutate state. Escape hatch `SMT_HOOK_WRITE=1` reserved for future hook scripts. Also enforces the **commit gate** for `mode ∈ {fix, implement}`: a Bash `git commit` is blocked unless the active state shows either pass shape — `events[]` contains `{skill:'workflow-human-check', result:'pass'}`, or `completed_stages` includes `workflow-human-check`. Both shapes are written together by `scripts/finalize-human-check.mjs` when the user clicks `complete`, so either alone suffices. A `current_stage === 'done'` value is NOT a pass shape: the schema's `WORKFLOW_SKILLS` enum rejects that literal, the finalize hook deliberately leaves `current_stage` at `workflow-human-check`, and SKILL.md forbids writing it.
-2. `scripts/skill-stage-transition.mjs` — PostToolUse `Skill` matcher. Invoking an allowed workflow skill auto-writes the pass event + updates `current_stage` + (for non-deferred skills) appends `completed_stages`. Deferred skills (`workflow-e2e`, `workflow-human-check`, `workflow-agent-review`, `workflow-team-code-review`, `workflow-verify`, `workflow-e2e-review`) set `current_stage` only.
-3. `scripts/state-validator.mjs` — `validateEvidenceIntegrity()` wired into `state-schema.writeState()`. Every `completed_stages` entry must have a pass event with existing `evidence.path`. Forged stages throw.
-4. `critic-watchdog.mjs` R13 — Bash-based bypass defense-in-depth. Skipped when `SMT_HOOK_WRITE=1`.
-5. `keyword-detector.mjs::shouldCreateNewFeature` (v2.4.3) — natural-language follow-ups reuse the session's active feature instead of creating a new slug per prompt. New feature is only created for slash commands, explicit `새 feature` / `new feature` phrases, or when no in-progress pointer exists. Per-session pointer `.smt/state/active-feature-<session_id>.json` keeps concurrent sessions isolated.
+**Gate enforcement stack** (v0.4 contract bridge):
+1. `scripts/pre-tool-enforcer.mjs` — PreToolUse Write/Edit guard on `.state.json` path. Agents cannot directly mutate state. Escape hatch `SMT_HOOK_WRITE=1` is reserved for hook scripts. For source-file edits, the hook imports `workflow-v4-guard.mjs` and enforces `task_type` + `step`: `read/design/verify` cannot edit source, `write` can edit source only at `EXECUTE` with red-test evidence (`events[].type === 'test_red'` or legacy `test_cycles[]` fail evidence), and `freeform` can edit source only at `EXECUTE`. It still enforces the **commit gate** for write/freeform work: a Bash `git commit` is blocked unless the active state shows a `workflow-human-check` pass event or `completed_stages` includes `workflow-human-check`. A `current_stage === 'done'` value is NOT a pass shape.
+2. `scripts/skill-stage-transition.mjs` — PostToolUse `Skill` matcher. Invoking an allowed workflow skill auto-writes the pass event + updates `current_stage` + (for non-deferred skills) appends `completed_stages`. It also updates bridged v0.4 `step/allowed_actions`: investigate → `DISCOVERY`, brainstorm/tasker → `PLAN`, write-test → `TEST_DESIGN`, coding → `EXECUTE`, verify/e2e/review → `VERIFY`, human-check → `HUMAN_CHECK`. Deferred skills (`workflow-e2e`, `workflow-human-check`, `workflow-agent-review`, `workflow-team-code-review`, `workflow-verify`, `workflow-e2e-review`) set `current_stage` and v0.4 step only.
+3. `scripts/auto-confirm.mjs` — Stop hook decision controller. It imports `workflow-v4-controller.mjs` and applies deterministic v0.4 transitions: pass advances along `step_flow`, verification fail moves to `RECOVER`, and human pass moves `HUMAN_CHECK` to `DONE`. Producer-chain routing remains the skill-level executor path.
+4. `scripts/state-validator.mjs` — `validateEvidenceIntegrity()` wired into `state-schema.writeState()`. Every `completed_stages` entry must have a pass event with existing `evidence.path`. Forged stages throw.
+5. `critic-watchdog.mjs` R13 — Bash-based bypass defense-in-depth. Skipped when `SMT_HOOK_WRITE=1`.
+6. `keyword-detector.mjs::shouldCreateNewFeature` — natural-language follow-ups reuse the session's active feature instead of creating a new slug per prompt. New feature is only created for slash commands, explicit `새 feature` / `new feature` phrases, or when no in-progress pointer exists. Per-session pointer `.smt/state/active-feature-<session_id>.json` keeps concurrent sessions isolated.
 
-    **Session-isolation contract (v2.4.8):** all consumer readers — `auto-confirm.findActiveTaskState`, `stop-stage-enforcer.findActiveStatePath` / `getActiveFeatureSummary`, `skill-stage-transition.resolveActiveState`, `critic-watchdog.readActiveState` — treat the per-session pointer as strictly authoritative when `sessionId` is present. None fall back to the non-scoped `active-feature.json` or to an mtime-latest scan of `features/*/task/*.state.json`. A fresh session that inherits a prior session's non-scoped pointer resolves to "no active state" and halts cleanly instead of advancing through another session's stages.
+`scripts/pretool-stage-gate.mjs` records `Skill(workflow-*)` loads against the target workflow skill epoch (`<slug>::<skill>`) when the skill is allowed by the active state. This matches hook order: PreToolUse sees the Skill call before `skill-stage-transition.mjs` moves `current_stage`, so recording against the old current stage would make the following stage's first write (for example `workflow-human-check` writing `results.md`) look unloaded. Non-workflow or non-allowlisted skills fall back to the current-stage epoch. `results.md` is additionally pinned to the `workflow-human-check` active stage, so a prior stage's valid load cannot authorize terminal result writes before the transition occurs.
+
+    **Session-isolation contract:** all consumer readers — `auto-confirm.findActiveTaskState`, `skill-stage-transition.resolveActiveState`, `critic-watchdog.readActiveState` — treat the per-session pointer as strictly authoritative when `sessionId` is present. None fall back to the non-scoped `active-feature.json` or to an mtime-latest scan of `features/*/task/*.state.json`. A fresh session that inherits a prior session's non-scoped pointer resolves to "no active state" and halts cleanly instead of advancing through another session's stages.
 
 **Classifier-subprocess re-entrancy guard**: when `lib/subagent-classifier.mjs` spawns the Claude CLI to run the Haiku classifier, that subprocess inherits the parent hook chain. `keyword-detector.mjs` detects this via `process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1'` and bails out before any state-seeding side effect. Without this guard, slug derivation would use the classifier's system prompt as if it were user input, polluting the state store with spurious feature slugs over multiple sessions.
 
@@ -252,7 +278,7 @@ On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/imp
 
 ---
 
-## 3. Workflow Skill Registry (14 skills)
+## 3. Workflow Skill Registry (16 skills)
 
 > Skill definitions live in a single location (`skills/<name>/SKILL.md`). Shared across modes.
 
@@ -262,41 +288,42 @@ On every workflow command (`/plan`, `/fix`, `/simple-fix`, `/investigate`, `/imp
 | 2 | `workflow-brainstorm-review` | `brainstorm.md` | `brainstorm-review.md` | pass/fail/reshape |
 | 3 | `workflow-investigate` | brainstorm.md or trigger | `investigation.md` | static read (structure, references) |
 | 4 | `workflow-investigate-review` | `investigation.md` | `investigation-review.md` | pass/fail/reshape |
-| 5 | `workflow-tasker` | investigation.md (+brainstorm.md) | `tasks.md`, `target_type`, initial `team_runtime` | |
-| 6 | `workflow-tasker-review` | `tasks.md` | `tasks-review.md` | side-effect / scope check; pass/fail/reshape |
-| 7 | `workflow-write-test` | `tasks.md` | `*.test.*` (RED), `test_cycles` entries | surface-based exemption applies |
-| 8 | `workflow-coding` | `*.test.*` (RED) or `active_feedback` | `src/**` changes | implementation |
-| 9 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` updates | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" → A. |
-| 10 | `workflow-e2e` | built `src/**` | `artifacts/` (video / screenshots / logs / transcripts / IO samples) | **Drives the real interface** (browser, subprocess, HTTP port, DB engine, hook pipe). Test-runner stdout alone is NOT a valid pass. |
-| 11 | `workflow-e2e-review` | `artifacts/` | `e2e_review.md` | scenario coverage / artifact quality |
-| 12 | `workflow-team-code-review` | whole change | `team_review.md` (severity-tagged) | **Multi-agent 95% consensus** |
-| 13 | `workflow-verify` | current codebase (no RED required) | `verify_report.md` (Phase 1 tests + Phase 2 static inspection + Phase 3 E2E interface) | Entry skill of `/verify`. Non-modifying. Not a review skill — no Multi-Pass rounds. |
-| 14 | `workflow-human-check` | all artifacts | user decision (`rework` / `complete` / `hold` / `upgrade`) | final gate |
+| 5 | `workflow-implementation-plan` | investigation.md (+brainstorm/tasks optional) | `implementation-plan.md` | code-based plan, reuse/new-tech options, trade-offs, user technical decision when needed |
+| 6 | `workflow-implementation-plan-review` | `implementation-plan.md` | `implementation-plan-review.md` | evidence / trade-off / queue review |
+| 7 | `workflow-tasker` | investigation.md (+brainstorm.md) | `tasks.md`, `target_type`, initial `team_runtime` | planning-only `/brainstorm` task shaping |
+| 8 | `workflow-tasker-review` | `tasks.md` | `tasks-review.md` | side-effect / scope check; pass/fail/reshape |
+| 9 | `workflow-write-test` | `implementation-plan.md` or `tasks.md` | `*.test.*` (RED), `test_cycles` entries | surface-based exemption applies |
+| 10 | `workflow-coding` | `*.test.*` (RED) or `active_feedback` | `src/**` changes | implementation |
+| 11 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` updates | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" → A. |
+| 12 | `workflow-e2e` | built `src/**` | `artifacts/` (video / screenshots / logs / transcripts / IO samples) | **Drives the real interface** (browser, subprocess, HTTP port, DB engine, hook pipe). Test-runner stdout alone is NOT a valid pass. |
+| 13 | `workflow-e2e-review` | `artifacts/` | `e2e_review.md` | scenario coverage / artifact quality |
+| 14 | `workflow-team-code-review` | whole change | `team_review.md` (severity-tagged) | **Multi-agent 95% consensus** |
+| 15 | `workflow-verify` | current codebase (no RED required) | `verify_report.md` (Phase 1 tests + Phase 2 static inspection + Phase 3 E2E interface) | Entry skill of `/verify`. Non-modifying. Not a review skill — no Multi-Pass rounds. |
+| 16 | `workflow-human-check` | all artifacts | user decision (`rework` / `complete` / `hold` / `upgrade`) | final gate |
 
 ---
 
-## 4. Mode Definitions (v3.1)
+## 4. Mode Definitions (v0.4)
 
-v3 collapsed the six-mode set to **five**. v3.1 unifies all configuration into a single file for maintenance simplicity and adds target-type dispatch + 2-round mid-pipeline reviews.
+v0.4 exposes six user modes: `brainstorm`, `implement`, `fix`, `explore`, `verify`, and `dobby`. The workflow config is a single file, and verification uses one global 2-round policy.
 
 - `modes/workflow.yaml` — single source of truth: skills + pipelines + modes + target_type_routing + verification_rounds + command_aliases.
 - Loader: `scripts/lib/workflow-loader.mjs`. Consumers: `keyword-detector.mjs`, `skill-stage-transition.mjs`.
 
-### v3.1 pipelines (4 code-modifying + 3 read-only)
+### v0.4 pipelines
 
 | Pipeline | Skills | Used by |
 |---|---|---|
-| `full` | 13 (brainstorm → ... → human-check) | `/implement` default (new_feature / refactor / migration / bug_fix) |
-| `extend_light` | 9 (investigate → ... → human-check, no brainstorm, no tasker-review, no team-code-review) | `/implement` when `target_type: extend_existing` (via `extend` magic keyword) |
+| `full` | 11 (investigate → implementation-plan → ... → human-check) | `/implement` for all target types |
 | `fix` | 8 (investigate → investigate-review → write-test → coding → agent-review → e2e → e2e-review → human-check) | `/fix` default for all `bug_fix` |
 | `fix_simple` | 4 (investigate → coding → e2e → human-check) | `/fix` for `text` (텍스트 수정) and `design` (디자인 수정) — the only two surfaces that route here |
-| `planning_only` | 6 | `/think` |
-| `investigate_only` | 2 | `/investigate` |
+| `planning_only` | 6 | `/brainstorm` |
+| `explore_only` | 2 | `/explore` |
 | `verify_only` | 4 | `/verify` |
 
-v3.2 removes the scope-dependent `medium` pipeline: all `/fix` bug_fix runs take `fix` regardless of file count / surface count, and `extend_existing` routes out of `/fix` to `/implement + extend_light`.
+v0.4 removes `extend_light`: all `/implement` work uses the same code-based implementation-plan pipeline. `extend_existing` is planning context, not a lighter verification path.
 
-### v3.2 target_type dispatch (`/fix` and `/implement`)
+### v0.4 target_type dispatch (`/fix` and `/implement`)
 
 `workflow-investigate` determines `target_type`. `workflow-loader.selectPipeline()` picks the pipeline with mode-specific gating:
 
@@ -305,62 +332,76 @@ v3.2 removes the scope-dependent `medium` pipeline: all `/fix` bug_fix runs take
 | `/fix` | `text` / `design` | `fix_simple` |
 | `/fix` | `bug_fix` | `fix` |
 | `/fix` | `extend_existing` | `upgrade_required` → escalate to `/implement` |
-| `/fix` | `new_feature` / `refactor` / `migration` | `upgrade_required` → escalate to `/implement` or `/think` |
-| `/implement` | `extend_existing` | `extend_light` |
+| `/fix` | `new_feature` / `refactor` / `migration` | `upgrade_required` → escalate to `/implement` or `/brainstorm` |
+| `/implement` | `extend_existing` | `full` |
 | `/implement` | any other / none | `full` (declared default) |
 
 Prevents the tasker-overhead problem where trivial fixes ran the full chain, and avoids the dual-mode confusion where `/fix + extend_existing` silently pulled in a heavy pipeline.
 
-### v3.2 verification rounds
+### v0.4.0 verification rounds
 
-`workflow.yaml.verification_rounds` separates mid-pipeline reviews from terminal gates, with per-mode overrides:
-- `mid_pipeline: 2` — `workflow-brainstorm-review`, `workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`. Rounds: omission + contradiction.
-- `terminal: 3` — `workflow-e2e-review` (visual verification), `workflow-team-code-review` (95% consensus), `workflow-human-check`.
-- `mode_overrides.fix` — all reviews drop to **1 round** (omission only), except `workflow-e2e-review` (2 rounds: omission + edge_case) and `workflow-human-check` (3, user gate).
+`workflow.yaml.verification_rounds` is intentionally a single global value:
+- `rounds: 2` — every review skill and every mode runs omission + contradiction.
 
-Resolver: `getVerificationRounds(skill, modeName?, cfg?)` checks `mode_overrides[mode][skill] → mode_overrides[mode].default → skills[skill].rounds bucket → mid_pipeline`.
+Resolver: `getVerificationRounds(skill, modeName?, cfg?)` returns the global `rounds` value. `modeName` is accepted for API compatibility but does not branch behavior.
 
-v3.1 cut 4 mid-reviews × 1 round per `/fix` run; v3.2 cuts 3 additional rounds from the common `/fix` flow by dropping all mid-pipeline reviews to 1 round.
+There are no mid-pipeline, terminal, or per-mode round buckets. Review strictness is uniform and predictable.
 
-### 4-1. think (`/think`) — was `/plan`
+### 4-1. brainstorm (`/brainstorm`)
 
 **pipeline**: `planning_only` (brainstorm → brainstorm-review → investigate → investigate-review → tasker → tasker-review).
 **defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: true`.
 **entry**: `workflow-brainstorm` with `depth: deep`.
 **purpose**: ideation + planning without touching code. Produces `brainstorm.md` + `tasks.md`. Exits via `mode_transition_to_implement` after user approves `tasks.md`.
 
-### 4-2. fix (`/fix`) — absorbs former `simple_fix`
+`workflow-brainstorm` follows the superpowers brainstorming experience while preserving Smelter's file/state gates: explore project context first, offer an available visual companion when visual decisions would benefit from it, ask one question at a time, present 2-3 approaches with trade-offs and a recommendation, validate design sections with the user, persist the approved design, run author self-review for placeholders/contradictions/ambiguity/scope, then hand off to `workflow-brainstorm-review` for the mandatory 2-round review.
 
-**pipeline**: `fix` (8 skills) by default; `fix_simple` (4 skills) pinned to `target_type ∈ {text, design}`; `upgrade_required` for `extend_existing`/`new_feature`/`refactor`/`migration` (escalate to `/implement` or `/think`).
+### 4-2. fix (`/fix`) — includes trivial-fix surfaces
+
+**pipeline**: `fix` (8 skills) by default; `fix_simple` (4 skills) pinned to `target_type ∈ {text, design}`; `upgrade_required` for `extend_existing`/`new_feature`/`refactor`/`migration` (escalate to `/implement` or `/brainstorm`).
 **defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
 **entry**: `workflow-investigate`.
-**surface exemption (v3.3)**: `fix_simple` is entered via exactly two target_types.
+**surface exemption**: `fix_simple` is entered via exactly two target_types.
 - `text` (텍스트 수정) — magic keywords `typo` / `오타` / `dialogue` / `대화` / `text` / `텍스트` / `copy` / `i18n` → `target_type=text`, `exempt={tdd:true, e2e:true}`.
 - `design` (디자인 수정) — magic keywords `css` / `style` / `design` / `디자인` → `target_type=design`, `exempt={tdd:true, e2e:false}` (visual surface keeps e2e).
-This replaces the v2 `simple_fix` mode and the v3.2 `typo`/`dialogue` enum.
-**review rounds**: mode override — all mid-pipeline reviews at **1 round**, `workflow-e2e-review` at **2 rounds**, `workflow-human-check` at **3 rounds** (user gate).
+This replaces the old standalone trivial-fix mode and the old narrow text-only target-type split.
+**review rounds**: global **2 rounds** for every review skill; no mode-specific override.
 **terminal**: `workflow-human-check` — **mandatory, cannot be skipped** (§8 human review).
+
+`/fix` follows the superpowers systematic-debugging experience while preserving Smelter's TDD gates: reproduce the symptom, check recent changes, trace data flow, compare working examples, state one root-cause hypothesis, then write a RED regression target before coding. `/fix` intentionally does not run `workflow-tasker`; `investigation.md` is the planning source for `workflow-write-test`.
 
 ### 4-3. implement (`/implement`)
 
-**pipeline**: `full` (13 skills — brainstorm → ... → human-check) by default; `extend_light` (9 skills — no brainstorm, no brainstorm-review, no tasker-review, no team-code-review) for `target_type: extend_existing`.
+**pipeline**: `full` for all implement work (investigate → investigate-review → implementation-plan → implementation-plan-review → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check).
 **defaults**: `exempt.tdd: false`, `exempt.e2e: false`.
-**entry**: `workflow-brainstorm` with `depth: light`.
-`extend` / `add to` / `덧붙여` magic keywords set `target_type: extend_existing`, which — via target-type dispatch — routes to `extend_light` (brainstorm skipped because it's not in the pipeline).
-**resume**: when entered after `/think`, pre-existing `brainstorm.md` / `tasks.md` cause `nextSkill()` to skip straight to `workflow-write-test` (file-driven routing from superpowers).
+**entry**: `workflow-investigate`.
+`workflow-implementation-plan` is the technical decision point. It uses code evidence to decide reuse vs new technology, presents trade-offs to the user only when a real choice exists, and for `extend_existing` proceeds with the existing feature plan when sufficient.
+**resume**: when entered after `/brainstorm`, pre-existing `brainstorm.md` / `tasks.md` are requirements input only; `/implement` still runs code investigation and implementation planning.
 **terminal**: `workflow-human-check` — **mandatory**.
 
-### 4-4. investigate (`/investigate`)
+`/implement` follows the superpowers writing-plans and subagent-driven development experience: `implementation-plan.md` includes a file map, exact task queue, RED/GREEN commands with expected outcomes, and no placeholders. Independent queue items may be executed with fresh focused executor contexts, but Smelter's review chain remains authoritative.
 
-**pipeline**: `investigate_only` (investigate + investigate-review).
+### 4-4. explore (`/explore`)
+
+**pipeline**: `explore_only` (investigate + investigate-review).
 **defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: true`.
-Static read only. Exits via user-chosen mode transition (`mode_transition_to_fix`, `mode_transition_to_think`, `mode_transition_to_implement`, `free_chat`).
+Static read only. Exits via user-chosen mode transition (`mode_transition_to_fix`, `mode_transition_to_brainstorm`, `mode_transition_to_implement`, `free_chat`).
 
 ### 4-5. verify (`/verify`)
 
 **pipeline**: `verify_only` (verify + e2e + e2e-review + human-check).
 **defaults**: `exempt.tdd: true`, `exempt.e2e: false`, `read_only: true`.
 **entry**: `workflow-verify`. Three-phase report (tests + static inspection + real-interface E2E). Fails route to `/fix` via mode upgrade or chain auto-advance.
+
+`/verify` follows the superpowers verification-before-completion experience: no pass/fail claim without fresh command output or artifacts. `workflow-verify` records tests, static checks, and E2E scope; `workflow-e2e` and `workflow-e2e-review` produce and verify real-interface artifacts before `workflow-human-check` summarizes results.
+
+### 4-6. dobby (`/dobby`)
+
+**pipeline**: `dobby_only` (human-check only).
+**defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: false`.
+**entry**: freeform `EXECUTE`; `workflow-human-check` is the only workflow skill and final gate.
+
+`/dobby` seeds `task_type: freeform` directly at `step: EXECUTE`, so source edits are allowed without the normal write pipeline. No commit, push, PR, or completion claim is allowed before `workflow-human-check` records a pass event.
 
 ---
 
@@ -371,10 +412,12 @@ Static read only. Exits via user-chosen mode transition (`mode_transition_to_fix
 ```
 workflow-brainstorm-review   ─fail─▶ workflow-brainstorm
 workflow-investigate-review  ─fail─▶ workflow-investigate
+workflow-implementation-plan-review ─fail─▶ workflow-implementation-plan
 workflow-tasker-review       ─fail─▶ workflow-tasker
-workflow-write-test          ─fail─▶ workflow-tasker
+workflow-write-test          ─fail─▶ workflow-implementation-plan (/implement) OR workflow-investigate (/fix)
 workflow-coding              ─fail─▶ workflow-write-test      (RED cycle missing)
-                                    OR workflow-tasker       (scope mismatch)
+                                    OR workflow-implementation-plan (/implement scope mismatch)
+                                    OR workflow-investigate / mode-upgrade (/fix scope mismatch)
 workflow-agent-review        ─fail─▶ workflow-coding
 workflow-e2e                 ─fail─▶ workflow-coding          (assertion, typecheck, build)
                                     OR workflow-coding       (e2e_infra_missing → install harness, v3 §7-1)
@@ -383,12 +426,12 @@ workflow-e2e-review          ─fail─▶ workflow-coding          (insufficien
                                     OR workflow-coding       (visual_mismatch → v3 §7-2 vision inspection)
                                     OR workflow-e2e          (file_absent)
 workflow-team-code-review    ─fail─▶ workflow-coding          (medium/low)
-                                    OR workflow-tasker        (high/critical)
-workflow-verify              ─fail─▶ workflow-coding          (any runtime failure → /fix upgrade)
+                                    OR workflow-implementation-plan / workflow-tasker (high/critical)
+workflow-verify              ─fail─▶ mode-upgrade suggestion  (read-only; user chooses /fix or other recovery)
 workflow-human-check         ─fail─▶ active_feedback[].target_skill (default workflow-coding)
 ```
 
-Origin skills (brainstorm, investigate, tasker) re-run themselves on fail.
+Origin/planning skills (`workflow-brainstorm`, `workflow-investigate`, `workflow-implementation-plan`, `workflow-tasker`) re-run themselves on fail.
 
 ### 5-2. Reshape edge (review skills only)
 
@@ -412,11 +455,11 @@ If a fail-route target is `workflow-*` but not in `allowed_skills`:
 Any direction allowed; always user-gated.
 
 ```
-fix ──▶ implement ──▶ think
+fix ──▶ implement ──▶ brainstorm
  ◀──    ◀──          ◀──
 ```
 
-`investigate` and `verify` are read-only siblings that upgrade to any of the three code-writing modes via user-gated transition.
+`explore` and `verify` are read-only siblings that upgrade to any of the three code-writing modes via user-gated transition.
 
 On upgrade: `mode` and `allowed_skills` are rewritten; `events`, `test_cycles`, `active_feedback`, `sub_tasks` are **preserved**.
 
@@ -613,7 +656,7 @@ If a scenario requires a login account, session cookie, API key, or any other se
 | Skill | When | Reviews | Performer | On fail |
 |-------|------|---------|-----------|---------|
 | `workflow-brainstorm-review` | after brainstorm | ambiguity / contradiction in plan | single critic | workflow-brainstorm |
-| `workflow-investigate-review` | after investigate | coverage / risk validation | single explore-high | workflow-investigate |
+| `workflow-investigate-review` | after `workflow-investigate` | coverage / risk validation | single explore-high | workflow-investigate |
 | `workflow-tasker-review` | after tasker | plan side-effects / scope | Pattern B 95% consensus | workflow-tasker |
 | `workflow-agent-review` | after coding, before e2e | code quality / bugs / security / Risks | Pattern B dual (code-reviewer + security-reviewer) | workflow-coding |
 | `workflow-e2e-review` | after e2e | scenario coverage / artifact quality | single code-reviewer | workflow-coding |
@@ -641,30 +684,27 @@ Rounds repeat until all agents' agreement ≥ 95%.
 
 The `## Risks` section is retained in the task document.
 
-### 9-3. Multi-Pass Verification (3-round enforcement)
+### 9-3. Multi-Pass Verification (2-round enforcement)
 
-All 6 review skills enforce:
+All review skills enforce:
 
 ```yaml
-min_verification_rounds: 3
+min_verification_rounds: 2
 verification_rounds:
   - n: 1
     focus: omission         # what's missing?
   - n: 2
     focus: contradiction    # what conflicts?
-  - n: 3
-    focus: edge_case        # what boundary is unaddressed?
 ```
 
-`pass` requires `completed_rounds === 3` and every round `result === 'pass'`. Anti-evasion guards:
+`pass` requires `completed_rounds === 2` and every round `result === 'pass'`. Anti-evasion guards:
 1. No prior-round conclusions injected into the current round.
 2. `critic-watchdog` blocks "already verified" skip statements.
-3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥ 2 types).
-4. Declaring `pass` with `completed_rounds < 3` is hook-blocked.
+3. Declaring `pass` with `completed_rounds < 2` is hook-blocked.
 
 ### 9-4. Evidence Integrity (Mechanical Enforcement)
 
-Every `fail` verdict emitted by a fail-routing review skill (`workflow-investigate-review`, `workflow-tasker-review`, `workflow-agent-review`, `workflow-e2e-review`, `workflow-team-code-review`) MUST cite at least one anchor in the strict form:
+Every `fail` verdict emitted by a fail-routing review skill (`workflow-investigate-review`, `workflow-implementation-plan-review`, `workflow-tasker-review`, `workflow-agent-review`, `workflow-e2e-review`, `workflow-team-code-review`) MUST cite at least one anchor in the strict form:
 
 ```
 **Evidence:** `path/to/file.ext:LINE[-LINE]` "verbatim quote substring"
@@ -706,7 +746,7 @@ E2E      : <surface + pass/fail + artifacts>
 
 ### 10-2. User options
 
-**MANDATORY:** ask via the Claude Code `AskUserQuestion` tool (native clickable prompt), never as a plain-text menu. `AskUserQuestion` is a deferred tool — load its schema first via `ToolSearch("select:AskUserQuestion")`, then invoke it. The same rule applies to `/investigate` exit options (`commands/investigate.md`).
+**MANDATORY:** ask via the Claude Code `AskUserQuestion` tool (native clickable prompt), never as a plain-text menu. `AskUserQuestion` is a deferred tool — load its schema first via `ToolSearch("select:AskUserQuestion")`, then invoke it. The same rule applies to `/explore` exit options (`commands/explore.md`).
 
 Options:
 
@@ -776,7 +816,7 @@ Recursion is prevented by setting `SMT_CLASSIFIER=1` on the spawned sub-agent's 
 
 Sub-agent model selection (`pickSubAgentModel`):
 - Default = `sonnet`.
-- `~/.smt/config.json.codexMode === true`, env `CODEX_MODE=1`, or env `SMELTER_MODEL_MODE=codex` → `haiku` (mini) for the Codex CLI runtime.
+- Env `CODEX_MODE=1` or env `SMELTER_MODEL_MODE=codex` → `gpt-5.4-mini` (Codex mini) for the Codex CLI runtime. Env is the only truth source; the old `~/.smt/config.json.codexMode` fallback is removed because the global file last-writer-wins race leaked codex state into parallel plain-claude sessions.
 - `SMELTER_MODEL_MODE=claude` (set by the claude wrapper for non-codex sessions) forces the queued sub-agent back to `sonnet`, even if stale Codex env like `SMELTER_ACTIVE_MODEL=gpt-*` is still present.
 
 The queued payload includes `sub_agent_model` so the next-turn agent's continuation work uses the same model.
@@ -798,7 +838,7 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 1. Explicit user stop (`/cancel`, `/stop`, or manual abort).
 2. `workflow-human-check` awaiting user input. The halt clears only when `state.events` contains a pass event whose `skill === 'workflow-human-check'`, or when `state.completed_stages` includes `workflow-human-check` (legacy migration fallback). A pass event from any prior skill (e.g., `workflow-tasker-review`) must NOT clear the halt — previously, the guard only checked `lastEvent.result === 'pass'` and allowed a stale prior-skill pass to advance the chain to `workflow-write-test`. On terminal approval (pass event OR legacy marker), the guard short-circuits to `session_wrap` so a genuine human-check approval does not fall through to the generic advance branch below.
 3. Mode-upgrade decision awaited.
-4. `investigate` mode terminal (user picks the next mode).
+4. `explore` mode terminal (user picks the next mode).
 5. **Classifier sub-agent verdict = `halt`** — when no state-machine signal matches, the lightweight LLM classifier decides; a `halt` verdict (or any sub-agent failure: timeout, missing binary, malformed output) ends the session cleanly and prevents the prior "no explicit signal, prompting to proceed" infinite loop. There is no regex fallback (see §11-2).
 
 ### 11-5. Config
@@ -809,19 +849,18 @@ Flow: keyword → call `sub-tasker` agent → extract the risk from context → 
 {
   "autoConfirm": true,
   "subTaskerOnRisk": true,
-  "codexMode": false,
   "maxSessionHours": 24,
   "stopOnCostLimit": false
 }
 ```
 
-`codexMode: true` (or env `CODEX_MODE=1` / `SMELTER_MODEL_MODE=codex`) switches the queued sub-agent model from `sonnet` (default) to `haiku` for the Codex CLI runtime. `scripts/session-start-smt.mjs` also syncs the current model-mode env into `~/.smt/config.json.codexMode` at session start so Stop/UserPromptSubmit hooks can read a stable codex flag. The same SessionStart hook now injects Caveman from vendored upstream skill content at `skills/caveman/SKILL.md`, replacing the old inline concise prompt string.
+Codex detection is env-only (`CODEX_MODE=1` or `SMELTER_MODEL_MODE=codex`) — env switches the queued sub-agent model from `sonnet` (default) to `gpt-5.4-mini` for the Codex CLI runtime. The `codexMode` key in `~/.smt/config.json` is no longer written or read; `scripts/session-start-smt.mjs` had synced it for Stop/UserPromptSubmit hooks, but the global shared file caused cross-session bleed between parallel `claude-codex` + plain `claude` windows. `scripts/lib/subagent-classifier.mjs` and `scripts/auto-confirm.mjs::pickSubAgentModel()` now rely solely on env + the session-scoped `.smt/state/model-mode-${SMELTER_SESSION_ID}.json`. The SessionStart hook still injects Caveman from vendored upstream skill content at `skills/caveman/SKILL.md`.
 
-**Session-scoped model-mode state (v3.3.7):** the per-session codex indicator lives in `.smt/state/model-mode-${SMELTER_SESSION_ID}.json`, never in a shared `model-mode.json`. The wrapper (`codex-for-claude-code/scripts/claude-wrapper.mjs`) coins `SMELTER_SESSION_ID` via `randomUUID()` (or reuses an inbound value after `sanitizeSessionId` validation) and injects it into the child env. Every reader — `statusline-hud.mjs`, `hud-summary-trigger.mjs`, `scripts/lib/subagent-classifier.mjs`, `pre-compact.mjs` — resolves the same env var, sanitizes it, and short-circuits to the settings/env fallback when it is absent. Plain `claude` sessions have no `SMELTER_SESSION_ID` and therefore never read a state file → concurrent codex + plain claude in the same cwd are isolated by env, not by path. Wrapper pre-launch sweeps the legacy unscoped file (one-time migration) plus `model-mode-*.json` entries older than 24h; normal exit / SIGINT / SIGTERM / SIGHUP unlinks the current session's scoped file. `sanitizeSessionId` (`scripts/auto-confirm.mjs:65`) is the shared contract — regex `/^[A-Za-z0-9_-]+$/`; changing it requires a coordinated consumer review.
+**Session-scoped model-mode state:** the per-session codex indicator lives in `.smt/state/model-mode-${SMELTER_SESSION_ID}.json`, never in a shared `model-mode.json`. The wrapper (`codex-for-claude-code/scripts/claude-wrapper.mjs`) coins `SMELTER_SESSION_ID` via `randomUUID()` (or reuses an inbound value after `sanitizeSessionId` validation) and injects it into the child env. Every reader — `statusline-hud.mjs`, `hud-summary-trigger.mjs`, `scripts/lib/subagent-classifier.mjs`, `pre-compact.mjs` — resolves the same env var, sanitizes it, and short-circuits to the settings/env fallback when it is absent. Plain `claude` sessions have no `SMELTER_SESSION_ID` and therefore never read a state file → concurrent codex + plain claude in the same cwd are isolated by env, not by path. Wrapper pre-launch sweeps the legacy unscoped file (one-time migration) plus `model-mode-*.json` entries older than 24h; normal exit / SIGINT / SIGTERM / SIGHUP unlinks the current session's scoped file. `sanitizeSessionId` (`scripts/auto-confirm.mjs:65`) is the shared contract — regex `/^[A-Za-z0-9_-]+$/`; changing it requires a coordinated consumer review.
 `claude` sessions are forced to pass `SMELTER_MODEL_MODE=claude` and actively clear inherited Codex-only env (`CODEX_MODE`, `SMELTER_ACTIVE_MODEL`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) via `scripts/claude-wrapper.mjs`, so parallel windows can’t inherit a stale Codex-only override from another session. For concurrent codex/claude isolation the wrapper injects `CLAUDE_CONFIG_DIR=~/.claude` into the codex child; this keeps session history and `--resume` shared with plain Claude while the Claude binary reads `~/.claude/.claude-<sha8(NFC(dir))>.json` instead of the global `~/.claude.json` for Codex model cache. `applyCodexMode()` writes codex `additionalModelOptionsCache` only to that scoped file, never the global one — plain `claude` windows (which bypass the wrapper) always see a clean global picker. `~/.claude/` remains the shared config dir for settings/agents/commands/hooks. Codex child exit only runs a legacy-global `clearModelCache()` safety net; the scoped file stays populated so a concurrent second codex window isn't disrupted when the first exits (every codex launch writes the same constant `CODEX_MODEL_OPTIONS`).
 
 Hook timeouts and env vars:
-- `hooks/hooks.json` Stop hook timeout = 120 s (raised from 45 s in v2.4.10 to give the folded single-hook enough budget for one inner classifier round-trip plus state I/O; the inner classifier call is capped at 10 s via `STAGE_CLASSIFIER_TIMEOUT_MS` so a hung sub-agent cannot consume the full budget).
+- `hooks/hooks.json` Stop hook timeout = 120 s, giving the folded single-hook enough budget for one inner classifier round-trip plus state I/O; the inner classifier call is capped at 10 s via `STAGE_CLASSIFIER_TIMEOUT_MS` so a hung sub-agent cannot consume the full budget.
 - `SMT_CLASSIFIER=1` is injected into the spawned classifier sub-agent's env. The Stop hook bails out immediately when it sees this flag, preventing recursive Stop-hook fires from the classifier session.
 - `SMT_CLASSIFIER_CMD` (test-only) overrides the classifier binary path so unit tests can inject a stub.
 
@@ -836,13 +875,13 @@ This guarantees `/queue` items always run; without this check the classifier wou
 
 #### 11-5b. E2E reminder untracking (post-tool-verifier ↔ auto-confirm)
 
-**v2.4.10 note**: `stop-stage-enforcer.mjs` has been deleted and its stage-progression logic (`pickNextStage`, `isTerminalStage`, `ALWAYS_TERMINAL_STAGES`) folded directly into `scripts/auto-confirm.mjs` as local exports. `auto-confirm.mjs` is now the **single Stop hook**. The `hooks/hooks.json` and `settings.json` Stop hook arrays each contain only the auto-confirm entry (timeout 120 s).
+**Current Stop-hook shape**: `stop-stage-enforcer.mjs` has been deleted and its stage-progression logic (`pickNextStage`, `isTerminalStage`, `ALWAYS_TERMINAL_STAGES`) folded directly into `scripts/auto-confirm.mjs` as local exports. `auto-confirm.mjs` is now the **single Stop hook**. The `hooks/hooks.json` and `settings.json` Stop hook arrays each contain only the auto-confirm entry (timeout 120 s).
 
-`auto-confirm.mjs` is the unified Stop-hook stage-progression guard. Its primary role is to block Stop when a workflow mode (fix/implement/think) has not yet reached a terminal stage. It also preserves the legacy E2E reminder pathway as a fallback: it reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and surfaces an `[E2E]` reason when the next stage would be `workflow-e2e` and `summary.json.e2e_required` is set.
+`auto-confirm.mjs` is the unified Stop-hook stage-progression guard. Its primary role is to block Stop when a workflow mode (fix/implement/brainstorm) has not yet reached a terminal stage. It also preserves the legacy E2E reminder pathway as a fallback: it reads `/tmp/smelter-session-files-<projectHash>.json` (populated by `post-tool-verifier.mjs` on every Edit/Write) and surfaces an `[E2E]` reason when the next stage would be `workflow-e2e` and `summary.json.e2e_required` is set.
 
-Active-state resolution is **session-isolated** (v2.4.5): `findActiveStatePath(cwd, sessionId)` reads `.smt/state/active-feature-<sessionId>.json` (primary) then `.smt/state/active-feature.json` (non-scoped, session-less fallback only). The global `.smt/active_task` pointer was removed in Phase 13 — concurrent sessions would overwrite it and strand each other's mid-flow chains. Same resolution applies to `critic-watchdog.readActiveState`, `skill-stage-transition.resolveActiveState`, `auto-confirm.findActiveTaskState`, and `critic-watchdog` R12. `keyword-detector.seedWorkflowState` writes only the per-session pointer when `session_id` is present; non-scoped pointer is written only when `session_id` is absent (legacy CLI / `session-sim.mjs`). `clearActiveFeature(directory, sessionId)` unlinks per-session + non-scoped + legacy `.smt/active_task` so `/cancel` fully clears the chain.
+Active-state resolution is **session-isolated**: `findActiveStatePath(cwd, sessionId)` reads `.smt/state/active-feature-<sessionId>.json` (primary) then `.smt/state/active-feature.json` (non-scoped, session-less fallback only). The global `.smt/active_task` pointer was removed — concurrent sessions would overwrite it and strand each other's mid-flow chains. Same resolution applies to `critic-watchdog.readActiveState`, `skill-stage-transition.resolveActiveState`, `auto-confirm.findActiveTaskState`, and `critic-watchdog` R12. `keyword-detector.seedWorkflowState` writes only the per-session pointer when `session_id` is present; non-scoped pointer is written only when `session_id` is absent (legacy CLI / `session-sim.mjs`). `clearActiveFeature(directory, sessionId)` unlinks per-session + non-scoped + legacy `.smt/active_task` so `/cancel` fully clears the chain.
 
-**Stuck-loop escape** (v2.4.x, unified in v2.4.10): `auto-confirm` maintains a per-project + per-session loop counter at `/tmp/smelter-auto-confirm-loop-<projectHash>-<sessHash>.json`. The counter signature is now `slug:mode:current_stage:completedCount` (count of `completed_stages`, not the decision-action string) — monotonically increasing on genuine advance, so the counter resets precisely when state moves forward. When the same signature triggers `AUTO_CONFIRM_STUCK_THRESHOLD` (default 3) consecutive identical-signature runs with no state progression, the hook halts with a stuck-loop warning. Any genuine state transition (stage advance, mode flip, slug swap) resets the counter; the counter is also considered stale after 30 min. `cancel-propagator.mjs` cleans both the auto-confirm counter path and the legacy stop-loop path (`/tmp/smelter-stop-loop-<projectHash>-<sessHash>.json`) on hard cancel so pre-existing files from prior sessions do not inherit stale state.
+**Stuck-loop escape**: `auto-confirm` maintains a per-project + per-session loop counter at `/tmp/smelter-auto-confirm-loop-<projectHash>-<sessHash>.json`. The counter signature is `slug:mode:current_stage:completedCount` (count of `completed_stages`, not the decision-action string) — monotonically increasing on genuine advance, so the counter resets precisely when state moves forward. When the same signature triggers `AUTO_CONFIRM_STUCK_THRESHOLD` (default 3) consecutive identical-signature runs with no state progression, the hook halts with a stuck-loop warning. Any genuine state transition (stage advance, mode flip, slug swap) resets the counter; the counter is also considered stale after 30 min. `cancel-propagator.mjs` cleans both the auto-confirm counter path and the legacy stop-loop path (`/tmp/smelter-stop-loop-<projectHash>-<sessHash>.json`) on hard cancel so pre-existing files from prior sessions do not inherit stale state.
 
 To stop the reminder firing repeatedly after the user has already validated changes, `post-tool-verifier.mjs` removes a tracked source file from the list whenever a Bash command runs `<base>.test.<ext>` and the command does **not** match `detectBashFailure()`. When the list becomes empty, the tracking file is deleted, so auto-confirm SKIPs the E2E surface enrichment cleanly on the next Stop event.
 
@@ -854,13 +893,13 @@ Untrack heuristic (matches anywhere in the command, including under `bash -c`):
 
 For each match, the corresponding `<base>.<ext>` (and its basename) is removed from the tracking list. Tests that fail leave the entries in place so the reminder still fires.
 
-#### 11-5c. Interactive-skill in-progress continue (v2.4.8)
+#### 11-5c. Interactive-skill in-progress continue
 
-Interactive workflow skills (`workflow-brainstorm`, `workflow-investigate`, `workflow-tasker`) run a multi-turn Q&A before writing their canonical artifact. Between Q1 and Q_n, `state.completed_stages` and `state.events` are both empty — the pre-v2.4.8 enforcer read this as "skill has not been invoked yet" and emitted `[Stage] entry_not_started`, forcing the agent to re-invoke the skill on every turn. That in turn reset the Q&A, clouded the conversation, and eventually tripped the `STUCK_LOOP_THRESHOLD = 3` escape — but only after three forced re-entries.
+Interactive workflow skills (`workflow-brainstorm`, `workflow-investigate`, `workflow-tasker`) run a multi-turn Q&A before writing their canonical artifact. Between Q1 and Q_n, `state.completed_stages` and `state.events` are both empty; the hook treats an in-progress tool invocation as continuation rather than forcing the agent to re-invoke the skill on every turn.
 
 `auto-confirm.mjs::decide` (which absorbed the `isTerminalStage` / `pickNextStage` logic from the now-deleted `stop-stage-enforcer.mjs`) consults the transcript before emitting `entry_not_started`. After `isTerminalStage` (terminal short-circuit), if `current_stage` is set with empty completed/events AND `hasSkillInvocationSinceLastUserText(transcriptPath, current_stage)` returns true, the hook returns `{action: 'continue'}` and Stop passes cleanly — the agent halts, the user replies, and the next turn resumes the Q&A naturally.
 
-`hasSkillInvocationSinceLastUserText` (in `scripts/lib/transcript-reader.mjs`) anchors on the last `role: 'user'` entry carrying a `type: 'text'` part (so Claude Code's user-role `tool_result` envelopes do not mistakenly cut the current turn's tool loop out of the window). Success is gated on a matching `tool_result` with `is_error !== true`; platform-rejected invocations do NOT register. The helper is fail-closed — missing `transcript_path`, oversize files, and parse exceptions all return `false`, preserving the pre-v2.4.8 `entry_not_started` block.
+`hasSkillInvocationSinceLastUserText` (in `scripts/lib/transcript-reader.mjs`) anchors on the last `role: 'user'` entry carrying a `type: 'text'` part (so Claude Code's user-role `tool_result` envelopes do not mistakenly cut the current turn's tool loop out of the window). Success is gated on a matching `tool_result` with `is_error !== true`; platform-rejected invocations do NOT register. The helper is fail-closed — missing `transcript_path`, oversize files, and parse exceptions all return `false`, preserving the guarded `entry_not_started` block.
 
 Paired with this, `auto-confirm.mjs::decide` now accepts `questionShape` and suppresses the `spawn_sub_tasker` branch when the last assistant message matches `multi_choice`, `yes_no`, or `open_question` (`classifyQuestionShape` applies a conservative bullet-line requirement so rhetorical `?`-ending prose still triggers risk-keyword routing). The shape gate is inserted AFTER the halt conditions (`workflow-human-check`, `_awaiting_mode_upgrade`, investigate-review pass halt, `done`) so those pauses remain authoritative.
 
@@ -900,13 +939,13 @@ Four-level cascade (Levels 1-3 user-silent):
 
 Each level retries up to 2 times before escalating. Level 2 onward do not reset the stall timer (prevents infinite cascade).
 
-### 11-7. Read-before-Write Prevention & Retry Fallback (v3.3.5)
+### 11-7. Read-before-Write Prevention & Retry Fallback
 
 The Claude Code harness rejects `Write`/`Edit` of any file not `Read` in the current session with the error `File has not been read yet. Read it first before writing to it.`. Two complementary mechanisms keep this error from halting the agent:
 
-**Preventive prompt (PreToolUse, `scripts/pre-tool-enforcer.mjs`)**: whenever the tool is `Write` or `Edit` AND `existsSync(file_path)` is true, the hook appends a `Read-first reminder:` block to `additionalContext` alongside the existing `Writing:`/`Editing:` description. The reminder echoes the exact path, states the harness contract, and explicitly exempts new-file writes. Emitted in the normal (non-block) flow path — block paths (protected-state, v3.3 code-file gate, commit gate) short-circuit first, so the reminder does not leak into block reasons.
+**Preventive prompt (PreToolUse, `scripts/pre-tool-enforcer.mjs`)**: whenever the tool is `Write` or `Edit` AND `existsSync(file_path)` is true, the hook appends a `Read-first reminder:` block to `additionalContext` alongside the existing `Writing:`/`Editing:` description. The reminder echoes the exact path, states the harness contract, and explicitly exempts new-file writes. Emitted in the normal (non-block) flow path — block paths (protected-state, code-file gate, commit gate) short-circuit first, so the reminder does not leak into block reasons.
 
-**Escalated retry (PostToolUse, `scripts/tool-retry.mjs`)**: the existing `file-not-read` retry pattern stays as attempt 1 (single-line instruction). On `currentCount >= 1` (attempt 2+), `buildRetryInstruction` returns a `FALLBACK (escalated...)` block that enumerates steps (1)…(4) — explicit `Read()` call, Read-verify, re-issue with same payload, spurious-error recovery. The retry-cap (`MAX_RETRIES=3`) is unchanged; only the message content escalates. Attempt 1 keeps the original single-line form so routine recoveries do not bloat context.
+**Escalated retry (PostToolUse, `scripts/tool-retry.mjs`)**: the existing `file-not-read` retry pattern stays as attempt 1 (single-line instruction). On `currentCount >= 1` (attempt 2+), `buildRetryInstruction` returns a `FALLBACK (escalated...)` block that enumerates steps (1)…(4) — explicit `Read()` call, Read-verify, re-issue with same payload, spurious-error recovery. The retry-cap (`MAX_RETRIES=3`) is unchanged; only the message content escalates. Attempt 1 keeps the original single-line form so routine recoveries do not bloat context. The file-writer gate accepts both bare tool names (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`) and UI-decorated variants like `Write(/abs/path)` so the retry still fires when the payload includes the rendered invocation label.
 
 The two layers are independent: the preventive prompt fires on every Write/Edit (cheap), the escalated fallback fires only when the retry counter demonstrates the agent did not Read between attempts (expensive message, rare path). Both layers preserve Iron Law #4 (no unbounded retry).
 
@@ -1004,21 +1043,21 @@ Per-task queues are independent; session context may be shared. Specialist agent
                                          ▼
                                 ╭──────────────────╮
                                 │  classifier       │
-                                │ (pattern match)   │
+                                │ (rules + LLM)     │
                                 ╰──────────────────╯
                                          │
             ┌──────┬─────────┬──────┬──────────┐
             ▼      ▼         ▼      ▼          ▼
-           think  fix    investigate verify  implement   (explicit override)
+        brainstorm fix       explore verify  implement   (explicit override)
             │      │         │         │        │
             ▼      ▼         ▼         ▼        ▼
            ╭────────────────────────────────────────────────╮
            │           SHARED PIPELINE (workflow-*)          │
            │                                                  │
-           │  brainstorm ◀──▶ investigate                    │
+            │  brainstorm ◀──▶ workflow-investigate           │
            │       │                │                         │
            │       ▼                ▼                         │
-           │  brainstorm-review  investigate-review          │
+            │  brainstorm-review  investigate-review          │
            │                        │                         │
            │                        ▼                         │
            │  tasker ──▶ tasker-review                       │
@@ -1079,16 +1118,19 @@ Full regression only at `workflow-human-check` via explicit user request.
 
 ---
 
-## 15. Rules Injection
+## 15. Prompt Injection Boundary
 
-`rules-lib/<lang>/*.md` is injected by `PreToolUse` based on file extension.
+`scripts/lib/yellow-tag.mjs` is a shared hook utility. Keep its
+invisible-character sanitization table encoded with escaped Unicode literals
+(`\u2028`, `\u2029`, `\u202A-\u202E`, `\u2066-\u2069`) rather than embedding raw
+control characters directly in source; Node 22 can treat raw line/paragraph
+separators as lexical breaks during ESM parse.
 
-| Tag | Meaning |
-|-----|---------|
-| `[Inject: rules-lib/typescript]` | editing `.ts` / `.tsx` |
-| `[Inject: rules-lib/python]` | editing `.py` |
-
-Per-skill rules may also be injected (e.g., `workflow-coding` pulls `common/coding-style.md`).
+Smelter does not run a generic per-file rule prompt injector. Mandatory TDD,
+security, and style constraints belong in deterministic gates, workflow skills,
+tests, and review hooks. Smelter-specific hook architecture is project-local
+knowledge and is documented in `CLAUDE.md`, not pushed into user-project coding
+contexts.
 
 ---
 
@@ -1147,17 +1189,16 @@ skills/
     ├── deep-interview/SKILL.md
     └── ...
 
-modes/                                 ← v3: three-file YAML config (replaces modes/*.json)
-├── skills.yaml                        ← per-skill team patterns + agent defaults
-├── pipelines.yaml                     ← reusable skill sequences
-└── modes.yaml                         ← thin mode defs (entry + pipeline + flags + team_hints)
+modes/                                 ← v0.4 unified workflow config
+└── workflow.yaml                      ← skills + pipelines + modes + routing
 
-commands/                              ← v3 canonical set (5 workflow + 1 utility)
-├── think.md                           ← was plan.md
+commands/                              ← v0.4 canonical set (6 commands + utilities)
+├── brainstorm.md
 ├── fix.md
 ├── implement.md
-├── investigate.md
+├── explore.md
 ├── verify.md
+├── dobby.md
 └── queue.md                           ← utility (no mode)
 
 scripts/
@@ -1169,8 +1210,7 @@ scripts/
 ├── stall-detector.mjs            ← §11-6 stall signals + cascade
 ├── critic-watchdog.mjs           ← Pattern E Layer 1 (17 rules, §12-5)
 ├── parallel-dispatcher.mjs       ← Pattern A/B/C/D dispatch plan
-├── feature-version-check.mjs     ← .smt/features/* state integrity
-└── rule-injector.mjs             ← rules-lib injection
+└── feature-version-check.mjs     ← .smt/features/* state integrity
 
 agents/
 ├── debugger.md                   ← Stall Cascade Level 1
@@ -1276,7 +1316,7 @@ agents/
 | Cause enum | Fixed (§6-3). |
 | Declarer | hook > user > (skill forbidden). |
 | Mode upgrade | Always user-gated; any direction. |
-| brainstorm ↔ investigate | Bidirectional (reshape edge). |
+| brainstorm ↔ workflow-investigate | Bidirectional (reshape edge). |
 | Implement brainstorm | `depth: light` shared skill. |
 | Fix routing (text/design) | **Auto-classifier first** (pattern match); `/fix` + magic keyword → `target_type ∈ {text, design}` → `fix_simple` pipeline (only these two surfaces route there). |
 | State store | `<task>.state.json` (JSON, per-task). |
@@ -1297,13 +1337,19 @@ agents/
 
 ---
 
-## Appendix D — Transcript-paste passthrough (v2.4.8)
+## Appendix D — Transcript-paste passthrough
 
 This passthrough is intentionally narrower than the Layer-3 LLM passthrough hint. Transcript-paste detection still bypasses workflow seeding even during an active workflow session, but generic LLM `passthrough:true` hints do not: active workflow continuation wins unless the input matches the transcript-paste heuristic.
 
-`scripts/keyword-detector.mjs::detectNaturalLanguageCommand` short-circuits to `{ passthrough: true, matched: 'transcript-paste', source: 'passthrough' }` when `isTranscriptPaste(prompt)` returns true (≥2 distinct markers among: `⏺` bullet, `⎿` connector, `Stop hook (error|feedback)`, `Ran \d+ stop hooks?`, `[master|main <sha>]`). Prevents pasted Claude Code session logs from seeding a spurious `/fix` chain via the legacy `\bfix\b` pattern. Explicit slash commands (`/fix`, `/plan`, …) still bypass the heuristic via `extractExplicitHarnessCommand`. Rollback: `SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1`.
+`scripts/keyword-detector.mjs::detectNaturalLanguageCommand` short-circuits to `{ passthrough: true, matched: 'transcript-paste', source: 'passthrough' }` when `isTranscriptPaste(prompt)` returns true (≥2 distinct markers among: `⏺` bullet, `⎿` connector, `Stop hook (error|feedback)`, `Ran \d+ stop hooks?`, `[master|main <sha>]`). Prevents pasted Claude Code session logs from seeding a spurious `/fix` chain via the legacy `\bfix\b` pattern. Explicit slash commands (`/fix`, `/brainstorm`, …) still bypass the heuristic via `extractExplicitHarnessCommand`. Rollback: `SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1`.
 
 `scripts/stop-stage-enforcer.mjs::buildBlockReason` entry_not_started branch includes a `/cancel` escape hint so users whose legitimate prompt was nonetheless mis-seeded can clear state without completing the whole workflow chain.
+
+## Appendix E — Sticky active workflow passthrough (v0.4.0)
+
+Once a session has an unfinished active workflow pointer, natural-language prompts do not start a different mode. `scripts/keyword-detector.mjs::detectNaturalLanguageCommand` checks the active per-session state before the LLM classifier; if the active task is not terminal (`workflow-human-check` not completed and `step !== DONE`), non-slash prompts are treated as continuation and no new mode skill is injected. Explicit slash commands and explicit new-work phrases (`새 feature`, `new feature`, `다른 작업`, `새로 시작`) remain the user-controlled way to start another feature.
+
+Communication-only prompts such as `한글로 말해봐`, language switches, and response-style changes are passthrough and never seed workflow state. Investigation rollback phrasing inside an active workflow (for example `다시 탐색해보자`) stays in the current mode and injects `Skill: workflow-investigate` instead of starting `/explore`.
 
 ---
 
@@ -1311,10 +1357,10 @@ This passthrough is intentionally narrower than the Layer-3 LLM passthrough hint
 
 | # | Item | Depends on | Notes |
 |---|------|-----------|-------|
-| 1 | `state.json` schema v2.4.1 | none | single source of truth |
+| 1 | `state.json` schema v0.4.0 | none | single source of truth |
 | 2 | Mode classifier (`scripts/mode-classifier.mjs`) | 1 | natural-language → mode |
-| 3 | Mode definition files (`modes/*.json`) | 1 | 6 modes + allowed_skills |
-| 4 | 14 `skills/workflow-*/SKILL.md` | 1 | contract + default pattern |
+| 3 | Unified workflow config (`modes/workflow.yaml`) | 1 | 6 modes + allowed_skills |
+| 4 | 16 `skills/workflow-*/SKILL.md` | 1 | contract + default pattern |
 | 5 | Producer-chain router (`scripts/route-on-fail.mjs`) | 1, 4 | |
 | 6 | Auto-confirm hook (`scripts/auto-confirm.mjs`) | 1, 5 | decide tree + risk sub-tasker + chain advance |
 | 7 | Auto-confirm consumer (`scripts/auto-confirm-consumer.mjs`) | 6 | queue-drop pattern pair |
@@ -1326,7 +1372,7 @@ This passthrough is intentionally narrower than the Layer-3 LLM passthrough hint
 | 13 | Critic Watchdog Hook Layer 1 | 1, 6 | 17 rules (R01–R17); R16/R17 enforce per-skill Terminal State language (§0-bis) |
 | 14 | Critic Watchdog Agent Layer 2 | 13 | periodic semantic checks |
 | 15 | Pattern D Hierarchical (tasker / brainstorm) | 4 | architect + personas |
-| 16 | Multi-Pass Verification engine | 4 | 3-round enforcement for review skills |
+| 16 | Multi-Pass Verification engine | 4 | 2-round enforcement for review skills |
 | 17 | Feature state integrity utility (`feature-version-check.mjs`) | 1 | orphan scan |
 | 18 | `/verify` mode + `workflow-verify` skill | 4, 13 | tests + static + real-interface E2E |
 | 19 | **E2E real-interface enforcement (§8)** | 13 | R11 CRITICAL block, artifact_missing / mocked_interface causes, per-surface artifact gate |

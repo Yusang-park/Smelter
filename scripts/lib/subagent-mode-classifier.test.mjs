@@ -71,13 +71,13 @@ test('classifyMode returns chained_modes array when stub emits chain', async () 
   const dir = mkdtempSync(join(tmpdir(), 'mc-'));
   try {
     const stub = mkStub(dir, `export function classifyMode(prompt) {
-      return { mode: 'investigate', chained_modes: ['investigate', 'fix'], trigger: 'llm:chain' };
+      return { mode: 'explore', chained_modes: ['explore', 'fix'], trigger: 'llm:chain' };
     }`);
     process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
     const { classifyMode } = await freshImport();
     const res = classifyMode('조사하고 수정해', { cwd: dir, sessionId: 's2' });
-    assert.equal(res.mode, 'investigate');
-    assert.deepEqual(res.chained_modes, ['investigate', 'fix']);
+    assert.equal(res.mode, 'explore');
+    assert.deepEqual(res.chained_modes, ['explore', 'fix']);
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });
@@ -112,15 +112,15 @@ test('classifyMode caches repeated prompts per session', async () => {
       export function classifyMode(prompt) {
         const n = Number(readFileSync('${counterPath}', 'utf-8')) + 1;
         writeFileSync('${counterPath}', String(n));
-        return { mode: 'think', trigger: 'llm:call-' + n };
+        return { mode: 'brainstorm', trigger: 'llm:call-' + n };
       }
     `);
     process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
     const { classifyMode } = await freshImport();
     const r1 = classifyMode('리팩토링 계획 세워', { cwd: dir, sessionId: 'cache-s' });
     const r2 = classifyMode('리팩토링 계획 세워', { cwd: dir, sessionId: 'cache-s' });
-    assert.equal(r1.mode, 'think');
-    assert.equal(r2.mode, 'think');
+    assert.equal(r1.mode, 'brainstorm');
+    assert.equal(r2.mode, 'brainstorm');
     const callCount = Number(readFileSync(counterPath, 'utf-8'));
     assert.equal(callCount, 1, 'stub invoked once — second read served from cache');
   } finally {
@@ -151,12 +151,12 @@ test('classifyMode rejects poisoned non-passthrough cache entry with command: tr
     const cache = JSON.parse(readFileSync(cachePath, 'utf-8'));
     const hashKey = Object.keys(cache).find((k) => k !== '_session');
     // Poison: claim a non-LLM provenance prefix.
-    cache[hashKey] = { mode: 'think', passthrough: false, trigger: 'command:/think', chained_modes: null };
+    cache[hashKey] = { mode: 'brainstorm', passthrough: false, trigger: 'command:/think', chained_modes: null };
     writeFileSync(cachePath, JSON.stringify(cache));
 
     const r2 = classifyMode(prompt, { cwd: dir, sessionId: 'poison2' });
     assert.equal(r2.mode, 'fix', 'poisoned non-passthrough entry must be rejected');
-    assert.notEqual(r2.mode, 'think');
+    assert.notEqual(r2.mode, 'brainstorm');
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });
@@ -296,6 +296,17 @@ test('classifier model selection ignores stale Codex active model in explicit Cl
     if (prevCodexMode === undefined) delete process.env.CODEX_MODE;
     else process.env.CODEX_MODE = prevCodexMode;
   }
+});
+
+test('classifier prompt exposes v0.4 command surface only', async () => {
+  const { CLASSIFICATION_PROMPT } = await freshImport();
+  assert.match(CLASSIFICATION_PROMPT, /Commands available: brainstorm[\s\S]*implement[\s\S]*fix[\s\S]*explore[\s\S]*verify[\s\S]*dobby/);
+  assert.match(CLASSIFICATION_PROMPT, /command:brainstorm/);
+  assert.match(CLASSIFICATION_PROMPT, /command:explore/);
+  assert.match(CLASSIFICATION_PROMPT, /command:implement/);
+  assert.doesNotMatch(CLASSIFICATION_PROMPT, /command:plan\b/);
+  assert.doesNotMatch(CLASSIFICATION_PROMPT, /command:build\b/);
+  assert.doesNotMatch(CLASSIFICATION_PROMPT, /Commands available: plan/);
 });
 
 await runAll();

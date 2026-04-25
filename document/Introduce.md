@@ -2,7 +2,7 @@
 title: Smelter — Philosophy & Direction
 type: canonical
 tags: [smelter, philosophy, workflow, skill-composition]
-updated: 2026-04-20
+updated: 2026-04-26
 ---
 
 # Smelter — Philosophy & Direction
@@ -19,12 +19,11 @@ Smelter composes atomic **workflow skills** (`workflow-*`) into modes:
 
 | Mode | Entry skill | Use |
 |------|-------------|-----|
-| `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution |
 | `fix` | `workflow-investigate` | Bug / logic repair |
-| `investigate` | `workflow-investigate` | Static investigation (맥락·근거 파악) |
+| `explore` | `workflow-investigate` | Static investigation (맥락·근거 파악) |
 | `verify` | `workflow-verify` | Non-modifying verification (tests + static inspect + E2E) |
-| `plan` | `workflow-brainstorm` (deep) | New feature / refactor, planning first |
-| `implement` | `workflow-brainstorm` (light) | Lightweight build on existing code |
+| `brainstorm` | `workflow-brainstorm` (deep) | New feature / refactor, planning first |
+| `implement` | `workflow-investigate` → `workflow-implementation-plan` | Code-based implementation planning and build |
 
 Each skill declares a contract (`consumes`, `produces`, `gate`). Failures route via **producer chain** — no retries, no evasion, no self-failure. See `document/workflow.md` §5.
 
@@ -41,7 +40,7 @@ All plans, decisions, and execution state live on disk under `.smt/`:
 │       ├── task/
 │       │   ├── plan.md                   ← feature goal, scope, acceptance criteria
 │       │   ├── <task-name>.md            ← human-readable task record
-│       │   └── <task-name>.state.json    ← machine state (v2.4.1 schema)
+│       │   └── <task-name>.state.json    ← machine state (v0.4.0 schema)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e video, screenshots, logs
 └── state/                                ← global session state
@@ -80,7 +79,7 @@ Each agent has a clear primary role and hands off only when necessary.
 
 Smelter does not accept "execute then done". It re-smelts the output through multiple independent verifications:
 
-- **Multi-Pass Verification (§9-3)**: every review skill runs 3 rounds — omission / contradiction / edge case — before declaring pass.
+- **Multi-Pass Verification (§9-3)**: every review skill runs 2 rounds — omission / contradiction — before declaring pass.
 - **Pattern B Dual Adversarial (agent-review)**: `code-reviewer` + `security-reviewer` run in parallel; `arbitrator` merges.
 - **Pattern B 95% Consensus (team-code-review)**: advocate / critic / arbitrator iterate to consensus.
 - **Critic Watchdog (§12-8)**: 10-rule hook layer continuously enforces Iron Laws during implementation.
@@ -107,11 +106,11 @@ See `document/workflow.md` §0. The eight non-negotiables:
 
 | User input | Mode classifier routes to |
 |------------|----------------------------|
-| "text fix", "CSS", "rename", "typo", "translation" | `simple_fix` |
+| "text fix", "CSS", "rename", "typo", "translation" | `fix` with surface exemption |
 | "bug", "error", "not working", "broken" | `fix` |
-| "analyze", "investigate", "how does X work" | `investigate` |
-| "design", "plan", "refactor", "new feature" | `plan` |
+| "analyze", "investigate", "how does X work" | `explore` |
+| "design", "plan", "refactor", "new feature" | `brainstorm` |
 | "build", "add", "implement", "extend" | `implement` |
 | Ambiguous | `fix` (safe default) |
 
-Explicit slash commands (`/simple-fix`, `/fix`, `/investigate`, `/plan`, `/implement`) override the classifier.
+Explicit slash commands (`/brainstorm`, `/fix`, `/explore`, `/verify`, `/implement`, `/dobby`) override the classifier.

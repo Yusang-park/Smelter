@@ -2,7 +2,7 @@
 
 This is **Smelter** — a TDD-first, file-based, multi-agent AI development system for Claude Code.
 
-**Version:** 2.4.1
+**Version:** 0.4.0
 
 ## Core Philosophy
 
@@ -29,14 +29,14 @@ Surface-based exemption: CSS/style, i18n/copy-only, typo, and pure-dialogue chan
 
 ### Commands (6)
 
-| Command | Mode | Entry skill | Use |
-|---------|------|-------------|-----|
-| `/plan` | `plan` | `workflow-brainstorm` (deep) | New features / refactors; planning first. |
-| `/implement` | `implement` | `workflow-brainstorm` (light) | Build on existing code; lightweight. |
-| `/fix` | `fix` | `workflow-investigate` | Bug / logic repair. |
-| `/simple-fix` | `simple_fix` | `workflow-coding` | Trivial text / CSS / constant substitution. |
-| `/investigate` | `investigate` | `workflow-investigate` | Static investigation (맥락·근거 파악); mode-transition exit. |
-| `/verify` | `verify` | `workflow-verify` | Non-modifying verification (테스트·점검): test run + static inspection + E2E interface in one pass. |
+| Command | Mode | Task type | Entry skill | Use |
+|---------|------|-----------|-------------|-----|
+| `/brainstorm` | `brainstorm` | `design` | `workflow-brainstorm` (deep) | New features / refactors; planning first. |
+| `/implement` | `implement` | `write` | `workflow-investigate` → `workflow-implementation-plan` | Build on existing code; code-based planning. |
+| `/fix` | `fix` | `write` | `workflow-investigate` | Bug / logic repair. |
+| `/explore` | `explore` | `read` | `workflow-investigate` | Static read-only exploration (맥락·근거 파악); mode-transition exit. |
+| `/verify` | `verify` | `verify` | `workflow-verify` | Non-modifying verification (테스트·점검): test run + static inspection + E2E interface in one pass. |
+| `/dobby` | `dobby` | `freeform` | `workflow-human-check` | Explicit no-pipeline escape hatch; slash-only. |
 
 The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language input; explicit slash commands override the classifier.
 
@@ -44,23 +44,23 @@ The mode classifier (`scripts/mode-classifier.mjs`) auto-routes natural-language
 
 | Keyword (en / ko) | Routes to | Branch hint |
 |-------------------|-----------|-------------|
-| "design X", "plan Y", "refactor", "설계해줘", "계획부터" | `/plan` | — |
+| "design X", "plan Y", "refactor", "설계해줘", "계획부터" | `/brainstorm` | — |
 | "build X", "add X", "implement X", "extend", "덧붙여", "확장해줘" | `/implement` | `extend` skips brainstorm |
 | "fix", "bug", "error", "버그", "고쳐" | `/fix` | `bug` forces E2E on interface surface |
-| "text change", "CSS", "rename", "typo", "i18n", "텍스트", "색상" | `/simple-fix` | TDD exemption auto-applied |
-| "analyze", "investigate", "how does X work", "파악해", "분석해", "검증해", "확인해", "체크해" | `/investigate` | static read only |
+| "text change", "CSS", "rename", "typo", "i18n", "텍스트", "색상" | `/fix` | surface exemption auto-applied |
+| "analyze", "investigate", "how does X work", "파악해", "분석해", "검증해", "확인해", "체크해" | `/explore` | static read only |
 | "테스트 해봐", "점검해", "돌려봐", "run tests", "health check" | `/verify` | tests + static inspect + E2E |
 | `cancel`, `stop` | `/cancel` | hard stop |
 
 ### Workflow examples
 
 ```
-/plan "new onboarding flow"          → plan mode; brainstorm-deep → investigate → tasker
-/implement "add dark mode toggle"    → implement mode; brainstorm-light → full pipeline
-/implement "extend the auth flow"    → magic 'extend' skips brainstorm
-/fix "login form error text"         → fix mode; investigate → tasker → write-test → coding
-/simple-fix "rename button label"    → simple_fix mode; coding → e2e → human-check
-/investigate "how does billing work" → investigate only; exits to /fix or /plan
+/brainstorm "new onboarding flow"     → brainstorm mode; brainstorm-deep → discovery → tasker
+/implement "add dark mode toggle"    → implement mode; discovery → implementation-plan → full pipeline
+/implement "extend the auth flow"    → implement mode; implementation-plan reuses existing feature plan when sufficient
+/fix "login form error text"         → fix mode; discovery → write-test → coding
+/fix "rename button label"            → fix mode; surface-aware fix_simple path when applicable
+/explore "how does billing work"     → explore only; exits to /fix, /implement, or /brainstorm
 ```
 
 ### Auto-Confirm (global Stop hook)
@@ -89,7 +89,7 @@ Summary. Full detail in `document/workflow.md` §0.
 
 ## Available Agents
 
-### v2 specialist agents (workflow support)
+### Workflow specialist agents
 
 | Agent | Purpose |
 |-------|---------|
@@ -137,7 +137,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     │       ├── task/
     │       │   ├── plan.md                  ← feature goal, scope, acceptance criteria
     │       │   ├── <task-name>.md           ← human-readable task record
-    │       │   └── <task-name>.state.json   ← v2.4.1 machine state
+    │       │   └── <task-name>.state.json   ← v0.4 machine state
     │       ├── decisions.md                  ← architecture decisions
     │       └── artifacts/                    ← e2e video, screenshots, logs
     ├── archive/                              ← archived legacy features
@@ -146,7 +146,7 @@ Use agents proactively: complex feature → **planner** then **executor**; just 
     └── session/                              ← session logs (YYYY-MM-DD.md)
 ```
 
-`task/*.md` are human-readable. `task/*.state.json` (v2.4.1 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
+`task/*.md` are human-readable. `task/*.state.json` (v0.4 schema in `scripts/state-schema.mjs`) are machine-owned; prefer reading state.json over scanning markdown when a structured field is sufficient.
 
 **Protocol:**
 1. Session start → read `features/*/task/plan.md` + relevant `features/*/task/*.md` and `*.state.json`.
@@ -161,7 +161,7 @@ Before marking ANY task complete:
 - [ ] Unit tests written AND passing
 - [ ] Integration tests passing (if applicable)
 - [ ] E2E tests passing (if the selected tasks changed any interface: UI, CLI, API, hook, or script)
-- [ ] Multi-Pass Verification: all 3 rounds passed for each review skill (§9-3)
+- [ ] Multi-Pass Verification: both rounds passed for each review skill (§9-3)
 - [ ] `features/<slug>/task/<task-name>.md` + `.state.json` updated
 - [ ] No TypeScript errors (`tsc --noEmit`) scoped to changed surface
 - [ ] `workflow-human-check` approved
@@ -199,7 +199,7 @@ Minimum coverage: 80%
 1. **Unit tests** — Individual functions, utilities, components
 2. **Integration tests** — API endpoints, database operations
 3. **E2E tests** — Test through the real interface (UI→Playwright, CLI→subprocess, API→real server, hook→stdin/stdout pipe)
-4. **Multi-Pass Verification** — All 6 review skills run 3 rounds (omission / contradiction / edge case) before declaring pass (§9-3)
+4. **Multi-Pass Verification** — All review skills run 2 rounds (omission / contradiction) before declaring pass (§9-3)
 
 TDD workflow: write test first (RED) → minimal implementation (GREEN) → refactor → verify 80%+ coverage.
 
@@ -233,9 +233,9 @@ Commit format: `<type>: <description>`. Types: feat, fix, refactor, docs, test, 
 src/             — Core TypeScript engine (types, engine, adapters, runners, rules)
 bin/             — CLI entry point (smelter command)
 agents/          — Specialized subagent definitions (incl. aggregator, conflict-resolver, critic-watchdog, debugger)
-skills/          — workflow-* skills (13) + utility skills
-modes/           — Mode definitions (5 JSON files)
-commands/        — Slash command entry points (plan, simple-fix, fix, investigate, implement)
+skills/          — workflow-* skills (16) + utility skills
+modes/           — Unified workflow config (`workflow.yaml`)
+commands/        — Slash command entry points (brainstorm, explore, fix, implement, verify, dobby)
 hooks/           — hooks.json trigger registration
 scripts/         — Node.js hook scripts (state-schema, mode-classifier, route-on-fail, auto-confirm, critic-watchdog, stall-detector, verification-rounds, ...)
 templates/       — Verification prompt templates + scaffolds
@@ -263,14 +263,13 @@ Every hook prints a short ANSI-yellow bracketed tag to stderr so you can see wha
 | `[Permission]` | permission-handler |
 | `[Pre-Compact]` | pre-compact |
 | `[Agent Check]` | sub-agent review injection |
-| `[Inject: rules-lib/<lang>]` | rule-injector |
 | `[Stall Cascade: L<n>]` | stall-detector |
 | `[Critic-Watchdog: rule <n>]` | critic-watchdog |
 | `[Verify: round <n> <focus>]` | verification-rounds |
 
-### Rules Injection
+### Rule References
 
-`rules-lib/` contains language-specific coding rules injected on a per-surface basis by `scripts/rule-injector.mjs`. Rules are **not** auto-loaded by the CLI at startup; they are injected via a `PreToolUse` hook when a tool targets a file whose extension maps to a known language. Tag: `[Inject: rules-lib/<lang>]`.
+`rules-lib/` is reference material only. Mandatory TDD/security/style constraints are enforced by workflow gates, coding skills, tests, and review hooks rather than a generic per-file prompt injector.
 
 ## ECC Instinct Learning
 

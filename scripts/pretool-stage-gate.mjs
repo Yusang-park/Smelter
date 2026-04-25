@@ -12,19 +12,17 @@
  *
  * Modes (SMT_STAGE_GATE_MODE env):
  *   off     — full bypass
- *   shadow  — log only; decision=allow (default phase 1)
- *   enforce — actual block (phase 2)
+ *   enforce — actual block (default)
  *
  * Bypass: SMT_DISABLE_STAGE_GATE=1 plus ~/.smt/bypass-token mtime < 1h.
  *
- * Fail-closed: uncaught exception → decision=block with gate-error reason
- * (except in shadow mode, which logs and allows).
+ * Fail-closed: uncaught exception → decision=block with gate-error reason.
  */
 
 import { readFileSync, appendFileSync, statSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   loadedSkillsPath,
   resolveActiveState,
@@ -57,8 +55,8 @@ const MUTATING_MCP = new Set([
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit']);
 
 function getMode() {
-  const m = (process.env.SMT_STAGE_GATE_MODE || 'shadow').toLowerCase();
-  return ['off', 'shadow', 'enforce'].includes(m) ? m : 'shadow';
+  const m = (process.env.SMT_STAGE_GATE_MODE || 'enforce').toLowerCase();
+  return m === 'off' ? 'off' : 'enforce';
 }
 
 function bypassActive() {
@@ -85,6 +83,19 @@ function appendLoadedSkill(cwd, sessionId, skill, stageEpoch) {
   } catch (e) { logStderr('append-error', { error: String(e && e.message || e) }); }
 }
 
+function resolveSkillLoadEpoch(active, skill) {
+  if (!active || !active.state) return 'no-stage';
+  if (
+    typeof skill === 'string' &&
+    skill.startsWith('workflow-') &&
+    Array.isArray(active.state.allowed_skills) &&
+    active.state.allowed_skills.includes(skill)
+  ) {
+    return `${active.slug}::${skill}`;
+  }
+  return active.state.current_stage ? `${active.slug}::${active.state.current_stage}` : 'no-stage';
+}
+
 function readLoadedSkills(cwd, sessionId) {
   const p = loadedSkillsPath(cwd, sessionId);
   try {
@@ -108,6 +119,12 @@ function isMutatingTool(toolName, toolInput) {
     if (!r.readonly) return { mutating: true, reason: `bash-mutating:${r.reason || 'unknown'}` };
   }
   return { mutating: false };
+}
+
+function isHumanCheckResultsWrite(active, toolInput) {
+  const filePath = toolInput && typeof toolInput.file_path === 'string' ? toolInput.file_path : '';
+  if (!filePath || !active?.statePath) return false;
+  return resolve(filePath) === resolve(dirname(active.statePath), 'results.md');
 }
 
 function emitBlock(reason) {
@@ -142,9 +159,7 @@ async function main() {
     const skill = tool_input && tool_input.skill;
     if (typeof skill === 'string' && skill) {
       const active = resolveActiveState(cwd, session_id);
-      const stageEpoch = active && active.state && active.state.current_stage
-        ? `${active.slug}::${active.state.current_stage}`
-        : 'no-stage';
+      const stageEpoch = resolveSkillLoadEpoch(active, skill);
       appendLoadedSkill(cwd, session_id, skill, stageEpoch);
       logStderr('skill-load', { skill, stageEpoch, mode });
     }
@@ -164,7 +179,6 @@ async function main() {
     // corrupt state → fail-closed
     const reason = `gate-error: state.json unreadable at ${active.statePath}`;
     logStderr('state-error', { reason, mode });
-    if (mode === 'shadow') emitAllow();
     emitBlock(reason);
     return;
   }
@@ -173,7 +187,13 @@ async function main() {
   if (currentStage == null) {
     const reason = `stage transition in progress for ${active.slug}; retry after Skill() dispatch`;
     logStderr('stage-null', { slug: active.slug, mode });
-    if (mode === 'shadow') emitAllow();
+    emitBlock(reason);
+    return;
+  }
+
+  if (isHumanCheckResultsWrite(active, tool_input) && currentStage !== 'workflow-human-check') {
+    const reason = `Skill(workflow-human-check) must be the active stage before ${tool_name} writes results.md (current stage ${currentStage}; ${check.reason}).`;
+    logStderr('block-results-before-human-check', { tool: tool_name, stage: currentStage, mode, reason: check.reason });
     emitBlock(reason);
     return;
   }
@@ -190,14 +210,13 @@ async function main() {
 
   const reason = `Skill(${currentStage}) must be loaded before ${tool_name} (stage epoch ${stageEpoch}; ${check.reason}).`;
   logStderr('block', { tool: tool_name, stage: currentStage, mode, reason: check.reason });
-  if (mode === 'shadow') emitAllow();
   emitBlock(reason);
 }
 
 process.on('uncaughtException', (e) => {
   const mode = getMode();
   process.stderr.write(`[PreTool Stage Gate] crash ${String(e && e.stack || e)}\n`);
-  if (mode === 'shadow' || mode === 'off') emitAllow();
+  if (mode === 'off') emitAllow();
   process.stdout.write(JSON.stringify({ decision: 'block', reason: `gate-error: ${String(e && e.message || e)}` }));
   process.exit(0);
 });

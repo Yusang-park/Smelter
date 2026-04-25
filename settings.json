@@ -84,11 +84,6 @@
             "type": "command",
             "command": "node \"/Users/yusang/Smelter/scripts/pre-tool-enforcer.mjs\"",
             "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "node \"/Users/yusang/Smelter/scripts/rule-injector.mjs\"",
-            "timeout": 3
           }
         ]
       }

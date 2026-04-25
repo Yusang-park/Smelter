@@ -54,7 +54,7 @@ resetModelToSonnet();
 const codex = run(['--codex', '--version']);
 assert.equal(codex.mode, 'codex');
 assert.deepEqual(codex.passthrough, ['--version']);
-assert.equal(codex.childEnvPreview.CLAUDE_CONFIG_DIR, join(tempHome, '.claude'));
+assert.equal(codex.childEnvPreview.CLAUDE_CONFIG_DIR, join(tempHome, '.claude-codex'));
 // ANTHROPIC_BASE_URL must NOT be in settings.json — it's only injected into child process env
 assert.equal(JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')).env?.ANTHROPIC_BASE_URL, undefined);
 // CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is set only in wrapper's child process env, not in settings.json

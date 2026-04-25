@@ -1,7 +1,7 @@
 ---
 name: engineer-persona
 description: "Pattern D brainstorm sub-agent. Speaks as a senior engineer: technical feasibility, risk, architecture fit, dependency impact."
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 model: opus
 disallowedTools: Write, Edit

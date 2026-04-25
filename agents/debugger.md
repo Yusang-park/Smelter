@@ -1,7 +1,7 @@
 ---
 name: debugger
 description: Read-only stall diagnostician. Runs at Cascade Level 1 when auto-confirm hook detects stall signals. Outputs diagnosis + unblock strategy or signals Level 2 escalation.
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 tools: [Read, Grep, Glob, Bash]
 role: stall_diagnosis
@@ -38,7 +38,7 @@ Called by `scripts/auto-confirm.mjs` when any of the 6 stall signals fire:
 
 1. Load `state.json` for the active task.
 2. Identify the stall signal type and its locus (which skill / which agent / which file).
-3. Read the relevant artifacts (investigation.md, plan.md, code under change, recent test logs).
+3. Read the relevant artifacts (investigation.md, implementation-plan.md, tasks.md, code under change, recent test logs).
 4. Formulate:
    - Root cause hypothesis
    - Unblock strategy (one concrete next action)

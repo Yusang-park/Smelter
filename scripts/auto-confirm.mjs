@@ -37,6 +37,8 @@ import { readCancel, clearCancel } from './lib/cancel-signal.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { readLastAssistantText, lastAssistantQuestionShape, classifyQuestionShape } from './lib/transcript-reader.mjs';
 import { inspectClassifierModel } from './lib/subagent-classifier.mjs';
+import { nextV4Transition } from './lib/workflow-v4-controller.mjs';
+import { transitionV4State } from './lib/workflow-v4-state.mjs';
 
 // Question shapes that mark the assistant as actively soliciting a user
 // reply. When the last message matches any of these, the spawn_sub_tasker
@@ -105,8 +107,6 @@ export function buildClassifierPrompt(lastMessage) {
 export function pickSubAgentModel() {
   if (process.env.CODEX_MODE === '1') return 'gpt-5.4-mini';
   if (process.env.SMELTER_MODEL_MODE === 'codex') return 'gpt-5.4-mini';
-  const cfg = readJson(join(homedir(), '.smt', 'config.json'));
-  if (cfg && cfg.codexMode === true) return 'gpt-5.4-mini';
   const settings = readJson('/Users/yusang/smelter/settings.json');
   const model = String(settings?.model ?? '');
   return inspectClassifierModel(model);
@@ -334,10 +334,10 @@ export const ACTIVE_STATE_MAX_AGE_MS = 60 * 60 * 1000;
 export function detectModeTransitionSignal(message) {
   if (!message || typeof message !== 'string') return '';
   const patterns = [
-    /mode_transition_to_(think|fix|investigate|implement|verify)\b/i,
-    /transition(?:ing)?\s+to\s+(think|fix|investigate|implement|verify)\s+mode/i,
-    /switching\s+to\s+(think|fix|investigate|implement|verify)\s+mode/i,
-    /(think|fix|investigate|implement|verify)\s+모드로\s*(?:전환|넘어)/i,
+    /mode_transition_to_(brainstorm|fix|explore|implement|verify)\b/i,
+    /transition(?:ing)?\s+to\s+(brainstorm|fix|explore|implement|verify)\s+mode/i,
+    /switching\s+to\s+(brainstorm|fix|explore|implement|verify)\s+mode/i,
+    /(brainstorm|fix|explore|implement|verify)\s+모드로\s*(?:전환|넘어)/i,
   ];
   for (const p of patterns) {
     const m = message.match(p);
@@ -437,6 +437,21 @@ export function shouldRunStageCompletionClassifier(state, lastAssistantText) {
   return !alreadyPassed;
 }
 
+function applyV4ControllerTransition(state, statePath, event) {
+  if (!state || typeof state.task_type !== 'string' || typeof state.step !== 'string') return null;
+  const transition = nextV4Transition(state, event);
+  if (!transition?.step || transition.step === state.step) return transition;
+  transitionV4State(state, transition.step);
+  if (statePath) {
+    try {
+      writeState(statePath, state);
+    } catch (err) {
+      process.stderr.write(`\x1b[33m[smelter] auto-confirm · v0.4 transition write failed: ${err.message}\x1b[0m\n`);
+    }
+  }
+  return transition;
+}
+
 // Decision tree per section 11-2. Returns { action, reason, payload }.
 //
 // `questionShape` (optional) is the classification of the assistant's last
@@ -446,7 +461,7 @@ export function shouldRunStageCompletionClassifier(state, lastAssistantText) {
 // contain a risk keyword (e.g. Korean "위험") does not get rerouted into
 // a fictional follow-up task. The shape gate is placed STRICTLY after
 // the halt conditions (workflow-human-check / _awaiting_mode_upgrade /
-// investigate-review) so those pauses remain authoritative.
+  // explore-review) so those pauses remain authoritative.
 export function decide({ state, lastAssistantText, statePath, stageClassifier, questionShape }) {
   if (!state) return { action: 'no_state', reason: 'no active task state.json found' };
 
@@ -488,6 +503,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     if (!humanCheckPassed && !legacyCompleted) {
       return { action: 'halt', reason: 'awaiting user decision in workflow-human-check' };
     }
+    applyV4ControllerTransition(state, statePath, { type: 'human_pass' });
     return { action: 'session_wrap', reason: 'workflow-human-check approved, writing session log' };
   }
   if (state._awaiting_mode_upgrade) {
@@ -496,8 +512,8 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
 
   const events = state.events || [];
   const last = events[events.length - 1];
-  if (state.mode === 'investigate' && state.current_stage === 'workflow-investigate-review' && last?.result === 'pass') {
-    return { action: 'halt', reason: 'investigate mode user decision required after workflow-investigate-review pass' };
+  if (state.mode === 'explore' && state.current_stage === 'workflow-investigate-review' && last?.result === 'pass') {
+    return { action: 'halt', reason: 'explore mode user decision required after workflow-investigate-review pass' };
   }
 
   if (isSubTaskerOnRisk() && lastAssistantText && detectRiskKeyword(lastAssistantText)
@@ -513,12 +529,15 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
   if (unresolved) {
     return {
       action: 'enter_skill',
-      reason: 'unresolved active_feedback',
+      reason: `continue: unresolved feedback for '${unresolved.target_skill}'. Read ~/.claude/skills/${unresolved.target_skill}/SKILL.md and follow its steps to resolve feedback '${unresolved.id}'.`,
       payload: { skill: unresolved.target_skill, feedback_id: unresolved.id },
     };
   }
 
   if (last && last.result === 'fail') {
+    if (state.step === 'VERIFY') {
+      applyV4ControllerTransition(state, statePath, { type: 'verify_fail', signal: last.cause || '' });
+    }
     const r = route({ event: last, state });
     if (r.reason === 'whitelist_violation') {
       return { action: 'request_mode_upgrade', reason: r.info, payload: r };
@@ -526,17 +545,20 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     if (r.target) {
       // Producer-chain → direction 'back' because the chain routes to the
       // upstream skill that owns the defect.
-      return { action: 'enter_skill', reason: `producer chain: ${r.reason}`, payload: { skill: r.target, direction: 'back' } };
+      return { action: 'enter_skill', reason: `continue: route back to upstream producer '${r.target}'. Read ~/.claude/skills/${r.target}/SKILL.md and follow its steps. Cause: ${r.reason}`, payload: { skill: r.target, direction: 'back' } };
     }
   }
 
-  if (last && last.result === 'pass' && last.skill === (state.current_stage || '')) {
-    // Fix A companion — the advance branch only fires when the last event's
-    // skill matches current_stage. Without this guard, a cross-stage pass event
-    // (e.g. Fix A's hook-written pass for workflow-investigate while
-    // current_stage has advanced to workflow-investigate-review) would
-    // trigger pickNextStage and skip the current stage entirely.
-    //
+  // Fix A companion — the advance branch only fires when EITHER
+  //   (a) the last event's skill matches current_stage (normal PostToolUse path), OR
+  //   (b) current_stage has a prior fail event (producer-chain recovery — e.g.
+  //       workflow-coding failed with scope_mismatch, routed to workflow-tasker,
+  //       which passed → advance resumes at coding/next).
+  // Without this guard, Fix A's hook-written pass for the prior stage would
+  // trigger pickNextStage and skip the current stage entirely.
+  const currentStageHasFail = events.some(e => e && e.skill === state.current_stage && e.result === 'fail');
+  if (last && last.result === 'pass' && (last.skill === (state.current_stage || '') || currentStageHasFail)) {
+    applyV4ControllerTransition(state, statePath, { type: 'stage_pass' });
     // H2 — name the next skill explicitly instead of a vague "advance".
     // pickNextStage honors allowed_skills order + completed_stages so the
     // agent receives an unambiguous target instead of guessing from
@@ -550,7 +572,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     const skill = pickNextStage(state);
     return {
       action: 'advance',
-      reason: `last event pass, advance to ${skill}`,
+      reason: `continue: previous stage passed. Next stage '${skill}'. Read ~/.claude/skills/${skill}/SKILL.md and follow its steps.`,
       payload: { skill, direction: 'advance' },
     };
   }
@@ -559,7 +581,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     c.run_result === 'fail' && ['added_case', 'modified_case'].includes(c.action)
   );
   if (hasRed && state.current_stage !== 'workflow-coding' && state.allowed_skills.includes('workflow-coding')) {
-    return { action: 'enter_skill', reason: 'RED cycle ready, enter workflow-coding', payload: { skill: 'workflow-coding' } };
+    return { action: 'enter_skill', reason: `continue: a failing test is ready. Read ~/.claude/skills/workflow-coding/SKILL.md and follow its steps to turn the failing test green.`, payload: { skill: 'workflow-coding' } };
   }
 
   // Stage-completion gate: when current_stage is set, no pass event has
@@ -595,7 +617,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
         if (r.target) {
           return {
             action: 'enter_skill',
-            reason: `review fail verdict → producer chain: ${r.reason}`,
+            reason: `continue: review fail verdict — route back to upstream producer '${r.target}'. Read ~/.claude/skills/${r.target}/SKILL.md and follow its steps. Cause: ${r.reason}`,
             payload: { skill: r.target, direction: 'back' },
           };
         }
@@ -608,7 +630,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
       const nextSkill = pickNextStage(state);
       return {
         action: 'stage_complete',
-        reason: `stage-completion classifier → ${state.current_stage} complete`,
+        reason: `continue: stage '${state.current_stage}' is done. Next stage is '${nextSkill}'. Read ~/.claude/skills/${nextSkill}/SKILL.md and follow its steps.`,
         payload: {
           stage: state.current_stage,
           nextSkill,
@@ -621,7 +643,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     if (verdict && verdict.verdict === 'incomplete') {
       return {
         action: 'stage_incomplete',
-        reason: `stage-completion classifier → ${state.current_stage} incomplete`,
+        reason: `continue: stage '${state.current_stage}' is not done yet. Re-read ~/.claude/skills/${state.current_stage}/SKILL.md and finish the work it describes.`,
         payload: {
           stage: state.current_stage,
           summary: verdict.summary || '',

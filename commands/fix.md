@@ -1,8 +1,8 @@
 # Smelter: /fix — Bug & Logic Repair
 
-Run the `fix` mode on $ARGUMENTS. Use for bug fixes, regressions, and logic-flow changes that require investigation before the repair.
+Run the `fix` mode on $ARGUMENTS. Use for bug fixes, regressions, and logic-flow changes that require investigation before the repair. The experience follows superpowers systematic debugging: reproduce, gather evidence, identify root cause, write a failing regression test, then fix the root cause.
 
-Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (8 skills); `fix_simple` (4 skills) routes to exactly two surfaces — `text` (텍스트 수정) and `design` (디자인 수정). Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/think`.
+Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (8 skills); `fix_simple` (4 skills) routes to exactly two surfaces — `text` (텍스트 수정) and `design` (디자인 수정). Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/brainstorm`.
 
 ## Task
 $ARGUMENTS
@@ -15,13 +15,21 @@ $ARGUMENTS
 4. `fix_simple` flow (only `target_type ∈ {text, design}`): investigate → coding → e2e → human-check.
 5. `workflow-agent-review` uses Pattern B (code-reviewer + security-reviewer).
 
-## Review rounds — /fix mode override
+## Debugging contract
 
-- All mid-pipeline reviews: **1 round** (omission only). Scope is narrow; terminal gates catch escapes.
-- `workflow-e2e-review`: **2 rounds** (preserves visual + edge_case checks).
-- `workflow-human-check`: **3 rounds** (user gate, unchanged).
+- No fixes before root cause evidence.
+- Reproduce consistently when feasible; if not reproducible, record what data is missing and add targeted diagnostics rather than guessing.
+- Check recent changes, working examples, and comparable code paths before choosing a fix.
+- Form one hypothesis at a time and test it with the smallest useful observation.
+- The RED test must reproduce the original bug or prove the expected corrected behavior.
+- If three distinct fix attempts fail, stop patching and route back to planning or architecture review.
 
-Configured under `modes/workflow.yaml → verification_rounds.mode_overrides.fix`.
+## Review rounds
+
+- Every review skill uses the same **2 rounds**: omission and contradiction.
+- There is no `/fix`-specific round override.
+
+Configured under `modes/workflow.yaml → verification_rounds.rounds`.
 
 ## Surface-based exemption
 
@@ -46,7 +54,7 @@ Trivial text/CSS/i18n/config-only changes stay in `/fix` but get surface-based T
 - No completion claim without fresh evidence (Iron Law #5)
 - No retry; failures route via producer chain (Iron Law #4)
 - Do NOT delete failing tests to pass (watchdog rule #1)
-- Do NOT silently widen scope (watchdog rule #7) — new scope → `workflow-human-check` mode upgrade to `/implement` or new task via `/plan`
+- Do NOT silently widen scope (watchdog rule #7) — new scope → `workflow-human-check` mode upgrade to `/implement` or new task via `/brainstorm`
 - Scoped testing only (spec §14-3) — no repo-wide `pnpm test` before `workflow-human-check`
 
 ## Auto-routing note

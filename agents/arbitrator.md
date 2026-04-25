@@ -1,7 +1,7 @@
 ---
 name: arbitrator
 description: "Pattern B consensus agent. Plays the neutral synthesizer — reconciles advocate + critic findings, computes agreement score, renders the final verdict."
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 model: opus
 disallowedTools: Write, Edit
@@ -72,9 +72,8 @@ Used by:
 
 - Round 1 (omission focus): synthesize advocate/critic reports about completeness.
 - Round 2 (contradiction focus): synthesize about internal conflicts.
-- Round 3 (edge-case focus): synthesize about boundary / failure-mode coverage.
 
-After round 3, emit final verdict. Earlier rounds may emit tentative verdicts but cannot declare overall `pass` before all 3 rounds are complete (Iron Law, §9-3 anti-evasion rule 4).
+After round 2, emit final verdict. Earlier rounds may emit tentative verdicts but cannot declare overall `pass` before both rounds are complete (Iron Law, §9-3 anti-evasion rule 3).
 
 ## Iron Law compliance
 

@@ -9,23 +9,23 @@
  * Priority: (1) explicit slash command → (2) magic keyword (natural language).
  *
  * Supported slash commands:
- *   plan, simple-fix, fix, investigate, verify, implement, cancel, queue.
+ *   brainstorm, fix, explore, verify, implement, cancel, queue.
  *
  * Supported magic-keyword (natural-language) mapping:
- *   plan / deep interview / 설계해줘 / 계획부터      -> plan
- *   new feature / 새 기능 / design first             -> plan (planning-first)
+ *   brainstorm / deep interview / 설계해줘 / 계획부터 -> brainstorm
+ *   new feature / 새 기능 / design first             -> brainstorm (planning-first)
  *   extend / add to / 덧붙여                         -> implement (brainstorm skipped)
  *   fix / bug / 버그                                 -> fix (E2E forced for interface surface)
- *   typo / dialogue / 텍스트 / copy / i18n           -> fix (target_type=text  → fix_simple)
- *   css / style / design / 디자인                    -> fix (target_type=design → fix_simple)
+ *   typo / dialogue / 텍스트 / copy / i18n           -> fix (surface exemption)
+ *   css / style / design / 디자인                    -> fix (surface exemption)
  *   verify / validate / 검증 / 점검                  -> verify
- *   analyze / investigate / 파악 / 분석              -> investigate
+ *   analyze / investigate / 파악 / 분석              -> explore
  *   cancel / stop                                    -> cancel
  *   queue                                            -> queue (explicit only)
  */
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync, renameSync } from 'fs';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { clearCancel } from './lib/cancel-signal.mjs';
@@ -37,20 +37,24 @@ import { writeFeatureSummary } from './lib/feature-summary.mjs';
 import { createInitialState, writeState } from './state-schema.mjs';
 import { getMode as getV3Mode, loadWorkflowConfig, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
 import { parseSlashArgs, mergeSurface } from './lib/surface-extraction.mjs';
+import { writeLastDetection } from './lib/hook-guards.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PLUGIN_ROOT = dirname(__dirname);
 
-// Command name (on disk) → v3 mode id. v3 canonical modes only; legacy
-// /plan and /simple-fix commands are removed entirely.
+// Command name (on disk) → v0.4 mode id. Retired planning/simple-fix command
+// spellings are removed entirely and are not accepted as aliases.
 const COMMAND_TO_MODE = {
-  think: 'think',
+  brainstorm: 'brainstorm',
   fix: 'fix',
-  investigate: 'investigate',
+  explore: 'explore',
   implement: 'implement',
   verify: 'verify',
+  dobby: 'dobby',
 };
+
+const RETIRED_SLASH_COMMAND_RE = /^\/(?:investigate|think|plan|simple-fix)\b/i;
 
 // v3 loader: reads modes/{skills,pipelines,modes}.yaml via workflow-loader.mjs.
 // No legacy JSON fallback — modes/*.json has been removed.
@@ -101,7 +105,7 @@ function extractExplicitHarnessCommand(prompt) {
   // starting with `/fix` followed by a pasted multi-line transcript still
   // matches the slash command and bypasses the transcript-paste heuristic
   // (TPP6).
-  const match = trimmed.match(/^\/(think|fix|investigate|implement|verify|cancel|queue)\b(?:[:\s-]*([\s\S]*))?$/i);
+  const match = trimmed.match(/^\/(brainstorm|fix|explore|implement|verify|dobby|cancel|queue)\b(?:[:\s-]*([\s\S]*))?$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase(),
@@ -113,11 +117,12 @@ function extractExplicitHarnessCommand(prompt) {
 // Internal map: mode-classifier emits v3 mode ids, detector contract speaks
 // dash-cased command names (matches file names in commands/).
 const MODE_TO_COMMAND = {
-  think: 'think',
+  brainstorm: 'brainstorm',
   fix: 'fix',
-  investigate: 'investigate',
+  explore: 'explore',
   verify: 'verify',
   implement: 'implement',
+  dobby: 'dobby',
 };
 
 // Prior versions carried `FIX_PATTERNS` + `INVESTIGATE_PATTERNS` + a
@@ -160,6 +165,68 @@ export function isTranscriptPaste(text) {
   return false;
 }
 
+export function isCommunicationIntent(text) {
+  const s = String(text || '')
+    .trim()
+    .replace(/[.!?。！？]+$/g, '')
+    .replace(/\s+/g, ' ');
+  if (!s) return false;
+  return [
+    /^(?:한글|한국어|영어|영문)(?:로|으로)?\s*(?:말해|말해봐|답해|대답해|응답해|설명해|써줘|해줘)?$/i,
+    /^(?:짧게|간단히|자세히)\s*(?:말해|말해봐|답해|대답해|응답해|설명해)(?:줘|봐)?$/i,
+    /^(?:말투|언어|답변\s*언어)\s*(?:바꿔|변경|전환)(?:줘|해줘)?$/i,
+    /^(?:respond|answer|speak|explain)\s+(?:in\s+)?(?:korean|english)$/i,
+    /^(?:use|switch to)\s+(?:korean|english)$/i,
+  ].some((re) => re.test(s));
+}
+
+function hasExplicitNewWorkflowIntent(text) {
+  return /새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작|중단하고\s*(?:새로|다른)/i.test(String(text || ''));
+}
+
+function isRollbackToInvestigationIntent(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  return /(?:다시|더|추가로)\s*(?:탐색|조사|분석|파악|검토|생각)해?\s*(?:보자|봐|줘)?/i.test(s) ||
+    /(?:탐색|조사|분석|파악|검토|생각)해?\s*보자/i.test(s) ||
+    /\b(?:re-?investigate|rethink|explore again|look into|analy[sz]e again)\b/i.test(s);
+}
+
+function readActiveWorkflow(directory, sessionId) {
+  if (!sessionId) return null;
+  try {
+    const pointerPath = join(directory, '.smt', 'state', `active-feature-${sessionId}.json`);
+    if (!existsSync(pointerPath)) return null;
+    const pointer = JSON.parse(readFileSync(pointerPath, 'utf-8'));
+    if (!pointer?.slug) return null;
+    const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
+    if (!existsSync(statePath)) return null;
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
+    if (state.step === 'DONE' || completed.includes('workflow-human-check')) return null;
+    return { slug: pointer.slug, state, statePath };
+  } catch {
+    return null;
+  }
+}
+
+function createActiveWorkflowContinuation(active, prompt) {
+  const rollback = isRollbackToInvestigationIntent(prompt) &&
+    Array.isArray(active?.state?.allowed_skills) &&
+    active.state.allowed_skills.includes('workflow-investigate');
+  if (!rollback) return null;
+  return `[ACTIVE WORKFLOW CONTINUATION]
+
+An unfinished ${active.state.mode} workflow is already active (${active.slug}). Keep that mode; do not start /explore or any new mode.
+
+The user is asking to revisit discovery/investigation inside the current workflow. Invoke the workflow stage skill as the first tool call:
+
+Skill: workflow-investigate
+
+User request:
+${prompt}`;
+}
+
 // Strip ANSI escape sequences and C0/C1 control characters before emitting
 // user-controlled text to stderr — an attacker-shaped prompt could otherwise
 // move the cursor / clear the screen / inject bell chars via printTag.
@@ -179,6 +246,21 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
   // Rollback lever: set SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 to disable.
   if (process.env.SMELTER_SKIP_TRANSCRIPT_HEURISTIC !== '1' && isTranscriptPaste(text)) {
     return { passthrough: true, matched: 'transcript-paste', source: 'passthrough' };
+  }
+
+  if (isCommunicationIntent(text)) {
+    return { passthrough: true, matched: 'communication-intent', source: 'passthrough' };
+  }
+
+  const active = readActiveWorkflow(cwd, sessionId);
+  if (active && !hasExplicitNewWorkflowIntent(text)) {
+    const additionalContext = createActiveWorkflowContinuation(active, text);
+    return {
+      passthrough: true,
+      matched: additionalContext ? 'active-workflow:rollback-to-investigate' : 'active-workflow:sticky-continuation',
+      source: 'passthrough',
+      additionalContext,
+    };
   }
 
   // LLM classifier is the sole natural-language router (v2.4.9). On failure
@@ -201,7 +283,7 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
     const active = shouldCreateNewFeature(cwd, sessionId, text, 'magic');
     if (!active.create && active.state?.current_stage && active.state.current_stage !== 'done') {
       return {
-        name: active.state.mode === 'verify' ? 'verify' : 'investigate',
+        name: active.state.mode === 'verify' ? 'verify' : 'explore',
         args: '',
         hint: 'active-workflow-continuation',
         matched: `active-workflow:${trigger || 'passthrough'}`,
@@ -240,11 +322,12 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
 // are utility commands (no mode). Modes resolved via workflow-loader.mjs
 // from modes/workflow.yaml.
 const COMMAND_CONFIG = {
-  think:       { mode: 'think' },
+  brainstorm: { mode: 'brainstorm' },
   fix:         { mode: 'fix' },
-  investigate: { mode: 'investigate' },
+  explore:     { mode: 'explore' },
   verify:      { mode: 'verify' },
   implement:   { mode: 'implement' },
+  dobby:       { mode: 'dobby' },
 };
 
 function writeStateFile(directory, filename, data) {
@@ -299,23 +382,14 @@ const LEADING_FILLER_TOKENS = new Set([
   'and','or','but','if','so','then','than','because','just','please',
 ]);
 
-function deriveSlug(prompt) {
-  const raw = (prompt || '').toString().trim();
-  const stripped = stripSystemPreamble(raw);
-  const base = (stripped || raw).slice(0, 120).toLowerCase();
-
-  const tokens = base
-    .replace(/[^a-z0-9가-힣\s-]+/g, ' ')
-    .split(/[\s-]+/)
-    .filter(Boolean);
-
-  while (tokens.length > 1 && LEADING_FILLER_TOKENS.has(tokens[0])) tokens.shift();
-
-  const slug = tokens.join('-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
-
-  if (slug) return slug;
-  const suffix = randomBytes(3).toString('hex');
-  return `feature-${Date.now().toString(36)}-${suffix}`;
+function deriveSlug(_prompt) {
+  // UUID-fixed slug — always returns `feature-<uuid>`. See
+  // scripts/lib/workflow-state-seeder.mjs::deriveSlug for the rationale:
+  // descriptive prompt-derived slugs caused a state↔artifact divergence bug
+  // where the seeder's slug and the agent's descriptive slug diverged,
+  // leaving the state machine tracking a path with no artifacts.
+  // Prompt parameter is kept for API compatibility but intentionally unused.
+  return `feature-${randomUUID()}`;
 }
 
 // Atomic single-file write (tmp + rename) to avoid torn state on crash.
@@ -340,7 +414,7 @@ function writeAtomic(path, content) {
 // session does not drag another session's active feature around.
 function shouldCreateNewFeature(directory, sessionId, prompt, source, commandName = '') {
   if (source === 'slash') return { create: true, reason: 'slash-command' };
-  if (commandName === 'investigate') return { create: true, reason: 'investigate-command-reseed' };
+  if (commandName === 'explore' && source !== 'magic') return { create: true, reason: 'explore-command-reseed' };
   const text = String(prompt || '');
   if (/새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작/i.test(text)) {
     return { create: true, reason: 'explicit-new-intent' };
@@ -361,6 +435,21 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
     // 'done' from WORKFLOW_SKILLS — so that check was dead.
     if (Array.isArray(state.completed_stages) && state.completed_stages.includes('workflow-human-check')) {
       return { create: true, reason: 'prior-completed' };
+    }
+    // Mode-upgrade: read-only exploration (verify/explore/brainstorm) → write
+    // mode (fix/implement). Reusing would leave state.mode at the read-only
+    // value and pre-tool-enforcer would block every code Edit/Write. Must
+    // match the branch in lib/workflow-state-seeder.mjs (duplicated pending
+    // deduplication of this local copy).
+    //
+    // Gated on source==='skill-tool' only — natural-language follow-ups
+    // (source==='magic') stay reuse so users sending a second prompt do not
+    // accidentally get a new feature when the mode classifier reroutes.
+    const requestedMode = COMMAND_TO_MODE[commandName];
+    if (source === 'skill-tool' &&
+        (requestedMode === 'fix' || requestedMode === 'implement') &&
+        (state.mode === 'verify' || state.mode === 'explore' || state.mode === 'brainstorm')) {
+      return { create: true, reason: 'mode-upgrade' };
     }
     return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath, state };
   } catch { return { create: true, reason: 'pointer-parse-error' }; }
@@ -646,6 +735,12 @@ async function main() {
     }
 
     // (1) Explicit slash command takes priority
+    if (RETIRED_SLASH_COMMAND_RE.test(prompt.trim())) {
+      printTag(`Retired command ignored: ${sanitizeForLog(prompt.trim().split(/\s+/, 1)[0])}`);
+      console.log(JSON.stringify({ continue: true }));
+      return;
+    }
+
     let detected = extractExplicitHarnessCommand(prompt);
 
     // (2) Deterministic natural-language routing for high-confidence prompts
@@ -654,6 +749,10 @@ async function main() {
       if (detected?.passthrough === true) {
         // Pure shell / git op — no workflow mode, no state seeding.
         printTag(`Passthrough: ${sanitizeForLog(detected.matched)}`);
+        if (detected.additionalContext) {
+          console.log(JSON.stringify(createHookOutput(detected.additionalContext)));
+          return;
+        }
         console.log(JSON.stringify({ continue: true }));
         return;
       }
@@ -666,7 +765,7 @@ async function main() {
     if (!detected) {
       const classification = classifyPrompt(prompt, { cwd: directory, sessionId });
       if (classification.intent === 'command' && classification.command) {
-        const validCommands = ['think', 'fix', 'investigate', 'implement', 'verify', 'cancel', 'queue'];
+        const validCommands = ['brainstorm', 'fix', 'explore', 'implement', 'verify', 'dobby', 'cancel', 'queue'];
         const cmd = classification.command.toLowerCase().replace(/^\//, '');
         if (validCommands.includes(cmd)) {
           printTag(`Magic Keyword: Haiku classified command`);
@@ -682,6 +781,22 @@ async function main() {
       if (!detected && classification.intent === 'question') {
         printTag(`Magic Keyword: Haiku classified question`);
       }
+    }
+
+    if (detected) {
+      writeLastDetection({
+        cwd: directory,
+        sessionId,
+        payload: {
+          kind: detected.source === 'slash' ? 'slash' : 'magic',
+          name: detected.name,
+          args: detected.args || '',
+          source: detected.source || 'magic',
+          intent: detected.source === 'slash' ? 'new' : 'continue',
+          chained_modes: detected.chained_modes || null,
+          classification: detected.classification || null,
+        },
+      });
     }
 
     // Clear stale cancel signals on any non-cancel/queue prompt
@@ -757,14 +872,12 @@ async function main() {
 
     // MODE banner (once per session per command)
     const MODE_LABELS = {
-      think: 'THINK MODE',
-      plan: 'PLAN MODE',
-      build: 'BUILD MODE',
+      brainstorm: 'BRAINSTORM MODE',
       fix: 'FIX MODE',
-      'simple-fix': 'SIMPLE-FIX MODE',
-      investigate: 'INVESTIGATE MODE',
+      explore: 'EXPLORE MODE',
       implement: 'IMPLEMENT MODE',
       verify: 'VERIFY MODE',
+      dobby: 'DOBBY MODE',
     };
     const modeLabel = MODE_LABELS[detected.name];
     if (modeLabel) {

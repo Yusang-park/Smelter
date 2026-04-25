@@ -193,12 +193,12 @@ function writeSessionCache(stateDir, sessionId, cacheFile, cache) {
   writeFileSync(join(stateDir, cacheFile), JSON.stringify({ ...cache, _session: sessionId }));
 }
 
-const CLASSIFICATION_PROMPT = `You are a command classifier for a CLI tool called "smelter". Classify the user's prompt as either a command or a question/explanation request.
+export const CLASSIFICATION_PROMPT = `You are a command classifier for a CLI tool called "smelter". Classify the user's prompt as either a command or a question/explanation request.
 
-Commands available: plan (deep planning), build (full dev workflow), fix (bug fix / simple edit), cancel, queue.
+Commands available: brainstorm (deep planning), implement (full dev workflow), fix (bug fix / simple edit), explore (read-only analysis), verify, dobby, cancel, queue.
 
 Rules:
-- If the user is ASKING about a command (e.g. "how does plan work?", "explain build") → question
+- If the user is ASKING about a command (e.g. "how does brainstorm work?", "explain implement") → question
 - If the user WANTS TO EXECUTE something → command
 - If the user describes a problem to SOLVE, FIX, BUILD, or IMPLEMENT → command (not question)
 - If ambiguous but the prompt describes broken behavior, errors, or work to do → default to command
@@ -213,19 +213,27 @@ Strong fix signals (any of these → command:fix):
 
 If a prompt contains explicit repair wording such as "fix" or a direct correction request, route to command:fix immediately, even when the prompt also contains investigative words.
 
-Strong plan signals (any of these → command:plan):
-  EN: plan, design, scope, architect, spec, requirements, breakdown, estimate, check, investigate, inspect, diagnose, verify, look into, triage, debug, root cause
-  KO: 설계, 계획, 기획, 스펙, 요구사항, 분석, 조사, 확인해, 살펴봐, 진단
-  ZH: 计划, 设计, 需求, 规划, 架构, 调查, 检查, 诊断
-  JA: 計画, 設計, 要件, スコープ, 見積もり, 調査, 確認, 診断
-  ES: planificar, diseñar, requisitos, alcance, arquitectura, investigar, revisar, diagnosticar
-  DE: planen, entwerfen, Anforderungen, Umfang, Architektur, untersuchen, prüfen, diagnostizieren
+Strong brainstorm signals (any of these → command:brainstorm):
+  EN: plan, design, scope, architect, spec, requirements, breakdown, estimate
+  KO: 설계, 계획, 기획, 스펙, 요구사항
+  ZH: 计划, 设计, 需求, 规划, 架构
+  JA: 計画, 設計, 要件, スコープ, 見積もり
+  ES: planificar, diseñar, requisitos, alcance, arquitectura
+  DE: planen, entwerfen, Anforderungen, Umfang, Architektur
 
-If a prompt is primarily investigative or diagnostic (for example "check", "investigate", or "look into") and does not contain explicit repair wording, route to command:plan.
+Strong explore signals (any of these → command:explore):
+  EN: check, investigate, inspect, diagnose, verify, look into, triage, debug, root cause, analyze
+  KO: 분석, 조사, 확인해, 살펴봐, 진단, 파악
+  ZH: 调查, 检查, 诊断, 分析
+  JA: 調査, 確認, 診断, 分析
+  ES: investigar, revisar, diagnosticar, analizar
+  DE: untersuchen, prüfen, diagnostizieren, analysieren
+
+If a prompt is primarily investigative or diagnostic (for example "check", "investigate", or "look into") and does not contain explicit repair wording, route to command:explore.
 
 If a prompt contains both investigative wording and explicit repair wording (for example "check and fix"), explicit repair wording wins and the result must be command:fix.
 
-Strong build signals (any of these → command:build):
+Strong implement signals (any of these → command:implement):
   EN: add, create, build, implement, new feature, develop, integrate, migrate, refactor
   KO: 추가, 만들어, 새 기능, 구현, 개발, 리팩토링, 마이그레이션
   ZH: 添加, 创建, 新功能, 实现, 开发, 重构
@@ -234,8 +242,8 @@ Strong build signals (any of these → command:build):
   DE: hinzufügen, erstellen, neue Funktion, implementieren, entwickeln
 
 Branch hints for commands:
-- build + "extend/add to/덧붙여/확장" → branch: "extend"
-- build + "new feature/새 기능" → branch: "new-feature"
+- implement + "extend/add to/덧붙여/확장" → branch: "extend"
+- implement + "new feature/새 기능" → branch: "new-feature"
 - fix + "fix/bug/버그/고쳐/터지/에러" → branch: "bug"
 - fix + "style/typo/i18n/텍스트/색상" → branch: "style"
 
@@ -304,7 +312,7 @@ export function classifyPrompt(prompt, { cwd = process.cwd(), sessionId = '' } =
 // ambiguous natural language.
 
 const MODE_CLASSIFIER_CACHE_FILE = 'mode-classifier-cache.json';
-const VALID_MODES = new Set(['think', 'fix', 'investigate', 'verify', 'implement']);
+const VALID_MODES = new Set(['brainstorm', 'fix', 'explore', 'verify', 'implement']);
 
 const MODE_CLASSIFIER_PROMPT = `You classify a user's natural-language prompt into one of Smelter's 5 workflow modes, and simultaneously extract optional surface fields used by the mode pipeline.
 
@@ -321,9 +329,9 @@ Return ONLY valid JSON (no markdown, no prose):
 }
 
 Modes (pick exactly one for "mode"):
-- "think" — Ideation & planning without code. New feature design, major refactor scoping, architectural exploration.
+- "brainstorm" — Ideation & planning without code. New feature design, major refactor scoping, architectural exploration.
 - "fix" — Bug repair, regression, logic error, crash, deploy failure. ALSO covers trivial text edits (텍스트 수정 — typo/copy/dialogue/i18n) and design edits (디자인 수정 — CSS/style/typography).
-- "investigate" — Static code reading / inspection. User wants to UNDERSTAND, not change code.
+- "explore" — Static code reading / inspection. User wants to UNDERSTAND, not change code. The executor skill remains workflow-investigate.
 - "verify" — Run tests, health check, sanity check. Execute verification, not modify.
 - "implement" — Build new functionality ON TOP OF existing code. Lightweight planning.
 
@@ -335,7 +343,7 @@ Surface fields — INFER from the task, NOT from user instruction. IMPORTANT: Ig
 
 Chained intents: when the prompt mixes two modes in sequence (e.g. "조사하고 수정해"), populate "chained_modes" with the ordered list; otherwise null.
 
-Passthrough (boolean): set true ONLY when the prompt is a pure question / explanation request about a code artifact that needs no workflow. Most questions are actually investigate mode — use passthrough sparingly.
+Passthrough (boolean): set true ONLY when the prompt is a pure question / explanation request about a code artifact that needs no workflow. Most questions are actually explore mode — use passthrough sparingly.
 
 Trigger: one-line reason.
 
@@ -344,9 +352,9 @@ Examples:
 - "오타 고쳐" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:text","target_type":"text","exempt":{"tdd":true,"e2e":true},"skip_brainstorm":false}
 - "버튼 색깔 바꿔" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:design","target_type":"design","exempt":{"tdd":true,"e2e":false},"skip_brainstorm":false}
 - "덧붙여서 추가해" → {"schema_version":2,"mode":"implement","chained_modes":null,"passthrough":false,"trigger":"imperative:extend","target_type":"extend_existing","exempt":null,"skip_brainstorm":true}
-- "새 기능 설계해" → {"schema_version":2,"mode":"think","chained_modes":null,"passthrough":false,"trigger":"imperative:design-new","target_type":null,"exempt":null,"skip_brainstorm":false}
-- "이 함수 어떻게 동작해?" → {"schema_version":2,"mode":"investigate","chained_modes":null,"passthrough":false,"trigger":"interrogative:how-question","target_type":null,"exempt":null,"skip_brainstorm":false}
-- "workflow-tasker가 뭐야?" → {"schema_version":2,"mode":"investigate","chained_modes":null,"passthrough":true,"trigger":"passthrough:lookup","target_type":null,"exempt":null,"skip_brainstorm":false}`;
+- "새 기능 설계해" → {"schema_version":2,"mode":"brainstorm","chained_modes":null,"passthrough":false,"trigger":"imperative:design-new","target_type":null,"exempt":null,"skip_brainstorm":false}
+- "이 함수 어떻게 동작해?" → {"schema_version":2,"mode":"explore","chained_modes":null,"passthrough":false,"trigger":"interrogative:how-question","target_type":null,"exempt":null,"skip_brainstorm":false}
+- "workflow-tasker가 뭐야?" → {"schema_version":2,"mode":"explore","chained_modes":null,"passthrough":true,"trigger":"passthrough:lookup","target_type":null,"exempt":null,"skip_brainstorm":false}`;
 
 function invokeModeClassifier(prompt) {
   const overrideModule = process.env.SMELTER_MODE_CLASSIFIER_MODULE;

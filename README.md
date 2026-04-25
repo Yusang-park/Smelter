@@ -3,20 +3,10 @@
 </p>
 
 <p align="center">
-  <strong>Skill-composition workflow engine for Claude Code — TDD-first, file-based, multi-agent.</strong>
+  <strong>TDD-first workflow engine for Claude Code: file-based state, deterministic gates, multi-agent execution.</strong>
 </p>
 
-<p align="center">
-  <a href="#features">Features</a> &middot;
-  <a href="#commands">Commands</a> &middot;
-  <a href="#how-it-works">How It Works</a> &middot;
-  <a href="#iron-laws">Iron Laws</a> &middot;
-  <a href="#philosophy">Philosophy</a>
-</p>
-
-<p align="center">
-  <code>v3.1.0</code>
-</p>
+<p align="center"><code>v0.4.0</code></p>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a>
@@ -26,238 +16,108 @@
 
 ## Install
 
-### End users (one-time, auto-updates)
-
 ```bash
 claude plugin marketplace add Yusang-park/Smelter
 claude plugin install smelter@smelter-marketplace
 ```
 
-Auto-updates on every session start.
-
-### Developers (working on Smelter itself)
-
-Clone the repo, then run the developer installer once:
+Developing Smelter itself:
 
 ```bash
 git clone https://github.com/Yusang-park/Smelter.git ~/Smelter
 node ~/Smelter/scripts/dev-install.mjs
 ```
 
-What it does:
-1. Symlinks `~/.claude/{skills,commands,agents}` → `~/Smelter/{skills,commands,agents}` so edits are live instantly in any new session.
-2. Merges `hooks/hooks.json` into `~/.claude/settings.json` under `hooks`, substituting `${CLAUDE_PLUGIN_ROOT}` with the absolute repo path. Entries are tagged `_smelter_dev_managed: true` so re-runs never duplicate.
-3. Refuses to run when the production plugin is installed (prevents double-fire). `--force` to override.
-
-Flags:
-- `--dry-run`   — preview, no writes
-- `--uninstall` — remove dev symlinks + dev-managed hooks only
-- `--force`     — bypass plugin-conflict check
-
-Activation: start a new Claude Code session (hooks load at session start).
+`dev-install.mjs` symlinks `skills/`, `commands/`, and `agents/`, then installs repo-managed hooks into `~/.claude/settings.json`. Use `--dry-run`, `--uninstall`, or `--force` as needed. Start a new Claude Code session after hook registration changes.
 
 ---
 
-## TL;DR
+## What Changed In v0.4
 
-- **5 commands** (v3): `/think`, `/implement`, `/fix`, `/investigate`, `/verify`. Natural-language input is auto-routed — explicit slash commands override. v2 `/plan` + `/simple-fix` removed.
-- **Unified config**: `modes/workflow.yaml` holds skills + pipelines + modes + target_type_routing + verification_rounds in one file.
-- **Target-type dispatch (v3.1)**: `/fix` picks the pipeline at runtime based on `target_type` + scope signals — `typo`/`dialogue` → `minimal` (4 skills), simple `bug_fix` → `light` (8), complex → `medium` (11). Cuts tasker overhead on trivial fixes.
-- **14 workflow skills** compose into modes. Each skill declares a `consumes → produces` contract; failures route via **producer chain** — no retries, no evasion, no self-failure.
-- **8 Iron Laws** are runtime-enforced via hooks (`auto-confirm`, `critic-watchdog`, `pre-tool-enforcer`), not just prompts.
-- **Multi-Pass Verification (v3.1)**: mid-pipeline reviews (brainstorm-review, investigate-review, tasker-review, agent-review) run **2 rounds** (omission + contradiction). Terminal reviews (e2e-review, team-code-review, human-check) run **3 rounds**.
-- **File-based state**: every task has a single-source `*.state.json`. Agents read files, not memory.
-- **Commit gate (v3.1)**: `pre-tool-enforcer` blocks `git commit` in code-modifying modes until `workflow-human-check` passes. Shell-unwrap matcher catches `bash -c`, env prefix, absolute path.
-- **Visual artifact rendering (v3.1)**: `workflow-human-check` opens every `.png`/`.jpg`/`.webm` via the `Read` tool before `AskUserQuestion`.
+- Versioning is now `0.*`; the current release line is `v0.4.0`.
+- User-facing read-only mode is `explore`, invoked with `/explore`.
+- The executor skill remains `workflow-investigate`; skill names describe implementation artifacts, while modes describe user intent.
+- The retired investigate command is not an alias.
+- `/brainstorm` remains the only design/planning command; retired think, plan, and simple-fix commands are not aliases.
+- Runtime permissions are derived from `UserMode → TaskType → Step → Guard`, not from prompt wording.
 
 ---
 
-## Features
+## Commands
 
-| # | Feature                       | What it gives you                                                                                  |
-|---|-------------------------------|----------------------------------------------------------------------------------------------------|
-| 1 | Auto-routing mode classifier  | `scripts/mode-classifier.mjs` maps `"버그 고쳐줘"` → `/fix`, `"검증하고 수정해"` → `investigate → fix chain` |
-| 2 | Producer-chain routing        | On fail, the engine routes to the upstream skill that produced the artifact — *never* retries blindly |
-| 3 | Auto-confirm (never-halt)     | Stop hook drops a continuation payload into `.smt/state/auto-confirm-queue.json`; `UserPromptSubmit` consumer injects it on the next turn. Session keeps moving |
-| 4 | Risk auto-tasking             | Risk keywords ("리스크", "TODO", "나중에") in the agent's reply auto-spawn a `sub-tasker` task so concerns never get lost |
-| 5 | Stall Cascade (4 levels)      | `scripts/stall-detector.mjs` emits 6 signals; Level 1 spawns a ReadOnly `debugger`, Level 2 reroutes via producer chain, Level 3 sub-tasks the blocker, Level 4 requests mode upgrade |
-| 6 | Team Agent Patterns           | A (Specialist) • B (95% Consensus: advocate + critic + arbitrator) • C (Parallel Delegation + Aggregator + Conflict-Resolver) • D (Hierarchical Lead + sub-agents) • E (Critic Watchdog) |
-| 7 | Critic Watchdog (2 layers)    | Layer 1: `PostToolUse` hook, 10 formal rules, CRITICAL = exit 2 (block). Layer 2: semantic ReadOnly agent every 5–10 tool calls during `workflow-coding` |
-| 8 | Multi-Pass Verification       | Review skills run `omission → contradiction → edge_case` rounds; `pass` requires all 3; no prior-round leakage |
-| 9 | Surface-based exemption       | CSS / i18n / typo / dialogue surfaces auto-skip TDD; keyword table encoded in each mode           |
-| 10 | File-based single source       | `.smt/features/<slug>/task/<task>.state.json` (schema v2.4.1) is the single source of truth — no in-memory state, no hidden retries |
-| 11 | **E2E real-interface enforcement** | `workflow-e2e` and `workflow-verify` Phase 3 must drive the **actual user-facing interface** (real browser, real subprocess, real HTTP port, real DB engine, real hook pipe) and produce per-surface artifacts. Test-runner stdout alone is NOT a valid pass. Critic Watchdog R11 (CRITICAL) blocks offenders. |
+| Command | User mode | Task type | Entry skill | Pipeline | Use when |
+|---|---|---|---|---|---|
+| `/brainstorm` | `brainstorm` | `design` | `workflow-brainstorm` | `planning_only` | Product/architecture planning without code edits |
+| `/explore` | `explore` | `read` | `workflow-investigate` | `explore_only` | Read-only codebase exploration and diagnosis |
+| `/implement` | `implement` | `write` | `workflow-investigate` → `workflow-implementation-plan` | `full` | Build on existing code with implementation planning |
+| `/fix` | `fix` | `write` | `workflow-investigate` | runtime-selected | Bug repair, logic fixes, trivial text/design edits |
+| `/verify` | `verify` | `verify` | `workflow-verify` | `verify_only` | Non-mutating tests, static checks, and real-interface E2E |
+| `/dobby` | `dobby` | `freeform` | `workflow-human-check` | `dobby_only` | Explicit no-pipeline escape hatch with human approval |
+
+Natural language routes to the same modes. Examples: "analyze this function" → `/explore`, "버그 고쳐줘" → `/fix`, "설계해줘" → `/brainstorm`, "run tests" → `/verify`.
 
 ---
 
-## Commands (v3)
+## Contract Model
 
-| Command        | Mode          | Entry skill                      | Pipeline           | Use when                                                |
-|----------------|---------------|----------------------------------|--------------------|---------------------------------------------------------|
-| `/think`       | `think`       | `workflow-brainstorm` (deep)     | `planning_only`    | Ideation + planning. No code changes. (was `/plan` in v2) |
-| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | `full` (13)        | Build on existing code; lightweight interview           |
-| `/fix`         | `fix`         | `workflow-investigate`           | runtime-selected   | Bug / logic repair. Trivial (`typo`/`dialogue`) → `minimal` (4) · simple `bug_fix` → `light` (8) · `extend_existing` / complex → `medium` (11) |
-| `/investigate` | `investigate` | `workflow-investigate`           | `investigate_only` | Static read (맥락·근거 파악); exit via mode transition |
-| `/verify`      | `verify`      | `workflow-verify`                | `verify_only`      | Non-modifying verification (테스트·점검·E2E in one pass) |
+Smelter v0.4 separates four layers:
 
-v3 migration: `/plan` → `/think`. `/simple-fix` absorbed into `/fix` (magic keyword `typo`/`dialogue`/`css` sets exempt flags).
+| Layer | Purpose |
+|---|---|
+| `UserMode` | User intent: `brainstorm`, `explore`, `implement`, `fix`, `verify`, `dobby` |
+| `TaskType` | Side-effect contract: `design`, `read`, `write`, `verify`, `freeform` |
+| `Step` | Deterministic FSM position: `INTENT`, `DISCOVERY`, `PLAN`, `TEST_DESIGN`, `EXECUTE`, `VERIFY`, `HUMAN_CHECK`, `DONE` |
+| `Guard` | Tool/action validator for the current `(task_type, step, state)` |
 
-Natural-language auto-routing covers Korean + English verbs (`검증`, `분석`, `파악`, `만들어줘`, `리팩토링`, `verify`, `validate`, `implement`, …) and compound intents (`검증하고 수정해` → `investigate → fix`).
+This means read/design/verify modes cannot mutate source, write modes cannot edit product code before RED test evidence, and commits are blocked until `workflow-human-check` passes.
 
 ---
 
 ## How It Works
 
-### 1. Skill composition over fixed steps
+1. `scripts/mode-classifier.mjs` resolves slash commands and natural language into a user mode.
+2. `scripts/keyword-detector.mjs` seeds `.smt/features/<slug>/task/<slug>.state.json` and an active-feature pointer.
+3. `modes/workflow.yaml` maps the mode to entry skill and allowed pipeline.
+4. Workflow skills produce file artifacts under `.smt/features/<slug>/task/`.
+5. `scripts/skill-stage-transition.mjs`, `scripts/auto-confirm.mjs`, and `scripts/pre-tool-enforcer.mjs` enforce transitions, continuation, and tool permissions.
+6. Review and verification skills must pass before `workflow-human-check` can complete the task.
 
-Each mode is a **subset of the 13 workflow skills** plus an entry point.
-
-```
-fix mode:
-  investigate → investigate-review → tasker → tasker-review →
-  write-test → coding → agent-review →
-  e2e → e2e-review → team-code-review → human-check
-```
-
-Every skill declares a contract in `skills/workflow-*/SKILL.md`:
-
-```yaml
-name: workflow-coding
-consumes: *.test.* (RED) OR active_feedback
-produces: src files changed
-default_pattern: A
-default_agent: executor
-supports_patterns: [A, C]
-gate:
-  pre:
-    - tdd_cycle: "test_cycles has action=added_case|modified_case + run_result=fail"
-  post:
-    - src_changed: true
-    - typecheck_clean: true
-    - scoped_tests_pass: true
-```
-
-### 2. Producer-chain routing (no retries)
-
-When a skill fails, `scripts/route-on-fail.mjs` looks up the producer:
-
-```
-workflow-coding (tdd_cycle fail) → workflow-write-test
-workflow-coding (scope_mismatch fail) → workflow-tasker
-workflow-team-code-review (CRITICAL) → workflow-tasker
-workflow-team-code-review (MEDIUM)   → workflow-coding
-workflow-e2e-review (file_absent)    → workflow-e2e
-workflow-e2e-review (insufficient_scenario) → workflow-coding
-workflow-human-check (rework) → active_feedback[].target_skill
-```
-
-If the routed target is outside the mode's `allowed_skills`, the engine emits a **mode upgrade** request — user-gated.
-
-### 3. Queue-drop auto-confirm
-
-Stop hooks have a 15-second cap. Smelter splits the "never halt" logic:
-
-- `scripts/auto-confirm.mjs` (Stop) — reads `*.state.json`, runs the decide tree, drops the injection payload into `.smt/state/auto-confirm-queue.json`, emits a `block` decision.
-- `scripts/auto-confirm-consumer.mjs` (UserPromptSubmit) — reads the queue (ignores entries older than 5 min), injects via `additionalContext`, deletes the queue.
-
-The only halt conditions: explicit user stop, `workflow-human-check` awaiting input, mode-upgrade decision, or no active state.
-
-### 4. Team patterns (A–E)
-
-Selected by `workflow-tasker` at plan-time, stored in `state.team_runtime[skill]`:
-
-- **A. Specialist** — 1 skill, 1 agent. Default for most skills.
-- **B. Team Consensus (95%)** — `advocate` + `critic` + `arbitrator` run rounds until agreement ≥ 95%. Default for `workflow-tasker-review` and `workflow-team-code-review`; `workflow-agent-review` uses a Pattern B dual (code-reviewer + security-reviewer → arbitrator).
-- **C. Parallel Delegation** — N agents split by area / file / module, `aggregator` merges at `sync_point`, `conflict-resolver` adjudicates merge failures. Default for `workflow-investigate` (area), `workflow-write-test` (file), `workflow-coding` (module, when split).
-- **D. Hierarchical** — lead agent orchestrates sub-agents. Default for `workflow-tasker` (architect + researcher + executor) and `workflow-brainstorm` deep (planner + product/engineer/design personas).
-- **E. Adversarial Watchdog** — `scripts/critic-watchdog.mjs` (Layer 1, hook) + `agents/critic-watchdog.md` (Layer 2, periodic agent). Always active during `workflow-coding`.
-
-### 5. Multi-Pass Verification (review skills only)
-
-Every review skill runs 3 mandatory rounds:
-
-| Round | Focus          | Asks                                                             |
-|-------|----------------|------------------------------------------------------------------|
-| 1     | omission       | What's missing from the artifact?                                |
-| 2     | contradiction  | What conflicts internally or with upstream?                      |
-| 3     | edge_case      | What corner cases are unaddressed?                               |
-
-Rounds are recorded in `state.team_runtime[skill].rounds[]`. `pass` requires `completed_rounds === 3` and every round `result === 'pass'`. Hook-blocked against premature `pass`.
-
-### 6. Stall Cascade (§11-7)
-
-6 signals: parallel-agent tool-inactive, repeated fail, sync-point wait, tdd-no-green, feedback backlog, state stale.
-
-```
-Level 1 debugger (ReadOnly)   — diagnose + propose unblock
-Level 2 producer reroute      — jump upstream
-Level 3 sub-tasker extract    — blocker becomes a new task
-Level 4 mode upgrade          — only user-facing level
-```
+The core rule is unchanged: **agents do not memorize; agents read files.**
 
 ---
 
-## Iron Laws
+## TDD And Verification
 
-Non-negotiable. Runtime-enforced.
-
-1. **Never halt after failure** — the session keeps moving via producer chain + queue-drop.
-2. **No evasion** — risk keywords in replies auto-spawn sub-tasks; critic-watchdog R08 flags `??`-chain / TODO evasion.
-3. **No skill self-failure** — `events[].declarer` ∈ `{hook, user}`; skill-declared fails are rejected by state schema.
-4. **No retry** — producer-chain routing replaces `max_retry`. Same skill may self-rerun after upstream state changes; not a retry.
-5. **File is truth** — agents read `.state.json`, not in-memory claims.
-6. **Workflow whitelist is user decision** — any `workflow-*` outside the mode's allowed set requires user-gated mode upgrade.
-7. **Independent queues, shared session** — per-task queues; specialist agents assignable.
-8. **Scoped testing** — full regression only at `workflow-human-check`.
-
-See `document/workflow.md` §0 for details.
+- Implementation work must write tests first, observe RED, implement, then reach GREEN.
+- Interface-changing work requires real-interface E2E: browser, subprocess, HTTP port, DB engine, or hook stdin/stdout as applicable.
+- CSS/style, i18n/copy-only, typo, and pure-dialogue changes are surface-exempt from TDD but still go through the selected workflow.
+- Multi-Pass Verification runs exactly two global rounds, omission and contradiction, for every review skill.
 
 ---
 
-## Project layout
+## Project Layout
 
 ```
-agents/                          ← 39 sub-agent definitions (10 core v2.4.1 + 29 specialists)
-commands/                        ← 5 slash-command entry points
-document/                        ← workflow.md (spec), implementation-v2.md (this arch), Introduce.md, index.md
-hooks/hooks.json                 ← Claude Code hook registrations
-modes/                           ← 5 mode JSON files
-scripts/                         ← runtime scripts (auto-confirm, mode-classifier, route-on-fail, stall-detector, critic-watchdog, …)
-skills/                          ← 13 workflow-* skills + utility skills (deep-interview, queue)
-src/                             ← core TypeScript engine
-.smt/                            ← project-local state (features, state, session, wiki)
+agents/        specialized subagent definitions
+skills/        workflow-* skills and utility skills
+commands/      slash command entry points
+modes/         unified workflow config (`workflow.yaml`)
+hooks/         Claude Code hook registration
+scripts/       runtime hooks, routing, state, guards, verification
+document/      workflow and implementation specification
+src/           core TypeScript engine
+bin/           CLI entry point
+.smt/          project-local task memory and session state
 ```
-
----
-
-## Philosophy
-
-> **Agents do not memorize. Agents read files.**
-
-Every plan, task, decision, and event is persisted to `.smt/`. Session start = re-read files. Progress = update files. Memory lives in files, not in the context window.
-
-> **Automate the actual human developer workflow.**
-
-Receive work → investigate → plan → TDD → implement → review (self + team) → verify (E2E) → human-check → deploy. Smelter models this as a skill graph; Claude Code executes it.
-
-> **User-driven, not autonomous.**
-
-Mode upgrade, human-check verdict, and mode transitions are gated by the user. Everything else keeps moving.
 
 ---
 
 ## Status
 
-- Version: `2.4.7`
+- Version: `0.4.0`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
-- Implementation reference: [`document/implementation-v2.md`](document/implementation-v2.md)
+- Implementation status: [`document/implementation.md`](document/implementation.md)
 - Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)
-- Test suites: `scripts/auto-confirm.test.mjs` (51 cases), `scripts/mode-classifier.test.mjs` (15 cases)
+- Main verification: `npm test`, `npm run typecheck`
 
-Tested on macOS 14+ with Node 20+. Plugin-scope installs via `claude plugin install`.
-
----
-
-## License
-
-Private. See `plugin.json` for metadata.
+Private project. See `plugin.json` for metadata.

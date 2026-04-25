@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * workflow-loader.test.mjs — unit tests for v3.1 unified workflow config loader.
+ * workflow-loader.test.mjs — unit tests for v0.4 unified workflow config loader.
  */
 
 import test from 'node:test';
@@ -21,7 +21,7 @@ import {
 
 test('loadWorkflowConfig parses the unified workflow.yaml', () => {
   const cfg = loadWorkflowConfig();
-  assert.equal(cfg.schema_version, '3.1.0');
+  assert.equal(cfg.schema_version, '0.4.0');
   assert.ok(cfg.skills, 'skills present');
   assert.ok(cfg.pipelines, 'pipelines present');
   assert.ok(cfg.modes, 'modes present');
@@ -31,14 +31,14 @@ test('loadWorkflowConfig parses the unified workflow.yaml', () => {
 
   assert.deepEqual(
     Object.keys(cfg.modes).sort(),
-    ['fix', 'implement', 'investigate', 'think', 'verify'].sort(),
+    ['brainstorm', 'fix', 'implement', 'explore', 'verify', 'dobby'].sort(),
   );
 });
 
 test('verification_rounds globals', () => {
   const cfg = loadWorkflowConfig();
-  assert.equal(cfg.verification_rounds.mid_pipeline, 2);
-  assert.equal(cfg.verification_rounds.terminal, 3);
+  assert.deepEqual(Object.keys(cfg.verification_rounds).sort(), ['rounds']);
+  assert.equal(cfg.verification_rounds.rounds, 2);
 });
 
 test('legacy split files are removed (modes/{skills,pipelines,modes}.yaml)', () => {
@@ -63,39 +63,43 @@ test('getMode(fix) has target_type_dispatch: true and default pipeline=fix', () 
   assert.ok(!fix.allowed_skills.includes('workflow-brainstorm'));
 });
 
-test('getMode(implement) uses full pipeline and light brainstorm', () => {
+test('getMode(implement) starts with code investigation and implementation planning', () => {
   const impl = getMode('implement');
-  assert.equal(impl.entry_skill, 'workflow-brainstorm');
-  assert.equal(impl.entry_params['workflow-brainstorm'].depth, 'light');
+  assert.equal(impl.entry_skill, 'workflow-investigate');
+  assert.equal(impl.entry_params['workflow-brainstorm'], undefined);
   assert.equal(impl.pipeline, 'full');
+  assert.ok(!impl.allowed_skills.includes('workflow-brainstorm'));
+  assert.ok(!impl.allowed_skills.includes('workflow-brainstorm-review'));
+  assert.ok(impl.allowed_skills.includes('workflow-implementation-plan'));
+  assert.ok(impl.allowed_skills.includes('workflow-implementation-plan-review'));
   assert.equal(impl.default_team_overrides['workflow-coding'].pattern, 'C');
 });
 
-test('getMode(think) read-only + planning_only pipeline', () => {
-  const think = getMode('think');
-  assert.equal(think.read_only, true);
-  assert.equal(think.pipeline, 'planning_only');
-  assert.ok(!think.allowed_skills.includes('workflow-coding'));
-  assert.ok(think.allowed_skills.includes('workflow-tasker'));
+test('getMode(brainstorm) read-only + planning_only pipeline', () => {
+  const brainstorm = getMode('brainstorm');
+  assert.equal(brainstorm.read_only, true);
+  assert.equal(brainstorm.pipeline, 'planning_only');
+  assert.ok(!brainstorm.allowed_skills.includes('workflow-coding'));
+  assert.ok(brainstorm.allowed_skills.includes('workflow-tasker'));
 });
 
-test('getMode(investigate) + getMode(verify) read-only', () => {
-  assert.equal(getMode('investigate').read_only, true);
+test('getMode(explore) + getMode(verify) read-only', () => {
+  assert.equal(getMode('explore').read_only, true);
   assert.equal(getMode('verify').read_only, true);
 });
 
-test('pipeline set: fix / extend_light / fix_simple / full exist; medium removed', () => {
+test('pipeline set: fix / fix_simple / full exist; extend_light and medium removed', () => {
   const cfg = loadWorkflowConfig();
   assert.ok(cfg.pipelines.fix, 'fix pipeline must exist');
-  assert.ok(cfg.pipelines.extend_light, 'extend_light pipeline must exist');
   assert.ok(cfg.pipelines.fix_simple, 'fix_simple pipeline must exist');
   assert.ok(cfg.pipelines.full, 'full pipeline must exist');
+  assert.equal(cfg.pipelines.extend_light, undefined, 'extend_light pipeline must be removed');
   assert.equal(cfg.pipelines.medium, undefined, 'medium pipeline must be removed');
 });
 
 test('all fix/implement pipelines terminate with workflow-human-check', () => {
   const cfg = loadWorkflowConfig();
-  for (const pipeline of ['fix', 'extend_light', 'fix_simple', 'full']) {
+  for (const pipeline of ['fix', 'fix_simple', 'full']) {
     const steps = cfg.pipelines[pipeline];
     assert.equal(steps[steps.length - 1], 'workflow-human-check',
       `pipeline ${pipeline} must end with workflow-human-check`);
@@ -113,15 +117,20 @@ test('fix pipeline is 8 skills including investigate-review, no tasker, no team-
   assert.ok(!steps.includes('workflow-brainstorm'));
 });
 
-test('extend_light pipeline is 9 skills with tasker but no tasker-review / no team-code-review / no brainstorm', () => {
+test('implement full pipeline is code-based and does not include PM brainstorm or tasker stages', () => {
   const cfg = loadWorkflowConfig();
-  const steps = cfg.pipelines.extend_light;
-  assert.equal(steps.length, 9);
-  assert.ok(steps.includes('workflow-tasker'));
-  assert.ok(!steps.includes('workflow-tasker-review'));
-  assert.ok(!steps.includes('workflow-team-code-review'));
+  const steps = cfg.pipelines.full;
+  assert.deepEqual(steps.slice(0, 4), [
+    'workflow-investigate',
+    'workflow-investigate-review',
+    'workflow-implementation-plan',
+    'workflow-implementation-plan-review',
+  ]);
   assert.ok(!steps.includes('workflow-brainstorm'));
   assert.ok(!steps.includes('workflow-brainstorm-review'));
+  assert.ok(!steps.includes('workflow-tasker'));
+  assert.ok(!steps.includes('workflow-tasker-review'));
+  assert.ok(steps.includes('workflow-team-code-review'));
 });
 
 test('selectPipeline: fix without target_type uses default (fix)', () => {
@@ -142,8 +151,8 @@ test('selectPipeline: fix + extend_existing → upgrade_required (use /implement
   assert.equal(selectPipeline('fix', { target_type: 'extend_existing' }), 'upgrade_required');
 });
 
-test('selectPipeline: implement + extend_existing → extend_light', () => {
-  assert.equal(selectPipeline('implement', { target_type: 'extend_existing' }), 'extend_light');
+test('selectPipeline: implement + extend_existing stays on full pipeline', () => {
+  assert.equal(selectPipeline('implement', { target_type: 'extend_existing' }), 'full');
 });
 
 test('selectPipeline: implement without target_type → full (default)', () => {
@@ -158,48 +167,45 @@ test('selectPipeline: fix + new_feature / refactor / migration → upgrade_requi
 });
 
 test('selectPipeline: non-dispatching modes always return declared pipeline', () => {
-  assert.equal(selectPipeline('think', { target_type: 'text' }), 'planning_only');
-  assert.equal(selectPipeline('investigate', {}), 'investigate_only');
+  assert.equal(selectPipeline('brainstorm', { target_type: 'text' }), 'planning_only');
+  assert.equal(selectPipeline('explore', {}), 'explore_only');
   assert.equal(selectPipeline('verify', {}), 'verify_only');
 });
 
-test('getVerificationRounds: mid reviews = 2 (no mode)', () => {
-  for (const skill of ['workflow-brainstorm-review', 'workflow-investigate-review', 'workflow-tasker-review', 'workflow-agent-review']) {
-    assert.equal(getVerificationRounds(skill), 2, `${skill} should be mid_pipeline=2`);
+test('getVerificationRounds: every skill uses the global 2-round policy', () => {
+  for (const skill of [
+    'workflow-brainstorm-review',
+    'workflow-investigate-review',
+    'workflow-implementation-plan-review',
+    'workflow-tasker-review',
+    'workflow-agent-review',
+    'workflow-e2e-review',
+    'workflow-team-code-review',
+    'workflow-human-check',
+  ]) {
+    assert.equal(getVerificationRounds(skill), 2, `${skill} should use global rounds=2`);
   }
-});
-
-test('getVerificationRounds: terminal reviews = 3 (no mode)', () => {
-  for (const skill of ['workflow-e2e-review', 'workflow-team-code-review', 'workflow-human-check']) {
-    assert.equal(getVerificationRounds(skill), 3, `${skill} should be terminal=3`);
-  }
-});
-
-test('getVerificationRounds: non-review skills default to mid_pipeline', () => {
   assert.equal(getVerificationRounds('workflow-investigate'), 2);
   assert.equal(getVerificationRounds('workflow-coding'), 2);
   assert.equal(getVerificationRounds('workflow-unknown'), 2);
 });
 
-test('getVerificationRounds with mode=fix: all mid reviews → 1, e2e-review → 2, human-check → 3', () => {
-  assert.equal(getVerificationRounds('workflow-investigate-review', 'fix'), 1);
-  assert.equal(getVerificationRounds('workflow-agent-review', 'fix'), 1);
-  assert.equal(getVerificationRounds('workflow-brainstorm-review', 'fix'), 1);
-  assert.equal(getVerificationRounds('workflow-tasker-review', 'fix'), 1);
+test('getVerificationRounds ignores mode-specific branching', () => {
+  assert.equal(getVerificationRounds('workflow-investigate-review', 'fix'), 2);
+  assert.equal(getVerificationRounds('workflow-agent-review', 'fix'), 2);
+  assert.equal(getVerificationRounds('workflow-brainstorm-review', 'fix'), 2);
+  assert.equal(getVerificationRounds('workflow-tasker-review', 'fix'), 2);
   assert.equal(getVerificationRounds('workflow-e2e-review', 'fix'), 2);
-  assert.equal(getVerificationRounds('workflow-human-check', 'fix'), 3);
-});
-
-test('getVerificationRounds with mode=implement: rounds unchanged (2/3)', () => {
+  assert.equal(getVerificationRounds('workflow-human-check', 'fix'), 2);
   assert.equal(getVerificationRounds('workflow-investigate-review', 'implement'), 2);
-  assert.equal(getVerificationRounds('workflow-e2e-review', 'implement'), 3);
-  assert.equal(getVerificationRounds('workflow-human-check', 'implement'), 3);
+  assert.equal(getVerificationRounds('workflow-e2e-review', 'implement'), 2);
+  assert.equal(getVerificationRounds('workflow-human-check', 'implement'), 2);
 });
 
 test('nextSkill returns first skill of pipeline when nothing completed', () => {
   assert.equal(nextSkill('fix', []), 'workflow-investigate');
-  assert.equal(nextSkill('implement', []), 'workflow-brainstorm');
-  assert.equal(nextSkill('think', []), 'workflow-brainstorm');
+  assert.equal(nextSkill('implement', []), 'workflow-investigate');
+  assert.equal(nextSkill('brainstorm', []), 'workflow-brainstorm');
 });
 
 test('nextSkill skips completed stages', () => {
@@ -225,7 +231,7 @@ test('nextSkill honors skipFromArtifacts (file-driven routing)', () => {
   };
   const skip = resolveSkipFromArtifacts('implement', artifacts);
   const next = nextSkill('implement', [], loadWorkflowConfig(), skip);
-  assert.equal(next, 'workflow-write-test');
+  assert.equal(next, 'workflow-implementation-plan');
 });
 
 test('scanFeatureArtifacts detects files on real disk', () => {
@@ -241,11 +247,13 @@ test('scanFeatureArtifacts detects files on real disk', () => {
   assert.equal(art['investigation.md'], false);
 });
 
-test('resolveCommandAlias v3 canonical set only', () => {
-  assert.equal(resolveCommandAlias('/think'), 'think');
+test('resolveCommandAlias v0.4 canonical set only', () => {
+  assert.equal(resolveCommandAlias('/brainstorm'), 'brainstorm');
+  assert.equal(resolveCommandAlias('/think'), null);
   assert.equal(resolveCommandAlias('/fix'), 'fix');
   assert.equal(resolveCommandAlias('/implement'), 'implement');
-  assert.equal(resolveCommandAlias('/investigate'), 'investigate');
+  assert.equal(resolveCommandAlias('/explore'), 'explore');
+  assert.equal(resolveCommandAlias('/investigate'), null);
   assert.equal(resolveCommandAlias('/verify'), 'verify');
   assert.equal(resolveCommandAlias('/plan'), null);
   assert.equal(resolveCommandAlias('/simple-fix'), null);

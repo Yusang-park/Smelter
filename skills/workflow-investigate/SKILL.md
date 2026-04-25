@@ -1,6 +1,6 @@
 ---
 name: workflow-investigate
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: brainstorm.md OR trigger_prompt
 produces: investigation.md
@@ -25,13 +25,27 @@ gate:
 
 ## Overview
 
-Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is `investigation.md` that downstream `workflow-tasker` consumes to build the plan.
+Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is `investigation.md`, consumed by the active mode's next stage: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-write-test` for `/fix`, or mode transition for `/explore`.
 
 **Core principle:** Evidence from the current codebase, not memory or assumption, is the source of truth for the plan. Every finding must cite a file path or external reference.
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
 **Announce at start:** "I'm using workflow-investigate to gather evidence from the code and external docs into `investigation.md`."
+
+## `/fix` systematic debugging flow
+
+When active mode is `/fix`, this skill follows the superpowers systematic-debugging experience before any test or code change:
+
+1. **Read the failure carefully** — capture exact errors, stack traces, symptoms, commands, URLs, inputs, and observed output.
+2. **Reproduce consistently** — document exact reproduction steps. If reproduction is not possible, identify the missing data and add only diagnostic evidence requests; do not guess.
+3. **Check recent changes** — inspect current diff, related commits, config changes, dependency changes, or environment changes that could explain the regression.
+4. **Trace data flow** — identify where the bad value, missing state, or wrong branch first appears. In multi-component paths, inspect each boundary.
+5. **Compare working examples** — find similar working code in this repo and list the relevant differences.
+6. **State one root-cause hypothesis** — write why this is the root cause and what observation supports it.
+7. **Define the regression test target** — specify the exact RED test or interface assertion `workflow-write-test` must create.
+
+For `/fix`, `investigation.md` must include `## Reproduction`, `## Root Cause`, and `## Regression Test Target` in addition to the standard sections.
 
 ## The Iron Law
 
@@ -61,6 +75,9 @@ On re-entry after `workflow-tasker`, a restricted run limited to a specific area
 - `## Relevant Files` — path list
 - `## Risks Identified` — discovered risks
 - `## Data Flow` (if applicable)
+- `## Reproduction` (required for `/fix`) — exact steps, command, request, UI path, or reason reproduction is blocked
+- `## Root Cause` (required for `/fix`) — source-level cause, not symptom
+- `## Regression Test Target` (required for `/fix`) — behavior the RED test must prove
 
 The aggregator (`architect`) merges per-area results into a single document.
 
@@ -72,7 +89,9 @@ The aggregator (`architect`) merges per-area results into a single document.
 | "The pattern is typically X" | Pattern guesses are not findings. Grep for actual usage before claiming. |
 | "External docs say it works this way" | Cite the URL. Findings without references are unverifiable by the reviewer. |
 | "One file is enough to understand this" | Pattern C splits by area for a reason. Investigate the areas tasker will need. |
-| "I'll investigate as I code" | `workflow-coding` consumes `plan.md` which consumes `investigation.md`. Investigate now or the whole chain has no base. |
+| "I'll investigate as I code" | Downstream tests and coding consume investigation-backed artifacts. Investigate now or the whole chain has no base. |
+| "The fix is obvious" | Obvious symptom is not root cause. Reproduce, compare, and write the hypothesis before test design. |
+| "Just try this patch" | Guess-and-check is not debugging. One hypothesis, one observation, then a RED test. |
 
 ## Rationalization Prevention
 
@@ -100,4 +119,4 @@ Do NOT:
 - Stop the session or report "investigation complete"
 - Offer continue/pause choices — Iron Law #1 forbids pausing at non-human-check stages
 
-On `/investigate` mode, the review still runs; mode transition only happens on `pass` after review.
+On `/explore` mode, the review still runs; mode transition only happens on `pass` after review.

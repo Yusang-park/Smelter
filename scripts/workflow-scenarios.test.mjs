@@ -20,7 +20,7 @@
  * "no_state_output" / silent stop is forbidden outside the 4 halt cases.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -56,6 +56,7 @@ import {
   recordRoundResult,
   canDeclarePass,
   REVIEW_SKILLS_WITH_VERIFICATION,
+  DEFAULT_ROUNDS,
 } from './verification-rounds.mjs';
 
 let passed = 0;
@@ -104,7 +105,7 @@ function fixModeState(overrides = {}) {
 }
 
 function planModeState() {
-  const s = createInitialState({ taskId: 'plan-scn', mode: 'think' });
+  const s = createInitialState({ taskId: 'plan-scn', mode: 'brainstorm' });
   s.allowed_skills = [
     'workflow-brainstorm', 'workflow-brainstorm-review',
     'workflow-investigate', 'workflow-investigate-review',
@@ -114,13 +115,12 @@ function planModeState() {
 }
 
 // Full /implement pipeline state — used by generic producer-chain tests that
-// need tasker / team-code-review in allowed_skills (absent from fix).
+// need implementation-plan / team-code-review in allowed_skills (absent from fix).
 function fullPipelineState(overrides = {}) {
   const s = createInitialState({ taskId: 'full-scn', mode: 'implement' });
   s.allowed_skills = [
-    'workflow-brainstorm', 'workflow-brainstorm-review',
     'workflow-investigate', 'workflow-investigate-review',
-    'workflow-tasker', 'workflow-tasker-review',
+    'workflow-implementation-plan', 'workflow-implementation-plan-review',
     'workflow-write-test', 'workflow-coding',
     'workflow-agent-review',
     'workflow-e2e', 'workflow-e2e-review',
@@ -186,10 +186,14 @@ section('SCENARIO 1 — Full fix-mode workflow, 8 skills end-to-end (fix), zero 
     assert.notEqual(d.action, 'halt');
   });
 
-  test('task reaches current_stage: done → session_wrap (terminal, not halt)', () => {
-    const s = fixModeState({ current_stage: 'done' });
+  test('task reaches canonical terminal (current_stage=workflow-human-check + pass event) → session_wrap (terminal, not halt)', () => {
+    // v3.3.4 refactor: legacy current_stage='done' branch removed as dead code.
+    // Canonical terminal is current_stage stays at 'workflow-human-check' with a
+    // pass event (or legacy completed_stages entry) recorded by finalize-human-check.mjs.
+    const s = fixModeState({ current_stage: 'workflow-human-check' });
+    s.events = [passEvent('workflow-human-check')];
     const d = decide({ state: s, lastAssistantText: '' });
-    assert.equal(d.action, 'session_wrap', 'done = orderly session wrap, not Iron Law #1 halt');
+    assert.equal(d.action, 'session_wrap', 'canonical terminal = orderly session wrap, not Iron Law #1 halt');
   });
 }
 
@@ -199,11 +203,10 @@ section('SCENARIO 2 — Producer chain exhaustive (every fail branch has a targe
 {
   const cases = [
     { skill: 'workflow-investigate-review', cause: 'file_absent', expected: 'workflow-investigate' },
-    { skill: 'workflow-tasker-review', cause: 'side_effect', expected: 'workflow-tasker' },
-    { skill: 'workflow-tasker-review', cause: 'scope_mismatch', expected: 'workflow-tasker' },
-    { skill: 'workflow-write-test', cause: 'file_absent', expected: 'workflow-tasker' },
+    { skill: 'workflow-implementation-plan-review', cause: 'scope_mismatch', expected: 'workflow-implementation-plan' },
+    { skill: 'workflow-write-test', cause: 'file_absent', expected: 'workflow-implementation-plan' },
     { skill: 'workflow-coding', cause: 'tdd_cycle', expected: 'workflow-write-test' },
-    { skill: 'workflow-coding', cause: 'scope_mismatch', expected: 'workflow-tasker' },
+    { skill: 'workflow-coding', cause: 'scope_mismatch', expected: 'workflow-implementation-plan' },
     { skill: 'workflow-coding', cause: 'typecheck', expected: 'workflow-coding' },
     { skill: 'workflow-coding', cause: 'lint', expected: 'workflow-coding' },
     { skill: 'workflow-coding', cause: 'test_run', expected: 'workflow-coding' },
@@ -229,17 +232,25 @@ section('SCENARIO 2 — Producer chain exhaustive (every fail branch has a targe
     assert.equal(r.target, 'workflow-brainstorm');
   });
 
-  // team-code-review tests use full-pipeline state (tasker + team-code-review
+  for (const cause of ['side_effect', 'scope_mismatch']) {
+    test(`workflow-tasker-review fail(${cause}) → routes to workflow-tasker (brainstorm mode)`, () => {
+      const state = planModeState();
+      const r = route({ event: failEvent('workflow-tasker-review', cause), state });
+      assert.equal(r.target, 'workflow-tasker');
+    });
+  }
+
+  // team-code-review tests use full-pipeline state (implementation-plan + team-code-review
   // whitelisted); the severity → producer-target mapping is mode-agnostic.
-  test('workflow-team-code-review CRITICAL → workflow-tasker (redesign)', () => {
+  test('workflow-team-code-review CRITICAL → workflow-implementation-plan (redesign)', () => {
     const state = fullPipelineState();
     const r = route({ event: failEvent('workflow-team-code-review', 'scope_mismatch', { severity: 'CRITICAL' }), state });
-    assert.equal(r.target, 'workflow-tasker');
+    assert.equal(r.target, 'workflow-implementation-plan');
   });
-  test('workflow-team-code-review HIGH → workflow-tasker', () => {
+  test('workflow-team-code-review HIGH → workflow-implementation-plan', () => {
     const state = fullPipelineState();
     const r = route({ event: failEvent('workflow-team-code-review', 'scope_mismatch', { severity: 'HIGH' }), state });
-    assert.equal(r.target, 'workflow-tasker');
+    assert.equal(r.target, 'workflow-implementation-plan');
   });
   test('workflow-team-code-review MEDIUM → workflow-coding', () => {
     const state = fullPipelineState();
@@ -286,7 +297,7 @@ section('SCENARIO 4 — Mode whitelist enforcement (spec §5-3)');
 // ============================================================================
 {
   test('route target outside allowed_skills → whitelist_violation', () => {
-    const state = createInitialState({ taskId: 't', mode: 'think' });
+    const state = createInitialState({ taskId: 't', mode: 'brainstorm' });
     state.allowed_skills = ['workflow-brainstorm', 'workflow-brainstorm-review'];
     // fail in workflow-coding (not in plan mode) should flag violation
     const r = route({ event: failEvent('workflow-coding', 'typecheck'), state });
@@ -295,7 +306,7 @@ section('SCENARIO 4 — Mode whitelist enforcement (spec §5-3)');
   });
 
   test('decide() with fail+whitelist_violation → request_mode_upgrade (user decides)', () => {
-    const state = createInitialState({ taskId: 't', mode: 'think' });
+    const state = createInitialState({ taskId: 't', mode: 'brainstorm' });
     state.allowed_skills = ['workflow-brainstorm', 'workflow-brainstorm-review'];
     state.events = [failEvent('workflow-coding', 'typecheck')];
     const d = decide({ state, lastAssistantText: '' });
@@ -451,10 +462,10 @@ section('SCENARIO 9 — test_cycles RED forces workflow-coding entry');
 section('SCENARIO 10 — Chained intent auto-transition (no user prompt between modes)');
 // ============================================================================
 {
-  test('investigate+fix chain: transition signal → chain_advance to fix', () => {
+  test('explore+fix chain: transition signal → chain_advance to fix', () => {
     withTempState(Object.assign(fixModeState(), {
-      mode: 'investigate',
-      chained_modes: ['investigate', 'fix'],
+      mode: 'explore',
+      chained_modes: ['explore', 'fix'],
       current_stage: 'workflow-investigate-review',
       events: [passEvent('workflow-investigate-review')],
     }), (dir, path) => {
@@ -465,10 +476,10 @@ section('SCENARIO 10 — Chained intent auto-transition (no user prompt between 
     });
   });
 
-  test('think→implement chain: even in human-check, chain_advance fires FIRST (bypasses halt)', () => {
+  test('brainstorm→implement chain: even in human-check, chain_advance fires FIRST (bypasses halt)', () => {
     withTempState(Object.assign(fixModeState(), {
-      mode: 'think',
-      chained_modes: ['think', 'implement'],
+      mode: 'brainstorm',
+      chained_modes: ['brainstorm', 'implement'],
       current_stage: 'workflow-human-check',
     }), (dir, path) => {
       const state = JSON.parse(readFileSync(path, 'utf-8'));
@@ -481,13 +492,13 @@ section('SCENARIO 10 — Chained intent auto-transition (no user prompt between 
     });
   });
 
-  test('3-mode chain sequentially advances: investigate → think → implement', () => {
+  test('3-mode chain sequentially advances: explore → brainstorm → implement', () => {
     withTempState(Object.assign(fixModeState(), {
-      mode: 'investigate',
-      chained_modes: ['investigate', 'think', 'implement'],
+      mode: 'explore',
+      chained_modes: ['explore', 'brainstorm', 'implement'],
     }), (dir, path) => {
       let state = JSON.parse(readFileSync(path, 'utf-8'));
-      assert.equal(consumeNextChainedMode(path, state, '*'), 'think');
+      assert.equal(consumeNextChainedMode(path, state, '*'), 'brainstorm');
       state = JSON.parse(readFileSync(path, 'utf-8'));
       assert.equal(consumeNextChainedMode(path, state, '*'), 'implement');
       state = JSON.parse(readFileSync(path, 'utf-8'));
@@ -497,8 +508,8 @@ section('SCENARIO 10 — Chained intent auto-transition (no user prompt between 
 
   test('chain advance without transition signal → does not fire', () => {
     const s = fixModeState();
-    s.mode = 'investigate';
-    s.chained_modes = ['investigate', 'fix'];
+    s.mode = 'explore';
+    s.chained_modes = ['explore', 'fix'];
     s.current_stage = 'workflow-investigate-review';
     s.events = [passEvent('workflow-investigate-review')];
     const d = decide({ state: s, lastAssistantText: 'neutral message' });
@@ -518,27 +529,33 @@ section('SCENARIO 11 — Multi-Pass Verification gate (§9-3)');
     assert.equal(r.reason, 'rounds_incomplete');
   });
 
-  test('canDeclarePass blocked after rounds 1 and 2 only', () => {
+  test('canDeclarePass blocked after round 1 only', () => {
     const state = fixModeState();
     initRounds(state, 'workflow-agent-review', { pattern: 'B' });
     startRound(state, 'workflow-agent-review', 1, 'code-reviewer');
     recordRoundResult(state, 'workflow-agent-review', 1, { result: 'pass' });
-    startRound(state, 'workflow-agent-review', 2, 'security-reviewer');
-    recordRoundResult(state, 'workflow-agent-review', 2, { result: 'pass' });
     const r = canDeclarePass(state, 'workflow-agent-review');
     assert.equal(r.allowed, false);
-    assert.equal(r.detail, '2/3 rounds passed');
+    assert.equal(r.detail, '1/2 rounds passed');
   });
 
-  test('canDeclarePass allowed only after all 3 rounds pass', () => {
+  test('canDeclarePass allowed only after both rounds pass', () => {
     const state = fixModeState();
     initRounds(state, 'workflow-agent-review', { pattern: 'B' });
-    for (const n of [1, 2, 3]) {
+    for (const n of [1, 2]) {
       startRound(state, 'workflow-agent-review', n, 'code-reviewer');
       recordRoundResult(state, 'workflow-agent-review', n, { result: 'pass' });
     }
     const r = canDeclarePass(state, 'workflow-agent-review');
     assert.equal(r.allowed, true);
+  });
+
+  test('default verification scaffold has exactly 2 rounds', () => {
+    assert.deepEqual(DEFAULT_ROUNDS.map((r) => r.focus), ['omission', 'contradiction']);
+    const state = fixModeState();
+    const entry = initRounds(state, 'workflow-agent-review', { pattern: 'B' });
+    assert.equal(entry.min_verification_rounds, 2);
+    assert.equal(entry.rounds.length, 2);
   });
 
   test('round fail surfaces verification_failed event (never silently ignored)', () => {
@@ -551,10 +568,11 @@ section('SCENARIO 11 — Multi-Pass Verification gate (§9-3)');
     assert.equal(last.cause, 'verification_failed');
   });
 
-  test('all 6 review skills support Multi-Pass Verification', () => {
+  test('all 7 review skills support Multi-Pass Verification', () => {
     const expected = [
       'workflow-brainstorm-review',
       'workflow-investigate-review',
+      'workflow-implementation-plan-review',
       'workflow-tasker-review',
       'workflow-agent-review',
       'workflow-e2e-review',
@@ -565,15 +583,11 @@ section('SCENARIO 11 — Multi-Pass Verification gate (§9-3)');
     }
   });
 
-  test('re-run after strict sequencing: round 3 cannot complete before round 2', () => {
+  test('strict sequencing: round 2 cannot complete before round 1', () => {
     const state = fixModeState();
     initRounds(state, 'workflow-brainstorm-review', { pattern: 'A' });
-    startRound(state, 'workflow-brainstorm-review', 1, 'critic');
-    recordRoundResult(state, 'workflow-brainstorm-review', 1, { result: 'pass' });
-    startRound(state, 'workflow-brainstorm-review', 2, 'critic');
-    // Try to jump to round 3 without finishing 2
     try {
-      startRound(state, 'workflow-brainstorm-review', 3, 'critic');
+      recordRoundResult(state, 'workflow-brainstorm-review', 2, { result: 'pass' });
       assert.fail('should have thrown on out-of-order round');
     } catch (e) {
       // Expected — either enforces order on start or record; allow either
@@ -585,9 +599,9 @@ section('SCENARIO 11 — Multi-Pass Verification gate (§9-3)');
 section('SCENARIO 12 — State-schema consistency with spec');
 // ============================================================================
 {
-  test('14 workflow skills, 5 modes exposed in schema', () => {
-    assert.equal(WORKFLOW_SKILLS.length, 14);
-    assert.equal(MODES.length, 5);
+  test('16 workflow skills, 6 modes exposed in schema', () => {
+    assert.equal(WORKFLOW_SKILLS.length, 16);
+    assert.equal(MODES.length, 6);
   });
   test('all 5 Team Agent Patterns present', () => {
     assert.deepEqual([...PATTERNS].sort(), ['A', 'B', 'C', 'D', 'E']);
@@ -599,7 +613,7 @@ section('SCENARIO 12 — State-schema consistency with spec');
     assert.ok(CAUSE_ENUM.includes('stall_cascade'));
   });
   test('VERIFICATION_FOCUS_ENUM matches current schema', () => {
-    assert.deepEqual([...VERIFICATION_FOCUS_ENUM].sort(), ['contradiction', 'edge_case', 'effect_verification', 'omission']);
+    assert.deepEqual([...VERIFICATION_FOCUS_ENUM].sort(), ['contradiction', 'omission']);
   });
   test('TARGET_TYPE_ENUM matches tasker §3 output spec (v3.3: text/design replace typo/dialogue for fix_simple dispatch)', () => {
     assert.deepEqual(
@@ -647,18 +661,18 @@ section('SCENARIO 13 — Mode classifier verdict coherence with spec §1-2');
     ['버그 고쳐줘', 'fix'],
     ['이거 안 돌아가', 'fix'],
     ['fix the login error', 'fix'],
-    // investigate (static read)
-    ['파악해줘', 'investigate'],
-    ['확인 좀 해줘', 'investigate'],
-    ['analyze this function', 'investigate'],
+    // explore (static read)
+    ['파악해줘', 'explore'],
+    ['확인 좀 해줘', 'explore'],
+    ['analyze this function', 'explore'],
     // verify (dynamic: run tests + inspect + E2E)
     ['점검해', 'verify'],
     ['테스트 해봐', 'verify'],
     ['run the tests', 'verify'],
-    // think (design / refactor / new feature — renamed from plan)
-    ['설계해줘', 'think'],
-    ['리팩토링할거야', 'think'],
-    ['새로운 기능 만들거야', 'think'],
+    // brainstorm (design / refactor / new feature — v0.4 canonical planning mode)
+    ['설계해줘', 'brainstorm'],
+    ['리팩토링할거야', 'brainstorm'],
+    ['새로운 기능 만들거야', 'brainstorm'],
     // implement (extend / add)
     ['다크모드 토글 추가해줘', 'implement'],
     ['덧붙여서 이메일 알림도', 'implement'],
@@ -728,7 +742,7 @@ section('SCENARIO 15 — Integrity: agent always moves forward (no deadlock patt
   // every combination produces either a halt (legitimate) or a forward action.
 
   const pathologies = [
-    { label: 'fail in non-allowed skill', state: () => { const s = createInitialState({ taskId: 't', mode: 'think' }); s.allowed_skills = ['workflow-brainstorm']; s.events = [failEvent('workflow-coding', 'typecheck')]; return s; } },
+    { label: 'fail in non-allowed skill', state: () => { const s = createInitialState({ taskId: 't', mode: 'brainstorm' }); s.allowed_skills = ['workflow-brainstorm']; s.events = [failEvent('workflow-coding', 'typecheck')]; return s; } },
     { label: 'double-fail (two consecutive fails)', state: () => { const s = fixModeState({ current_stage: 'workflow-coding' }); s.events = [failEvent('workflow-coding', 'typecheck'), failEvent('workflow-coding', 'typecheck')]; return s; } },
     { label: 'empty events + no feedback + random stage', state: () => fixModeState({ current_stage: 'workflow-tasker' }) },
     { label: 'all feedback resolved + empty events', state: () => { const s = fixModeState({ current_stage: 'workflow-tasker' }); s.active_feedback = [{ id: 'x', target_skill: 'workflow-coding', resolved: true, text: 'x', from: 'x', evidence_ref: 'x' }]; return s; } },
@@ -756,7 +770,7 @@ section('SCENARIO 15-B — Active workflow suppresses LLM passthrough drop');
     try {
       const sessionId = 'sess-active-pass-1';
       const first = spawnSync(process.execPath, [detector], {
-        input: JSON.stringify({ cwd: dir, session_id: sessionId, prompt: '/investigate 로그인 플로우' }),
+        input: JSON.stringify({ cwd: dir, session_id: sessionId, prompt: '/explore 로그인 플로우' }),
         encoding: 'utf-8',
         env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: join(process.cwd(), 'scripts', 'lib', '__fixtures__', 'mode-classifier-stub.mjs') },
       });
@@ -773,10 +787,12 @@ section('SCENARIO 15-B — Active workflow suppresses LLM passthrough drop');
       });
       assert.equal(follow.status, 0, `follow-up failed: ${follow.stderr}`);
       const out = JSON.parse(follow.stdout);
-      assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Skill: fix/);
+      assert.equal(out.hookSpecificOutput, undefined, 'sticky continuation must not inject a different mode skill');
 
       const pointerPath = join(dir, '.smt', 'state', `active-feature-${sessionId}.json`);
       assert.ok(existsSync(pointerPath), 'per-session pointer must persist across passthrough-like follow-up');
+      const dirs = readdirSync(join(dir, '.smt', 'features'));
+      assert.equal(dirs.length, 1, `sticky continuation must not fork feature; got ${dirs.length}: ${dirs.join(', ')}`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -806,17 +822,16 @@ section('SCENARIO 16 — Implement/verify/fail/replan/re-implement/re-verify cyc
     assert.equal(r2.payload.skill, 'workflow-agent-review');
   });
 
-  test('16-B coding scope_mismatch → route back to tasker → re-plan → re-coding', () => {
-    // scope_mismatch routes back to tasker, which only exists in full/extend_light.
-    const s = fullPipelineState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-tasker', 'workflow-write-test'] });
+  test('16-B coding scope_mismatch → route back to implementation-plan → re-plan → re-coding', () => {
+    const s = fullPipelineState({ current_stage: 'workflow-coding', completed_stages: ['workflow-investigate', 'workflow-implementation-plan', 'workflow-write-test'] });
     s.events = [failEvent('workflow-coding', 'scope_mismatch')];
     const r1 = decide({ state: s, lastAssistantText: '' });
     assert.equal(r1.action, 'enter_skill');
-    assert.equal(r1.payload.skill, 'workflow-tasker', 'scope_mismatch routes back to tasker for re-plan');
+    assert.equal(r1.payload.skill, 'workflow-implementation-plan', 'scope_mismatch routes back to implementation-plan for re-plan');
     assert.equal(r1.payload.direction, 'back');
 
-    // Tasker re-plans + passes.
-    s.events.push(passEvent('workflow-tasker'));
+    // Implementation-plan re-plans + passes.
+    s.events.push(passEvent('workflow-implementation-plan'));
     const r2 = decide({ state: s, lastAssistantText: '' });
     assert.equal(r2.action, 'advance');
   });
@@ -871,15 +886,14 @@ section('SCENARIO 16 — Implement/verify/fail/replan/re-implement/re-verify cyc
     assert.equal(d.payload.direction, 'advance');
   });
 
-  test('16-F tasker-review fail → tasker → pass → continue, no deadlock', () => {
-    // tasker-review only exists in full pipeline; fix skips tasker entirely.
-    const s = fullPipelineState({ current_stage: 'workflow-tasker-review', completed_stages: ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker'] });
-    s.events = [failEvent('workflow-tasker-review', 'scope_mismatch')];
+  test('16-F implementation-plan-review fail → implementation-plan → pass → continue, no deadlock', () => {
+    const s = fullPipelineState({ current_stage: 'workflow-implementation-plan-review', completed_stages: ['workflow-investigate', 'workflow-investigate-review', 'workflow-implementation-plan'] });
+    s.events = [failEvent('workflow-implementation-plan-review', 'scope_mismatch')];
     const r1 = decide({ state: s, lastAssistantText: '' });
-    assert.equal(r1.payload.skill, 'workflow-tasker');
+    assert.equal(r1.payload.skill, 'workflow-implementation-plan');
     assert.equal(r1.payload.direction, 'back');
 
-    s.events.push(passEvent('workflow-tasker-review'));
+    s.events.push(passEvent('workflow-implementation-plan-review'));
     const r2 = decide({ state: s, lastAssistantText: '' });
     assert.equal(r2.action, 'advance');
   });

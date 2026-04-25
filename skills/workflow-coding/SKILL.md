@@ -1,6 +1,6 @@
 ---
 name: workflow-coding
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: "*.test.*" (RED) OR active_feedback
 produces: src files changed
@@ -63,6 +63,16 @@ If `workflow-human-check` has not run and returned a user `complete` decision, t
 - `tsc --noEmit` exit 0
 - Scoped tests pass (only those related to changed files)
 
+## Coding Quality Gate
+
+These are coding-stage constraints, not generic per-file prompt injections:
+
+- No hardcoded secrets, tokens, credentials, or environment-specific constants.
+- Handle errors explicitly; never silently swallow failures.
+- Keep functions short and readable; avoid deep nesting.
+- Keep files below 800 lines unless the surrounding codebase already requires a larger generated or declarative file.
+- Validate external input at system boundaries before use.
+
 ## Red Flags - STOP
 
 These thoughts mean STOP — you're rationalizing:
@@ -107,6 +117,16 @@ When tasker declares a frontend/backend split:
 - sync_point: "api-contract" — converges at the API/interface agreement point
 - Aggregator (architect) integrates; on conflict, invokes conflict-resolver
 
+## Subagent execution discipline
+
+For `/implement` tasks with independent queue items, follow the superpowers subagent-driven development experience without changing Smelter's gates:
+
+- Dispatch a fresh executor context per independent task or module when parallelization is safe.
+- Give each executor the exact task text, file map, acceptance criteria, and relevant excerpts from `implementation-plan.md`; do not make the subagent rediscover the whole plan from session history.
+- Require implementer self-review before handoff: spec compliance, tests run, and concerns explicitly reported.
+- Run Smelter's existing review chain after coding; implementer self-review never replaces `workflow-agent-review`, `workflow-e2e`, or `workflow-team-code-review`.
+- If a subagent reports `NEEDS_CONTEXT` or `BLOCKED`, provide missing context, narrow the task, or route back to the producer skill. Do not blindly retry the same prompt.
+
 ## Critic Watchdog (Pattern E, always active)
 
 The `scripts/critic-watchdog.mjs` hook watches every Edit/Write/Bash:
@@ -131,7 +151,8 @@ On entry, inject `active_feedback` entries where `target_skill == workflow-codin
 ## Fail routing
 
 - `tdd_cycle` → `workflow-write-test`
-- `scope_mismatch` → `workflow-tasker`
+- `scope_mismatch` in `/fix` → `workflow-investigate` or mode upgrade to `/implement`
+- `scope_mismatch` in `/implement` → `workflow-implementation-plan`
 - `typecheck`/`lint`/`test_run` → self re-run (same skill, different attempt; **not a retry** — code has changed)
 
 ## Terminal State — Required Next Skill

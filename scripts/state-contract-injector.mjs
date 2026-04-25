@@ -43,9 +43,9 @@
 import { readFileSync } from 'node:fs';
 import { seedWorkflowState } from './lib/workflow-state-seeder.mjs';
 import { sanitizeSessionId, resolveActiveState } from './lib/session-paths.mjs';
-import { NEXT_SKILL_ON_PASS, PRODUCER_OF, ALWAYS_ALLOWED, isTerminalStage } from './lib/workflow-chain.mjs';
+import { ALWAYS_ALLOWED, nextSkillForState, producerForState } from './lib/workflow-chain.mjs';
 
-const COMMAND_SKILLS = new Set(['fix', 'implement', 'investigate', 'verify', 'think']);
+const COMMAND_SKILLS = new Set(['fix', 'implement', 'explore', 'verify', 'brainstorm', 'dobby']);
 
 function isLastEventFail(events, stage) {
   if (!Array.isArray(events)) return false;
@@ -58,17 +58,16 @@ function isLastEventFail(events, stage) {
 
 // Returns null when the move is legal, or a human-readable reason string when
 // it is not. Caller decides the emit shape.
-function chainBlockReason(currentStage, requested, events) {
+function chainBlockReason(state, requested) {
+  const currentStage = state?.current_stage;
+  const events = state?.events;
   if (currentStage == null) return null;              // no chain yet
   if (requested === currentStage) return null;        // idempotent re-entry
   if (ALWAYS_ALLOWED.has(requested)) return null;     // user escape
-  // Terminal stages (no declared next) delegate the move to downstream
-  // allowed_skills enforcement instead of rejecting here — the chain has no
-  // opinion once the pipeline ends.
-  if (isTerminalStage(currentStage)) return null;
-  const expectedNext = NEXT_SKILL_ON_PASS[currentStage];
+  const expectedNext = nextSkillForState(state, currentStage);
+  if (!expectedNext) return null;
   if (requested === expectedNext) return null;        // forward on pass
-  if (PRODUCER_OF[currentStage] === requested && isLastEventFail(events, currentStage)) {
+  if (producerForState(state, currentStage) === requested && isLastEventFail(events, currentStage)) {
     return null;                                      // fail-route to producer
   }
   return `[Smelter chain] Skill('${requested}') violates the declared pipeline from current stage '${currentStage}'. Expected one of: '${currentStage}' (re-entry), '${expectedNext}' (forward on pass), or 'workflow-human-check' (escape). Fix: dispatch the expected next skill, or invoke workflow-human-check to hand control back to the user.`;
@@ -187,7 +186,7 @@ function main() {
         return;
       }
       if (active && active.state && typeof active.state === 'object') {
-        const reason = chainBlockReason(active.state.current_stage, skill, active.state.events);
+        const reason = chainBlockReason(active.state, skill);
         if (reason) {
           emit({
             continue: false,

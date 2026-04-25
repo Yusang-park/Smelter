@@ -3,7 +3,7 @@
  * mode-classifier.mjs — Classify natural-language input into a v2 mode.
  *
  * Layer architecture (v2.4.9+, no-fallback variant):
- *   Layer 1 — Explicit slash commands (/fix, /plan, /implement, ...) always win.
+ *   Layer 1 — Explicit slash commands (/fix, /brainstorm, /implement, ...) always win.
  *   Layer 2 — Passthrough for pure git/shell verb-first imperatives.
  *   Layer 3 — LLM classifier (subagent-classifier.classifyMode).
  *             Returns mode + optional chained_modes + passthrough hint.
@@ -30,16 +30,19 @@ import { readFileSync } from 'node:fs';
 import { classifyMode } from './lib/subagent-classifier.mjs';
 
 const EXPLICIT_COMMANDS = {
-  '/think': 'think',
+  '/brainstorm': 'brainstorm',
   '/fix': 'fix',
-  '/investigate': 'investigate',
+  '/explore': 'explore',
   '/verify': 'verify',
   '/implement': 'implement',
+  '/dobby': 'dobby',
 };
+
+const RETIRED_COMMANDS = new Set(['/investigate', '/think', '/plan', '/simple-fix']);
 
 // Mode whitelist — kept in sync with state-schema MODES (v3 canonical set).
 const MODES_WHITELIST = Object.freeze([
-  'think', 'fix', 'investigate', 'verify', 'implement',
+  'brainstorm', 'fix', 'explore', 'verify', 'implement', 'dobby',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -101,6 +104,14 @@ export function classify(input, { cwd = process.cwd(), sessionId = '' } = {}) {
     const rest = trimmed.slice(cmd.length);
     if (rest === '' || /^[:\s-]/.test(rest)) {
       return { mode, trigger: `command:${cmd}`, overridden: true };
+    }
+  }
+
+  for (const cmd of RETIRED_COMMANDS) {
+    if (!trimmed.startsWith(cmd)) continue;
+    const rest = trimmed.slice(cmd.length);
+    if (rest === '' || /^[:\s-]/.test(rest)) {
+      return { mode: null, trigger: `retired-command:${cmd}`, overridden: false, passthrough: true, retired: true };
     }
   }
 

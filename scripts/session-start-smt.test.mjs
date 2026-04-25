@@ -2,8 +2,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -31,23 +31,22 @@ test('session-start emits vendored caveman skill content', () => {
   assert.equal(ctx.includes(UPSTREAM_SKILL.trim()), true);
 });
 
-test('session-start syncs codex mode into ~/.smt/config.json when SMELTER_MODEL_MODE=codex', () => {
-  const cfgPath = join(homedir(), '.smt', 'config.json');
-  const prev = existsSync(cfgPath) ? readFileSync(cfgPath, 'utf8') : null;
+test('session-start does NOT write codexMode into ~/.smt/config.json under any env (cross-session-bleed regression)', () => {
+  const tempHome = mkdtempSync(join(tmpdir(), 'sst-home-'));
+  mkdirSync(join(tempHome, '.smt'), { recursive: true });
+  const cfgPath = join(tempHome, '.smt', 'config.json');
+  writeFileSync(cfgPath, JSON.stringify({ autoConfirm: true }));
   try {
     const result = spawnSync(process.execPath, [SCRIPT], {
       input: JSON.stringify({ session_id: 'test-session' }),
       encoding: 'utf8',
-      env: { ...process.env, SMELTER_MODEL_MODE: 'codex' },
+      env: { ...process.env, HOME: tempHome, SMELTER_MODEL_MODE: 'codex', CODEX_MODE: '1' },
     });
     assert.equal(result.status, 0, result.stderr);
     const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
-    assert.equal(cfg.codexMode, true);
+    assert.ok(!('codexMode' in cfg), `session-start must not write codexMode; got ${JSON.stringify(cfg)}`);
+    assert.equal(cfg.autoConfirm, true, 'unrelated config keys must survive');
   } finally {
-    if (prev === null) {
-      rmSync(cfgPath, { force: true });
-    } else {
-      writeFileSync(cfgPath, prev);
-    }
+    rmSync(tempHome, { recursive: true, force: true });
   }
 });

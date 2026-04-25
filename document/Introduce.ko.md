@@ -4,7 +4,7 @@ type: translation
 lang: ko
 base: document/Introduce.md
 tags: [smelter, philosophy, workflow, skill-composition, korean]
-updated: 2026-04-20
+updated: 2026-04-26
 ---
 
 > 이 문서는 [`document/Introduce.md`](Introduce.md) (영문 canonical)의 한국어 번역본입니다.
@@ -24,12 +24,11 @@ Smelter는 원자 단위의 **workflow 스킬** (`workflow-*`)을 모드로 조�
 
 | 모드 | 진입 스킬 | 용도 |
 |------|-----------|------|
-| `simple_fix` | `workflow-coding` | 텍스트 / CSS / 상수 치환 |
 | `fix` | `workflow-investigate` | 버그 / 로직 수리 |
-| `investigate` | `workflow-investigate` | 정적 조사 (맥락·근거 파악) |
+| `explore` | `workflow-investigate` | 정적 조사 (맥락·근거 파악) |
 | `verify` | `workflow-verify` | 비수정 검증 (테스트 + 정적 점검 + E2E) |
-| `plan` | `workflow-brainstorm` (deep) | 신규 기능 / 리팩토링, 기획 우선 |
-| `implement` | `workflow-brainstorm` (light) | 기존 코드 위에 경량 빌드 |
+| `brainstorm` | `workflow-brainstorm` (deep) | 신규 기능 / 리팩토링, 기획 우선 |
+| `implement` | `workflow-investigate` → `workflow-implementation-plan` | 기존 코드 기반 구현 계획과 빌드 |
 
 각 스킬은 계약 (`consumes`, `produces`, `gate`)을 선언한다. 실패는 **producer chain**으로 라우팅 — 재시도 없음, 회피 없음, 자기 포기 없음. `document/workflow.md` §5 참조.
 
@@ -46,7 +45,7 @@ Smelter는 원자 단위의 **workflow 스킬** (`workflow-*`)을 모드로 조�
 │       ├── task/
 │       │   ├── plan.md                   ← feature 목표, 범위, acceptance criteria
 │       │   ├── <task-name>.md            ← 사람이 읽는 작업 기록
-│       │   └── <task-name>.state.json    ← 기계 상태 (v2.4.1 스키마)
+│       │   └── <task-name>.state.json    ← 기계 상태 (v0.4.0 스키마)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e 영상, 스크린샷, 로그
 └── state/                                ← 전역 세션 상태
@@ -85,7 +84,7 @@ Smelter는 원자 단위의 **workflow 스킬** (`workflow-*`)을 모드로 조�
 
 Smelter는 "실행 후 완료"를 받아들이지 않는다. 출력은 여러 독립 검증을 거쳐 **재제련** 된다:
 
-- **Multi-Pass Verification (§9-3)**: 모든 review 스킬은 pass 선언 전 3 라운드(omission / contradiction / edge case) 수행.
+- **Multi-Pass Verification (§9-3)**: 모든 review 스킬은 pass 선언 전 2 라운드(omission / contradiction) 수행.
 - **Pattern B Dual Adversarial (agent-review)**: `code-reviewer` + `security-reviewer` 병렬 실행; `arbitrator` merge.
 - **Pattern B 95% Consensus (team-code-review)**: advocate / critic / arbitrator가 합의 도달까지 iterate.
 - **Critic Watchdog (§12-8)**: 11 규칙 hook 레이어가 구현 중 Iron Laws 상시 강제.
@@ -112,12 +111,12 @@ Smelter는 "실행 후 완료"를 받아들이지 않는다. 출력은 여러 �
 
 | 사용자 입력 | Mode classifier 라우팅 |
 |-------------|------------------------|
-| "text fix", "CSS", "rename", "typo", "translation" | `simple_fix` |
+| "text fix", "CSS", "rename", "typo", "translation" | surface exemption이 적용된 `fix` |
 | "bug", "error", "not working", "broken" | `fix` |
-| "analyze", "investigate", "how does X work" | `investigate` |
+| "analyze", "investigate", "how does X work" | `explore` |
 | "테스트 해봐", "점검해", "run tests" | `verify` |
-| "design", "plan", "refactor", "new feature" | `plan` |
+| "design", "plan", "refactor", "new feature" | `brainstorm` |
 | "build", "add", "implement", "extend" | `implement` |
 | 불명확 | `fix` (안전 기본값) |
 
-명시 slash 커맨드 (`/simple-fix`, `/fix`, `/investigate`, `/verify`, `/plan`, `/implement`)가 classifier를 override.
+명시 slash 커맨드 (`/brainstorm`, `/fix`, `/explore`, `/verify`, `/implement`, `/dobby`)가 classifier를 override.

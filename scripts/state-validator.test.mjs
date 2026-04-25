@@ -28,7 +28,7 @@ function parseSkillMdProduces(skillName) {
 }
 
 function baseState() {
-  return createInitialState({ taskId: 'feat', mode: 'investigate' });
+  return createInitialState({ taskId: 'feat', mode: 'explore' });
 }
 
 // ── Happy path ─────────────────────────────────────────────────────────────
@@ -282,4 +282,29 @@ test('contract: workflow-tasker-review SKILL.md produces matches SKILL_ARTIFACT_
   const expected = SKILL_ARTIFACT_BASENAME[skill]; // 'tasks-review.md'
   assert.equal(declared, expected,
     `SKILL.md produces "${declared}" but SKILL_ARTIFACT_BASENAME expects "${expected}"`);
+});
+
+test('contract: workflow-agent-review has a map entry and SKILL.md matches', () => {
+  // Regression: without a map entry, skill-stage-transition cannot advance
+  // completed_stages for agent-review. SKILL.md historically used
+  // agent_review.md (underscore); both must converge on agent-review.md.
+  const skill = 'workflow-agent-review';
+  const expected = SKILL_ARTIFACT_BASENAME[skill];
+  assert.ok(expected, `SKILL_ARTIFACT_BASENAME is missing "${skill}"`);
+  assert.equal(expected, 'agent-review.md',
+    `expected hyphenated canonical; got "${expected}"`);
+  const declared = parseSkillMdProduces(skill);
+  assert.equal(declared, expected,
+    `SKILL.md produces "${declared}" but map expects "${expected}"`);
+});
+
+test('contract: workflow-e2e-review has a map entry and SKILL.md matches', () => {
+  const skill = 'workflow-e2e-review';
+  const expected = SKILL_ARTIFACT_BASENAME[skill];
+  assert.ok(expected, `SKILL_ARTIFACT_BASENAME is missing "${skill}"`);
+  assert.equal(expected, 'e2e-review.md',
+    `expected hyphenated canonical; got "${expected}"`);
+  const declared = parseSkillMdProduces(skill);
+  assert.equal(declared, expected,
+    `SKILL.md produces "${declared}" but map expects "${expected}"`);
 });

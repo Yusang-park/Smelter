@@ -1,6 +1,6 @@
 {
   "name": "smelter",
-  "version": "2.4.1",
+  "version": "0.4.0",
   "description": "Skill-composition workflow engine with TDD + E2E enforcement, multi-pass verification, and producer-chain routing for Claude Code",
   "hooks": "hooks/hooks.json"
 }

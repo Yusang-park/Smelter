@@ -65,7 +65,7 @@ test('chain prompt with 하고 connective seeds chained_modes on state', async (
     assert.ok(Array.isArray(state.chained_modes), 'chained_modes must be array');
     assert.ok(state.chained_modes.length >= 2, `expected chain length >= 2, got ${state.chained_modes.length}`);
     assert.equal(state.chained_modes[0], state.mode, 'entry mode must match chained_modes[0]');
-    assert.deepEqual(state.chained_modes.slice(0, 2), ['investigate', 'fix']);
+    assert.deepEqual(state.chained_modes.slice(0, 2), ['explore', 'fix']);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -91,6 +91,66 @@ test('single-mode prompt produces no chain on state', async () => {
   }
 });
 
+test('communication-only prompt does not seed a workflow', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-comm-'));
+  try {
+    const out = runDetector({ cwd, prompt: '한글로 말해봐', sessionId: 'comm-only' });
+    assert.equal(out.continue, true);
+    assert.equal(out.hookSpecificOutput, undefined, 'communication-only prompt must pass through');
+    assert.equal(findStateFile(cwd), null, 'communication-only prompt must not create workflow state');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('active workflow is sticky: natural-language explore does not reseed mode', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-sticky-'));
+  const sessionId = 'sticky-mode';
+  try {
+    const first = runDetector({ cwd, prompt: '다크모드 토글 추가해줘', sessionId });
+    assert.equal(first.continue, true);
+    const firstStatePath = findStateFile(cwd);
+    assert.ok(firstStatePath, 'initial implement state file not seeded');
+    const firstState = JSON.parse(readFileSync(firstStatePath, 'utf8'));
+    assert.equal(firstState.mode, 'implement');
+
+    const second = runDetector({ cwd, prompt: '파악해줘', sessionId });
+    assert.equal(second.continue, true);
+    assert.equal(second.hookSpecificOutput, undefined, 'sticky continuation must not inject Skill: explore');
+
+    const slugs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(slugs.length, 1, `active workflow must not create a second feature, got ${slugs}`);
+    const state = JSON.parse(readFileSync(firstStatePath, 'utf8'));
+    assert.equal(state.mode, 'implement', 'active workflow mode must remain implement');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('active workflow rollback intent injects current-mode investigate stage', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-rollback-'));
+  const sessionId = 'rollback-mode';
+  try {
+    const first = runDetector({ cwd, prompt: '다크모드 토글 추가해줘', sessionId });
+    assert.equal(first.continue, true);
+    const firstStatePath = findStateFile(cwd);
+    assert.ok(firstStatePath, 'initial implement state file not seeded');
+
+    const second = runDetector({ cwd, prompt: '다시 탐색해보자', sessionId });
+    assert.equal(second.continue, true);
+    const ctx = second.hookSpecificOutput?.additionalContext ?? '';
+    assert.match(ctx, /ACTIVE WORKFLOW CONTINUATION/);
+    assert.match(ctx, /Skill: workflow-investigate/);
+
+    const slugs = readdirSync(join(cwd, '.smt', 'features'));
+    assert.equal(slugs.length, 1, 'rollback intent must stay inside the active feature');
+    const state = JSON.parse(readFileSync(firstStatePath, 'utf8'));
+    assert.equal(state.mode, 'implement', 'rollback intent must not switch mode to explore');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test('explicit slash command bypasses classifier and seeds single mode', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-slash-'));
   try {
@@ -111,7 +171,21 @@ test('explicit slash command bypasses classifier and seeds single mode', async (
   }
 });
 
-test('think+implement chain (설계하고 구현해) seeds think → implement', async () => {
+test('retired slash commands are fail-closed and do not seed workflow state', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-retired-'));
+  try {
+    for (const prompt of ['/investigate auth', '/think auth', '/plan auth', '/simple-fix copy']) {
+      const out = runDetector({ cwd, prompt, sessionId: `retired-${prompt.slice(1, 5)}` });
+      assert.equal(out.continue, true);
+      assert.equal(out.hookSpecificOutput, undefined, `${prompt} must not inject workflow context`);
+    }
+    assert.equal(findStateFile(cwd), null, 'retired slash commands must not seed state');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('brainstorm+implement chain (설계하고 구현해) seeds brainstorm → implement', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-chain2-'));
   try {
     const out = runDetector({ cwd, prompt: '설계하고 구현해줘' });
@@ -120,8 +194,8 @@ test('think+implement chain (설계하고 구현해) seeds think → implement',
     const statePath = findStateFile(cwd);
     assert.ok(statePath, 'state file not seeded');
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
-    assert.deepEqual(state.chained_modes.slice(0, 2), ['think', 'implement']);
-    assert.equal(state.mode, 'think', 'entry mode must be first chain element');
+    assert.deepEqual(state.chained_modes.slice(0, 2), ['brainstorm', 'implement']);
+    assert.equal(state.mode, 'brainstorm', 'entry mode must be first chain element');
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -146,7 +220,7 @@ test('CSS2: slash command always creates new feature', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse2-'));
   try {
     runDetector({ cwd, prompt: '사이드바 폭 파악해줘', sessionId: 's1' });
-    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    runDetector({ cwd, prompt: '/explore 로그인 플로우', sessionId: 's1' });
     const dirs = readdirSync(join(cwd, '.smt', 'features'));
     assert.equal(dirs.length, 2, 'slash command creates distinct feature');
   } finally { await rm(cwd, { recursive: true, force: true }); }
@@ -155,30 +229,29 @@ test('CSS2: slash command always creates new feature', async () => {
 test('CSS3: after slash command, next natural-language follow-up REUSES the slash feature', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse3-'));
   try {
-    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    runDetector({ cwd, prompt: '/explore 로그인 플로우', sessionId: 's1' });
     runDetector({ cwd, prompt: 'OAuth 부분 추가로 확인', sessionId: 's1' });
     const dirs = readdirSync(join(cwd, '.smt', 'features'));
     assert.equal(dirs.length, 1, `post-slash follow-up must reuse; got ${dirs.length}: ${dirs.join(', ')}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('CSS3b: active workflow blocks LLM passthrough and keeps seeding current session', async () => {
+test('CSS3b: active workflow sticky follow-up does not inject a new mode', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse3b-'));
   try {
-    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    runDetector({ cwd, prompt: '/explore 로그인 플로우', sessionId: 's1' });
     const out = runDetector({ cwd, prompt: 'workflow-tasker가 뭐야?', sessionId: 's1' });
     assert.equal(out.continue, true);
-    const ctx = out.hookSpecificOutput?.additionalContext ?? '';
-    assert.match(ctx, /Skill: fix/);
+    assert.equal(out.hookSpecificOutput, undefined, 'sticky follow-up must not inject a different mode skill');
     const dirs = readdirSync(join(cwd, '.smt', 'features'));
-    assert.equal(dirs.length, 1, `active workflow follow-up must not passthrough or fork feature; got ${dirs.length}: ${dirs.join(', ')}`);
+    assert.equal(dirs.length, 1, `active workflow follow-up must not fork feature; got ${dirs.length}: ${dirs.join(', ')}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
 test('CSS3c: active workflow still allows transcript paste passthrough', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-reuse3c-'));
   try {
-    runDetector({ cwd, prompt: '/investigate 로그인 플로우', sessionId: 's1' });
+    runDetector({ cwd, prompt: '/explore 로그인 플로우', sessionId: 's1' });
     const out = runDetector({ cwd, prompt: '⏺ step 1\n⏺ step 2', sessionId: 's1' });
     assert.equal(out.continue, true);
     assert.equal(out.hookSpecificOutput, undefined);
@@ -208,7 +281,9 @@ test('CSS5: different session_id on same cwd gets its own active pointer', async
 
 // ── Slug preamble pruning (defense-in-depth behind SMELTER_CLASSIFIER_SUBPROCESS) ──
 
-test('SLUG1: "/fix You are a command classifier…" strips "You are a" preamble', async () => {
+const UUID_SLUG_RE = /^feature-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+test('SLUG1: "/fix You are a command classifier…" → uuid-fixed slug (no prompt derivation)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-you-'));
   try {
     runDetector({
@@ -218,20 +293,16 @@ test('SLUG1: "/fix You are a command classifier…" strips "You are a" preamble'
     });
     const slugs = readdirSync(join(cwd, '.smt', 'features'));
     assert.equal(slugs.length, 1, `expected 1 feature dir, got: ${slugs.join(', ')}`);
-    const slug = slugs[0];
-    assert.ok(!slug.startsWith('you-are'), `slug must not start with 'you-are'; got: ${slug}`);
-    assert.match(slug, /command|classifier|cli|smelter/, `slug should reflect domain; got: ${slug}`);
-    assert.ok(slug.length <= 50, `slug too long (${slug.length}): ${slug}`);
+    assert.match(slugs[0], UUID_SLUG_RE, `slug must be uuid-fixed; got: ${slugs[0]}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('SLUG2: "/fix The login endpoint…" drops leading filler "the"', async () => {
+test('SLUG2: "/fix The login endpoint…" → uuid-fixed slug (no filler leak, no prompt words)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-filler-'));
   try {
     runDetector({ cwd, prompt: '/fix The login endpoint 500 regression', sessionId: 'slug-s2' });
     const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
-    assert.ok(!slug.startsWith('the-'), `leading 'the' must be dropped; got: ${slug}`);
-    assert.match(slug, /^login/, `slug should lead with domain word 'login'; got: ${slug}`);
+    assert.match(slug, UUID_SLUG_RE, `slug must be uuid-fixed; got: ${slug}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -257,7 +328,7 @@ test('SLUG4: "/fix 당신은 …" strips Korean copula preamble', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('SLUG5: stacked preambles ("System: You are a X") peel iteratively', async () => {
+test('SLUG5: stacked preambles → uuid-fixed slug (no peel artifacts)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-slug-stacked-'));
   try {
     runDetector({
@@ -266,9 +337,7 @@ test('SLUG5: stacked preambles ("System: You are a X") peel iteratively', async 
       sessionId: 'slug-s5',
     });
     const slug = readdirSync(join(cwd, '.smt', 'features'))[0];
-    assert.ok(!slug.startsWith('system'), `nested 'System:' label must peel; got: ${slug}`);
-    assert.ok(!slug.startsWith('you-are'), `nested 'You are a' must peel; got: ${slug}`);
-    assert.match(slug, /command|classifier|fix|slug/, `slug should reflect domain; got: ${slug}`);
+    assert.match(slug, UUID_SLUG_RE, `slug must be uuid-fixed; got: ${slug}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -450,7 +519,7 @@ test('MK3 /fix 버그 ... with no magic keyword → default fix pipeline, no exe
 });
 
 // ---------------------------------------------------------------------------
-// Phase 24 — classification forwarding, THINK banner, no double Haiku call.
+// Phase 24 — classification forwarding, BRAINSTORM banner, no double Haiku call.
 // ---------------------------------------------------------------------------
 
 test('P24-2a detectNaturalLanguageCommand returns full classification object', () => {
@@ -513,7 +582,7 @@ test('P24-2b seedWorkflowState uses forwarded classification — no second stub 
   }
 });
 
-test('P24-3 THINK MODE banner emitted for think classification', async () => {
+test('P24-3 BRAINSTORM MODE banner emitted for brainstorm classification', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-p24-3-'));
   try {
     const input = JSON.stringify({ cwd, session_id: 'p24-3', prompt: '설계해줘' });
@@ -523,7 +592,7 @@ test('P24-3 THINK MODE banner emitted for think classification', async () => {
       env: { ...process.env, SMELTER_MODE_CLASSIFIER_MODULE: CLASSIFIER_STUB_PATH },
     });
     assert.equal(result.status, 0);
-    assert.match(result.stderr, /THINK MODE/, `THINK MODE tag must appear in stderr; got ${result.stderr}`);
+    assert.match(result.stderr, /BRAINSTORM MODE/, `BRAINSTORM MODE tag must appear in stderr; got ${result.stderr}`);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

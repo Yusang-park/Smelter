@@ -1,6 +1,6 @@
 ---
 name: workflow-human-check
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: all artifacts + team_review.md
 produces: user decision (rework | complete | hold | upgrade)
@@ -94,9 +94,26 @@ The `AskUserQuestion` call is the gate. A plain-text question asking "should I c
 | Field    | Value                                 |
 |----------|---------------------------------------|
 | Feature  | `<slug>`                              |
-| Task     | `<title>`                             |
+| Task     | `<title>` — `<user-facing detail>`    |
 | Mode     | `<mode>`                              |
 | Stages   | `<comma-separated completed skills>`  |
+
+**Task field — user-centric detail is mandatory.** Title alone ("fix login bug") is insufficient; user must see *what changed for them*. After the title, append `— <detail>` using one of:
+
+- **User flow change** (UI/UX/CLI/API surface): describe before → after in user terms.
+  - ✅ `Login redirect — before: stuck on 500 error page; after: returns to /dashboard with session restored`
+  - ✅ `/deploy CLI — before: required --env flag; after: auto-detects env from git branch`
+  - ❌ `Login redirect — refactored authMiddleware.ts`  (implementation detail, not user-visible)
+- **Technical problem resolved** (internal/infra/perf/security): state the concrete failure mode that's now fixed.
+  - ✅ `Connection pool leak — idle conns not released on 502, pool exhausted after ~2h; fix: release in finally block`
+  - ✅ `Race condition in queue consumer — duplicate message delivery under concurrent ACK; fix: atomic compare-and-swap on offset`
+  - ❌ `Pool leak — fixed pool.ts`  (no failure mode, no mechanism)
+
+**Rules:**
+- One line, ≤ 200 chars. If longer, put full rationale in Risks/notes and keep the cell short.
+- Prefer the **user flow change** form when the task touched any user-facing surface (`ui|cli|api`). Use **technical problem resolved** only for pure internals.
+- Include concrete mechanism or observable symptom — not "improved X" or "cleaned up Y".
+- Source of truth: `.smt/features/<slug>/task/<name>.md` should already carry this detail from the tasker stage; the Summary cell is a distilled one-liner, not a fresh invention. If the task md lacks user-centric framing, derive it from diff + plan.md + decisions.md.
 
 ### Artifacts table
 
@@ -154,7 +171,7 @@ Rules:
   1. `rework`   — specify rework targets → create `active_feedback` → route to `target_skill`
   2. `complete` — Git options (push current branch / new branch / local only)
   3. `hold`     — record status: `blocked`
-  4. `upgrade`  — upgrade mode (simple_fix → fix, etc.)
+  4. `upgrade`  — upgrade mode (for example, explore → fix)
 
 Do NOT paraphrase these options into a free-form text block; every human-check exit must route through `AskUserQuestion`.
 
@@ -188,6 +205,24 @@ Steps the skill still runs by hand:
 3. Append to `session/YYYY-MM-DD.md` log.
 4. Perform Git options.
 
+## Finishing options on `complete`
+
+Use the superpowers finishing-a-development-branch experience, adapted to Smelter's commit gate. Before offering Git options, summarize fresh verification evidence from the current task artifacts; do not claim completion from stale output.
+
+Present a concise choice set:
+
+1. `commit-local` — create a local commit after the human-check pass event exists.
+2. `push-pr` — push the current branch and create a pull request.
+3. `keep-as-is` — leave the branch and worktree untouched for the user.
+4. `discard` — discard this work only after typed confirmation `discard`.
+
+Safety rules:
+
+- Do not run `git commit` before the finalize-human-check pass event or completed stage exists.
+- Do not push, create a PR, merge, or delete branches unless the user explicitly chose that option.
+- For `discard`, list the branch/worktree/commits that would be removed and require exact typed confirmation.
+- If tests or E2E are failing, do not present merge/PR as ready; present rework or hold instead.
+
 Step 1 is the only load-bearing one — the hook observes that write and finalizes state for you. The earlier "SMT_HOOK_WRITE=1 node -e appendEvent+markComplete+writeState" dance is obsolete (and was blocked by the auto-mode permission classifier in practice).
 
 Note on `current_stage`: the state schema's `WORKFLOW_SKILLS` enum does not include the literal `"done"`, so the finalize hook deliberately leaves `current_stage` at `"workflow-human-check"` after finalization. The commit gate accepts the `completed_stages` entry and/or the `events[]` pass event written by the same hook — no terminal-state sentinel is required (or accepted).
@@ -203,6 +238,6 @@ Only on explicit user request: run full `pnpm test` / `npx playwright test`.
 | `complete` | Run the **On Complete** sequence above: write `results.md` (the finalize-human-check hook auto-writes the pass event + `completed_stages` from there), check the task md box, append the session log, then Git options. Halt after. |
 | `rework` | Create `active_feedback` entry, route to user-specified `target_skill` (default `workflow-coding`) |
 | `hold` | Set `state.json.status: blocked` — then halt |
-| `upgrade` | Transition mode (e.g., `simple_fix → fix`), re-enter appropriate entry skill |
+| `upgrade` | Transition mode (for example, `explore → fix`), re-enter appropriate entry skill |
 
 This is the ONLY workflow-* skill with `halts_session: true`. All other skills are forbidden from stopping the session per Iron Law #1.

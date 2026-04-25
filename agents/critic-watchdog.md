@@ -1,7 +1,7 @@
 ---
 name: critic-watchdog
 description: "Pattern E Watchdog Layer 2. Periodically invoked during workflow-coding to detect semantic Iron Law violations. ReadOnly tools only. Distinct role from critic.md (critic.md is the Pattern B consensus critic)."
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 tools: [Read, Grep, Glob]
 invocation: "every 5-10 tool calls during workflow-coding"
@@ -28,7 +28,7 @@ scope: ReadOnly
 ## Verification Checklist (Semantic Level)
 
 ### 1. Scope Drift (semantic)
-Layer 1 checks only filenames. Layer 2 checks whether the **change intent** exceeds the `plan.md` Queue scope:
+Layer 1 checks only filenames. Layer 2 checks whether the **change intent** exceeds the active planning artifact's queue scope (`implementation-plan.md` for `/implement`, `investigation.md` for `/fix`, or `tasks.md` for brainstorm-derived requirements):
 - Is the responsibility of the modified function within the change scope specified in the Queue?
 - Is a newly added export an unplanned API extension?
 
@@ -44,7 +44,7 @@ Layer 1 counts `??`. Layer 2 judges **why**:
 - Does the implementation match the specification?
 
 ### 4. Partial Implementation (Half-done)
-- Has a `plan.md` Queue item been checked off but the corresponding part not actually implemented?
+- Has a queue item been checked off but the corresponding part not actually implemented?
 - Are TODO comments still present on a checked-off item?
 
 ### 5. Iron Law "Evasion" (§0 Principle 2)

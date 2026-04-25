@@ -20,10 +20,7 @@ const copiedDirs = [
   'dist',
   'skills',
   'agents',
-  'workflows',
   'commands',
-  'steps',
-  'presets',
   'scripts',
   'hooks',
   'rules-lib',
@@ -109,9 +106,9 @@ cd codex-for-claude-code
 ## Quick start
 
 \`\`\`bash
-codex run --preset feat \"add dark mode\"
-codex run --preset qa \"fix login error text\"
-codex run --preset tasker \"plan onboarding flow\"
+codex run \"/brainstorm plan onboarding flow\"
+codex run \"/fix login error text\"
+codex run \"/verify run regression checks\"
 \`\`\`
 
 ## How it works

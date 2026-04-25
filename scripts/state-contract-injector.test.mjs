@@ -57,6 +57,8 @@ test('H2: every workflow-* skill name triggers injection', () => {
     for (const skill of [
       'workflow-investigate',
       'workflow-investigate-review',
+      'workflow-implementation-plan',
+      'workflow-implementation-plan-review',
       'workflow-tasker',
       'workflow-tasker-review',
       'workflow-write-test',
@@ -86,7 +88,7 @@ test('B1: non-workflow skill (caveman) is a no-op', () => {
 });
 
 test('B2: command skills (fix, implement, ...) are no-op (do not start with workflow-)', () => {
-  for (const skill of ['fix', 'implement', 'investigate', 'verify', 'think', 'queue']) {
+  for (const skill of ['fix', 'implement', 'explore', 'verify', 'brainstorm', 'queue']) {
     const r = run({ tool_name: 'Skill', tool_input: { skill } });
     const out = parse(r.stdout);
     assert.equal(out.hookSpecificOutput, undefined, `${skill} must not receive workflow injection`);
@@ -122,8 +124,8 @@ test('E3: empty payload → continue:true', () => {
 });
 
 // ── Command-skill state seeding (v3.3.4) ───────────────────────────────────
-// When the agent invokes a command-level skill (fix / implement / investigate /
-// verify / think) via the Skill tool instead of a typed `/slash`, the
+// When the agent invokes a command-level skill (fix / implement / explore /
+// verify / brainstorm) via the Skill tool instead of a typed `/slash`, the
 // UserPromptSubmit hook chain does not run and `keyword-detector.mjs` never
 // seeds `.state.json`. pre-tool-enforcer then blocks every code edit. This
 // hook closes that gap by seeding workflow state in-line.
@@ -287,9 +289,9 @@ test('I1: contract enumerates the three blocked write paths the agent must not a
 
 // ── Chain enforcement (skill-delegation-enforcement) ──────────────────────
 // PreToolUse:Skill must block workflow-* skill invocations that skip ahead
-// in the declared pipeline chain. Allowed moves from current_stage X:
+// in the active state's allowed_skills chain. Allowed moves from current_stage X:
 //   1. X itself (idempotent re-entry)
-//   2. NEXT_SKILL_ON_PASS[X] (forward)
+//   2. next skill in allowed_skills (forward)
 //   3. workflow-human-check (user-escape, always callable)
 //   4. Producer of X on fail-route (events[last]={skill:X,result:'fail'})
 // All other workflow-* targets → { continue: false, stopReason: string }.
@@ -412,6 +414,30 @@ test('CE6 error: current=workflow-tasker, skill=workflow-e2e (multi-skip) → BL
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('CE6b happy: implement current=workflow-investigate-review advances to implementation-plan, not tasker', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE6b', {
+      mode: 'implement',
+      current_stage: 'workflow-investigate-review',
+      allowed_skills: [
+        'workflow-investigate','workflow-investigate-review',
+        'workflow-implementation-plan','workflow-implementation-plan-review',
+        'workflow-write-test','workflow-coding',
+        'workflow-agent-review','workflow-e2e','workflow-e2e-review',
+        'workflow-team-code-review','workflow-human-check',
+      ],
+    });
+    const allowed = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-implementation-plan' }, session_id: 'sess-CE6b' }, cwd);
+    assert.equal(parse(allowed.stdout).continue, true);
+
+    const blocked = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-tasker' }, session_id: 'sess-CE6b' }, cwd);
+    const out = parse(blocked.stdout);
+    assert.equal(out.continue, false, 'mode-inactive tasker must not be the implement next step');
+    assert.match(out.stopReason || out.hookSpecificOutput?.permissionDecisionReason || '', /workflow-implementation-plan/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('CE7 edge: workflow-human-check is always callable (user-escape)', () => {
   const cwd = makeTempCwd();
   try {
@@ -472,15 +498,12 @@ test('CE11 edge: state pointer missing → chain check skipped (no false block)'
 test('CE12 edge: review pass event — forward to next in chain allowed', () => {
   const cwd = makeTempCwd();
   try {
-    // After investigate-review passes, next is workflow-tasker in /implement, workflow-write-test in /fix.
+    // After investigate-review passes, next is whatever the active allowed_skills order declares.
     seedState(cwd, 'sess-CE12', {
       current_stage: 'workflow-investigate-review',
       events: [{ t: new Date().toISOString(), skill: 'workflow-investigate-review', result: 'pass', declarer: 'hook' }],
     });
-    // /fix pipeline skips tasker → next is workflow-write-test per posttool-terminal-state-gate.
-    // But posttool-terminal-state-gate uses workflow-tasker as next. For a mode-agnostic gate,
-    // either target should pass; use workflow-tasker here to match the current NEXT_SKILL_ON_PASS map.
-    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-tasker' }, session_id: 'sess-CE12' }, cwd);
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-write-test' }, session_id: 'sess-CE12' }, cwd);
     const out = parse(r.stdout);
     assert.equal(out.continue, true);
   } finally { rmSync(cwd, { recursive: true, force: true }); }

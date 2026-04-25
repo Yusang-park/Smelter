@@ -1,7 +1,7 @@
 ---
 name: design-persona
 description: "Pattern D brainstorm sub-agent. Speaks as a designer: UX flow, visual hierarchy, accessibility, copy & tone."
-version: 2.3.0
+version: 0.4.0
 type: workflow-support
 model: opus
 disallowedTools: Write, Edit

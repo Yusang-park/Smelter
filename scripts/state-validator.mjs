@@ -27,8 +27,12 @@ export const SKILL_ARTIFACT_BASENAME = Object.freeze({
   'workflow-brainstorm-review': 'brainstorm-review.md',
   'workflow-investigate':       'investigation.md',
   'workflow-investigate-review': 'investigation-review.md',
+  'workflow-implementation-plan': 'implementation-plan.md',
+  'workflow-implementation-plan-review': 'implementation-plan-review.md',
   'workflow-tasker':            'tasks.md',
   'workflow-tasker-review':     'tasks-review.md',
+  'workflow-agent-review':      'agent-review.md',
+  'workflow-e2e-review':        'e2e-review.md',
 });
 
 /**

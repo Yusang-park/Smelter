@@ -1,30 +1,7 @@
 # Hooks System
 
-## Hook Types
+**Hook types:** PreToolUse (validation/param modification), PostToolUse (checks/format), Stop (final verification), SessionStart/End.
 
-- **PreToolUse**: Before tool execution (validation, parameter modification)
-- **PostToolUse**: After tool execution (auto-format, checks)
-- **Stop**: When session ends (final verification)
+**Permissions:** Configure `allowedTools` in settings. Never use `--dangerously-skip-permissions`.
 
-## Auto-Accept Permissions
-
-Use with caution:
-- Enable for trusted, well-defined plans
-- Disable for exploratory work
-- Never use dangerously-skip-permissions flag
-- Configure `allowedTools` in `~/.claude.json` instead
-
-## TodoWrite Best Practices
-
-Use TodoWrite tool to:
-- Track progress on multi-step tasks
-- Verify understanding of instructions
-- Enable real-time steering
-- Show granular implementation steps
-
-Todo list reveals:
-- Out of order steps
-- Missing items
-- Extra unnecessary items
-- Wrong granularity
-- Misinterpreted requirements
+**Note:** Smelter does NOT use TodoWrite. Track tasks in `.smt/features/<slug>/task/*.md` only.

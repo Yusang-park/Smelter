@@ -115,7 +115,8 @@ test('mode_transition_to_<mode> marker matches', () => {
   assert.equal(detectModeTransitionSignal('ready. mode_transition_to_implement now'), 'implement');
 });
 test('English "transitioning to X mode" matches', () => {
-  assert.equal(detectModeTransitionSignal('transitioning to think mode'), 'think');
+  assert.equal(detectModeTransitionSignal('transitioning to brainstorm mode'), 'brainstorm');
+  assert.equal(detectModeTransitionSignal('transitioning to think mode'), '');
 });
 test('English "switching to X mode" matches', () => {
   assert.equal(detectModeTransitionSignal('switching to fix mode'), 'fix');
@@ -313,7 +314,7 @@ test('single-element chain returns empty string', () => {
   assert.equal(consumeNextChainedMode('/tmp/nope', s), '');
 });
 test('two-element chain advances to next mode', () => {
-  withTempState(baseState({ mode: 'investigate', chained_modes: ['investigate', 'fix'] }), (path, state) => {
+  withTempState(baseState({ mode: 'explore', chained_modes: ['explore', 'fix'] }), (path, state) => {
     const next = consumeNextChainedMode(path, state);
     assert.equal(next, 'fix');
     assert.equal(state.mode, 'fix');
@@ -324,13 +325,13 @@ test('two-element chain advances to next mode', () => {
   });
 });
 test('requestedMode "*" takes the immediate next in chain', () => {
-  withTempState(baseState({ mode: 'think', chained_modes: ['think', 'implement'] }), (path, state) => {
+  withTempState(baseState({ mode: 'brainstorm', chained_modes: ['brainstorm', 'implement'] }), (path, state) => {
     const next = consumeNextChainedMode(path, state, '*');
     assert.equal(next, 'implement');
   });
 });
 test('requestedMode matching later entry skips head', () => {
-  withTempState(baseState({ mode: 'investigate', chained_modes: ['investigate', 'think', 'implement'] }), (path, state) => {
+  withTempState(baseState({ mode: 'explore', chained_modes: ['explore', 'brainstorm', 'implement'] }), (path, state) => {
     const next = consumeNextChainedMode(path, state, 'implement');
     assert.equal(next, 'implement');
     assert.deepEqual(state.chained_modes, ['implement']);
@@ -338,7 +339,7 @@ test('requestedMode matching later entry skips head', () => {
 });
 test('requestedMode not in remaining chain returns empty', () => {
   withTempState(baseState({ mode: 'fix', chained_modes: ['fix', 'implement'] }), (path, state) => {
-    const next = consumeNextChainedMode(path, state, 'think');
+    const next = consumeNextChainedMode(path, state, 'brainstorm');
     assert.equal(next, '');
   });
 });
@@ -364,6 +365,16 @@ test('workflow-human-check with pass event → session_wrap (terminal approval)'
   const s = baseState({ current_stage: 'workflow-human-check', events: [passEvent('workflow-human-check')] });
   const d = decide({ state: s, lastAssistantText: '' });
   assert.equal(d.action, 'session_wrap');
+});
+test('v0.4 controller: human-check pass advances step to DONE', () => {
+  const s = baseState({ current_stage: 'workflow-human-check', events: [passEvent('workflow-human-check')] });
+  s.task_type = 'write';
+  s.step = 'HUMAN_CHECK';
+  s.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+  const d = decide({ state: s, lastAssistantText: '' });
+  assert.equal(d.action, 'session_wrap');
+  assert.equal(s.step, 'DONE');
+  assert.deepEqual(s.allowed_actions, ['read', 'git_commit']);
 });
 test('workflow-human-check with prior-skill pass event → halt (Fix B)', () => {
   // Regression guard for the loop described in investigation.md:
@@ -569,6 +580,20 @@ test('last event fail routes via producer chain → enter_skill', () => {
   // Producer chain for workflow-coding typecheck goes back to workflow-coding itself
   assert.equal(d.payload.skill, 'workflow-coding');
 });
+test('v0.4 controller: verification fail advances step to RECOVER before producer routing', () => {
+  const s = baseState({
+    current_stage: 'workflow-e2e',
+    events: [failEvent('workflow-e2e', 'assertion')],
+  });
+  s.task_type = 'write';
+  s.step = 'VERIFY';
+  s.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+  const d = decide({ state: s, lastAssistantText: 'clean' });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.skill, 'workflow-coding');
+  assert.equal(s.step, 'RECOVER');
+  assert.deepEqual(s.allowed_actions, ['read', 'write_artifact']);
+});
 test('last event pass → advance', () => {
   const s = baseState({
     current_stage: 'workflow-write-test',
@@ -576,6 +601,19 @@ test('last event pass → advance', () => {
   });
   const d = decide({ state: s, lastAssistantText: 'clean' });
   assert.equal(d.action, 'advance');
+});
+test('v0.4 controller: stage pass advances bridged step along flow', () => {
+  const s = baseState({
+    current_stage: 'workflow-write-test',
+    events: [passEvent('workflow-write-test')],
+  });
+  s.task_type = 'write';
+  s.step = 'TEST_DESIGN';
+  s.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+  const d = decide({ state: s, lastAssistantText: 'clean' });
+  assert.equal(d.action, 'advance');
+  assert.equal(s.step, 'EXECUTE');
+  assert.deepEqual(s.allowed_actions, ['read', 'write_source', 'run_test']);
 });
 test('H2: advance payload names the next skill via pickNextStage', () => {
   const s = baseState({
@@ -597,9 +635,9 @@ test('H2: advance from workflow-investigate → workflow-investigate-review', ()
   assert.equal(d.payload.skill, 'workflow-investigate-review');
 });
 
-test('investigate-review pass halts for user mode decision in investigate mode', () => {
+test('investigate-review pass halts for user mode decision in explore mode', () => {
   const s = baseState({
-    mode: 'investigate',
+    mode: 'explore',
     allowed_skills: ['workflow-investigate', 'workflow-investigate-review'],
     current_stage: 'workflow-investigate-review',
     completed_stages: ['workflow-investigate'],
@@ -607,7 +645,7 @@ test('investigate-review pass halts for user mode decision in investigate mode',
   });
   const d = decide({ state: s, lastAssistantText: 'mode_transition gate' });
   assert.equal(d.action, 'halt');
-  assert.match(d.reason, /investigate mode user decision/);
+  assert.match(d.reason, /explore mode user decision/);
 });
 test('H2: advance at terminal stage falls back to workflow-human-check', () => {
   // No explicit next after workflow-team-code-review except human-check.
@@ -659,7 +697,7 @@ test('no signal + empty message → classify_needed with empty payload', () => {
 section('decide() — chained intent auto-transition (§4-3 gate + §11 integration)');
 // ----------------------------------------------------------------------------
 test('chained_modes + transition signal → chain_advance', () => {
-  withTempState(baseState({ mode: 'investigate', chained_modes: ['investigate', 'fix'], current_stage: 'workflow-investigate-review', events: [passEvent('workflow-investigate-review')] }), (path, state) => {
+  withTempState(baseState({ mode: 'explore', chained_modes: ['explore', 'fix'], current_stage: 'workflow-investigate-review', events: [passEvent('workflow-investigate-review')] }), (path, state) => {
     const d = decide({
       state,
       lastAssistantText: 'transitioning to fix mode',
@@ -670,7 +708,7 @@ test('chained_modes + transition signal → chain_advance', () => {
   });
 });
 test('chain_advance fires BEFORE halt — compound intents bypass human-check wait', () => {
-  withTempState(baseState({ mode: 'think', chained_modes: ['think', 'implement'], current_stage: 'workflow-human-check' }), (path, state) => {
+  withTempState(baseState({ mode: 'brainstorm', chained_modes: ['brainstorm', 'implement'], current_stage: 'workflow-human-check' }), (path, state) => {
     const d = decide({
       state,
       lastAssistantText: 'transitioning to implement mode',
@@ -685,7 +723,7 @@ test('transition signal without chain → no chain_advance', () => {
   assert.notEqual(d.action, 'chain_advance');
 });
 test('missing statePath disables chain_advance (safe default)', () => {
-  const s = baseState({ mode: 'think', chained_modes: ['think', 'implement'], events: [] });
+  const s = baseState({ mode: 'brainstorm', chained_modes: ['brainstorm', 'implement'], events: [] });
   const d = decide({ state: s, lastAssistantText: 'transitioning to implement mode' });
   assert.notEqual(d.action, 'chain_advance');
 });
@@ -709,8 +747,8 @@ test('H2: advance injection names the skill when payload.skill is set', () => {
   assert.match(text, /workflow-coding/);
 });
 test('chain_advance includes target + remaining chain tail', () => {
-  const s = baseState({ mode: 'think' });
-  const text = buildPromptInjection({ action: 'chain_advance', reason: 'r', payload: { nextMode: 'implement', remaining: ['think', 'implement', 'fix'] } }, s);
+  const s = baseState({ mode: 'brainstorm' });
+  const text = buildPromptInjection({ action: 'chain_advance', reason: 'r', payload: { nextMode: 'implement', remaining: ['brainstorm', 'implement', 'fix'] } }, s);
   assert.match(text, /implement/);
   assert.match(text, /remaining chain/);
 });
@@ -891,10 +929,10 @@ test('buildStageCompletionPrompt includes mode, stage, message', () => {
   const p = buildStageCompletionPrompt({
     lastMessage: 'I have found three root causes and documented evidence.',
     currentStage: 'workflow-investigate',
-    mode: 'investigate',
+    mode: 'explore',
   });
   assert.match(p, /workflow-investigate/);
-  assert.match(p, /mode:\s*investigate/i);
+  assert.match(p, /mode:\s*explore/i);
   assert.match(p, /I have found three root causes/);
   assert.match(p, /verdict/);
 });
@@ -1653,7 +1691,7 @@ test('decide: review stage_complete with fail verdict routes back via producer c
   const state = baseState({ mode: 'implement', current_stage: 'workflow-e2e-review' });
   state.allowed_skills = ['workflow-coding', 'workflow-e2e', 'workflow-e2e-review'];
   const lastMessage = [
-    '3-round review done.',
+    '2-round review done.',
     'Verdict\n\nfail',
     'Route: workflow-coding',
     'insufficient scenario coverage on CLI surface.',
@@ -1893,6 +1931,23 @@ test('Fix A companion 2-3: null/undefined current_stage → advance branch safel
   });
   // Must not crash and must not return advance (current_stage is null → guard trips)
   assert.notEqual(d.action, 'advance', 'null current_stage does not trigger advance');
+});
+
+test('Fix A companion 2-4: cross-stage pass + prior fail on current_stage (producer-chain recovery) → advance fires', () => {
+  // Producer-chain recovery: current_stage failed earlier, producer ran and passed,
+  // the currentStageHasFail OR-branch allows advance even though last.skill !== current_stage.
+  const s = baseState({
+    mode: 'fix',
+    current_stage: 'workflow-coding',
+    events: [failEvent('workflow-coding', 'scope_mismatch'), passEvent('workflow-tasker')],
+  });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'a'.repeat(50),
+    statePath: '/tmp/fake/task/f.state.json',
+    stageClassifier: () => ({ verdict: 'unknown', summary: '' }),
+  });
+  assert.equal(d.action, 'advance', 'currentStageHasFail OR-branch allows advance on producer-chain recovery');
 });
 
 // ----------------------------------------------------------------------------

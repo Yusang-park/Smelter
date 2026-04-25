@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 const CACHE_DIR = join(homedir(), '.claude', 'hud', 'task-summary');
 const MIN_PROMPT_LENGTH = 5;
-const SLASH_CMD_RE = /^\/(plan|build|fix|cancel|queue|help|model|usage|hud|instinct|evolve|doctor|skill)\b/i;
+const SLASH_CMD_RE = /^\/\S+/;
 
 function cacheKeyForCwd(cwd) {
   return Buffer.from(cwd || 'default').toString('base64url');

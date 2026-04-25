@@ -1,6 +1,6 @@
 ---
 name: workflow-team-code-review
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: full task change + e2e artifacts
 produces: team_review.md
@@ -14,7 +14,7 @@ team_template:
     max_rounds: 5
     aggregator: arbitrator
 result_types: [pass, fail]
-min_verification_rounds: 3
+min_verification_rounds: 2
 verification_rounds:
   - n: 1
     focus: omission
@@ -22,9 +22,6 @@ verification_rounds:
   - n: 2
     focus: contradiction
     prompt_template: templates/verification/round-2-contradiction.md
-  - n: 3
-    focus: edge_case
-    prompt_template: templates/verification/round-3-edge-case.md
 gate:
   postcondition:
     - file_exists: "team_review.md"
@@ -45,15 +42,15 @@ The final team review. Re-examines the whole implementation from 3 independent p
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
-**Announce at start:** "I'm using workflow-team-code-review to run 95% consensus + 3-round review on the complete task."
+**Announce at start:** "I'm using workflow-team-code-review to run 95% consensus + 2-round review on the complete task."
 
 ## The Iron Law
 
 ```
-NO HUMAN-CHECK HANDOFF WITHOUT 95% CONSENSUS AND 3/3 ROUNDS AT pass
+NO HUMAN-CHECK HANDOFF WITHOUT 95% CONSENSUS AND 2/2 ROUNDS AT pass
 ```
 
-Both must hold: `consensus_reached === true` AND `completed_rounds === 3 && all rounds result === pass`.
+Both must hold: `consensus_reached === true` AND `completed_rounds === 2 && all rounds result === pass`.
 
 ## Pattern B consensus (95%)
 
@@ -98,7 +95,7 @@ Rounds repeat until agreement ≥ 95% (max 5).
 | "workflow-agent-review passed, this is rubber-stamp" | Team review sees the WHOLE task + E2E artifacts. Agent review saw only the diff. New findings here are common. |
 | "95% is close to 90%" | Threshold is 95%. 90% is not pass. Run another round. |
 | "Advocate and critic have stopped disagreeing early — force consensus" | 95% computed by arbitrator, not forced. |
-| "All findings are MEDIUM, route to coding and call it done" | MEDIUM routes to coding. But the review itself still needs 3-round pass before the handoff. |
+| "All findings are MEDIUM, route to coding and call it done" | MEDIUM routes to coding. But the review itself still needs 2-round pass before the handoff. |
 | "Prior agent-review findings are auto-resolved by now" | Re-verify that each finding has been addressed in the diff. Missing resolutions are `HIGH`. |
 
 ## Rationalization Prevention
@@ -106,45 +103,43 @@ Rounds repeat until agreement ≥ 95% (max 5).
 | Excuse | Reality |
 |--------|---------|
 | "Nothing will change in round 2" | Round 2 targets contradiction. Absence is what the round reveals. |
-| "Skip round 3 — edge cases are too rare" | Rare cases in prod are expensive. Round 3 catches them. |
+| "Skip round 2 — contradictions are too rare" | Contradictions in review evidence are costly. Round 2 catches them. |
 | "I'm tired" | Iron Law applies. |
 
 ## Consensus not reached
 
 5 rounds exceeded → enter section 11-7 Stall Cascade Level 2. Do NOT force-pass.
 
-## Multi-Pass Verification (3-Round Enforcement)
+## Multi-Pass Verification (2-Round Enforcement)
 
-This skill runs **3 mandatory rounds** before declaring `pass`. Each round has a distinct focus:
+This skill runs **2 mandatory rounds** before declaring `pass`. Each round has a distinct focus:
 
 | Round | Focus | Question |
 |-------|-------|----------|
 | 1 | Omission | Are any diff paths, prior review findings, or plan items unaddressed? |
 | 2 | Contradiction | Are there conflicts between advocate/critic findings, or with earlier review artifacts? |
-| 3 | Edge case | Are regression, performance, security, and maintainability edge scenarios covered? |
 
 ### Agent assignment per round
 
 - **Pattern A**: Prefer different agent types across rounds. If reusing the same type, reset prompt context per round (fresh perspective).
 - **Pattern B**: Each round runs with 95% consensus (3 × N agents × consensus rounds).
-- **Pattern D**: Lead orchestrates 3 rounds, assigning different viewpoint sub-agents.
+- **Pattern D**: Lead orchestrates 2 rounds, assigning different viewpoint sub-agents.
 
 ### State recording
 
-All rounds recorded in `state.json.team_runtime.workflow-team-code-review.rounds[]`. Skill-level `pass` is declared only when `completed_rounds === 3 && all rounds result === pass`.
+All rounds recorded in `state.json.team_runtime.workflow-team-code-review.rounds[]`. Skill-level `pass` is declared only when `completed_rounds === 2 && all rounds result === pass`.
 
 ### Failure handling
 
 - Any round `fail` → skill-level fail with `cause: verification_failed`, `evidence: {round, focus, findings[]}`
 - Producer-chain routes to the skill's consumed-artifact producer based on severity (`workflow-tasker` or `workflow-coding`)
-- On re-entry after upstream fix, ALL 3 rounds re-run (not just failed ones)
+- On re-entry after upstream fix, both rounds re-run (not just failed ones)
 
 ### Anti-evasion enforcement
 
 1. Do not inject prior round conclusions into current round prompts (bias prevention)
 2. Critic Watchdog blocks "already verified" skip statements
-3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥2 types)
-4. Declaring `pass` with `completed_rounds < 3` is blocked by hook
+3. Declaring `pass` with `completed_rounds < 2` is blocked by hook
 
 ## Terminal State — Required Next Skill
 

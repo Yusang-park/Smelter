@@ -135,10 +135,25 @@ function main() {
     if (state.mode !== 'fix' && state.mode !== 'implement') {
       process.stdout.write(JSON.stringify({ continue: true })); return;
     }
-    if (state.current_stage !== 'workflow-human-check') {
-      // Only finalize from the canonical wait-state. Prevents accidentally
-      // flipping terminal state when an unrelated results.md write happens
-      // much later (e.g., the user re-edits the file post-completion).
+    // Accept finalize when workflow-human-check is the terminal skill of this
+    // run's pipeline AND current_stage is either human-check itself or the
+    // penultimate skill. The penultimate case is the real production path:
+    // skill-stage-transition.mjs advances current_stage on PostToolUse:Skill
+    // (Skill completion), but the Write(results.md) that triggers this hook
+    // fires DURING Skill(workflow-human-check) — so current_stage is still the
+    // predecessor skill at that moment. Line 146's alreadyPassed idempotency
+    // check prevents post-completion re-flips; the earlier strict
+    // current_stage === 'workflow-human-check' guard was redundant and caused
+    // the live timing bug where finalize no-op'd the first results.md write.
+    const pipeline = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+    const hcIdx = pipeline.indexOf('workflow-human-check');
+    if (hcIdx < 0) {
+      process.stdout.write(JSON.stringify({ continue: true })); return;
+    }
+    const penultimate = hcIdx > 0 ? pipeline[hcIdx - 1] : null;
+    const isHumanCheck = state.current_stage === 'workflow-human-check';
+    const isPenultimate = penultimate !== null && state.current_stage === penultimate;
+    if (!isHumanCheck && !isPenultimate) {
       process.stdout.write(JSON.stringify({ continue: true })); return;
     }
 

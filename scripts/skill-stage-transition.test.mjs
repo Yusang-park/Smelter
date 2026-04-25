@@ -24,15 +24,15 @@ const SKILL_ARTIFACT = {
   'workflow-tasker-review': 'tasks-review.md',
 };
 
-function seedState(cwd, { mode = 'investigate', slug = 'feat', sessionId = 't3' } = {}) {
+function seedState(cwd, { mode = 'explore', slug = 'feat', sessionId = 't3' } = {}) {
   const taskDir = join(cwd, '.smt', 'features', slug, 'task');
   mkdirSync(taskDir, { recursive: true });
   mkdirSync(join(cwd, '.smt', 'state'), { recursive: true });
   const statePath = join(taskDir, `${slug}.state.json`);
   const state = createInitialState({ taskId: slug, mode });
-  state.allowed_skills = { investigate: ['workflow-investigate', 'workflow-investigate-review'],
+  state.allowed_skills = { explore: ['workflow-investigate', 'workflow-investigate-review'],
     fix: ['workflow-investigate', 'workflow-coding', 'workflow-agent-review', 'workflow-e2e', 'workflow-human-check'],
-    think: ['workflow-brainstorm', 'workflow-investigate', 'workflow-tasker'],
+    brainstorm: ['workflow-brainstorm', 'workflow-investigate', 'workflow-tasker'],
     implement: ['workflow-coding', 'workflow-e2e'],
     verify: ['workflow-verify', 'workflow-e2e', 'workflow-human-check'],
   }[mode] || [];
@@ -81,7 +81,7 @@ function readState(statePath) {
 test('T3-H1: workflow-investigate with artifact → completed_stages append', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-h1-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     seedArtifact(sp, 'workflow-investigate');
     const r = runTransition({ cwd, skill: 'workflow-investigate' });
     assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
@@ -95,7 +95,7 @@ test('T3-H1: workflow-investigate with artifact → completed_stages append', as
 test('T3-H2: workflow-investigate WITHOUT artifact → current_stage only, defers completion', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-h2-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     // Note: no artifact file written
     runTransition({ cwd, skill: 'workflow-investigate' });
     const state = readState(sp);
@@ -140,7 +140,7 @@ test('T3-B3: workflow-agent-review in exception list — current_stage only', as
 test('T3-E1: skill not in mode allowed_skills → warn, no mutation', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-e1-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     const before = readState(sp);
     runTransition({ cwd, skill: 'workflow-coding' });
     const after = readState(sp);
@@ -160,7 +160,7 @@ test('T3-E2: no active state → no crash, noop', async () => {
 test('T3-C1: duplicate invocation is idempotent (no double-append)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-c1-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     seedArtifact(sp, 'workflow-investigate');
     runTransition({ cwd, skill: 'workflow-investigate' });
     runTransition({ cwd, skill: 'workflow-investigate' });
@@ -173,7 +173,7 @@ test('T3-C1: duplicate invocation is idempotent (no double-append)', async () =>
 test('T3-C2: non-Skill tool call is ignored', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-c2-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     const payload = JSON.stringify({
       cwd, tool_name: 'Bash',
       tool_input: { command: 'echo hi' },
@@ -189,7 +189,7 @@ test('T3-C2: non-Skill tool call is ignored', async () => {
 test('T3-I1: sequential skill invocations build completed_stages in order', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-i1-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     seedArtifact(sp, 'workflow-investigate');
     seedArtifact(sp, 'workflow-investigate-review');
     runTransition({ cwd, skill: 'workflow-investigate' });
@@ -206,7 +206,7 @@ test('T3-I1: sequential skill invocations build completed_stages in order', asyn
 test('T3-S1: per-session pointer with traversal slug escaping cwd is rejected', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-s1-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     seedArtifact(sp, 'workflow-investigate');
     // Forge per-session pointer with a slug that resolves outside cwd
     const forgedOutside = join(tmpdir(), `forged-${Date.now()}.state.json`);
@@ -223,7 +223,7 @@ test('T3-S1: per-session pointer with traversal slug escaping cwd is rejected', 
 });
 
 // ── Entry-command stage seeding (workflow chain enforcement) ───────────────
-// When the main agent invokes an entry command skill (think / fix / investigate /
+// When the main agent invokes an entry command skill (brainstorm / fix / investigate /
 // implement / verify) the hook must set current_stage
 // to the mode's entry_skill WITHOUT writing to completed_stages, so Iron
 // Law #5 is not violated but Stop hook no longer loops on a seeded entry.
@@ -242,9 +242,9 @@ test('ST-E1: Skill(skill="fix") in fix-mode state sets current_stage=workflow-in
 test('ST-E2: repeated entry-command invocation is idempotent', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'st-e2-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
-    runTransition({ cwd, skill: 'investigate' });
-    runTransition({ cwd, skill: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
+    runTransition({ cwd, skill: 'explore' });
+    runTransition({ cwd, skill: 'explore' });
     const state = readState(sp);
     assert.equal(state.current_stage, 'workflow-investigate');
     assert.deepEqual(state.completed_stages, []);
@@ -263,14 +263,57 @@ test('ST-E3: unknown skill (non-workflow, non-entry) is ignored', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('ST-E4: entry command "think" maps to think mode entry_skill (workflow-brainstorm)', async () => {
+test('V04-I1: workflow-coding invocation advances bridged v0.4 step to EXECUTE', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'v04-i1-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.user_mode = 'fix';
+    state.task_type = 'write';
+    state.step = 'TEST_DESIGN';
+    state.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.allowed_actions = ['read', 'write_test', 'run_test'];
+    state.allowed_skills.push('workflow-coding');
+    state.test_cycles = [{ action: 'added_case', run_result: 'fail' }];
+    writeFileSync(sp, JSON.stringify(state, null, 2));
+
+    const r = runTransition({ cwd, skill: 'workflow-coding' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.step, 'EXECUTE');
+    assert.deepEqual(after.allowed_actions, ['read', 'write_source', 'run_test']);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('V04-I2: workflow-human-check invocation advances bridged v0.4 step to HUMAN_CHECK', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'v04-i2-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.user_mode = 'fix';
+    state.task_type = 'write';
+    state.step = 'VERIFY';
+    state.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.allowed_actions = ['read', 'run_test', 'run_e2e', 'write_artifact'];
+    state.allowed_skills.push('workflow-human-check');
+    writeFileSync(sp, JSON.stringify(state, null, 2));
+
+    const r = runTransition({ cwd, skill: 'workflow-human-check' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.step, 'HUMAN_CHECK');
+    assert.deepEqual(after.allowed_actions, ['read', 'write_artifact', 'ask_user']);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E4: entry command "brainstorm" maps to brainstorm mode entry_skill (workflow-brainstorm)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'st-e4-'));
   try {
-    const sp = seedState(cwd, { mode: 'think' });
-    const r = runTransition({ cwd, skill: 'think' });
+    const sp = seedState(cwd, { mode: 'brainstorm' });
+    const r = runTransition({ cwd, skill: 'brainstorm' });
     assert.equal(r.status, 0);
     const state = readState(sp);
-    // modes.yaml → think.entry_skill = workflow-brainstorm
+    // modes.yaml → brainstorm.entry_skill = workflow-brainstorm
     assert.equal(state.current_stage, 'workflow-brainstorm');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
@@ -288,7 +331,7 @@ test('regression: skill-stage-transition.mjs has NO literal SKILL_ARTIFACT map a
 test('T3-S2: per-session pointer with slug producing non-canonical path is rejected', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-s2-'));
   try {
-    const sp = seedState(cwd, { mode: 'investigate' });
+    const sp = seedState(cwd, { mode: 'explore' });
     seedArtifact(sp, 'workflow-investigate');
     // Non-canonical: put state.json outside the /features/<slug>/task/ pattern
     const nonCanonical = join(cwd, 'random.state.json');

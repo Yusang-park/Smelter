@@ -1,8 +1,8 @@
 # Smelter: /verify — Non-modifying Verification
 
-Run the `verify` mode on $ARGUMENTS. Use for **점검** (health check) and **테스트** (run tests) without modifying the codebase. Produces a single `verify_report.md` covering tests + static inspection + E2E interface.
+Run the `verify` mode on $ARGUMENTS. Use for **점검** (health check) and **테스트** (run tests) without modifying the codebase. The experience follows superpowers verification-before-completion: evidence before claims, fresh command output before any pass/fail statement, and a report the user can inspect.
 
-Backed by `modes/verify.json`. Allowed workflow skills: `workflow-verify`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`.
+Backed by `modes/workflow.yaml`. Allowed workflow skills: `workflow-verify`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`.
 
 ## Task
 $ARGUMENTS
@@ -10,13 +10,14 @@ $ARGUMENTS
 ## Protocol
 
 1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: verify`, `exempt.tdd: true`.
-2. Entry skill is `workflow-verify` — runs three phases in one invocation:
+2. Entry skill is `workflow-verify` — records verification concerns before real-interface execution:
    - **Phase 1: Test code execution** (vitest/jest/pytest, scoped)
    - **Phase 2: Code logic inspection** (tsc, eslint, state-schema, doc-sync)
-   - **Phase 3: E2E interface** (Playwright / API / CLI per 5-Surface Mapping)
-3. Output: `verify_report.md` with all three sections + a summary verdict.
-4. If the report verdict is `fail`, the workflow surfaces a `/fix` mode-upgrade suggestion.
-5. `workflow-human-check` finalizes — user confirms or initiates rework via mode upgrade.
+   - **Phase 3: E2E interface scope** (surfaces/scenarios for `workflow-e2e`)
+3. Output: `verify_report.md` with test/static results and E2E scope requirements.
+4. `workflow-e2e` drives the real interface for any required surface and captures artifacts.
+5. `workflow-e2e-review` verifies artifacts and effect evidence.
+6. `workflow-human-check` finalizes — user confirms, starts rework, or initiates mode upgrade.
 
 ## When to use
 
@@ -27,13 +28,19 @@ $ARGUMENTS
 | "run the tests" / "run verification" | /verify |
 | "테스트하고 문제 있으면 고쳐" | /verify → /fix (auto-chain) |
 | "점검 후 수정해" | /verify → /fix (auto-chain) |
-| "맥락 파악해" / "검증해봐" (static read) | /investigate (not /verify) |
+| "맥락 파악해" / "검증해봐" (static read) | `/explore` (not `/verify`) |
 
 ## Does NOT do
 
 - Never modifies source code or test files. Strictly read + execute + report.
 - Does not run Multi-Pass Verification (that's for review skills). One invocation = one report.
 - Does not write new tests (that's `workflow-write-test` under `/fix` or `/implement`).
+
+## Evidence-before-claims
+
+- Do not claim tests, lint, build, E2E, or health checks pass before running the proving command in the current verification flow.
+- Read the full output and record exit codes, counts, failures, and artifact paths.
+- If evidence is partial, say exactly what was verified and what remains unverified.
 
 ## Iron Law
 

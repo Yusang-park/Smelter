@@ -1,6 +1,6 @@
 ---
 name: workflow-investigate-review
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: investigation.md
 produces: investigation-review.md
@@ -8,7 +8,7 @@ default_pattern: A
 default_agent: explore-high
 supports_patterns: [A]
 result_types: [pass, fail, reshape]
-min_verification_rounds: 2   # v3.1 — mid-pipeline review (omission + contradiction). Edge-case dropped for speed.
+min_verification_rounds: 2
 verification_rounds:
   - n: 1
     focus: omission
@@ -16,12 +16,9 @@ verification_rounds:
   - n: 2
     focus: contradiction
     prompt_template: templates/verification/round-2-contradiction.md
-  - n: 3
-    focus: edge_case
-    prompt_template: templates/verification/round-3-edge-case.md
 gate:
   postcondition:
-    - file_exists: "investigate_review.md"
+    - file_exists: "investigation-review.md"
     - contains_decision: "pass|fail|reshape"
 ---
 
@@ -29,25 +26,25 @@ gate:
 
 ## Overview
 
-Reviews `investigation.md`. Identifies missing coverage, excess, and risks before tasker consumes.
+Reviews `investigation.md`. Identifies missing coverage, excess, and risks before the active mode's next planning or execution stage consumes it.
 
-**Core principle:** Tasker only gets evidence that survives 3-round review. Partial review is not review.
+**Core principle:** Downstream stages only get evidence that survives 2-round review. Partial review is not review.
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
-**Announce at start:** "I'm using workflow-investigate-review to run 3-round verification on `investigation.md`."
+**Announce at start:** "I'm using workflow-investigate-review to run 2-round verification on `investigation.md`."
 
 ## The Iron Law
 
 ```
-NO TASKER HANDOFF WITHOUT 3/3 REVIEW ROUNDS AT pass
+NO DOWNSTREAM HANDOFF WITHOUT 2/2 REVIEW ROUNDS AT pass
 ```
 
-Skill-level `pass` requires `completed_rounds === 3 && all rounds result === pass`. Declaring `pass` with `completed_rounds < 3` is blocked by hook.
+Skill-level `pass` requires `completed_rounds === 2 && all rounds result === pass`. Declaring `pass` with `completed_rounds < 2` is blocked by hook.
 
 ## Output
 
-`investigate_review.md`:
+`investigation-review.md`:
 
 - `## Verdict` — `pass` / `fail` / `reshape`
 - `## Coverage Check` — whether any area is missing
@@ -58,9 +55,8 @@ Skill-level `pass` requires `completed_rounds === 3 && all rounds result === pas
 
 | Thought | Reality |
 |---------|---------|
-| "The investigation looks fine, skip rounds 2–3" | Hook blocks sub-3 pass. Run all rounds. |
+| "The investigation looks fine, skip round 2" | Hook blocks sub-2 pass. Run both rounds. |
 | "No contradictions, round 2 is wasted" | Round 2 finds the contradictions. Absence is what the round discovers. |
-| "Edge cases can be caught in tasker-review" | Each review catches different bugs. Do not defer. |
 | "Reshape feels heavy, downgrade to fail" | If scope is wrong, reshape. Calling reshape `fail` wastes the investigate re-run without fixing the upstream brainstorm. |
 
 ## Rationalization Prevention
@@ -73,54 +69,55 @@ Skill-level `pass` requires `completed_rounds === 3 && all rounds result === pas
 
 ## Routing
 
-- `pass` → next skill in the mode's default order (`workflow-tasker` or `mode_transition`)
+- `pass` → next skill in the active mode's default order
 - `fail` → re-run `workflow-investigate` (a specific area may be designated)
 - `reshape` → `workflow-brainstorm` (scope was wrong from the planning stage; evidence required)
 
 ## Mode-specific exits
 
-- `investigate` mode: on pass, `mode_transition` gate
-- `fix`/`implement` mode: on pass, `workflow-tasker`
-- `plan` mode: on pass, `workflow-tasker`
+- `/brainstorm` mode: on pass, `workflow-tasker`
+- `/implement` mode: on pass, `workflow-implementation-plan`
+- `/fix` mode: on pass, `workflow-write-test`
+- `/explore` mode: on pass, `mode_transition` gate
 
-## Multi-Pass Verification (3-Round Enforcement)
+## Multi-Pass Verification (2-Round Enforcement)
 
-This skill runs **3 mandatory rounds** before declaring `pass`. Each round has a distinct focus:
+This skill runs **2 mandatory rounds** before declaring `pass`. Each round has a distinct focus:
 
 | Round | Focus | Question |
 |-------|-------|----------|
 | 1 | Omission | Is any required area (schema, API surface, UI, security, docs) missing? |
 | 2 | Contradiction | Are there conflicting findings across areas or with the brainstorm? |
-| 3 | Edge case | Are boundary data paths, rare code paths, or external-system edge behaviors covered? |
 
 ### Agent assignment per round
 
 - **Pattern A**: Prefer different agent types across rounds. If reusing the same type, reset prompt context per round (fresh perspective).
 - **Pattern B**: Each round runs with 95% consensus (3 × N agents × consensus rounds).
-- **Pattern D**: Lead orchestrates 3 rounds, assigning different viewpoint sub-agents.
+- **Pattern D**: Lead orchestrates 2 rounds, assigning different viewpoint sub-agents.
 
 ### State recording
 
-All rounds recorded in `state.json.team_runtime.workflow-investigate-review.rounds[]`. Skill-level `pass` is declared only when `completed_rounds === 3 && all rounds result === pass`.
+All rounds recorded in `state.json.team_runtime.workflow-investigate-review.rounds[]`. Skill-level `pass` is declared only when `completed_rounds === 2 && all rounds result === pass`.
 
 ### Failure handling
 
 - Any round `fail` → skill-level fail with `cause: verification_failed`, `evidence: {round, focus, findings[]}`
 - Producer-chain routes to `workflow-investigate` (the consumed artifact's producer)
-- On re-entry after upstream fix, ALL 3 rounds re-run (not just failed ones)
+- On re-entry after upstream fix, both rounds re-run (not just failed ones)
 
 ### Anti-evasion enforcement
 
 1. Do not inject prior round conclusions into current round prompts (bias prevention)
 2. Critic Watchdog blocks "already verified" skip statements
-3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥2 types)
-4. Declaring `pass` with `completed_rounds < 3` is blocked by hook
+3. Declaring `pass` with `completed_rounds < 2` is blocked by hook
 
 ## Terminal State — Required Next Skill
 
 **REQUIRED NEXT SKILL on `pass`:**
-- `/plan`, `/implement`, `/fix` mode → `workflow-tasker`
-- `/investigate` mode → `mode_transition` gate (may route to `/plan` or `/fix` per suggested next mode)
+- `/brainstorm` mode → `workflow-tasker`
+- `/implement` mode → `workflow-implementation-plan`
+- `/fix` mode → `workflow-write-test`
+- `/explore` mode → `mode_transition` gate (may route to `/brainstorm`, `/implement`, or `/fix` per suggested next mode)
 
 **On `fail`:** route back to `workflow-investigate`.
 **On `reshape`:** route back to `workflow-brainstorm`.

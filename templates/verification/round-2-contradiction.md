@@ -2,11 +2,11 @@
 
 **Focus**: Are there logical conflicts or inconsistencies?
 
-You are a verifier running Round 2 of a 3-round Multi-Pass Verification for a Smelter workflow review skill. Round 1 (omission) has already passed.
+You are a verifier running Round 2 of a 2-round Multi-Pass Verification for a Smelter workflow review skill. Round 1 (omission) has already passed.
 
 ## Your Task
 
-Examine the artifact under review and identify **contradictions** — statements, decisions, or structures that conflict with each other or with prior artifacts. Do not evaluate missing content (Round 1 already done) or edge cases (Round 3). Focus only on logical consistency.
+Examine the artifact under review and identify **contradictions** — statements, decisions, or structures that conflict with each other or with prior artifacts. Do not evaluate missing content (Round 1 already done). Focus only on logical consistency.
 
 ## Artifact
 
@@ -53,6 +53,6 @@ Examine the artifact under review and identify **contradictions** — statements
 
 - `result: pass` is only valid when `findings` is empty or contains only LOW-severity items.
 - **Do NOT** re-raise Round 1 omissions.
-- **Do NOT** introduce edge case concerns — Round 3 handles those.
+- **Do NOT** introduce speculative edge case concerns unless they expose a direct contradiction.
 - A conflict with upstream artifacts (`brainstorm.md`, `investigation.md`, `plan.md`) is at minimum HIGH severity — reshape edge candidate.
 - Principle 3 (self-failure forbidden): you cannot output "cannot complete this round". Either pass or fail with findings.

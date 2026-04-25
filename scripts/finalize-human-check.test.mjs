@@ -32,7 +32,25 @@ function runHook({ cwd, toolName = 'Write', filePath, content = 'ok' }) {
   return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr };
 }
 
-function seedFeature(cwd, { slug = 'my-feat', mode = 'fix', currentStage = 'workflow-human-check', events = [], completed = [] } = {}) {
+const FULL_FIX_PIPELINE = Object.freeze([
+  'workflow-investigate',
+  'workflow-investigate-review',
+  'workflow-write-test',
+  'workflow-coding',
+  'workflow-agent-review',
+  'workflow-e2e',
+  'workflow-e2e-review',
+  'workflow-human-check',
+]);
+
+function seedFeature(cwd, {
+  slug = 'my-feat',
+  mode = 'fix',
+  currentStage = 'workflow-human-check',
+  events = [],
+  completed = [],
+  allowedSkills = ['workflow-coding', 'workflow-human-check'],
+} = {}) {
   const taskDir = join(cwd, '.smt', 'features', slug, 'task');
   mkdirSync(taskDir, { recursive: true });
   const statePath = join(taskDir, `${slug}.state.json`);
@@ -40,7 +58,7 @@ function seedFeature(cwd, { slug = 'my-feat', mode = 'fix', currentStage = 'work
     schema_version: '2.4.1',
     task_id: slug,
     mode,
-    allowed_skills: ['workflow-coding', 'workflow-human-check'],
+    allowed_skills: allowedSkills,
     current_stage: currentStage,
     completed_stages: completed,
     events,
@@ -152,10 +170,10 @@ test('E1: results.md empty (zero-byte) is a no-op', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('E2: wrong mode (investigate) is a no-op', async () => {
+test('E2: wrong mode (explore) is a no-op', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'fhc-e2-'));
   try {
-    const { statePath, resultsPath } = seedFeature(cwd, { mode: 'investigate' });
+    const { statePath, resultsPath } = seedFeature(cwd, { mode: 'explore' });
     writeFileSync(resultsPath, 'ok');
     runHook({ cwd, filePath: resultsPath });
     assert.equal(readState(statePath).current_stage, 'workflow-human-check');
@@ -163,13 +181,69 @@ test('E2: wrong mode (investigate) is a no-op', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('E3: wrong current_stage (workflow-coding) is a no-op', async () => {
+test('E3: current_stage earlier than penultimate is a no-op (defensive guard)', async () => {
+  // Full fix pipeline; current_stage = workflow-coding, which is neither the
+  // terminal skill (workflow-human-check) nor the penultimate skill
+  // (workflow-e2e-review). The relaxed guard still rejects genuinely-early
+  // stages to prevent premature finalize by stray results.md writes.
   const cwd = mkdtempSync(join(tmpdir(), 'fhc-e3-'));
   try {
-    const { statePath, resultsPath } = seedFeature(cwd, { currentStage: 'workflow-coding' });
+    const { statePath, resultsPath } = seedFeature(cwd, {
+      currentStage: 'workflow-coding',
+      allowedSkills: [...FULL_FIX_PIPELINE],
+    });
     writeFileSync(resultsPath, 'ok');
     runHook({ cwd, filePath: resultsPath });
-    assert.equal(readState(statePath).current_stage, 'workflow-coding');
+    const state = readState(statePath);
+    assert.equal(state.current_stage, 'workflow-coding');
+    assert.equal(state.events.length, 0, 'no pass event for early stage');
+    assert.ok(!state.completed_stages.includes('workflow-human-check'));
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('H4: current_stage=workflow-e2e-review (penultimate) still finalizes — hook-timing bug regression', async () => {
+  // Repro of the live timing bug: when Skill(workflow-human-check) runs its
+  // inner Write(results.md), PostToolUse:Write fires synchronously while the
+  // Skill is still in-flight. At that moment, skill-stage-transition has NOT
+  // yet advanced current_stage to 'workflow-human-check' — it is still the
+  // penultimate skill (workflow-e2e-review in the default fix pipeline).
+  // The hook MUST finalize anyway; otherwise the commit-gate blocks forever.
+  const cwd = mkdtempSync(join(tmpdir(), 'fhc-h4-'));
+  try {
+    const { statePath, resultsPath } = seedFeature(cwd, {
+      currentStage: 'workflow-e2e-review',
+      allowedSkills: [...FULL_FIX_PIPELINE],
+    });
+    writeFileSync(resultsPath, '# results\n\ncomplete');
+    const r = runHook({ cwd, filePath: resultsPath });
+    assert.equal(r.status, 0);
+    assert.equal(JSON.parse(r.stdout).continue, true);
+    const state = readState(statePath);
+    assert.ok(state.completed_stages.includes('workflow-human-check'),
+      'completed_stages must include workflow-human-check even when current_stage is penultimate');
+    const pass = state.events.find(e => e.skill === 'workflow-human-check' && e.result === 'pass');
+    assert.ok(pass, 'pass event must be present');
+    assert.equal(pass.evidence?.path, 'results.md');
+    assert.equal(pass.declarer, 'hook');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('H5: pipeline without workflow-human-check is a no-op (defensive pipeline guard)', async () => {
+  // Relaxed guard requires workflow-human-check to be declared in allowed_skills;
+  // otherwise the hook must not finalize. Protects state from stray results.md
+  // writes in non-human-check pipelines (e.g., explore-only sessions that
+  // somehow end up with a results.md artifact).
+  const cwd = mkdtempSync(join(tmpdir(), 'fhc-h5-'));
+  try {
+    const { statePath, resultsPath } = seedFeature(cwd, {
+      currentStage: 'workflow-coding',
+      allowedSkills: ['workflow-investigate', 'workflow-coding'],
+    });
+    writeFileSync(resultsPath, 'ok');
+    runHook({ cwd, filePath: resultsPath });
+    const state = readState(statePath);
+    assert.equal(state.events.length, 0);
+    assert.ok(!state.completed_stages.includes('workflow-human-check'));
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

@@ -4,7 +4,7 @@
  *
  * Extracted from keyword-detector.mjs so PreToolUse:Skill callers
  * (state-contract-injector.mjs) can seed `.state.json` for
- * agent-initiated `Skill(fix|implement|investigate|verify|think)`
+ * agent-initiated `Skill(fix|implement|explore|verify|brainstorm)`
  * invocations — previously a silent dead-end because
  * keyword-detector only runs on UserPromptSubmit.
  *
@@ -27,6 +27,7 @@ import {
 } from './workflow-loader.mjs';
 import { parseSlashArgs, mergeSurface } from './surface-extraction.mjs';
 import { sanitizeSessionId as safeSessionId } from './session-paths.mjs';
+import { allowedActionsFor } from './workflow-v4-contract.mjs';
 import { createInitialState, writeState } from '../state-schema.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,20 +40,21 @@ export const PLUGIN_ROOT = dirname(SCRIPTS_DIR);
 // allow-list drift across callers is impossible.
 
 const COMMAND_TO_MODE = Object.freeze({
-  think: 'think',
+  brainstorm: 'brainstorm',
   fix: 'fix',
-  investigate: 'investigate',
+  explore: 'explore',
   implement: 'implement',
   verify: 'verify',
+  dobby: 'dobby',
 });
 
 // Modes that do not mutate code. Used to detect when a user/agent escalates
-// from exploration to execution. Reusing a verify/investigate/think state
+// from exploration to execution. Reusing a verify/explore/brainstorm state
 // under Skill(fix|implement) leaves state.mode at the read-only value, and
 // pre-tool-enforcer's code-file gate would then block every subsequent edit
 // — the deadlock this branch fixes.
-const READONLY_MODES = Object.freeze(new Set(['verify', 'investigate', 'think']));
-const WRITE_MODES = Object.freeze(new Set(['fix', 'implement']));
+const READONLY_MODES = Object.freeze(new Set(['verify', 'explore', 'brainstorm']));
+const WRITE_MODES = Object.freeze(new Set(['fix', 'implement', 'dobby']));
 
 const LEADING_FILLER_TOKENS = new Set([
   'a','an','the','is','are','was','were','be','been','being','do','does','did',
@@ -109,7 +111,7 @@ function writeAtomic(path, content) {
 export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, commandName = '') {
   const sessionId = safeSessionId(sessionIdRaw);
   if (source === 'slash') return { create: true, reason: 'slash-command' };
-  if (commandName === 'investigate') return { create: true, reason: 'investigate-command-reseed' };
+  if (commandName === 'explore' && source !== 'magic') return { create: true, reason: 'explore-command-reseed' };
   const text = String(prompt || '');
   if (/새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작/i.test(text)) {
     return { create: true, reason: 'explicit-new-intent' };
@@ -127,7 +129,7 @@ export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, 
       return { create: true, reason: 'prior-completed' };
     }
     // Mode-upgrade: the agent escalated from a read-only exploration mode
-    // (verify/investigate/think) to a write mode (fix/implement). Reusing
+    // (verify/explore/brainstorm) to a write mode (fix/implement). Reusing
     // would leave state.mode at the read-only value, and pre-tool-enforcer
     // would then block every code Edit/Write. Create a fresh feature so the
     // new state.mode matches the command.
@@ -282,6 +284,10 @@ export function seedWorkflowState({
         const modeCfg = loadModeConfig(mode, log);
         const chain = Array.isArray(chainedModes) && chainedModes.length >= 2 ? chainedModes : [];
         const machineState = createInitialState({ taskId: slug, mode, chainedModes: chain });
+        if (mode === 'dobby') {
+          machineState.step = 'EXECUTE';
+          machineState.allowed_actions = allowedActionsFor({ task_type: machineState.task_type, step: 'EXECUTE' });
+        }
         if (modeCfg?.default_exempt) {
           machineState.exempt = { ...machineState.exempt, ...modeCfg.default_exempt };
         }

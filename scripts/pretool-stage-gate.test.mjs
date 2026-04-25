@@ -132,7 +132,15 @@ section('edge case');
   writePointer(dir, SID, 'fx');
   writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-brainstorm', completed_stages: [] });
   const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'shadow' });
-  assert('shadow mode → no block', r.stdout === null || r.stdout?.decision !== 'block', true);
+  assert('removed shadow mode → enforce block', r.stdout?.decision, 'block');
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-brainstorm', completed_stages: [] });
+  const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir);
+  assert('default mode → enforce block', r.stdout?.decision, 'block');
   rmSync(dir, { recursive: true, force: true });
 }
 {
@@ -162,6 +170,28 @@ section('integration');
   runHook({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
   const r = runHook({ tool_name: 'Edit', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
   assert('full flow: coding stage + loaded → Edit allowed', r.stdout === null || r.stdout?.decision !== 'block', true);
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
+  const allowed = ['workflow-e2e-review', 'workflow-human-check'];
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'fix', current_stage: 'workflow-e2e-review', allowed_skills: allowed, completed_stages: [] });
+  runHook({ tool_name: 'Skill', tool_input: { skill: 'workflow-human-check' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'fix', current_stage: 'workflow-human-check', allowed_skills: allowed, completed_stages: [] });
+  const r = runHook({ tool_name: 'Write', tool_input: { file_path: join(dir, '.smt/features/fx/task/results.md') }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  assert('human-check target epoch load → results.md Write allowed after transition', r.stdout === null || r.stdout?.decision !== 'block', true);
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
+  const allowed = ['workflow-e2e-review', 'workflow-human-check'];
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'fix', current_stage: 'workflow-e2e-review', allowed_skills: allowed, completed_stages: [] });
+  runHook({ tool_name: 'Skill', tool_input: { skill: 'workflow-e2e-review' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  runHook({ tool_name: 'Skill', tool_input: { skill: 'workflow-human-check' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  const r = runHook({ tool_name: 'Write', tool_input: { file_path: join(dir, '.smt/features/fx/task/results.md') }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  assert('target epoch load does not allow results.md Write while prior stage remains loaded', r.stdout?.decision, 'block');
   rmSync(dir, { recursive: true, force: true });
 }
 

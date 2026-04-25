@@ -503,7 +503,7 @@ export function rule15_stageSkipOnCodeEdit(input, state) {
 //   - no state.events[] entry with { skill: 'workflow-human-check', result: 'pass' }
 //
 // Deliberately does NOT fire when:
-//   - mode does not include workflow-human-check (e.g., pure /verify, /investigate)
+//   - mode does not include workflow-human-check (e.g., pure /verify, /explore)
 //   - state.user_decision === 'complete' (decision already recorded)
 //   - SMT_HOOK_WRITE=1 (hook-owned writes)
 export function rule16_prematureDone(input, state) {

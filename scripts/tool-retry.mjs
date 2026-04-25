@@ -42,11 +42,19 @@ function gatherText(...parts) {
 
 /**
  * Extract a single text blob covering stdout/stderr/error regardless of payload shape.
+ * Claude Code may deliver tool_response / tool_output as a raw string (the failure
+ * message itself) instead of an object — include that string verbatim so downstream
+ * classification sees the error text.
  */
 export function extractToolResultText(data) {
-  const out = data.tool_output || data.toolOutput || data.output || {};
-  const resp = data.tool_response || data.toolResponse || {};
+  const outRaw = data.tool_output || data.toolOutput || data.output;
+  const respRaw = data.tool_response || data.toolResponse;
+  const out = typeof outRaw === 'object' && outRaw !== null ? outRaw : {};
+  const resp = typeof respRaw === 'object' && respRaw !== null ? respRaw : {};
+  const outStr = typeof outRaw === 'string' ? outRaw : '';
+  const respStr = typeof respRaw === 'string' ? respRaw : '';
   return gatherText(
+    outStr, respStr,
     out.stdout, out.stderr, out.error, out.message,
     resp.stdout, resp.stderr, resp.error, resp.message,
     data.error, data.message,
@@ -131,18 +139,27 @@ export function isBenignGrepNoMatch(data) {
  * Returns only the error/message fields — NOT stdout — so patterns that
  * should fire on genuine tool errors don't trigger on incidental text
  * (e.g. a commit message echoed back in Bash stdout).
+ *
+ * When Claude Code ships tool_response/tool_output as a raw string, that string
+ * IS the failure message (convention: string payload == error channel), so we
+ * include it here for error-gated patterns like file-not-read.
  */
 export function extractErrorOnly(data) {
-  const out = data.tool_output || data.toolOutput || data.output || {};
-  const resp = data.tool_response || data.toolResponse || {};
+  const outRaw = data.tool_output || data.toolOutput || data.output;
+  const respRaw = data.tool_response || data.toolResponse;
+  const out = typeof outRaw === 'object' && outRaw !== null ? outRaw : {};
+  const resp = typeof respRaw === 'object' && respRaw !== null ? respRaw : {};
+  const outStr = typeof outRaw === 'string' ? outRaw : '';
+  const respStr = typeof respRaw === 'string' ? respRaw : '';
   return gatherText(
+    outStr, respStr,
     out.error, out.message, out.stderr,
     resp.error, resp.message, resp.stderr,
     data.error, data.message,
   );
 }
 
-const FILE_WRITER_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit)$/i;
+const FILE_WRITER_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit)(?:$|\b|\()/i;
 
 export function classifyError(text, exitCode, toolName, data = {}) {
   if (!text && exitCode !== 1) return null;
@@ -243,7 +260,13 @@ function extractFilePath(toolInput) {
   return typeof fp === 'string' ? fp : '';
 }
 
-function buildRetryInstruction(pattern, toolName, toolInput) {
+/**
+ * Build the retry instruction body. `currentCount` is the retry count BEFORE
+ * this attempt is recorded (0 on first retry, 1 on second, 2 on third). The
+ * `read-then-retry` action escalates on `currentCount >= 1` to a multi-step
+ * fallback so a distracted agent cannot skim past the recovery procedure.
+ */
+export function buildRetryInstruction(pattern, toolName, toolInput, currentCount = 0) {
   switch (pattern.action) {
     case 'retry-then-narrow':
       return `Retry the ${toolName} call. If it still times out, narrow scope: add --max-count 500, restrict the path glob, or split the pattern.`;
@@ -256,6 +279,15 @@ function buildRetryInstruction(pattern, toolName, toolInput) {
     }
     case 'read-then-retry': {
       const fp = extractFilePath(toolInput);
+      if (currentCount >= 1) {
+        const target = fp ? `"${fp}"` : 'the target file';
+        return `FALLBACK (escalated after a previous auto-retry did not recover). The harness still reports the file is unread. Execute the following steps in order:\n` +
+          `(1) Call Read({ file_path: ${target} }) now — no other tool call may come before it.\n` +
+          `(2) Verify the Read succeeded (content returned, not an error).\n` +
+          `(3) Re-issue the original ${toolName} on ${target} with the same payload — do not alter the content.\n` +
+          `(4) If Read reports the file does not exist, treat the original error as spurious and re-issue the ${toolName} once more without further changes.\n` +
+          `Do not stop, do not change strategy, do not report this error to the user — the harness requires Read-before-Write and recovery is mechanical.`;
+      }
       if (fp) {
         return `Run Read({ file_path: "${fp}" }) first (file exists but was never read this session), then re-issue the ${toolName} on "${fp}" with the same content. Do not stop and do not report this error to the user — the harness requires Read-before-Write and recovery is mechanical.`;
       }
@@ -326,7 +358,7 @@ async function main() {
     counters[key] = { count: current + 1, updated_at: Date.now() };
     writeRetryCounter(stateDir, counters);
 
-    const instruction = buildRetryInstruction(pattern, toolName || 'tool', toolInput);
+    const instruction = buildRetryInstruction(pattern, toolName || 'tool', toolInput, current);
     printTag(`Auto-Retry: ${pattern.reason}`);
     console.log(JSON.stringify({
       decision: 'block',

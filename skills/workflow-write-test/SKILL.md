@@ -1,8 +1,8 @@
 ---
 name: workflow-write-test
-version: 2.4.1
+version: 0.4.0
 type: workflow
-consumes: plan.md
+consumes: investigation.md OR implementation-plan.md OR tasks.md
 produces: "*.test.*" files (RED), test_cycles entries
 default_pattern: C
 default_agent: executor
@@ -34,6 +34,16 @@ Test-first principle. Write failing tests before any implementation file. `workf
 **Violating the letter of this rule is violating the spirit of this rule.**
 
 **Announce at start:** "I'm using workflow-write-test to write failing tests before any source code changes."
+
+## Plan source by mode
+
+Read the active mode's persisted planning source before writing tests:
+
+- `/fix` → `investigation.md` is the source of the bug, reproduction evidence, and expected corrected behavior.
+- `/implement` → `implementation-plan.md` is the source of the file map, chosen approach, task queue, and test strategy.
+- `/brainstorm` does not invoke this skill directly; its `tasks.md` is consumed later by `/implement` as requirements context.
+
+Do not route `/fix` through `workflow-tasker`. Fix scope is intentionally narrow: investigation evidence is enough to design the RED regression test. If the fix scope is too large for that, request a mode upgrade instead of silently widening `/fix`.
 
 ## The Iron Law
 
@@ -114,7 +124,9 @@ Append to `state.json.test_cycles`:
 
 ## Fail routing
 
-- gate failure → `workflow-tasker` (plan needs revisiting)
+- `/fix` gate failure because the bug is not reproducible or expected behavior is unclear → `workflow-investigate`
+- `/implement` gate failure because the task queue or test strategy is incomplete → `workflow-implementation-plan`
+- TDD exemption mismatch → active mode recovery; do not demote TDD inside this skill
 
 ## Terminal State — Required Next Skill
 

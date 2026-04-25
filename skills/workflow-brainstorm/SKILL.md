@@ -1,6 +1,6 @@
 ---
 name: workflow-brainstorm
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: trigger_prompt
 produces: brainstorm.md
@@ -25,10 +25,12 @@ gate:
 
 ## Overview
 
-Explores ideas, concepts, and scope before any implementation skill runs. Two variants via the `depth` parameter:
+Explores ideas, concepts, and scope before any implementation skill runs. This skill intentionally follows the superpowers brainstorming experience: understand the project context, ask one question at a time, compare approaches, present the design for approval, then persist the approved design.
 
-- **deep** (default for plan mode): brainstorming + deep interview (multi-persona, Pattern D)
-- **light** (default for implement mode): short interview (single planner, Pattern A)
+Two variants via the `depth` parameter:
+
+- **deep** (default for brainstorm mode): brainstorming + deep interview (multi-persona, Pattern D)
+- **light**: short interview (single planner, Pattern A) for narrow re-entry or scoped clarification
 
 **Core principle:** No implementation action until scope, constraints, and goal are captured on disk and a downstream skill consumes them.
 
@@ -54,7 +56,25 @@ This applies to every project regardless of perceived simplicity. "A todo list, 
 - `## Scope` — in-scope / out-of-scope
 - `## Constraints` — technical and business constraints
 - `## Candidate Approaches` — 2–4 options (deep mode only)
+- `## Recommended Approach` — chosen direction and why
+- `## Design` — behavior, architecture, components, data flow, error handling, and testing strategy scaled to complexity
+- `## User Decisions` — decisions explicitly approved or selected by the user
+- `## Risks` — important ambiguity, migration, UX, dependency, or validation risks
 - `## Open Questions` — deferred questions
+
+## Required checklist
+
+Create and complete work items in this order:
+
+1. **Explore project context** — check relevant files, docs, and recent project direction before asking the user about implementation details.
+2. **Offer visual companion when useful** — if upcoming questions are visual (UI mockups, diagrams, layout comparisons), offer an available visual/canvas/browser companion in its own message. If no visual companion is available, continue text-only and record that choice.
+3. **Ask clarifying questions** — one at a time, targeting purpose, constraints, success criteria, and existing-system fit.
+4. **Propose 2–3 approaches** — include trade-offs, lead with the recommended option, and explain why.
+5. **Present design sections** — scale detail to complexity and get user approval or correction after each section.
+6. **Write `brainstorm.md`** — persist the approved design under `.smt/features/<slug>/task/`.
+7. **Spec self-review** — scan for placeholders, contradictions, ambiguity, and scope creep; fix issues inline before handoff.
+8. **User reviews written design** — ask the user to review the persisted design when the scope is non-trivial or when decisions were made through dialogue.
+9. **Transition to review** — invoke `workflow-brainstorm-review`; do not invoke any implementation skill.
 
 ## Scope decomposition (before detailed questions)
 
@@ -76,7 +96,7 @@ These thoughts mean STOP — you're rationalizing:
 | Thought | Reality |
 |---------|---------|
 | "This is too simple to need a design" | Every project goes through this. Simple projects cause the most wasted work from unexamined assumptions. Write the short design. |
-| "User said 'fix X' so brainstorming is skipped" | `/fix` routes through `workflow-investigate` first, not `workflow-coding`. `/simple-fix` skips brainstorm but has its own gate. If you are here, you must run. |
+| "User said 'fix X' so brainstorming is skipped" | `/fix` routes through `workflow-investigate` first, not `workflow-coding`. Surface exemptions are handled inside the fix lane. If you are here, you must run. |
 | "I can design while I code" | Designing while coding means design is never reviewed. No `workflow-brainstorm-review` means the downstream `## Risks` section has nothing to validate. |
 | "The user already told me the plan" | A plan told conversationally is not `brainstorm.md` on disk. File is truth (Iron Law #5). Capture it. |
 | "I'll write the file after I investigate" | `workflow-investigate` CONSUMES `brainstorm.md`. It cannot start without it. |
@@ -98,6 +118,47 @@ These thoughts mean STOP — you're rationalizing:
 - **Target the weakest dimension** — score clarity mentally across goal / constraint / success-criteria / existing-fit and ask about the weakest
 - **Explore 2–3 alternatives** before settling — lead with your recommended option and its reasoning
 - **Present design sections** scaled to complexity — a few sentences if straightforward, up to 200-300 words if nuanced; get approval after each section
+- **YAGNI ruthlessly** — remove unnecessary features from the design before it becomes a task plan
+- **Be flexible** — go back and clarify when an answer changes the scope or invalidates a prior assumption
+
+## Approach presentation
+
+Before choosing a design, present 2–3 viable approaches with trade-offs. The recommended approach comes first, followed by alternatives. Include enough reasoning for the user to decide, but do not bury them in implementation detail before they approve the product direction.
+
+## Design presentation
+
+Once the direction is clear, present the design in sections. Cover these areas when relevant:
+
+- Architecture and boundaries
+- Components or files at a conceptual level
+- Data flow and state ownership
+- Error handling and recovery behavior
+- Testing strategy and acceptance criteria
+
+Ask after each section whether it looks right so far. If the user corrects direction, revise the section before moving on.
+
+## Spec self-review
+
+After writing `brainstorm.md`, review it with fresh eyes before invoking `workflow-brainstorm-review`:
+
+1. **Placeholder scan** — remove `TBD`, `TODO`, incomplete sections, and vague requirements.
+2. **Internal consistency** — make sure scope, approach, design, and risks do not contradict each other.
+3. **Scope check** — confirm this is focused enough for one downstream implementation plan; decompose if not.
+4. **Ambiguity check** — if a requirement could be interpreted two ways, choose one explicitly or record it as an open question.
+
+Fix issues inline. This author self-review does not replace `workflow-brainstorm-review`.
+
+## Visual companion
+
+A visual companion is optional and per-question, not a separate mode. Use it only when seeing the option is better than reading about it:
+
+- UI mockups, wireframes, layout comparisons, visual hierarchy, or polish decisions
+- Architecture diagrams, flowcharts, state machines, or entity relationships
+- Side-by-side visual designs where spatial relationships matter
+
+Use terminal text for requirements, scope, trade-offs, and technical decisions. A UI topic is not automatically a visual question; use visuals only when they improve understanding.
+
+When a visual companion is useful, offer it once for consent in its own message. Do not combine that offer with a clarifying question. If the user declines or the environment has no companion available, continue text-only.
 
 ## Working in existing codebases
 

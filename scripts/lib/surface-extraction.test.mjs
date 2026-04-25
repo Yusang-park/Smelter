@@ -55,9 +55,9 @@ test('TDD-4 parseSlashArgs(fix, "") → null [boundary]', async () => {
   assert.equal(parseSlashArgs('fix', ''), null);
 });
 
-test('TDD-5 parseSlashArgs(think, "anything") → null for non-scoped modes [boundary]', async () => {
+test('TDD-5 parseSlashArgs(brainstorm, "anything") → null for non-scoped modes [boundary]', async () => {
   const { parseSlashArgs } = await mod();
-  assert.equal(parseSlashArgs('think', 'anything'), null);
+  assert.equal(parseSlashArgs('brainstorm', 'anything'), null);
   assert.equal(parseSlashArgs('investigate', 'foo'), null);
   assert.equal(parseSlashArgs('verify', 'bar'), null);
 });

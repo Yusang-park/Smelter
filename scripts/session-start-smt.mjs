@@ -3,9 +3,8 @@
 // Injects response style + TDD context at session start.
 // Feature/task state is NO LONGER injected here — read .smt/ files directly when needed.
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { homedir } from 'os';
 import { resolve, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { printTag } from './lib/yellow-tag.mjs';
@@ -57,24 +56,6 @@ function getVersion() {
   } catch { return '0.0.0'; }
 }
 
-function syncCodexModeConfig() {
-  const configPath = join(homedir(), '.smt', 'config.json');
-  let current = {};
-  try {
-    if (existsSync(configPath)) {
-      current = JSON.parse(readFileSync(configPath, 'utf8'));
-    }
-  } catch {
-    current = {};
-  }
-
-  const codexMode = process.env.SMELTER_MODEL_MODE === 'codex' || process.env.CODEX_MODE === '1';
-  if (current.codexMode === codexMode) return;
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify({ ...current, codexMode }, null, 2) + '\n');
-}
-
 function emit(additionalContext) {
   process.stdout.write(JSON.stringify({
     continue: true,
@@ -88,7 +69,6 @@ function emit(additionalContext) {
 try {
   const version = getVersion();
   printTag(`Smelter v${version}`);
-  syncCodexModeConfig();
   const updateNotice = checkAutoUpdate() || '';
   const cavemanContext = loadCavemanContext();
   backgroundFetch();

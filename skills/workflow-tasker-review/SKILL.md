@@ -1,6 +1,6 @@
 ---
 name: workflow-tasker-review
-version: 2.4.1
+version: 0.4.0
 type: workflow
 consumes: tasks.md
 produces: tasks-review.md
@@ -14,7 +14,7 @@ team_template:
     max_rounds: 5
     aggregator: arbitrator
 result_types: [pass, fail, reshape]
-min_verification_rounds: 2   # v3.1 — mid-pipeline review (omission + contradiction). Edge-case dropped for speed.
+min_verification_rounds: 2
 verification_rounds:
   - n: 1
     focus: omission
@@ -22,12 +22,9 @@ verification_rounds:
   - n: 2
     focus: contradiction
     prompt_template: templates/verification/round-2-contradiction.md
-  - n: 3
-    focus: edge_case
-    prompt_template: templates/verification/round-3-edge-case.md
 gate:
   postcondition:
-    - file_exists: "tasker_review.md"
+    - file_exists: "tasks-review.md"
     - consensus_reached: true
     - contains_decision: "pass|fail|reshape"
 ---
@@ -36,21 +33,21 @@ gate:
 
 ## Overview
 
-95% consensus review of `plan.md`. Multi-angle assessment of side-effects, scope, and feasibility. This is the last gate before test-writing or coding begins — a bad plan that passes here becomes wasted implementation.
+95% consensus review of `tasks.md`. Multi-angle assessment of side-effects, scope, and feasibility. This is the last planning gate for `/brainstorm` output — bad tasks that pass here become wasted implementation later.
 
-**Core principle:** Two independent enforcements must both hold — 95% consensus between advocate/critic/arbitrator AND 3-round pass (omission, contradiction, edge case).
+**Core principle:** Two independent enforcements must both hold — 95% consensus between advocate/critic/arbitrator AND 2-round pass (omission, contradiction).
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
-**Announce at start:** "I'm using workflow-tasker-review to run 95% consensus + 3-round verification on `plan.md`."
+**Announce at start:** "I'm using workflow-tasker-review to run 95% consensus + 2-round verification on `tasks.md`."
 
 ## The Iron Law
 
 ```
-NO IMPLEMENTATION SKILL WITHOUT 95% CONSENSUS AND 3/3 REVIEW ROUNDS AT pass
+NO IMPLEMENTATION SKILL WITHOUT 95% CONSENSUS AND 2/2 REVIEW ROUNDS AT pass
 ```
 
-Both conditions are gated. `consensus_reached` and `contains_decision: pass` both required. Declaring pass with `completed_rounds < 3` is blocked by hook.
+Both conditions are gated. `consensus_reached` and `contains_decision: pass` both required. Declaring pass with `completed_rounds < 2` is blocked by hook.
 
 ## Pattern B consensus process
 
@@ -63,7 +60,7 @@ arbitrator: synthesize both sides and compute the score
 
 ## Output
 
-`tasker_review.md`:
+`tasks-review.md`:
 
 - `## Consensus` — agreement rate per round
 - `## Side Effects` — impact on existing functionality
@@ -99,44 +96,42 @@ arbitrator: synthesize both sides and compute the score
 - `scope_mismatch` — plan vs. investigation mismatch
 - `side_effect` — impact on other features detected
 
-## Multi-Pass Verification (3-Round Enforcement)
+## Multi-Pass Verification (2-Round Enforcement)
 
-This skill runs **3 mandatory rounds** before declaring `pass`. Each round has a distinct focus:
+This skill runs **2 mandatory rounds** before declaring `pass`. Each round has a distinct focus:
 
 | Round | Focus | Question |
 |-------|-------|----------|
 | 1 | Omission | Is any required task, TDD target, or queue item missing? |
 | 2 | Contradiction | Does the plan conflict with investigation findings or the chosen approach? |
-| 3 | Edge case | Are side-effect scenarios, rollback paths, and risky migrations considered? |
 
 ### Agent assignment per round
 
 - **Pattern A**: Prefer different agent types across rounds. If reusing the same type, reset prompt context per round (fresh perspective).
 - **Pattern B**: Each round runs with 95% consensus (3 × N agents × consensus rounds).
-- **Pattern D**: Lead orchestrates 3 rounds, assigning different viewpoint sub-agents.
+- **Pattern D**: Lead orchestrates 2 rounds, assigning different viewpoint sub-agents.
 
 ### State recording
 
-All rounds recorded in `state.json.team_runtime.workflow-tasker-review.rounds[]`. Skill-level `pass` is declared only when `completed_rounds === 3 && all rounds result === pass`.
+All rounds recorded in `state.json.team_runtime.workflow-tasker-review.rounds[]`. Skill-level `pass` is declared only when `completed_rounds === 2 && all rounds result === pass`.
 
 ### Failure handling
 
 - Any round `fail` → skill-level fail with `cause: verification_failed`, `evidence: {round, focus, findings[]}`
 - Producer-chain routes to `workflow-tasker` (the consumed artifact's producer)
-- On re-entry after upstream fix, ALL 3 rounds re-run (not just failed ones)
+- On re-entry after upstream fix, both rounds re-run (not just failed ones)
 
 ### Anti-evasion enforcement
 
 1. Do not inject prior round conclusions into current round prompts (bias prevention)
 2. Critic Watchdog blocks "already verified" skip statements
-3. Same agent for 3 consecutive rounds emits a warning (Pattern A should mix ≥2 types)
-4. Declaring `pass` with `completed_rounds < 3` is blocked by hook
+3. Declaring `pass` with `completed_rounds < 2` is blocked by hook
 
 ## Terminal State — Required Next Skill
 
 **REQUIRED NEXT SKILL on `pass`:**
 - Mode with TDD: `workflow-write-test`
-- Mode with `exempt.tdd === true` (e.g., `/simple-fix` for CSS/copy/typo): `workflow-coding`
+- Mode with `exempt.tdd === true` (CSS/copy/typo surface exemption): `workflow-coding`
 
 **On `fail`:** route to `workflow-tasker`.
 **On `reshape`:** route to `workflow-investigate`.

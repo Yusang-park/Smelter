@@ -1,6 +1,6 @@
 {
   "name": "smelter",
-  "version": "2.4.1",
+  "version": "0.4.0",
   "description": "TDD-first, file-based, multi-agent development harness for Claude Code",
   "author": {
     "name": "Yusang Park"

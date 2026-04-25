@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { validateEvidenceIntegrity } from './state-validator.mjs';
+import { allowedActionsFor, resolveContract, STEPS, TASK_TYPES, USER_MODES } from './lib/workflow-v4-contract.mjs';
 
 export const SCHEMA_VERSION = '2.4.1';
 
@@ -19,6 +20,8 @@ export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-brainstorm-review',
   'workflow-investigate',
   'workflow-investigate-review',
+  'workflow-implementation-plan',
+  'workflow-implementation-plan-review',
   'workflow-tasker',
   'workflow-tasker-review',
   'workflow-write-test',
@@ -31,9 +34,11 @@ export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-human-check',
 ]);
 
-// v3 canonical modes — legacy `plan` and `simple_fix` fully removed.
+// v0.4 canonical modes — legacy `plan`, `simple_fix`, `think`, and `investigate` commands fully removed.
+// `dobby` (v3.4) is a no-pipeline escape hatch: only workflow-human-check runs
+// as the terminal gate; code edits are permitted like fix/implement.
 export const MODES = Object.freeze([
-  'think', 'fix', 'implement', 'investigate', 'verify',
+  'brainstorm', 'fix', 'implement', 'explore', 'verify', 'dobby',
 ]);
 
 export const CAUSE_ENUM = Object.freeze([
@@ -50,7 +55,7 @@ export const CAUSE_ENUM = Object.freeze([
 ]);
 
 export const VERIFICATION_FOCUS_ENUM = Object.freeze([
-  'omission', 'contradiction', 'edge_case', 'effect_verification',
+  'omission', 'contradiction',
 ]);
 
 export const EVIDENCE_TYPE_ENUM = Object.freeze([
@@ -75,10 +80,16 @@ export function createInitialState({ taskId, mode, chainedModes = [] }) {
     if (!MODES.includes(m)) throw new Error(`invalid chained mode: ${m}`);
   }
   const now = new Date().toISOString();
+  const contract = resolveContract(mode);
   return {
     schema_version: SCHEMA_VERSION,
     task_id: taskId,
     mode,
+    user_mode: contract.user_mode,
+    task_type: contract.task_type,
+    step: 'INTENT',
+    step_flow: contract.steps,
+    allowed_actions: allowedActionsFor({ task_type: contract.task_type, step: 'INTENT' }),
     // Ordered auto-transition path. Empty when input was not a chained intent.
     // First element is the entry mode; subsequent elements are auto-selected
     // at mode_transition gates by the Stop hook. Additive-only field;
@@ -110,6 +121,11 @@ export function validate(state) {
   if (state.schema_version !== SCHEMA_VERSION) push('schema_version', `expected ${SCHEMA_VERSION}, got ${state.schema_version}`);
   if (typeof state.task_id !== 'string' || !state.task_id) push('task_id', 'required string');
   if (!MODES.includes(state.mode)) push('mode', `invalid: ${state.mode}`);
+  if (state.user_mode !== undefined && !USER_MODES.includes(state.user_mode)) push('user_mode', `invalid: ${state.user_mode}`);
+  if (state.task_type !== undefined && !TASK_TYPES.includes(state.task_type)) push('task_type', `invalid: ${state.task_type}`);
+  if (state.step !== undefined && !STEPS.includes(state.step)) push('step', `invalid: ${state.step}`);
+  if (state.step_flow !== undefined && !Array.isArray(state.step_flow)) push('step_flow', 'must be array when present');
+  if (state.allowed_actions !== undefined && !Array.isArray(state.allowed_actions)) push('allowed_actions', 'must be array when present');
 
   // chained_modes — additive optional field. When present must be a MODES[] array.
   // Absence is allowed for back-compat with states created before this field existed.

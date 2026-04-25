@@ -1,18 +1,18 @@
 ---
-title: Smelter v2.4.1 — Implementation Reference
+title: Smelter Historical v2.4.1 — Implementation Reference
 type: implementation-reference
-tags: [smelter, implementation, v2.4.1, architecture, scripts, agents, hooks]
-version: 2.4.0
+tags: [smelter, implementation, historical, v2.4.1, v0.4.0, architecture, scripts, agents, hooks]
+version: 0.4.0
 created: 2026-04-20
-updated: 2026-04-20
-status: canonical
+updated: 2026-04-26
+status: archived
 ---
 
-# Smelter v2.4.1 — Implementation Reference
+# Smelter Historical v2.4.1 — Implementation Reference
 
-> Companion to `document/workflow.md` (the behavioral spec).
-> This file documents **what's shipped**, **where it lives**, and **how the pieces wire together**.
-> Every symbol here is a file that exists on disk — cross-verified by the audit pass of 2026-04-20.
+> Historical companion to `document/workflow.md`.
+> Current shipped behavior lives in `document/implementation.md` and the `v0.4.0` workflow contract.
+> This archive keeps v2.4.1 migration context; do not treat its old command names as current user-facing commands.
 
 ---
 
@@ -24,37 +24,37 @@ status: canonical
 ├── commands/                        ← 6 slash-command entry points
 ├── document/                        ← canonical spec + indices (this dir)
 ├── hooks/                           ← hooks.json (Claude Code hook registration)
-├── modes/                           ← 6 mode definitions (JSON)
+├── modes/                           ← unified workflow config (`workflow.yaml`)
 ├── scripts/                         ← runtime scripts (hooks, engines, validators)
-├── skills/                          ← 14 workflow-* + utility skills
+├── skills/                          ← workflow-* + utility skills
 ├── src/                             ← core TypeScript engine
 ├── bin/                             ← smelter CLI entry
 ├── rules-lib/                       ← language-specific coding rules
 ├── templates/                       ← verification round prompts + task/plan/report templates
-├── plugin.json                      ← Claude Code plugin manifest (v2.4.1)
-├── .claude-plugin/plugin.json       ← plugin metadata (v2.4.1)
-├── package.json                     ← npm manifest (v2.4.1)
+├── plugin.json                      ← Claude Code plugin manifest (v0.4.0)
+├── .claude-plugin/plugin.json       ← plugin metadata (v0.4.0)
+├── package.json                     ← npm manifest (v0.4.0)
 └── settings.json                    ← Smelter settings
 ```
 
 ---
 
-## 1. Execution surface (6 commands × 6 modes × 14 skills)
+## 1. Execution surface (6 commands × 6 modes × 16 skills)
 
 ### 1-1. Commands (`commands/*.md`)
 
 | Command        | Mode          | Entry skill                      | Purpose                                                 |
 |----------------|---------------|----------------------------------|---------------------------------------------------------|
-| `/plan`        | `plan`        | `workflow-brainstorm` (deep)     | New features / refactor. Planning-first, deep interview |
-| `/implement`   | `implement`   | `workflow-brainstorm` (light)    | Build on existing code. Lightweight interview           |
+| `/brainstorm`  | `brainstorm`  | `workflow-brainstorm` (deep)     | New features / refactor. Planning-first, deep interview |
+| `/implement`   | `implement`   | `workflow-investigate` → `workflow-implementation-plan` | Build on existing code. Code-based implementation plan |
 | `/fix`         | `fix`         | `workflow-investigate`           | Bug or logic repair                                     |
-| `/simple-fix`  | `simple_fix`  | `workflow-coding`                | Trivial text / CSS / constant substitution              |
-| `/investigate` | `investigate` | `workflow-investigate`           | Static investigation (맥락·근거 파악); mode-transition exit |
+| `/explore`     | `explore`     | `workflow-investigate`           | Static read-only exploration (맥락·근거 파악); mode-transition exit |
 | `/verify`      | `verify`      | `workflow-verify`                | Non-modifying verification: test run + static inspection + E2E interface in one pass |
+| `/dobby`       | `dobby`       | `workflow-human-check`           | Explicit no-pipeline escape hatch                       |
 
 Commands are thin prompts that seed state and defer to the skill pipeline. `scripts/mode-classifier.mjs` auto-routes natural-language input to these modes; explicit slash commands override.
 
-### 1-2. Modes (`modes/*.json`)
+### 1-2. Modes (`modes/workflow.yaml`)
 
 Each mode declares:
 - `entry_skill` + optional `entry_params` (e.g., `{depth: deep|light}` for brainstorm)
@@ -64,17 +64,17 @@ Each mode declares:
 - `magic_keywords{}` — natural-language triggers that set flags (e.g., `css` → `exempt.tdd:true`)
 - `transitions{upgrade_to, downgrade_to}` — allowed mode transitions
 
-### 1-3. Workflow skills (`skills/workflow-*/SKILL.md`, 14 files)
+### 1-3. Workflow skills (`skills/workflow-*/SKILL.md`)
 
 | # | Skill                          | Default Pattern | Consumes → Produces                                     |
 |---|--------------------------------|-----------------|---------------------------------------------------------|
 | 1 | `workflow-brainstorm`          | A (light) / D (deep) | trigger → `brainstorm.md`                          |
-| 2 | `workflow-brainstorm-review`   | B               | `brainstorm.md` → `brainstorm_review.md`                |
+| 2 | `workflow-brainstorm-review`   | B               | `brainstorm.md` → `brainstorm-review.md`                |
 | 3 | `workflow-investigate`         | C (area split)  | brainstorm.md / trigger → `investigation.md`            |
-| 4 | `workflow-investigate-review`  | A               | `investigation.md` → `investigate_review.md`            |
-| 5 | `workflow-tasker`              | D (architect lead) | `investigation.md` → `plan.md` + `target_type` + `team_runtime` |
-| 6 | `workflow-tasker-review`       | B (95% consensus) | `plan.md` → `tasker_review.md`                        |
-| 7 | `workflow-write-test`          | C (file split)  | `plan.md` → `*.test.*` (RED) + `test_cycles[]`          |
+| 4 | `workflow-investigate-review`  | A               | `investigation.md` → `investigation-review.md`          |
+| 5 | `workflow-tasker`              | D (architect lead) | `investigation.md` → `tasks.md` + `target_type` + `team_runtime` |
+| 6 | `workflow-tasker-review`       | B (95% consensus) | `tasks.md` → `tasks-review.md`                        |
+| 7 | `workflow-write-test`          | C (file split)  | `investigation.md` / `implementation-plan.md` → `*.test.*` (RED) + `test_cycles[]` |
 | 8 | `workflow-coding`              | A / C (module split) + E (watchdog) | test_files (RED) / feedback → `src/**` changes |
 | 9 | `workflow-agent-review`        | B (dual: code+security) | `src/**` diff → `agent_review.md` + `## Risks` |
 | 10 | `workflow-e2e`                | A (qa-tester)   | built `src/**` → `artifacts/` (video/log/screenshots)   |
@@ -83,7 +83,7 @@ Each mode declares:
 | 13 | `workflow-verify`             | A (qa-tester)   | current codebase → `verify_report.md` (3 phases: tests + static + E2E) |
 | 14 | `workflow-human-check`        | User            | all artifacts → user decision (rework / complete / hold / upgrade) |
 
-All 6 review skills (rows 2, 4, 6, 9, 11, 12) enforce **Multi-Pass Verification** (§9-3 of `workflow.md`): 3 mandatory rounds with focus ∈ {omission, contradiction, edge_case}. Skill-level `pass` is only declared when `completed_rounds === 3` and every round passed. Anti-evasion rule 4 is hook-enforced.
+All review skills enforce **Multi-Pass Verification** (§9-3 of `workflow.md`): 2 mandatory rounds with focus ∈ {omission, contradiction}. Skill-level `pass` is only declared when `completed_rounds === 2` and every round passed. Anti-evasion rule 3 is hook-enforced.
 
 ### 1-4. Utility skills (`skills/<name>/SKILL.md`, no `workflow-` prefix)
 
@@ -106,7 +106,6 @@ Mode-unrestricted (Iron Law #6). Two shipped:
 | `UserPromptSubmit`   | `auto-confirm-consumer.mjs`          | Consumes `.smt/state/auto-confirm-queue-<sessionId>.json` (session-scoped), injects as context |
 | `UserPromptSubmit`   | `skill-injector.mjs`                 | Injects skill prompts per current workflow                          |
 | `PreToolUse`         | `pre-tool-enforcer.mjs`              | Pre-tool policy enforcement                                         |
-| `PreToolUse`         | `rule-injector.mjs`                  | Language-scoped rule injection (`rules-lib/<lang>`)                 |
 | `PermissionRequest: Bash` | `permission-handler.mjs`        | Bash permission policy                                              |
 | `PostToolUse`        | `post-tool-verifier.mjs`             | General post-tool verification                                      |
 | `PostToolUse`        | `tool-retry.mjs`                     | Transient-error retry (ripgrep timeout, file-modified, file-not-read, flag-parse) |
@@ -158,7 +157,7 @@ Validated invariants:
 - `allowed_skills` ⊂ the 13 workflow skills
 - `events[].declarer` ∈ `{hook, user}` (`skill` is forbidden per Iron Law #3)
 - `events[].cause` ∈ fixed enum (14 values incl. `verification_failed`, `stall_cascade`, `conflict_merge_failed`)
-- `team_runtime[skill].rounds[i]` (when present) has `focus` ∈ `{omission, contradiction, edge_case}` and `result` ∈ `{null, pass, fail}`
+- `team_runtime[skill].rounds[i]` (when present) has `focus` ∈ `{omission, contradiction}` and `result` ∈ `{null, pass, fail}`
 - `active_feedback[i].target_skill` ∈ workflow skills; `resolved` boolean
 
 ---
@@ -310,10 +309,10 @@ Level 4 — request mode upgrade (user decision); only user-facing cascade level
 
 ## 7. Multi-Pass Verification (§9-3)
 
-All 6 review skills (`brainstorm-review`, `investigate-review`, `tasker-review`, `agent-review`, `e2e-review`, `team-code-review`) declare:
+All review skills declare:
 
 ```yaml
-min_verification_rounds: 3
+min_verification_rounds: 2
 verification_rounds:
   - n: 1
     focus: omission
@@ -321,16 +320,12 @@ verification_rounds:
   - n: 2
     focus: contradiction
     prompt_template: templates/verification/round-2-contradiction.md
-  - n: 3
-    focus: edge_case
-    prompt_template: templates/verification/round-3-edge-case.md
 ```
 
-Per `state.team_runtime[skill].rounds[]`, each round records `{n, focus, result, findings[]}`. `pass` requires `completed_rounds === 3` and every round result = `pass`. Anti-evasion guardrails:
+Per `state.team_runtime[skill].rounds[]`, each round records `{n, focus, result, findings[]}`. `pass` requires `completed_rounds === 2` and every round result = `pass`. Anti-evasion guardrails:
 1. No prior-round-conclusion injection into current round.
 2. `critic-watchdog` blocks "already verified" skip statements.
-3. Same agent 3× in a row emits warning (Pattern A should mix ≥ 2 types).
-4. Declaring `pass` with `completed_rounds < 3` is hook-blocked.
+3. Declaring `pass` with `completed_rounds < 2` is hook-blocked.
 
 ---
 
@@ -353,14 +348,14 @@ Run everything: `node --test scripts/*.test.mjs` (per `package.json` `test` scri
 | V1 | Script functional integrity     | 9/9 scripts syntax+functional PASS; 15/15 + 51/51 test suites green |
 | V2 | Skills × Modes × Commands cross-ref | 10/10 structural checks PASS after remediation (persona agents added, e2e-review branching added) |
 | V3 | Agents contracts                 | 10 core agents present (aggregator, conflict-resolver, critic-watchdog, debugger, advocate, critic, arbitrator, product/engineer/design-persona); v1 residue 0 in core |
-| V4 | Docs coherence                   | v1 residue 0 in in-scope docs; all xrefs resolve; command set {plan, simple-fix, fix, investigate, implement} |
+| V4 | Docs coherence                   | v1 residue 0 in in-scope docs; all xrefs resolve; command set {brainstorm, fix, explore, implement, verify, dobby} |
 | V5 | Hooks + config                   | All 17 hook targets exist; `auto-confirm.mjs` + `auto-confirm-consumer.mjs` wired; plugin manifests aligned to 2.3.0 |
 
 Remediation applied post-audit:
 - Renamed `auto-confirm-v2.mjs` → `auto-confirm.mjs`; added `auto-confirm-consumer.mjs` (queue-drop pattern)
 - Added 5 previously-referenced agents: `advocate`, `arbitrator`, `product-persona`, `engineer-persona`, `design-persona`
 - `route-on-fail.mjs` e2e-review split into `file_absent → workflow-e2e` / `insufficient_scenario → workflow-coding`
-- `session-end.mjs` FORBIDDEN_COMMANDS: removed `simple` (was false-positiving `/simple-fix`)
+- `session-end.mjs` FORBIDDEN_COMMANDS: removed an over-broad `simple` detector that false-positive matched trivial-fix wording
 - `plugin.json`, `.claude-plugin/plugin.json`, `package.json` all bumped to `2.3.0`
 - `document/index.md` tag normalized to `v2.4.1`
 - `workflow.md` footer `End of workflow-v2.md` → `End of workflow.md`

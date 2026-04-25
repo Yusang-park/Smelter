@@ -29,23 +29,25 @@ import { writeState, appendEvent, markComplete } from './state-schema.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { detectReviewVerdict, detectReviewFailCause } from './auto-confirm.mjs';
 import { loadWorkflowConfig, getMode as getV3Mode, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
+import { transitionV4State } from './lib/workflow-v4-state.mjs';
 import yaml from 'js-yaml';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PLUGIN_ROOT = dirname(__dirname);
 
-// Entry-command skills (UserPromptSubmit routes `/fix`, `/investigate`, etc.
+// Entry-command skills (UserPromptSubmit routes `/fix`, `/explore`, etc.
 // as `Skill(skill: '<command>')`). When the agent invokes one of these, the
 // hook seeds `current_stage` from the mode's `entry_skill` so the Stop hook
 // does not loop on a stale null/seeded stage, while `completed_stages` is
 // kept empty (Iron Law #5 — no forged completion).
 const COMMAND_TO_MODE_ENTRY = Object.freeze({
-  think: 'think',
+  brainstorm: 'brainstorm',
   fix: 'fix',
-  investigate: 'investigate',
+  explore: 'explore',
   implement: 'implement',
   verify: 'verify',
+  dobby: 'dobby',
 });
 
 function loadModeEntrySkill(mode) {
@@ -143,6 +145,27 @@ function resolveArtifactPath(statePath, skill) {
   return join(taskDir, artifactName);
 }
 
+function stepForWorkflowSkill(skill) {
+  if (skill === 'workflow-brainstorm' || skill === 'workflow-brainstorm-review' || skill === 'workflow-tasker' || skill === 'workflow-tasker-review' || skill === 'workflow-implementation-plan' || skill === 'workflow-implementation-plan-review') {
+    return 'PLAN';
+  }
+  if (skill === 'workflow-investigate' || skill === 'workflow-investigate-review') return 'DISCOVERY';
+  if (skill === 'workflow-write-test') return 'TEST_DESIGN';
+  if (skill === 'workflow-coding') return 'EXECUTE';
+  if (skill === 'workflow-verify' || skill === 'workflow-e2e' || skill === 'workflow-e2e-review' || skill === 'workflow-agent-review' || skill === 'workflow-team-code-review') {
+    return 'VERIFY';
+  }
+  if (skill === 'workflow-human-check') return 'HUMAN_CHECK';
+  return null;
+}
+
+function transitionBridgedV4Step(state, skill) {
+  if (!state || typeof state.task_type !== 'string' || !Array.isArray(state.step_flow)) return;
+  const nextStep = stepForWorkflowSkill(skill);
+  if (!nextStep || !state.step_flow.includes(nextStep)) return;
+  transitionV4State(state, nextStep);
+}
+
 function main() {
   printTag('enter');
   try {
@@ -213,6 +236,7 @@ function main() {
 
     const now = new Date().toISOString();
     state.current_stage = skill;
+    transitionBridgedV4Step(state, skill);
 
     // Resolve genuine artifact path; if missing, defer completion but still
     // record current_stage. Tautological evidence (path === statePath) is
@@ -259,11 +283,15 @@ function main() {
     // target_type_dispatch, we re-run selectPipeline with those signals and, if
     // the resulting pipeline differs from the current allowed_skills, re-write
     // state.allowed_skills. This closes the gap where non-magic-keyword flows
-    // stayed on the mode's default pipeline regardless of target_type. v3.2
-    // extends this to /implement for extend_existing → extend_light.
-    if (skill === 'workflow-investigate-review' || skill === 'workflow-tasker') {
+    // stayed on the mode's default pipeline regardless of target_type. v0.4 keeps
+    // /implement on full; target_type is implementation-plan context only.
+    if (skill === 'workflow-investigate-review' || skill === 'workflow-tasker' || skill === 'workflow-implementation-plan') {
       try {
-        const artifactForScope = skill === 'workflow-tasker' ? 'tasks.md' : 'investigation.md';
+        const artifactForScope = skill === 'workflow-tasker'
+          ? 'tasks.md'
+          : skill === 'workflow-implementation-plan'
+            ? 'implementation-plan.md'
+            : 'investigation.md';
         const scopePath = join(dirname(statePath), artifactForScope);
         if (existsSync(scopePath)) {
           const raw = readFileSync(scopePath, 'utf-8');
@@ -289,7 +317,8 @@ function main() {
                 const newSkills = [...cfg.pipelines[newPipeline]];
                 const cur = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
                 // Preserve already-completed stages even if they're not in the new
-                // pipeline (e.g., tasker ran under full; extend_light drops tasker-review).
+                // pipeline. Preserve completed stages even when re-selection narrows
+                // remaining work in a future mode-specific branch.
                 // This is a one-way narrowing: remaining stages may shrink, but the
                 // audit trail of what already ran stays complete.
                 const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];
