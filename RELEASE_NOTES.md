@@ -8,7 +8,7 @@
 
 ### Changes
 
-- Current package, plugin, marketplace, Codex companion manifests, workflow schema, and workflow skill frontmatter version is `0.4.1`.
+- Current package, plugin, marketplace, workflow schema, and workflow skill frontmatter version is `0.4.1`.
 - Added `/infra` for cloud/resource/IaC operations with inventory-first planning, destructive-risk review, execution evidence, verification handoff, and human-check gating.
 - Added `workflow-infra-plan`, `workflow-infra-plan-review`, and `workflow-infra-execute` to the workflow registry and artifact routing.
 - Tightened agent-driven recovery: slash-prefixed command skills normalize correctly, hook scripts share effective session-id fallback, and stale active state is less likely to block scoped writes.
@@ -23,7 +23,7 @@
 
 ### Changes
 
-- Current package, plugin, marketplace, Codex companion manifests, workflow schema, skill frontmatter, and workflow-support agent frontmatter version is `0.4.0`.
+- Current package, plugin, marketplace, workflow schema, skill frontmatter, and workflow-support agent frontmatter version is `0.4.0`.
 - User-facing read-only mode is now `explore`; command entry is `/explore`.
 - The retired read-only command spelling is not accepted as an alias or fallback.
 - `workflow-investigate` remains the executor skill name for discovery artifacts and review contracts.

@@ -80,7 +80,7 @@ Non-brainstorm modes now import the strongest superpowers workflow experiences w
 
 Smelter now uses `0.*` versioning. The current release is `0.4.0`. User-facing read-only workflow entry is `/explore` with `mode: explore`; the executor skill remains `workflow-investigate` so existing investigation artifacts and skill contracts stay meaningful.
 
-- [x] v0.4.0-1. **Version line** — `package.json`, `package-lock.json`, plugin manifests, `codex-for-claude-code` manifests, `modes/workflow.yaml`, workflow skill frontmatter, workflow-support agent frontmatter, README, workflow docs, and command docs now identify the release as `0.4.0` / `v0.4.0`.
+- [x] v0.4.0-1. **Version line** — `package.json`, `package-lock.json`, plugin manifests, `modes/workflow.yaml`, workflow skill frontmatter, workflow-support agent frontmatter, README, workflow docs, and command docs now identify the release as `0.4.0` / `v0.4.0`. `codex-for-claude-code` keeps an independent package version and release line.
 - [x] v0.4.0-2. **Mode rename** — runtime `USER_MODES`, schema `MODES`, mode classifier explicit commands, command aliases, state seeding, keyword detector, and Stop-hook chain handling use `explore` instead of `investigate` for user intent.
 - [x] v0.4.0-3. **Retired command closure** — the retired investigate command is not accepted as an alias; tests assert retired slash commands fail closed before LLM routing instead of resolving to a workflow command.
 - [x] v0.4.0-4. **Docs and command file** — `commands/explore.md` replaces the old investigate command file; README/AGENTS/CLAUDE/index/workflow docs describe `explore → read` and distinguish it from the `workflow-investigate` skill.

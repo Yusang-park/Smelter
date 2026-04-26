@@ -8,7 +8,7 @@
 
 ### 변경 사항
 
-- 현재 package, plugin, marketplace, Codex companion manifest, workflow schema, workflow skill frontmatter 버전은 `0.4.1`입니다.
+- 현재 package, plugin, marketplace, workflow schema, workflow skill frontmatter 버전은 `0.4.1`입니다.
 - Cloud/resource/IaC 작업용 `/infra`를 추가했습니다. Inventory-first plan, destructive-risk review, execution evidence, verification handoff, human-check gate를 사용합니다.
 - `workflow-infra-plan`, `workflow-infra-plan-review`, `workflow-infra-execute`를 workflow registry와 artifact routing에 추가했습니다.
 - Agent-driven recovery를 강화했습니다. Slash-prefixed command skill 정규화, hook 공통 effective session-id fallback, stale active state write-block 완화가 포함됩니다.
@@ -23,7 +23,7 @@
 
 ### 변경 사항
 
-- 현재 package, plugin, marketplace, Codex companion manifest, workflow schema, skill frontmatter, workflow-support agent frontmatter 버전은 `0.4.0`입니다.
+- 현재 package, plugin, marketplace, workflow schema, skill frontmatter, workflow-support agent frontmatter 버전은 `0.4.0`입니다.
 - 사용자-facing read-only 모드는 `explore`, 명령은 `/explore`입니다.
 - retired read-only command spelling은 alias/fallback으로 허용하지 않습니다.
 - discovery artifact와 review contract를 위해 실행 스킬 이름은 계속 `workflow-investigate`입니다.

@@ -10,6 +10,8 @@ updated: 2026-04-27
 translations: document/workflow.ko.md
 ---
 
+`codex-for-claude-code` is released as an independent companion package. Do not treat its `package.json` or `plugin.json` version as part of the Smelter release version line.
+
 # Smelter Workflow — v0.4 Contract/FSM Model
 
 > Smelter v0.4 separates **UserMode**, **TaskType**, **Step**, and **Guard**. The LLM proposes intent; the harness owns routing, permissions, transitions, recovery, and verification truth.
