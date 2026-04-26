@@ -6,7 +6,7 @@
   <strong>Claude Code용 TDD-first 워크플로우 엔진: 파일 기반 상태, 결정적 gate, 멀티 에이전트 실행.</strong>
 </p>
 
-<p align="center"><code>v0.4.0</code></p>
+<p align="center"><code>v0.4.1</code></p>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a>
@@ -30,14 +30,15 @@ git clone https://github.com/Yusang-park/Smelter.git ~/Smelter
 node ~/Smelter/scripts/dev-install.mjs
 ```
 
-`dev-install.mjs`는 `skills/`, `commands/`, `agents/`를 심볼릭 링크하고 repo-managed hook을 `~/.claude/settings.json`에 설치합니다. Hook 등록 변경 뒤에는 새 Claude Code 세션을 시작하세요.
+`dev-install.mjs`는 `commands/`만 심볼릭 링크하고 repo-managed hook을 `~/.claude/settings.json`에 설치합니다. 예전 Smelter dev용 `skills/`, `agents/` symlink는 제거해 workflow 리소스가 전역 자동 노출되지 않게 합니다. Hook 등록 변경 뒤에는 새 Claude Code 세션을 시작하세요.
 
 ---
 
 ## v0.4 핵심 변경
 
-- 버전 체계는 이제 `0.*`이며 현재 릴리즈는 `v0.4.0`입니다.
+- 버전 체계는 이제 `0.*`이며 현재 릴리즈는 `v0.4.1`입니다.
 - 사용자용 read-only 모드는 `explore`, 명령은 `/explore`입니다.
+- 인프라 작업은 `/infra`를 사용해 cloud/IaC/resource 변경을 제품 코드 TDD와 분리합니다.
 - 실행 스킬 이름은 계속 `workflow-investigate`입니다. Mode는 사용자 의도, skill은 산출물/실행 단계를 뜻합니다.
 - retired investigate command는 alias가 아닙니다.
 - `/brainstorm`은 유일한 설계/기획 명령입니다. retired think, plan, simple-fix command는 alias가 아닙니다.
@@ -51,6 +52,7 @@ node ~/Smelter/scripts/dev-install.mjs
 | `/brainstorm` | `brainstorm` | `design` | `workflow-brainstorm` | `planning_only` | 코드 수정 없는 제품/아키텍처 설계 |
 | `/explore` | `explore` | `read` | `workflow-investigate` | `explore_only` | 읽기 전용 코드 탐색과 진단 |
 | `/implement` | `implement` | `write` | `workflow-investigate` → `workflow-implementation-plan` | `full` | 기존 코드 기반 기능 구현 |
+| `/infra` | `infra` | `infra` | `workflow-investigate` → `workflow-infra-plan` | `infra_ops` | Cloud/resource/IaC 작업과 안전 계획/실행 증거 |
 | `/fix` | `fix` | `write` | `workflow-investigate` | runtime-selected | 버그/로직 수정, 텍스트/디자인 표면 수정 |
 | `/verify` | `verify` | `verify` | `workflow-verify` | `verify_only` | 비수정 테스트, 정적 점검, 실제 인터페이스 E2E |
 | `/dobby` | `dobby` | `freeform` | `workflow-human-check` | `dobby_only` | 명시적 no-pipeline escape hatch |
@@ -65,8 +67,8 @@ Smelter v0.4는 네 계층을 분리합니다.
 
 | 계층 | 역할 |
 |---|---|
-| `UserMode` | 사용자 의도: `brainstorm`, `explore`, `implement`, `fix`, `verify`, `dobby` |
-| `TaskType` | side-effect 계약: `design`, `read`, `write`, `verify`, `freeform` |
+| `UserMode` | 사용자 의도: `brainstorm`, `explore`, `implement`, `infra`, `fix`, `verify`, `dobby` |
+| `TaskType` | side-effect 계약: `design`, `read`, `write`, `infra`, `verify`, `freeform` |
 | `Step` | 결정적 FSM 위치: `INTENT`, `DISCOVERY`, `PLAN`, `TEST_DESIGN`, `EXECUTE`, `VERIFY`, `HUMAN_CHECK`, `DONE` |
 | `Guard` | 현재 `(task_type, step, state)`에 대한 tool/action validator |
 
@@ -85,7 +87,7 @@ Smelter v0.4는 네 계층을 분리합니다.
 
 ## 상태
 
-- Version: `0.4.0`
+- Version: `0.4.1`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
 - Implementation status: [`document/implementation.md`](document/implementation.md)
 - Main verification: `npm test`, `npm run typecheck`

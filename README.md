@@ -6,7 +6,7 @@
   <strong>TDD-first workflow engine for Claude Code: file-based state, deterministic gates, multi-agent execution.</strong>
 </p>
 
-<p align="center"><code>v0.4.0</code></p>
+<p align="center"><code>v0.4.1</code></p>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a>
@@ -28,14 +28,15 @@ git clone https://github.com/Yusang-park/Smelter.git ~/Smelter
 node ~/Smelter/scripts/dev-install.mjs
 ```
 
-`dev-install.mjs` symlinks `skills/`, `commands/`, and `agents/`, then installs repo-managed hooks into `~/.claude/settings.json`. Use `--dry-run`, `--uninstall`, or `--force` as needed. Start a new Claude Code session after hook registration changes.
+`dev-install.mjs` symlinks `commands/` only, then installs repo-managed hooks into `~/.claude/settings.json`. It removes old Smelter dev symlinks for `skills/` and `agents/` so workflow resources are not globally auto-discovered. Use `--dry-run`, `--uninstall`, or `--force` as needed. Start a new Claude Code session after hook registration changes.
 
 ---
 
 ## What Changed In v0.4
 
-- Versioning is now `0.*`; the current release line is `v0.4.0`.
+- Versioning is now `0.*`; the current release line is `v0.4.1`.
 - User-facing read-only mode is `explore`, invoked with `/explore`.
+- Infrastructure operations use `/infra` so cloud/IaC/resource mutation does not route through product-code TDD.
 - The executor skill remains `workflow-investigate`; skill names describe implementation artifacts, while modes describe user intent.
 - The retired investigate command is not an alias.
 - `/brainstorm` remains the only design/planning command; retired think, plan, and simple-fix commands are not aliases.
@@ -50,6 +51,7 @@ node ~/Smelter/scripts/dev-install.mjs
 | `/brainstorm` | `brainstorm` | `design` | `workflow-brainstorm` | `planning_only` | Product/architecture planning without code edits |
 | `/explore` | `explore` | `read` | `workflow-investigate` | `explore_only` | Read-only codebase exploration and diagnosis |
 | `/implement` | `implement` | `write` | `workflow-investigate` → `workflow-implementation-plan` | `full` | Build on existing code with implementation planning |
+| `/infra` | `infra` | `infra` | `workflow-investigate` → `workflow-infra-plan` | `infra_ops` | Cloud/resource/IaC operations with inventory, safety plan, execution evidence |
 | `/fix` | `fix` | `write` | `workflow-investigate` | runtime-selected | Bug repair, logic fixes, trivial text/design edits |
 | `/verify` | `verify` | `verify` | `workflow-verify` | `verify_only` | Non-mutating tests, static checks, and real-interface E2E |
 | `/dobby` | `dobby` | `freeform` | `workflow-human-check` | `dobby_only` | Explicit no-pipeline escape hatch with human approval |
@@ -64,8 +66,8 @@ Smelter v0.4 separates four layers:
 
 | Layer | Purpose |
 |---|---|
-| `UserMode` | User intent: `brainstorm`, `explore`, `implement`, `fix`, `verify`, `dobby` |
-| `TaskType` | Side-effect contract: `design`, `read`, `write`, `verify`, `freeform` |
+| `UserMode` | User intent: `brainstorm`, `explore`, `implement`, `infra`, `fix`, `verify`, `dobby` |
+| `TaskType` | Side-effect contract: `design`, `read`, `write`, `infra`, `verify`, `freeform` |
 | `Step` | Deterministic FSM position: `INTENT`, `DISCOVERY`, `PLAN`, `TEST_DESIGN`, `EXECUTE`, `VERIFY`, `HUMAN_CHECK`, `DONE` |
 | `Guard` | Tool/action validator for the current `(task_type, step, state)` |
 
@@ -114,7 +116,7 @@ bin/           CLI entry point
 
 ## Status
 
-- Version: `0.4.0`
+- Version: `0.4.1`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
 - Implementation status: [`document/implementation.md`](document/implementation.md)
 - Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)

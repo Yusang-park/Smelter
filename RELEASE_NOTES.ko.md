@@ -3,6 +3,21 @@
 > 이 문서는 [`RELEASE_NOTES.md`](RELEASE_NOTES.md)의 한국어 번역본입니다.
 > Smelter 릴리즈 태그는 이제 `0.*` 라인을 사용합니다.
 
+## v0.4.1 — Infra Workflow와 Hook Recovery Rollup
+**릴리즈**: 2026-04-27
+
+### 변경 사항
+
+- 현재 package, plugin, marketplace, Codex companion manifest, workflow schema, workflow skill frontmatter 버전은 `0.4.1`입니다.
+- Cloud/resource/IaC 작업용 `/infra`를 추가했습니다. Inventory-first plan, destructive-risk review, execution evidence, verification handoff, human-check gate를 사용합니다.
+- `workflow-infra-plan`, `workflow-infra-plan-review`, `workflow-infra-execute`를 workflow registry와 artifact routing에 추가했습니다.
+- Agent-driven recovery를 강화했습니다. Slash-prefixed command skill 정규화, hook 공통 effective session-id fallback, stale active state write-block 완화가 포함됩니다.
+- Compact state-write contract, terminal reminder, prompt-budget regression coverage로 prompt/context overhead를 제한합니다.
+
+### 검증
+
+- Regression coverage는 infra pipeline/config, hook registration, prompt budget, RED recorder behavior, stage transition, workflow contract, state/permission guard를 포함합니다.
+
 ## v0.4.0 — Explore Mode와 결정적 Contract Runtime
 **릴리즈**: 2026-04-26
 

@@ -113,4 +113,4 @@ See `document/workflow.md` §0. The eight non-negotiables:
 | "build", "add", "implement", "extend" | `implement` |
 | Ambiguous | `fix` (safe default) |
 
-Explicit slash commands (`/brainstorm`, `/fix`, `/explore`, `/verify`, `/implement`, `/dobby`) override the classifier.
+Explicit slash commands (`/brainstorm`, `/fix`, `/infra`, `/explore`, `/verify`, `/implement`, `/dobby`) override the classifier.

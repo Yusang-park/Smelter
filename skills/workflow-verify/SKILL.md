@@ -1,6 +1,6 @@
 ---
 name: workflow-verify
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: current codebase (no RED requirement)
 produces: verify_report.md

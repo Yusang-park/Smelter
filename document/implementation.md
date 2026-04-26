@@ -2,13 +2,61 @@
 title: Smelter Workflow v0.4 — Implementation Status
 status: in_progress
 started: 2026-04-20
-updated: 2026-04-26
+updated: 2026-04-27
 ---
 
 # Smelter v0.4 Implementation Status
 
 > Source of truth: `document/workflow.md`.
 > Principle: sequential execution, respect dependencies, no omissions.
+
+## Release v0.4.1 — infrastructure workflow and hook recovery rollup (2026-04-27)
+
+This release packages the dedicated `/infra` workflow, compact prompt/runtime guidance, session-id recovery fixes, RED-test chain enforcement, hook registration coverage, and release metadata refresh.
+
+- [x] v0.4.1-1. **Infra mode** — `/infra`, `infra_ops`, `workflow-infra-plan`, `workflow-infra-plan-review`, and `workflow-infra-execute` are now documented and registered as the safe route for cloud/resource/IaC operations.
+- [x] v0.4.1-2. **Hook recovery** — command-skill slash normalization, effective session-id fallback, compact state-write contracts, and stale-state avoidance keep agent-driven workflow continuation aligned with scoped task state.
+- [x] v0.4.1-3. **Verification coverage** — hook registration, prompt-budget, infra pipeline, RED recorder, stage transition, and workflow contract tests cover the new release surface.
+- [x] v0.4.1-4. **Release metadata** — package/plugin manifests, README files, and workflow schema now identify the release as `0.4.1` / `v0.4.1`.
+
+## Phase v0.4.0 — infrastructure workflow routing (2026-04-26)
+
+Infrastructure/cloud/IaC work now has a dedicated `/infra` mode instead of being forced through `/fix` or `/implement`. The new flow is optimized for inventory, destructive-risk review, explicit approval, execution evidence, documentation updates, verification, and human-check.
+
+- [x] v0.4.0-token-1. **Compact workflow Skill reminder** — `state-contract-injector.mjs` now injects a short state-write contract instead of long hook architecture prose on every `workflow-*` Skill call, preserving the `.state.json` write ban, classifier-bypass warning, deferred-skill note, and `finalize-human-check.mjs` path.
+- [x] v0.4.0-token-2. **Nested cwd state resolution** — `pre-tool-enforcer.mjs` resolves the nearest ancestor `.smt` root before reading active workflow pointers, preventing subdirectory/submodule cwd false blocks without loosening source-edit, RED-test, state-file, or commit gates.
+- [x] v0.4.0-token-3. **High-traffic Skill prompt budgets** — `workflow-coding`, `workflow-e2e`, and `workflow-human-check` are compressed into checklist-style prompts while retaining required gates, terminal routing, artifact requirements, and human-check finalization rules. `skill-prompt-budget.test.mjs` prevents regression.
+- [x] v0.4.0-token-4. **Compact terminal reminders and diff policy** — `posttool-terminal-state-gate.mjs` emits a short missing-action reminder; docs now default review diffing to `git diff --stat`, `git diff --name-only`, and path-scoped diffs instead of whole-repo diff dumps after large artifacts.
+- [x] v0.4.0-token-5. **Command-only continuation injection** — `auto-confirm.mjs` no longer echoes prior assistant text in mandatory workflow-step prompts, and `keyword-detector.mjs` no longer echoes the user request in active-workflow rollback continuation. Continuations now inject only the required command/Skill target.
+- [x] v0.4.0-token-6. **Regression coverage** — `state-contract-injector.test.mjs` asserts the injected contract stays compact while retaining required guard tokens; `pre-tool-enforcer.test.mjs` asserts nested cwd reuses parent active state; `posttool-terminal-state-gate.test.mjs` asserts reminder compactness; `skill-prompt-budget.test.mjs` guards the compressed skill prompts; `auto-confirm.test.mjs` and `keyword-detector.test.mjs` assert continuation prompts do not replay prior messages.
+- [x] v0.4.0-infra-1. **Mode contract** — `workflow-v4-contract.mjs`, `state-schema.mjs`, `mode-classifier.mjs`, `subagent-classifier.mjs`, `keyword-detector.mjs`, and `workflow-state-seeder.mjs` recognize `infra` with task type `infra` and step flow `INTENT → DISCOVERY → PLAN → EXECUTE → VERIFY → HUMAN_CHECK → DONE`.
+- [x] v0.4.0-infra-2. **Pipeline and skills** — `modes/workflow.yaml` defines `infra_ops`: investigate → investigate-review → infra-plan → infra-plan-review → infra-execute → verify → human-check. Added `workflow-infra-plan`, `workflow-infra-plan-review`, and `workflow-infra-execute` skill prompts plus `/infra` command docs.
+- [x] v0.4.0-infra-3. **Guard integration** — `workflow-v4-guard.mjs`, `pre-tool-enforcer.mjs`, `pretool-stage-gate.mjs`, `skill-stage-transition.mjs`, `state-validator.mjs`, `workflow-loader.mjs`, `route-on-fail.mjs`, `posttool-terminal-state-gate.mjs`, and `finalize-human-check.mjs` handle infra stage transitions, artifact evidence, source-edit permission at infra `EXECUTE`, commit gating, and verify-fail routing back to `workflow-infra-execute`.
+- [x] v0.4.0-infra-4. **Regression coverage** — added infra assertions to `workflow-v4-contract.test.mjs`, `workflow-loader.test.mjs`, `mode-classifier.test.mjs`, `workflow-state-seeder.test.mjs`, and `workflow-v4-guard.test.mjs`; existing state/skill/pretool/auto-confirm suites remain green.
+
+## Phase v0.4.0 — Stop-hook artifact completion backfill (2026-04-26)
+
+Canonical task artifacts can be written after `PostToolUse:Skill` has already entered a stage. In that ordering, `skill-stage-transition.mjs` correctly sets `current_stage` but cannot record pass/fail because the artifact did not exist at skill-entry time; the next Stop could then classify the stage as incomplete even though the artifact was present.
+
+- [x] v0.4.0-artifact-backfill-1. **Stop-hook backfill** — `scripts/auto-confirm.mjs::applyArtifactCompletionEvent` records an artifact-backed event for the current stage when its canonical artifact exists and no stage event exists yet. Review artifacts with `verdict: fail` write `result: 'fail'` plus a detected cause (default `review_reject`) so producer-chain routing goes back to the upstream skill instead of re-running the review stage.
+- [x] v0.4.0-artifact-backfill-2. **Completion safety** — pass artifacts update `completed_stages[]` only for non-deferred stages and always cite `evidence.path`, preserving `state-validator.mjs` evidence integrity. Existing pass/fail events remain idempotent and are not overwritten.
+- [x] v0.4.0-artifact-backfill-3. **Regression coverage** — `scripts/auto-confirm.test.mjs` covers direct backfill for review-fail and pass artifacts plus a real CLI Stop-hook scenario that persists the fail event and queues `workflow-investigate` without invoking the classifier.
+
+## Phase v0.4.0 — transcript paste and slash skill recovery (2026-04-26)
+
+Fresh sessions can start from a pasted prior-session transcript plus a short current instruction. The transcript-paste heuristic must still suppress accidental state seeding from logs, but it must not swallow explicit current-turn work requests.
+
+- [x] v0.4.0-transcript-recovery-1. **Current directive wins** — `keyword-detector.mjs` keeps transcript-paste passthrough for plain logs but routes narrow current directives such as `이걸 고쳐줘` and `구현 진행해` to `fix` / `implement`, creating fresh session state.
+- [x] v0.4.0-transcript-recovery-2. **Slash skill normalization** — `state-contract-injector.mjs` and `skill-stage-transition.mjs` normalize `Skill(/implement)` to `Skill(implement)` so agent-invoked command skills seed/transition state even when the rendered command name includes a leading slash.
+- [x] v0.4.0-transcript-recovery-3. **Entry step bridge** — entry-command transition now advances the v0.4 step to the mode entry workflow skill phase even when `current_stage` was already seeded, so `Skill(/implement)` moves from `INTENT` to `DISCOVERY` with `current_stage=workflow-investigate`.
+- [x] v0.4.0-transcript-recovery-4. **Stage-gate load alias** — `pretool-stage-gate.mjs` treats a mode-matching slash command skill (`Skill(/implement)`) as loading the active entry stage (`workflow-investigate`), while mismatched command skills do not authorize writes.
+- [x] v0.4.0-transcript-recovery-5. **No premature clarification halt** — `commands/implement.md` now requires local workspace search before asking about repo-local names, model ids, wrappers, or paths.
+- [x] v0.4.0-transcript-recovery-6. **RED-gated coding entry** — `state-contract-injector.mjs` blocks `workflow-write-test → workflow-coding` until RED evidence exists (`events[].type === 'test_red'` or legacy failing `test_cycles[]`), so the chain does not enter EXECUTE only to have the first source edit rejected for missing RED proof.
+- [x] v0.4.0-transcript-recovery-7. **Consistent hook session resolution** — `session-paths.mjs::resolveHookSessionId()` centralizes `input.session_id` / `input.sessionId` / `SMELTER_SESSION_ID` fallback. PreToolUse, PostToolUse, Stop, and UserPromptSubmit hook scripts now use the same effective session id before falling back to unscoped `active-feature.json`, preventing stale brainstorm/design state from blocking a scoped write workflow.
+- [x] v0.4.0-transcript-recovery-8. **Regression coverage** — `keyword-detector.test.mjs` covers mixed paste + fix/implement directives; `state-contract-injector.test.mjs` covers `Skill(/implement)` state seeding, RED-gated `workflow-coding`, and env session fallback; `skill-stage-transition.test.mjs` covers slash-prefixed entry transition and env-backed v0.4 step advancement; `pretool-stage-gate.test.mjs`, `pre-tool-enforcer.test.mjs`, and `posttool-test-red-recorder.test.mjs` cover env session fallback for loaded-skill gating, source-edit gating, and RED recording.
+- [x] v0.4.0-transcript-recovery-9. **Masked RED diagnostics** — `posttool-test-red-recorder.mjs` now warns when a test command exits `0` while stdout contains a non-zero `exit=...` line, and `state-contract-injector.mjs` names the `; echo "exit=$?"` masking trap in the `workflow-coding` RED-evidence block reason.
+- [x] v0.4.0-transcript-recovery-10. **Stale registry assertions refreshed** — `test-model-mode-switch.mjs` derives codex model count from `CODEX_MODEL_OPTIONS` and asserts the new `gpt-5.5` option; `workflow-scenarios.test.mjs` now matches the current 19 workflow skills / 7 modes exposed by `state-schema.mjs`; `pre-tool-enforcer.test.mjs` matches the current agent-owned recovery set `Skill(fix|implement|infra|dobby)`.
+- [x] v0.4.0-transcript-recovery-11. **Vitest RED recorder recovery** — `posttool-test-red-recorder.mjs` recognizes direct Vitest commands such as `pnpm vitest run` and package test scripts such as `pnpm test:run`, and extracts exit codes only from structured hook payload fields (`exit_code`, `exitCode`, or `status` under `tool_response`, `toolResponse`, `tool_output`, `toolOutput`, `output`, or the top-level payload). It rejects stdout/stderr/error-text exit-code inference, accepts UI-decorated Bash tool labels, resolves the nearest ancestor `.smt` root before writing, and reconciles pointer conflicts by selecting a same-session state that is actually recordable (`task_type=write`, `step=TEST_DESIGN|EXECUTE`). Regression tests TR6-TR11 reproduce the `workflow-write-test → workflow-coding` block loop without fallback parsing.
 
 ## Phase v0.4.0 — superpowers brainstorming experience (2026-04-26)
 
@@ -26,6 +74,7 @@ Non-brainstorm modes now import the strongest superpowers workflow experiences w
 - [x] v0.4.0-mode-ux-3. **Implementation planning** — `/implement`, `workflow-implementation-plan`, and its review now require exact file maps, bite-sized TDD steps, commands with expected outcomes, placeholder scans, and fresh executor-context discipline.
 - [x] v0.4.0-mode-ux-4. **Verification/finishing** — `/verify` and `workflow-verify` now align with the active verify pipeline (`verify → e2e → e2e-review → human-check`) and require fresh evidence before claims; `workflow-human-check` exposes structured finishing options.
 - [x] v0.4.0-mode-ux-5. **Dobby guard alignment** — `workflow-state-seeder.mjs` seeds `/dobby` at `step: EXECUTE` with freeform write actions; regression coverage added in `workflow-state-seeder.test.mjs`.
+- [x] v0.4.0-mode-ux-6. **Dobby stage-gate pass-through** — `pretool-stage-gate.mjs` no longer requires the current workflow skill to be preloaded while active state is `dobby`, allowing freeform recovery commands such as `git checkout -- <path>`; regression coverage added in `pretool-stage-gate.test.mjs`.
 
 ## Phase v0.4.0 — explore mode and 0.* release line (2026-04-26)
 
@@ -133,7 +182,9 @@ Prior implementation wrote codex/claude mode state to a single cwd-scoped file, 
 
 Known limitation: `claude-codex --resume` from a fresh terminal without re-exporting `SMELTER_SESSION_ID` writes a new scoped file under a fresh sid; the old file is reaped only by the 24h TTL sweep. Persistence into `~/.claude-codex/last-session.json` is a follow-up, not in scope for this fix.
 
-## Release v3.1.1 — 2026-04-22
+## Historical Release v3.1.1 — 2026-04-22
+
+Archive note: the `v3.*` labels below are preserved as implementation history, not current release tags.
 
 Patch release. Headline: **Review Evidence Verifier** — closes the hallucinated-anchor loop where `workflow-*-review` skills could emit fail verdicts citing non-existent file:line anchors, routing indefinitely to `workflow-coding`.
 
@@ -286,6 +337,8 @@ User reported `/fix` still felt slow despite v3.1 target-type dispatch. Root cau
 - [x] Replaced the hardcoded SessionStart concise prompt with vendored upstream Caveman skill content from `skills/caveman/SKILL.md`.
 - [x] `src/rules/defaults.ts` now exports `CAVEMAN_SYSTEM_PROMPT` from the same vendored skill source.
 - [x] Added targeted regression tests for SessionStart Caveman injection and defaults export behavior.
+- [x] Removed learned-skill pre-injection from `UserPromptSubmit`: `scripts/skill-injector.mjs`, its bridge builder, and its hook registrations were deleted. Workflow skill bodies now enter context only through explicit Skill invocation by the active flow.
+- [x] Reduced global resource exposure: `scripts/dev-install.mjs` now symlinks only `commands/` into `~/.claude` and removes legacy repo-pointing `~/.claude/skills` / `~/.claude/agents` symlinks. PreToolUse and Stop-hook continuation prompts were compacted without changing their blocking/advance semantics.
 - [x] Previously synced Codex model-mode into `~/.smt/config.json.codexMode` during `SessionStart`. Reverted in v3.3.8 (2026-04-23): the global shared file caused a cross-session bleed where a running `claude-codex` session would flip plain-`claude` sibling sessions into selecting `gpt-5.4-mini` for their classifier subprocesses, which then failed with "gpt-5.4 temporarily unavailable" (no proxy in plain sessions). Detection now relies solely on per-process env (`CODEX_MODE` / `SMELTER_MODEL_MODE`) plus the session-scoped `.smt/state/model-mode-${SMELTER_SESSION_ID}.json`.
 - [x] Extended `scripts/auto-confirm.mjs::pickSubAgentModel()` to treat `SMELTER_MODEL_MODE=codex` the same as `CODEX_MODE=1`, forcing queued sub-agents onto `haiku` in codex windows.
 - [x] Hardened `scripts/keyword-detector.mjs` so an LLM `passthrough:true` hint is overridden when the current session already has an active, non-terminal workflow pointer. This preserves Smelter continuation in codex windows instead of silently dropping the session out of workflow mode. Transcript-paste passthrough remains exempt.
@@ -304,7 +357,7 @@ User reported: brainstorm→review cycle + tasker + reshape → `/fix` takes lon
 - [x] v3.1-3. **Verification round split** — historical only, superseded by v0.4.0 global 2-round policy. Split review buckets no longer exist.
 - [x] v3.1-4. **`getVerificationRounds(skill)` helper** in `workflow-loader.mjs` — now returns the global `verification_rounds.rounds` value.
 - [x] v3.1-5. **Commit gate** — `pre-tool-enforcer.mjs` PreToolUse:Bash rule: when command starts with `git commit` AND state.mode ∈ {fix, implement} AND workflow-human-check not passed → block with clear reason. Closes queued bug: agent committing before human-check.
-- [x] v3.1-6. **Human-check visual render** — `skills/workflow-human-check/SKILL.md` new section "Visual Artifact Rendering (v3.1)": `Read` tool invocation on every `.png`/`.jpg`/`.webm` under artifacts/; multimodal inline render in terminal; user sees output before `AskUserQuestion`.
+- [x] v3.1-6. **Human-check visual render** — `skills/workflow-human-check/SKILL.md` section "Visual Artifact Rendering": `Read` tool invocation on every `.png`/`.jpg`/`.webm` under artifacts/; multimodal inline render in terminal; user sees output before `AskUserQuestion`.
 - [x] v3.1-7. **Tests** — `scripts/lib/workflow-loader.test.mjs` expanded to 28 tests covering v3.1 features (selectPipeline × 6, getVerificationRounds × 3, unified-file load, legacy-file absence).
 - [x] v3.1-8. **Docs** — `document/workflow.md` §4 updated for v3.1 pipelines + target-type dispatch + round split.
 
@@ -722,7 +775,7 @@ Root cause: Smelter's `workflow-*/SKILL.md` files described technical gates (pos
 - [x] 3-5. `document/workflow.md` §12-5 — extend rule table with R14/R15 (previously undocumented in table), R16, R17. Rationale block explaining R16 = state-level catch, R17 = prose-level catch, complementing §0-bis Terminal State language.
 - [x] 3-6. `document/workflow.md` §17 + §18 — update `critic-watchdog.mjs` comment and table row 13 from "12 rules (R01–R11)" to "17 rules (R01–R17)".
 
-Totals at the time: 14/14 then-existing workflow-* skills ported (text), 2 new watchdog rules with 7 new tests (enforcement teeth), `critic-watchdog.test.mjs` 24/24 pass, `skill-stage-transition.test.mjs` 17/17 pass, `state-validator.test.mjs` 18/18 pass, `mode-classifier.test.mjs` 40/40 pass, `auto-confirm.test.mjs` 115/115 pass. Current v0.4 ships 16 workflow-* skills after adding implementation-plan and implementation-plan-review.
+Totals at the time: 14/14 then-existing workflow-* skills ported (text), 2 new watchdog rules with 7 new tests (enforcement teeth), `critic-watchdog.test.mjs` 24/24 pass, `skill-stage-transition.test.mjs` 17/17 pass, `state-validator.test.mjs` 18/18 pass, `mode-classifier.test.mjs` 40/40 pass, `auto-confirm.test.mjs` 115/115 pass. Current v0.4 ships 19 workflow-* skills after adding implementation-plan and infra stages.
 
 **Source attribution:** patterns imported from `obra/superpowers` skills:
 - `brainstorming/SKILL.md` — HARD-GATE, "too simple to need design" anti-pattern, scope decomposition, spec self-review

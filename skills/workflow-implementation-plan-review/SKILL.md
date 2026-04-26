@@ -1,6 +1,6 @@
 ---
 name: workflow-implementation-plan-review
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: implementation-plan.md
 produces: implementation-plan-review.md

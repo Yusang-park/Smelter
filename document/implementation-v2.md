@@ -104,7 +104,7 @@ Mode-unrestricted (Iron Law #6). Two shipped:
 | `SessionStart: maintenance` | `setup-maintenance.mjs`       | Plugin maintenance                                                  |
 | `UserPromptSubmit`   | `keyword-detector.mjs`               | Magic keyword classifier + command routing                          |
 | `UserPromptSubmit`   | `auto-confirm-consumer.mjs`          | Consumes `.smt/state/auto-confirm-queue-<sessionId>.json` (session-scoped), injects as context |
-| `UserPromptSubmit`   | `skill-injector.mjs`                 | Injects skill prompts per current workflow                          |
+| `UserPromptSubmit`   | `skill-injector.mjs`                 | Removed in v0.4; workflow skills load only through explicit Skill invocation |
 | `PreToolUse`         | `pre-tool-enforcer.mjs`              | Pre-tool policy enforcement                                         |
 | `PermissionRequest: Bash` | `permission-handler.mjs`        | Bash permission policy                                              |
 | `PostToolUse`        | `post-tool-verifier.mjs`             | General post-tool verification                                      |

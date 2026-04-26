@@ -1,8 +1,8 @@
 ---
 title: Smelter — Claude Code Workflow Engine
 type: index
-tags: [smelter, harness, workflow, v0.4.0]
-updated: 2026-04-26
+tags: [smelter, harness, workflow, v0.4.1]
+updated: 2026-04-27
 ---
 
 # Smelter
@@ -15,7 +15,7 @@ updated: 2026-04-26
 
 ## Canonical documents
 
-- [[workflow]] — v0.4.0 specification: modes, skills, routing, verification, teams, hooks.
+- [[workflow]] — v0.4.1 specification: modes, skills, routing, verification, teams, hooks.
 - [[implementation]] — implementation status tracker (what is built, what ships next).
 - [[Introduce]] — philosophy, direction, and the eight Iron Laws.
 
@@ -25,7 +25,7 @@ updated: 2026-04-26
 
 Smelter is a workflow engine that orchestrates Claude Code through the real team software development process: PM intake → investigation → planning → TDD → implementation → verification → team review → human approval → deploy.
 
-## Current architecture (v0.4.0)
+## Current architecture (v0.4.1)
 
 | Item | Current state |
 |------|---------------|
@@ -35,8 +35,8 @@ Smelter is a workflow engine that orchestrates Claude Code through the real team
 | Verification | TDD + scoped-surface E2E + Multi-Pass Verification (2 rounds) |
 | Task state | `.smt/` (plan, tasks, state.json, sessions, wiki) |
 | Entry points | Magic keyword auto-routing OR explicit slash command |
-| Commands (6) | `/brainstorm`, `/implement`, `/fix`, `/explore`, `/verify`, `/dobby` |
-| Workflow skills (16) | `workflow-*` prefix, composable per mode |
+| Commands (7) | `/brainstorm`, `/implement`, `/fix`, `/infra`, `/explore`, `/verify`, `/dobby` |
+| Workflow skills (19) | `workflow-*` prefix, composable per mode |
 | Execution guarantee | Iron Law #1 — never stops until user says stop |
 
 ## Directory layout

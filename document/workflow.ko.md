@@ -262,7 +262,7 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 
 ### 2-3. State 초기화 (workflow 명령 감지 시)
 
-모든 workflow 명령(`/brainstorm`, `/fix`, `/explore`, `/implement`, `/verify`, `/dobby`)을 감지하면, `scripts/keyword-detector.mjs`가 `.smt/features/<slug>/task/<slug>.state.json`을 `state-schema.createInitialState()` + `modes/workflow.yaml`의 `allowed_skills`로 작성하고, 세션 스코프 active-feature 포인터도 함께 기록. 대부분의 모드는 `step: INTENT`에서 시작하지만, `/dobby`는 명시적 freeform 예외로 `step: EXECUTE`에서 시작해 terminal human-check 전 직접 편집을 허용한다. **`current_stage`는 seeding 경로에 따라 `null` 또는 모드 entry skill로 초기화** — workflow pipeline이 있는 모드에서는 에이전트가 entry workflow 스킬을 호출해야 진행 가능. R12(critic-watchdog)와 함께 canonical 스킬-진입 워크플로우를 강제.
+모든 workflow 명령(`/brainstorm`, `/fix`, `/infra`, `/explore`, `/implement`, `/verify`, `/dobby`)을 감지하면, `scripts/keyword-detector.mjs`가 `.smt/features/<slug>/task/<slug>.state.json`을 `state-schema.createInitialState()` + `modes/workflow.yaml`의 `allowed_skills`로 작성하고, 세션 스코프 active-feature 포인터도 함께 기록. 대부분의 모드는 `step: INTENT`에서 시작하지만, `/dobby`는 명시적 freeform 예외로 `step: EXECUTE`에서 시작해 terminal human-check 전 직접 편집을 허용한다. **`current_stage`는 seeding 경로에 따라 `null` 또는 모드 entry skill로 초기화** — workflow pipeline이 있는 모드에서는 에이전트가 entry workflow 스킬을 호출해야 진행 가능. R12(critic-watchdog)와 함께 canonical 스킬-진입 워크플로우를 강제.
 
 **분류 서브프로세스 재진입 방지 가드**: `lib/subagent-classifier.mjs`가 Haiku 분류기용 Claude CLI를 spawn 하면, 그 서브프로세스는 부모 훅 체인을 상속. `keyword-detector.mjs`는 `process.env.SMELTER_CLASSIFIER_SUBPROCESS === '1'`로 이를 감지하고 state-seeding 부수효과 이전에 즉시 bail. 이 가드가 없으면 slug 파생이 분류기의 시스템 프롬프트를 user 입력으로 취급해 여러 세션에 걸쳐 state store 를 오염.
 
@@ -359,7 +359,7 @@ workflow-investigate
             └────────────────────────┘                       /fix   /brainstorm  free_chat
 ```
 
-**출구**: 정적 파악 결과를 제시하고 종료한다. 필요 시 다음 입력에서 `/fix`, `/brainstorm`, `/implement`, `/verify` 중 하나로 새 workflow를 시작한다.
+**출구**: 정적 파악 결과를 제시하고 종료한다. 필요 시 다음 입력에서 `/fix`, `/infra`, `/brainstorm`, `/implement`, `/verify` 중 하나로 새 workflow를 시작한다.
 
 ### 4-4. brainstorm (entry: `/brainstorm` 또는 자동 분기)
 

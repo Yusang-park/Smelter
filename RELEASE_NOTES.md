@@ -3,6 +3,21 @@
 > Canonical release log. Korean translation: [`RELEASE_NOTES.ko.md`](RELEASE_NOTES.ko.md).
 > Smelter release tags now use the `0.*` line.
 
+## v0.4.1 — Infra Workflow And Hook Recovery Rollup
+**Released**: 2026-04-27
+
+### Changes
+
+- Current package, plugin, marketplace, Codex companion manifests, workflow schema, and workflow skill frontmatter version is `0.4.1`.
+- Added `/infra` for cloud/resource/IaC operations with inventory-first planning, destructive-risk review, execution evidence, verification handoff, and human-check gating.
+- Added `workflow-infra-plan`, `workflow-infra-plan-review`, and `workflow-infra-execute` to the workflow registry and artifact routing.
+- Tightened agent-driven recovery: slash-prefixed command skills normalize correctly, hook scripts share effective session-id fallback, and stale active state is less likely to block scoped writes.
+- Kept prompt/context overhead bounded with compact state-write contracts, terminal reminders, and prompt-budget regression coverage.
+
+### Verification
+
+- Regression coverage includes infra pipeline/config, hook registration, prompt budgets, RED recorder behavior, stage transitions, workflow contract, and state/permission guards.
+
 ## v0.4.0 — Explore Mode And Deterministic Contract Runtime
 **Released**: 2026-04-26
 

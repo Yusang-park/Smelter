@@ -1,6 +1,6 @@
 ---
 name: workflow-agent-review
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: src/** diff
 produces: agent-review.md, "## Risks" updated

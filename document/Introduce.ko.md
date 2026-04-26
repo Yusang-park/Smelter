@@ -119,4 +119,4 @@ Smelter는 "실행 후 완료"를 받아들이지 않는다. 출력은 여러 �
 | "build", "add", "implement", "extend" | `implement` |
 | 불명확 | `fix` (안전 기본값) |
 
-명시 slash 커맨드 (`/brainstorm`, `/fix`, `/explore`, `/verify`, `/implement`, `/dobby`)가 classifier를 override.
+명시 slash 커맨드 (`/brainstorm`, `/fix`, `/infra`, `/explore`, `/verify`, `/implement`, `/dobby`)가 classifier를 override.

@@ -1,6 +1,6 @@
 ---
 name: workflow-write-test
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: investigation.md OR implementation-plan.md OR tasks.md
 produces: "*.test.*" files (RED), test_cycles entries

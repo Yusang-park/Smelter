@@ -142,7 +142,7 @@ level: 3
 
 | 훅 이벤트 | 스크립트 | 역할 |
 |-----------|---------|------|
-| `UserPromptSubmit` | `keyword-detector.mjs`, `skill-injector.mjs` | 키워드 감지, 스킬 주입 |
+| `UserPromptSubmit` | `keyword-detector.mjs`, `auto-confirm-consumer.mjs` | 키워드 감지, queued continuation 주입 |
 | `SessionStart` | `session-start.mjs`, `project-memory-session.mjs` | 세션 초기화, 메모리 로드 |
 | `PreToolUse` | `pre-tool-enforcer.mjs` | 도구 사용 전 검증 |
 | `PostToolUse` | `post-tool-verifier.mjs` | 도구 실행 후 검증 |

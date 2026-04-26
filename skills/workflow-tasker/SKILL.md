@@ -1,6 +1,6 @@
 ---
 name: workflow-tasker
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: investigation.md (+brainstorm.md optional)
 produces: tasks.md (+ target_type + team_runtime initial assignment)

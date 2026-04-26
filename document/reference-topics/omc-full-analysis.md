@@ -36,7 +36,7 @@ OMC는 Claude Code 플러그인으로, hooks + skills + agents + MCP tools + 실
 | Hook             | 스크립트                     | 역할                               | Smelter 적용         |
 | ---------------- | ------------------------ | -------------------------------- | ----------------- |
 | UserPromptSubmit | `keyword-detector.mjs`   | 프롬프트에서 키워드 감지 → 모드 활성화           | ✅ 필수 — E2E 자동 트리거 |
-| UserPromptSubmit | `skill-injector.mjs`     | 학습된 스킬 자동 주입                     | ✅ 하네스 스킬 주입       |
+| UserPromptSubmit | `skill-injector.mjs`     | Removed in v0.4; learned-skill auto-injection disabled | 제거됨 |
 | SessionStart     | `session-start.mjs`      | 모드 상태 복원, 버전 확인                  | ✅ 앱 시작 시 상태 복원    |
 | PreToolUse       | `pre-tool-enforcer.mjs`  | 도구 사용 전 컨텍스트 주입 (병렬 실행, 파일 읽기 등) | ✅ E2E 강제 리마인더     |
 | PostToolUse      | `post-tool-verifier.mjs` | 실패 감지, 통계 추적, `<remember>` 태그 처리 | ✅ E2E 결과 후처리      |
