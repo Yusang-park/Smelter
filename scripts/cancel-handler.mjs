@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { sanitizeSessionId } from './lib/session-paths.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 import { readLastDetection } from './lib/hook-guards.mjs';
 
 function readStdin() {
@@ -35,7 +35,7 @@ async function main() {
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
 
   const cwd = input.cwd || process.cwd();
-  const sessionId = sanitizeSessionId(input.session_id || input.sessionId || '');
+  const sessionId = resolveHookSessionId(input);
   if (!sessionId) return output();
 
   const file = join(cwd, '.smt', 'state', `last-detection-${sessionId}.json`);

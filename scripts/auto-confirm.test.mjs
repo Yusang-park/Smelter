@@ -42,6 +42,7 @@ import {
   detectReviewFailCause,
   ACTIVE_STATE_MAX_AGE_MS,
   applyProseCompletionPass,
+  applyArtifactCompletionEvent,
 } from './auto-confirm.mjs';
 
 import { createInitialState, writeState } from './state-schema.mjs';
@@ -766,10 +767,10 @@ test('spawn_sub_tasker prompt mentions sub-tasker', () => {
   const text = buildPromptInjection({ action: 'spawn_sub_tasker', reason: 'r', payload: { text: '리스크' } }, s);
   assert.match(text, /sub-tasker/i);
 });
-test('continue action embeds sub-agent model hint (default sonnet)', () => {
+test('continue action embeds Task model hint (default sonnet)', () => {
   const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
   const text = buildPromptInjection({ action: 'continue', reason: 'asked permission' }, s);
-  assert.match(text, /sub-agent/i);
+  assert.match(text, /Task/i);
   assert.match(text, /sonnet/);
 });
 test('continue action with codex sub-agent model emits haiku hint', () => {
@@ -786,7 +787,7 @@ test('continue with multi_choice questionShape appends NO-CHOICE autopick direct
   );
   assert.match(text, /\[NO-CHOICE POLICY\]/);
   assert.match(text, /Pick the single highest-confidence option/i);
-  assert.match(text, /execute it via tools immediately/i);
+  assert.match(text, /execute via tools/i);
 });
 test('continue with yes_no questionShape appends NO-CHOICE directive', () => {
   const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
@@ -830,8 +831,8 @@ test('MANDATORY: advance with payload.skill emits MANDATORY WORKFLOW STEP + Skil
   assert.match(text, /\[MANDATORY WORKFLOW STEP\]/);
   assert.match(text, /Skill\(skill: 'workflow-coding'\)/);
   assert.match(text, /direction=advance/);
-  assert.match(text, /Your last message \(truncated\)/);
-  assert.match(text, /I finished writing tests/);
+  assert.doesNotMatch(text, /Your last message/);
+  assert.doesNotMatch(text, /I finished writing tests/);
 });
 
 test('MANDATORY: enter_skill with producer-chain direction=back emits "go BACK to"', () => {
@@ -847,7 +848,7 @@ test('MANDATORY: enter_skill with producer-chain direction=back emits "go BACK t
   assert.match(text, /haiku/);
 });
 
-test('MANDATORY: injection truncates lastAssistantText to 400 chars', () => {
+test('MANDATORY: injection never replays lastAssistantText, even truncated', () => {
   const s = baseState({ mode: 'fix', current_stage: 'workflow-coding' });
   const long = 'a'.repeat(1000);
   const text = buildPromptInjection(
@@ -855,9 +856,9 @@ test('MANDATORY: injection truncates lastAssistantText to 400 chars', () => {
     s,
     { subAgentModel: 'sonnet', lastAssistantText: long },
   );
-  const quoted = text.match(/"""\n([\s\S]*?)\n"""/);
-  assert.ok(quoted, 'must include triple-quoted section');
-  assert.ok(quoted[1].length <= 400, `truncation must be <=400, got ${quoted[1].length}`);
+  assert.doesNotMatch(text, /"""/);
+  assert.doesNotMatch(text, /a{20}/);
+  assert.match(text, /Skill\(skill: 'workflow-agent-review'\)/);
 });
 
 test('MANDATORY: injection does not replay stale coding-stage alignment prose', () => {
@@ -1429,6 +1430,41 @@ test('active state + pass event + session_id → exit 2, session-scoped queue-dr
   }
 });
 
+test('active review artifact fail → CLI backfills state and routes upstream without classifier', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
+  try {
+    const featDir = join(dir, '.smt', 'features', 'rv', 'task');
+    mkdirSync(featDir, { recursive: true });
+    const statePath = join(featDir, 'rv.state.json');
+    const state = baseState({ mode: 'fix', current_stage: 'workflow-investigate-review', events: [] });
+    writeState(statePath, state);
+    writeFileSync(join(featDir, 'investigation-review.md'), '# Review\n\nverdict: fail\n\nCause: file_absent\n', 'utf-8');
+    mkdirSync(join(dir, '.smt', 'state'), { recursive: true });
+    const sessionId = 'sess-review-fail';
+    writeFileSync(
+      join(dir, '.smt', 'state', `active-feature-${sessionId}.json`),
+      JSON.stringify({ slug: 'rv', session_id: sessionId }),
+    );
+
+    const classifierStub = join(dir, 'classifier-should-not-run.sh');
+    writeFileSync(classifierStub, '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+    const payload = JSON.stringify({ cwd: dir, session_id: sessionId, last_assistant_text: 'Review done and artifact is present.' });
+    const res = spawnSync('node', [HOOK], { input: payload, encoding: 'utf-8', env: { ...process.env, SMT_CLASSIFIER_CMD: classifierStub } });
+    assert.equal(res.status, 2, `expected block exit 2, got ${res.status}\nstderr: ${res.stderr}\nstdout: ${res.stdout}`);
+    const persisted = JSON.parse(readFileSync(statePath, 'utf-8'));
+    const fail = persisted.events.find(e => e.skill === 'workflow-investigate-review' && e.result === 'fail');
+    assert.ok(fail, 'review fail event persisted');
+    assert.equal(fail.cause, 'file_absent');
+    assert.match(fail.evidence.path, /investigation-review\.md$/);
+    const queuePath = join(dir, '.smt', 'state', `auto-confirm-queue-${sessionId}.json`);
+    const queue = JSON.parse(readFileSync(queuePath, 'utf-8'));
+    assert.equal(queue.action, 'enter_skill');
+    assert.match(queue.additionalContext, /workflow-investigate/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('parallel sessions do not cross-pollinate: A writes, B reads nothing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ac-v2-'));
   try {
@@ -1706,7 +1742,7 @@ test('decide: review stage_complete with fail verdict routes back via producer c
   assert.equal(d.action, 'enter_skill');
   assert.equal(d.payload.direction, 'back');
   assert.equal(d.payload.skill, 'workflow-coding');
-  assert.match(d.reason, /review fail verdict/);
+  assert.match(d.reason, /review fail/);
 });
 test('decide: review stage_complete with pass verdict advances forward', () => {
   const state = baseState({ mode: 'implement', current_stage: 'workflow-e2e-review' });
@@ -1875,6 +1911,63 @@ test('Fix A 1-8: loop-breaking invariant — decide() after Fix A returns advanc
     assert.notEqual(second.action, 'stage_complete', 'second decide does not re-fire stage_complete');
     assert.notEqual(second.action, 'stage_incomplete', 'second decide does not return incomplete');
     assert.equal(second.action, 'advance', 'second decide returns advance (loop broken)');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ----------------------------------------------------------------------------
+section('Regression: artifact-backed stage completion backfill on Stop');
+// ----------------------------------------------------------------------------
+
+test('artifact backfill writes review fail event and routes back before classifier', () => {
+  const { dir, statePath, state } = seedStateOnDisk({ current_stage: 'workflow-investigate-review' });
+  try {
+    writeFileSync(
+      join(dirname(statePath), 'investigation-review.md'),
+      '# Investigation Review\n\nverdict: fail\n\nCause: file_absent\n',
+      'utf-8',
+    );
+
+    assert.equal(typeof applyArtifactCompletionEvent, 'function', 'applyArtifactCompletionEvent must be exported');
+    const wrote = applyArtifactCompletionEvent(state, statePath);
+    assert.equal(wrote, true, 'artifact should write a state event');
+
+    const failEvents = state.events.filter(e => e.skill === 'workflow-investigate-review' && e.result === 'fail');
+    assert.equal(failEvents.length, 1, 'review fail event recorded');
+    assert.equal(failEvents[0].cause, 'file_absent');
+    assert.equal(failEvents[0].evidence.type, 'file_present');
+    assert.match(failEvents[0].evidence.path, /investigation-review\.md$/);
+
+    const d = decide({
+      state,
+      lastAssistantText: 'Review artifact exists and declares fail with file_absent evidence.',
+      statePath,
+      stageClassifier: () => { throw new Error('classifier must not run after artifact backfill'); },
+    });
+    assert.equal(d.action, 'enter_skill');
+    assert.equal(d.payload.skill, 'workflow-investigate');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('artifact backfill writes pass event with evidence and completes non-deferred stage', () => {
+  const { dir, statePath, state } = seedStateOnDisk({ current_stage: 'workflow-investigate' });
+  try {
+    writeFileSync(
+      join(dirname(statePath), 'investigation.md'),
+      '# Investigation\n\nFindings with evidence anchors.\n',
+      'utf-8',
+    );
+
+    const wrote = applyArtifactCompletionEvent(state, statePath);
+    assert.equal(wrote, true, 'artifact should write a pass event');
+    assert.ok(state.completed_stages.includes('workflow-investigate'), 'stage completed from artifact evidence');
+    const persisted = JSON.parse(readFileSync(statePath, 'utf-8'));
+    assert.ok(persisted.completed_stages.includes('workflow-investigate'), 'completion persisted to disk');
+    const pass = persisted.events.find(e => e.skill === 'workflow-investigate' && e.result === 'pass');
+    assert.match(pass.evidence.path, /investigation\.md$/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

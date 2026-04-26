@@ -26,6 +26,7 @@ import { join, resolve } from 'node:path';
 import {
   loadedSkillsPath,
   resolveActiveState,
+  resolveHookSessionId,
   sanitizeSessionId
 } from './lib/session-paths.mjs';
 import { classifyCommand } from './lib/shell-tokenize.mjs';
@@ -53,6 +54,12 @@ const MUTATING_MCP = new Set([
 ]);
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit']);
+
+const COMMAND_SKILLS = new Set(['brainstorm', 'fix', 'infra', 'explore', 'verify', 'implement', 'dobby']);
+
+function normalizeSkillName(skill) {
+  return String(skill || '').replace(/^\/+/, '');
+}
 
 function getMode() {
   const m = (process.env.SMT_STAGE_GATE_MODE || 'enforce').toLowerCase();
@@ -85,15 +92,37 @@ function appendLoadedSkill(cwd, sessionId, skill, stageEpoch) {
 
 function resolveSkillLoadEpoch(active, skill) {
   if (!active || !active.state) return 'no-stage';
+  const normalized = normalizeSkillName(skill);
   if (
-    typeof skill === 'string' &&
-    skill.startsWith('workflow-') &&
-    Array.isArray(active.state.allowed_skills) &&
-    active.state.allowed_skills.includes(skill)
+    COMMAND_SKILLS.has(normalized) &&
+    normalized === active.state.mode &&
+    typeof active.state.current_stage === 'string' &&
+    active.state.current_stage
   ) {
-    return `${active.slug}::${skill}`;
+    return `${active.slug}::${active.state.current_stage}`;
+  }
+  if (
+    normalized.startsWith('workflow-') &&
+    Array.isArray(active.state.allowed_skills) &&
+    active.state.allowed_skills.includes(normalized)
+  ) {
+    return `${active.slug}::${normalized}`;
   }
   return active.state.current_stage ? `${active.slug}::${active.state.current_stage}` : 'no-stage';
+}
+
+function skillRecordName(active, skill) {
+  const normalized = normalizeSkillName(skill);
+  if (
+    active?.state &&
+    COMMAND_SKILLS.has(normalized) &&
+    normalized === active.state.mode &&
+    typeof active.state.current_stage === 'string' &&
+    active.state.current_stage
+  ) {
+    return active.state.current_stage;
+  }
+  return normalized;
 }
 
 function readLoadedSkills(cwd, sessionId) {
@@ -151,17 +180,19 @@ async function main() {
     return;
   }
 
-  const { tool_name, tool_input, session_id, cwd } = input;
+  const { tool_name, tool_input, cwd } = input;
+  const sessionId = resolveHookSessionId(input);
   if (!cwd) emitAllow();
 
   // Skill tool: record load and always allow
   if (tool_name === 'Skill') {
-    const skill = tool_input && tool_input.skill;
-    if (typeof skill === 'string' && skill) {
-      const active = resolveActiveState(cwd, session_id);
-      const stageEpoch = resolveSkillLoadEpoch(active, skill);
-      appendLoadedSkill(cwd, session_id, skill, stageEpoch);
-      logStderr('skill-load', { skill, stageEpoch, mode });
+    const rawSkill = tool_input && tool_input.skill;
+    if (typeof rawSkill === 'string' && rawSkill) {
+      const active = resolveActiveState(cwd, sessionId);
+      const skill = skillRecordName(active, rawSkill);
+      const stageEpoch = resolveSkillLoadEpoch(active, rawSkill);
+      appendLoadedSkill(cwd, sessionId, skill, stageEpoch);
+      logStderr('skill-load', { skill, rawSkill, stageEpoch, mode });
     }
     emitAllow();
     return;
@@ -172,7 +203,7 @@ async function main() {
   if (!check.mutating) { emitAllow(); return; }
 
   // Resolve active state
-  const active = resolveActiveState(cwd, session_id);
+  const active = resolveActiveState(cwd, sessionId);
   if (!active) { emitAllow(); return; } // state file absent → pass-through
 
   if (active.state === null) {
@@ -180,6 +211,12 @@ async function main() {
     const reason = `gate-error: state.json unreadable at ${active.statePath}`;
     logStderr('state-error', { reason, mode });
     emitBlock(reason);
+    return;
+  }
+
+  if (active.state.mode === 'dobby' || active.state.user_mode === 'dobby') {
+    logStderr('allow-dobby', { tool: tool_name, mode });
+    emitAllow();
     return;
   }
 
@@ -199,7 +236,7 @@ async function main() {
   }
 
   const stageEpoch = `${active.slug}::${currentStage}`;
-  const entries = readLoadedSkills(cwd, session_id);
+  const entries = readLoadedSkills(cwd, sessionId);
   const loaded = entries.some((e) => e && e.skill === currentStage && e.stageEpoch === stageEpoch);
 
   if (loaded) {

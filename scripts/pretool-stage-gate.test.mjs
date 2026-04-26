@@ -71,11 +71,40 @@ section('happy path');
 {
   const dir = mkFixture();
   writePointer(dir, SID, 'fx');
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-investigate', completed_stages: [] });
+  const r0 = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce', SMELTER_SESSION_ID: SID });
+  assert('missing input session_id + env state w/o skill → block', r0.stdout?.decision, 'block');
+  runHook({ tool_name: 'Skill', tool_input: { skill: 'workflow-investigate' }, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce', SMELTER_SESSION_ID: SID });
+  const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce', SMELTER_SESSION_ID: SID });
+  assert('missing input session_id uses SMELTER_SESSION_ID for loaded skill', r.stdout === null || r.stdout?.decision !== 'block', true);
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
   writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-brainstorm', completed_stages: [] });
   // record skill load via Skill tool
   runHook({ tool_name: 'Skill', tool_input: { skill: 'workflow-brainstorm' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
   const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
   assert('Write after Skill load → allow', r.stdout === null || r.stdout?.decision !== 'block', true);
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-investigate', completed_stages: [] });
+  runHook({ tool_name: 'Skill', tool_input: { skill: '/implement' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  assert('Write after slash entry command load → allow current entry stage', r.stdout === null || r.stdout?.decision !== 'block', true);
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-investigate', completed_stages: [] });
+  runHook({ tool_name: 'Skill', tool_input: { skill: '/fix' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  assert('mismatched slash entry command does not load current stage', r.stdout?.decision, 'block');
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -149,6 +178,14 @@ section('edge case');
   writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-brainstorm', completed_stages: [] });
   const r = runHook({ tool_name: 'Write', tool_input: { file_path: '/tmp/x' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'off' });
   assert('off mode → pass-through', r.stdout === null || r.stdout?.decision !== 'block', true);
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mkFixture();
+  writePointer(dir, SID, 'fx');
+  writeState(dir, 'fx', { task_id: 'fx', mode: 'dobby', user_mode: 'dobby', task_type: 'freeform', current_stage: 'workflow-human-check', completed_stages: [] });
+  const r = runHook({ tool_name: 'Bash', tool_input: { command: 'git checkout -- src/hooks/account/use-account-query.test.ts' }, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
+  assert('dobby active state → mutating git pass-through', r.stdout === null || r.stdout?.decision !== 'block', true);
   rmSync(dir, { recursive: true, force: true });
 }
 {

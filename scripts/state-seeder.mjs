@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 
 import { seedWorkflowState } from './lib/workflow-state-seeder.mjs';
-import { sanitizeSessionId } from './lib/session-paths.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 import { readLastDetection } from './lib/hook-guards.mjs';
 
 function readStdin() {
@@ -34,7 +34,7 @@ async function main() {
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
 
   const cwd = input.cwd || process.cwd();
-  const sessionId = sanitizeSessionId(input.session_id || input.sessionId || '');
+  const sessionId = resolveHookSessionId(input);
   if (!sessionId) {
     console.log(JSON.stringify({ continue: true }));
     return;

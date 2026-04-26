@@ -6,10 +6,11 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { readCancel } from './lib/cancel-signal.mjs';
 import { printTag } from './lib/yellow-tag.mjs';
 import { evaluateToolUse as evaluateV4ToolUse } from './lib/workflow-v4-guard.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 // Read stdin synchronously — hook scripts receive JSON via pipe, /dev/stdin returns immediately
 function readStdinSync() {
@@ -119,6 +120,17 @@ function resolveUnscopedFallback(directory) {
   return null;
 }
 
+function resolveWorkflowRoot(directory) {
+  let current = directory || process.cwd();
+  while (current) {
+    if (existsSync(join(current, '.smt'))) return current;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return directory || process.cwd();
+}
+
 function main() {
   printTag('Pre Tool Enforcer');
   try {
@@ -127,10 +139,11 @@ function main() {
     const toolName = extractJsonField(input, 'tool_name') || extractJsonField(input, 'toolName', 'unknown');
     printTag(`Pre Tool: ${toolName}`);
     const directory = extractJsonField(input, 'cwd') || extractJsonField(input, 'directory', process.cwd());
+    const workflowRoot = resolveWorkflowRoot(directory);
 
     let data = {};
     try { data = JSON.parse(input); } catch {}
-    const sessionId = data.session_id || data.sessionId || '';
+    const sessionId = resolveHookSessionId(data);
 
     // --- Block native EnterPlanMode only during Smelter /brainstorm (planning) ---
     // Smelter's /brainstorm → workflow-brainstorm (depth: deep) OWNS planning. Native
@@ -147,17 +160,17 @@ function main() {
       // another session) is treated as stale cross-session state and
       // ignored — preserving the session-isolation invariant in PLAN-C4.
       const smtStateScoped = sessionId
-        ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
-        : join(directory, '.smt', 'state', 'active-feature.json');
+          ? join(workflowRoot, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(workflowRoot, '.smt', 'state', 'active-feature.json');
       const smtState = existsSync(smtStateScoped)
         ? smtStateScoped
-        : resolveUnscopedFallback(directory, sessionId);
+        : resolveUnscopedFallback(workflowRoot, sessionId);
       let isBrainstormMode = false;
       try {
         if (smtState && existsSync(smtState)) {
           const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
           if (pointer?.slug) {
-            const statePath = join(directory, '.smt', 'features', pointer.slug, 'state', 'workflow.json');
+            const statePath = join(workflowRoot, '.smt', 'features', pointer.slug, 'state', 'workflow.json');
             if (existsSync(statePath)) {
               const wf = JSON.parse(readFileSync(statePath, 'utf-8'));
               isBrainstormMode = wf?.command === 'brainstorm';
@@ -240,11 +253,11 @@ function main() {
         // unscoped as fallback. See resolveUnscopedFallback for the
         // isolation rule (only pointer.session_id === '' is honored).
         const ptrScoped = sessionId
-          ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
-          : join(directory, '.smt', 'state', 'active-feature.json');
+          ? join(workflowRoot, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(workflowRoot, '.smt', 'state', 'active-feature.json');
         const ptrPath = existsSync(ptrScoped)
           ? ptrScoped
-          : resolveUnscopedFallback(directory, sessionId);
+          : resolveUnscopedFallback(workflowRoot, sessionId);
         let activeSlug = null;
         try {
           if (ptrPath && existsSync(ptrPath)) {
@@ -267,7 +280,7 @@ function main() {
 
     // --- v3.3: Force code-file Edit/Write through a Smelter workflow ---
     // User directive (2026-04-23): every CODE file modification, no matter
-    // how trivial, must run inside an active write/freeform workflow so
+    // how trivial, must run inside an active write/infra/freeform workflow so
     // workflow-human-check is always the terminal gate. Raw agent edits that
     // bypass the pipeline are blocked here at PreToolUse.
     //
@@ -321,18 +334,18 @@ function main() {
         // unscoped as fallback. See resolveUnscopedFallback for the
         // isolation rule (only pointer.session_id === '' is honored).
         const smtStateScoped = sessionId
-          ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
-          : join(directory, '.smt', 'state', 'active-feature.json');
+          ? join(workflowRoot, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(workflowRoot, '.smt', 'state', 'active-feature.json');
         const smtState = existsSync(smtStateScoped)
           ? smtStateScoped
-          : resolveUnscopedFallback(directory, sessionId);
+          : resolveUnscopedFallback(workflowRoot, sessionId);
         let allowedMode = null;
         let v4TaskType = null;
         try {
           if (smtState && existsSync(smtState)) {
             const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
             if (pointer?.slug) {
-              const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
+              const statePath = join(workflowRoot, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
               if (existsSync(statePath)) {
                 const state = JSON.parse(readFileSync(statePath, 'utf-8'));
                 if (typeof state?.task_type === 'string') {
@@ -359,13 +372,13 @@ function main() {
         } catch {}
         if (!allowedMode && !isWorkflowArtifactPath) {
           const v4Suffix = v4TaskType ? ` Current v0.4 task_type=${v4TaskType}.` : '';
-          printTag(`Block: ${toolName} code file requires active write/freeform workflow`);
+          printTag(`Block: ${toolName} code file requires active write/infra/freeform workflow`);
           console.log(JSON.stringify({
             decision: 'block',
             reason: `[SMELTER] Raw ${toolName} of code file is blocked: ${filePath}\n` +
-              `v0.4 guard requires task_type=write or task_type=freeform for source edits.${v4Suffix}\n` +
-              `All code-file modifications — including trivial text / design edits within code — require an active Smelter write/freeform workflow so workflow-human-check is the terminal gate.\n` +
-              `Agent recovery: invoke Skill(fix|implement|dobby) yourself to seed active state, or continue only after an existing active workflow pointer is present. Do not ask the user to type a slash command. Then re-issue the ${toolName}.\n` +
+              `v0.4 guard requires task_type=write, task_type=infra, or task_type=freeform for source edits.${v4Suffix}\n` +
+              `All code-file modifications — including trivial text / design edits within code — require an active Smelter write/infra/freeform workflow so workflow-human-check is the terminal gate.\n` +
+              `Agent recovery: invoke Skill(fix|implement|infra|dobby) yourself to seed active state, or continue only after an existing active workflow pointer is present. Do not ask the user to type a slash command. Then re-issue the ${toolName}.\n` +
               `Docs (.md / .txt / .rst) are NOT gated by this rule — only code files.\n` +
               `Iron Law #1 — never complete without workflow-human-check. Surface-exempt text/design fixes and dobby freeform work also count as workflow runs.`,
           }));
@@ -374,7 +387,7 @@ function main() {
       }
     }
 
-    // --- v3.1: Block `git commit` before workflow-human-check (fix/implement modes) ---
+    // --- Current rule: block `git commit` before workflow-human-check ---
     // When a code-modifying workflow is active and workflow-human-check has not
     // produced a pass event, agents must not commit. Human review is the last
     // gate; committing before it defeats the workflow's whole point.
@@ -393,8 +406,8 @@ function main() {
       const command = String(toolInputData.command || '');
       if (looksLikeGitCommit(command)) {
         const smtState = sessionId
-          ? join(directory, '.smt', 'state', `active-feature-${sessionId}.json`)
-          : join(directory, '.smt', 'state', 'active-feature.json');
+          ? join(workflowRoot, '.smt', 'state', `active-feature-${sessionId}.json`)
+          : join(workflowRoot, '.smt', 'state', 'active-feature.json');
         // Fail-CLOSED when an active pointer exists but state parsing fails.
         // An attacker who corrupts `.state.json` to bypass this gate gets
         // blocked instead of silently passing through.
@@ -406,7 +419,7 @@ function main() {
             pointerExists = true;
             const pointer = JSON.parse(readFileSync(smtState, 'utf-8'));
             if (pointer?.slug) {
-              const statePath = join(directory, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
+              const statePath = join(workflowRoot, '.smt', 'features', pointer.slug, 'task', `${pointer.slug}.state.json`);
               if (existsSync(statePath)) {
                 stateFileExists = true;
                 const state = JSON.parse(readFileSync(statePath, 'utf-8'));
@@ -494,7 +507,7 @@ function main() {
       if (fp) {
         try {
           if (existsSync(fp)) {
-            readFirstReminder = `Read-first reminder: "${fp}" already exists on disk. The Claude Code harness rejects ${toolName} of a file that was not Read in this session with "File has not been read yet". If you have not Read this file yet in the current session, issue Read({ file_path: "${fp}" }) before the ${toolName}. New-file writes (path does not exist) do not need this.`;
+            readFirstReminder = `Read-first: existing file. If not already Read this session, Read the same file before ${toolName}. New files exempt.`;
           }
         } catch {}
       }

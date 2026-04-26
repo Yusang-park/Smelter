@@ -62,14 +62,15 @@ try {
   assert.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, undefined);
   assert.equal(settings.env.ANTHROPIC_CUSTOM_MODEL_OPTION, undefined);
   assert.ok(true, 'expected additionalModelOptionsCache to exist');
-  assert.equal(codexCache.length, 4, 'expected 4 codex model options');
-  assert.equal(new Set(codexCache.map((option) => option.value)).size, 4, 'expected unique codex model values');
+  assert.equal(codexCache.length, CODEX_MODEL_OPTIONS.length, 'expected canonical codex model option count');
+  assert.equal(new Set(codexCache.map((option) => option.value)).size, CODEX_MODEL_OPTIONS.length, 'expected unique codex model values');
   assert.deepEqual(codexCache, CODEX_MODEL_OPTIONS, 'expected canonical codex model options');
+  assert.ok(codexCache.some((option) => option.value === 'gpt-5.5'), 'expected gpt-5.5 model option');
   assert.ok(codexCache.some((option) => option.value === 'gpt-5.3-codex-spark'), 'expected codex-spark model option');
 
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   assert.equal(state.mode, 'codex');
-  assert.equal(state.model, 'Codex gpt-5.4');
+  assert.equal(state.model, CODEX_MODEL_OPTIONS[0].label);
   assert.equal(getCodexConfigDir(tempHome), claudeCodexDir, 'codex config dir should be isolated at ~/.claude-codex');
   assert.equal(getCodexClaudeJsonPath(tempHome), claudeJsonPath, 'codex model cache should live at ${CLAUDE_CONFIG_DIR}/.claude.json (non-hashed) to match Claude Code v2.1+ resolver');
 

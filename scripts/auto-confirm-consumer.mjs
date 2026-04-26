@@ -21,6 +21,7 @@
 
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { queuePath, QUEUE_MAX_AGE_MS } from './auto-confirm.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 function readStdinJson() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
@@ -51,7 +52,7 @@ export function consume(cwd, sessionId = '', { now = Date.now() } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const input = readStdinJson();
   const cwd = input.cwd || process.cwd();
-  const sessionId = input.session_id || input.sessionId || '';
+  const sessionId = resolveHookSessionId(input);
   const entry = consume(cwd, sessionId);
 
   if (!entry || !entry.additionalContext) {

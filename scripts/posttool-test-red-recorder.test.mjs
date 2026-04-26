@@ -59,11 +59,52 @@ function seedActiveFeature(cwd, sessionId, slug, stateOverrides = {}) {
 }
 
 function runRecorder({ cwd, sessionId, payload }) {
+  const body = { cwd, ...payload };
+  if (sessionId !== undefined) body.session_id = sessionId;
   return spawnSync(process.execPath, [SCRIPT], {
-    input: JSON.stringify({ cwd, session_id: sessionId, ...payload }),
+    input: JSON.stringify(body),
     encoding: 'utf8',
     env: { ...process.env },
   });
+}
+
+function seedUnscopedFeature(cwd, slug, stateOverrides = {}) {
+  mkdirSync(join(cwd, '.smt', 'state'), { recursive: true });
+  mkdirSync(join(cwd, '.smt', 'features', slug, 'task'), { recursive: true });
+  writeFileSync(join(cwd, '.smt', 'state', 'active-feature.json'), JSON.stringify({ slug, session_id: '' }));
+  const path = join(cwd, '.smt', 'features', slug, 'task', `${slug}.state.json`);
+  writeFileSync(path, JSON.stringify({
+    schema_version: '2.4.1',
+    task_id: slug,
+    mode: 'brainstorm',
+    user_mode: 'brainstorm',
+    task_type: 'design',
+    step: 'INTENT',
+    step_flow: ['INTENT','PLAN','DONE'],
+    allowed_actions: ['classify_intent'],
+    allowed_skills: ['workflow-brainstorm'],
+    current_stage: 'workflow-brainstorm',
+    completed_stages: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    target_type: null,
+    surface: [],
+    exempt: { tdd: true, e2e: true },
+    skip_brainstorm: false,
+    team_runtime: {},
+    events: [],
+    scenarios: [],
+    test_cycles: [],
+    active_feedback: [],
+    sub_tasks: [],
+    ...stateOverrides,
+  }, null, 2));
+  return path;
+}
+
+function seedUnscopedPointer(cwd, sessionId, slug) {
+  mkdirSync(join(cwd, '.smt', 'state'), { recursive: true });
+  writeFileSync(join(cwd, '.smt', 'state', 'active-feature.json'), JSON.stringify({ slug, session_id: sessionId, updated_at: Date.now() }));
 }
 
 test('TR1 node --test exit≠0 appends test_red event (happy)', async () => {
@@ -104,6 +145,27 @@ test('TR2 node --test exit=0 does NOT append (boundary)', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+test('TR2b masked RED via echo exit does NOT append and emits diagnostic', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const slug = 'feature-tr2b-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr2b', slug);
+    const r = runRecorder({
+      cwd, sessionId: 'sess-tr2b',
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'node --test scripts/foo.test.mjs; echo "exit=$?"' },
+        tool_response: { exit_code: 0, stdout: '# fail 4\nexit=1\n' },
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 0, 'masked RED must not be recorded as evidence');
+    const out = JSON.parse(r.stdout || '{}');
+    assert.match(out.systemMessage || out.hookSpecificOutput?.additionalContext || '', /RED not recorded|remove.*echo|actual Bash exit code/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
 test('TR3 non-test bash command exit≠0 ignored (boundary)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
   try {
@@ -141,5 +203,189 @@ test('TR4 idempotent — repeated invocations do not duplicate (edge)', async ()
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
     const reds = (state.events || []).filter((e) => e.type === 'test_red');
     assert.equal(reds.length, 1, 'duplicate guard expected');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR5 missing input session_id uses SMELTER_SESSION_ID before stale unscoped pointer', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  const prevSid = process.env.SMELTER_SESSION_ID;
+  try {
+    const scopedSlug = 'feature-tr5-scoped';
+    const scopedPath = seedActiveFeature(cwd, 'sess-tr5', scopedSlug);
+    seedUnscopedFeature(cwd, 'feature-tr5-stale-design');
+    process.env.SMELTER_SESSION_ID = 'sess-tr5';
+    runRecorder({
+      cwd, sessionId: undefined,
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'node --test scripts/foo.test.mjs' },
+        tool_response: { exit_code: 1 },
+      },
+    });
+    const state = JSON.parse(readFileSync(scopedPath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 1, 'env-scoped state must receive RED event');
+  } finally {
+    if (prevSid === undefined) delete process.env.SMELTER_SESSION_ID;
+    else process.env.SMELTER_SESSION_ID = prevSid;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('TR6 pnpm vitest run exit≠0 appends test_red event', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const slug = 'feature-tr6-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr6', slug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    runRecorder({
+      cwd, sessionId: 'sess-tr6',
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'pnpm vitest run src/hooks/account/use-account-query.test.ts -t "user-switch identity guard"' },
+        tool_response: { exit_code: 1, stderr: '7 failed' },
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 1, 'vitest RED must be recorded');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR7 top-level exit_code exit≠0 appends test_red event', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const slug = 'feature-tr7-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr7', slug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    runRecorder({
+      cwd, sessionId: 'sess-tr7',
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'pnpm test:run src/hooks/account/use-account-query.test.ts' },
+        exit_code: 1,
+        tool_response: 'Error: Exit code 1',
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 1, 'top-level Bash exit_code must be recorded');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR8 object error text without structured exit code does NOT append', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const slug = 'feature-tr8-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr8', slug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    const r = runRecorder({
+      cwd, sessionId: 'sess-tr8',
+      payload: {
+        tool_name: 'Bash',
+        toolInput: { command: 'pnpm test:run src/hooks/account/use-account-query.test.ts -t "user-switch identity guard"' },
+        tool_response: { error: 'Error: Exit code 1', stderr: '7 failed' },
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 0, 'text-only exit code must not be trusted as RED evidence');
+    const out = JSON.parse(r.stdout || '{}');
+    assert.match(out.systemMessage || '', /RED not recorded|structured exit code/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR9 UI-decorated Bash tool_name still appends test_red event', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const slug = 'feature-tr9-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr9', slug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    runRecorder({
+      cwd, sessionId: 'sess-tr9',
+      payload: {
+        tool_name: 'Bash(pnpm test:run src/hooks/account/use-account-query.test.ts)',
+        tool_input: { command: 'pnpm test:run src/hooks/account/use-account-query.test.ts -t "user-switch identity guard"' },
+        tool_response: { exit_code: 1 },
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 1, 'UI-decorated Bash tool names must be recorded');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR10 nested cwd resolves ancestor .smt before recording RED', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const nested = join(cwd, 'src', 'hooks', 'account');
+    mkdirSync(nested, { recursive: true });
+    const slug = 'feature-tr10-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr10', slug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    runRecorder({
+      cwd: nested, sessionId: 'sess-tr10',
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'pnpm test:run src/hooks/account/use-account-query.test.ts -t "user-switch identity guard"' },
+        tool_response: { exit_code: 1 },
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const reds = (state.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 1, 'nested cwd must resolve parent workflow state');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR11 pointer conflict chooses same-session recordable write-test state', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const sessionId = 'sess-tr11';
+    const writeSlug = 'feature-tr11-write';
+    const freeformSlug = 'feature-tr11-freeform';
+    const writePath = seedActiveFeature(cwd, sessionId, writeSlug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    seedActiveFeature(cwd, sessionId, freeformSlug, {
+      mode: 'dobby',
+      user_mode: 'dobby',
+      task_type: 'freeform',
+      step: 'INTENT',
+      step_flow: ['INTENT','EXECUTE','HUMAN_CHECK','DONE'],
+      allowed_actions: ['classify_intent'],
+      allowed_skills: ['workflow-human-check'],
+      current_stage: 'workflow-human-check',
+    });
+    seedUnscopedPointer(cwd, sessionId, writeSlug);
+
+    runRecorder({
+      cwd, sessionId,
+      payload: {
+        tool_name: 'Bash(pnpm test:run src/hooks/account/use-account-query.test.ts)',
+        tool_input: { command: 'pnpm test:run src/hooks/account/use-account-query.test.ts -t "user-switch identity guard"' },
+        tool_response: { exit_code: 1 },
+      },
+    });
+
+    const writeState = JSON.parse(readFileSync(writePath, 'utf8'));
+    const reds = (writeState.events || []).filter((e) => e.type === 'test_red');
+    assert.equal(reds.length, 1, 'same-session write-test state must receive RED event');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

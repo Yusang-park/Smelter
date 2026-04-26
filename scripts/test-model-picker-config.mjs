@@ -33,7 +33,7 @@ try {
 
   const modelModeState = JSON.parse(readFileSync(modelModeStatePath, 'utf8'));
   assert.equal(modelModeState.mode, 'codex');
-  assert.equal(modelModeState.model, 'Codex gpt-5.4');
+  assert.equal(modelModeState.model, CODEX_MODEL_OPTIONS[0].label);
 
   console.log('model picker config test passed');
 } finally {

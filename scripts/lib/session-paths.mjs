@@ -21,6 +21,10 @@ export function sanitizeSessionId(sessionId) {
   return SESSION_ID_ALLOWED.test(sessionId) ? sessionId : '';
 }
 
+export function resolveHookSessionId(input = {}, env = process.env) {
+  return sanitizeSessionId(input.session_id || input.sessionId || env.SMELTER_SESSION_ID || '');
+}
+
 function stateDir(cwd) {
   return join(cwd, '.smt', 'state');
 }

@@ -15,7 +15,9 @@ import { join } from 'node:path';
 const SCRIPT = join(process.cwd(), 'scripts', 'pre-tool-enforcer.mjs');
 
 function runEnforcer({ cwd, toolName, toolInput, sessionId = 't2', env = {} }) {
-  const payload = JSON.stringify({ cwd, session_id: sessionId, tool_name: toolName, tool_input: toolInput });
+  const body = { cwd, tool_name: toolName, tool_input: toolInput };
+  if (sessionId !== undefined) body.session_id = sessionId;
+  const payload = JSON.stringify(body);
   // Strip SMT_HOOK_WRITE from the inherited environment — this test suite
   // pins the enforcer's default (agent-invoked) behavior, where the escape
   // hatch is NOT set. Leaking the parent env's SMT_HOOK_WRITE=1 (present when
@@ -63,6 +65,23 @@ test('T2-H1: Write on unrelated code file with active /fix workflow is allowed',
     const out = parseOut(r.stdout);
     assert.ok(out, 'parse output');
     assert.notEqual(out.decision, 'block', `unrelated Write blocked under active fix mode: ${JSON.stringify(out)}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1a: nested cwd resolves parent workflow state without weakening the gate', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1a-'));
+  try {
+    seedActiveWorkflow(cwd);
+    const nested = join(cwd, 'codex-for-claude-code');
+    mkdirSync(join(nested, 'scripts'), { recursive: true });
+    const r = runEnforcer({
+      cwd: nested,
+      toolName: 'Write',
+      toolInput: { file_path: join(nested, 'scripts', 'foo.mjs'), content: 'x' },
+    });
+    const out = parseOut(r.stdout);
+    assert.ok(out, `parse output; stdout=${r.stdout}`);
+    assert.notEqual(out.decision, 'block', `nested cwd should reuse parent active workflow: ${JSON.stringify(out)}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -155,6 +174,40 @@ test('T2-H1e: v0.4 write task allows EXECUTE source edit with legacy red test ev
     const r = runEnforcer({ cwd, toolName: 'Edit', toolInput: { file_path: `${cwd}/src/foo.ts`, old_string: 'a', new_string: 'b' } });
     const out = parseOut(r.stdout);
     assert.notEqual(out?.decision, 'block', `v0.4 guard should allow EXECUTE after red test: ${JSON.stringify(out)}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-H1f: missing input session_id uses SMELTER_SESSION_ID before stale unscoped design state', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1f-'));
+  try {
+    seedActiveWorkflow(cwd, { sessionId: 'env-sid', slug: 'scoped-write', mode: 'implement', task_type: 'write' });
+    const scopedStatePath = join(cwd, '.smt', 'features', 'scoped-write', 'task', 'scoped-write.state.json');
+    const scopedState = JSON.parse(readFileSync(scopedStatePath, 'utf-8'));
+    Object.assign(scopedState, {
+      user_mode: 'implement',
+      step: 'EXECUTE',
+      allowed_actions: ['read', 'write_source', 'run_test'],
+      events: [{ t: new Date().toISOString(), type: 'test_red', declarer: 'hook' }],
+    });
+    writeFileSync(scopedStatePath, JSON.stringify(scopedState));
+
+    const stateDir = join(cwd, '.smt', 'state');
+    const staleTaskDir = join(cwd, '.smt', 'features', 'stale-design', 'task');
+    mkdirSync(staleTaskDir, { recursive: true });
+    writeFileSync(join(stateDir, 'active-feature.json'), JSON.stringify({ slug: 'stale-design', session_id: '' }));
+    writeFileSync(join(staleTaskDir, 'stale-design.state.json'), JSON.stringify({
+      mode: 'brainstorm', user_mode: 'brainstorm', task_type: 'design', step: 'INTENT', allowed_actions: ['classify_intent'], events: [], completed_stages: [],
+    }));
+
+    const r = runEnforcer({
+      cwd,
+      sessionId: null,
+      toolName: 'Edit',
+      toolInput: { file_path: `${cwd}/src/foo.ts`, old_string: 'a', new_string: 'b' },
+      env: { SMELTER_SESSION_ID: 'env-sid' },
+    });
+    const out = parseOut(r.stdout);
+    assert.notEqual(out?.decision, 'block', `env session should select scoped write state, not stale design pointer: ${JSON.stringify(out)}`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -259,8 +312,8 @@ test('T2-V1: Write on code file with NO active workflow is blocked (v3.3 gate)',
     assert.ok(out);
     assert.equal(out.decision, 'block', 'code file without workflow must block');
     assert.match(out.reason, /Raw Write of code file/i);
-    assert.match(out.reason, /Skill\(fix\|implement\|dobby\)/);
-    assert.doesNotMatch(out.reason, /`\/(?:fix|implement|dobby)\s+<description>`/);
+    assert.match(out.reason, /Skill\(fix\|implement\|infra\|dobby\)/);
+    assert.doesNotMatch(out.reason, /`\/(?:fix|implement|infra|dobby)\s+<description>`/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -496,6 +549,7 @@ test('R-I1: Read-first reminder coexists with tool description in additionalCont
     const ctx = out?.hookSpecificOutput?.additionalContext || '';
     assert.match(ctx, /Writing:/, 'tool description must remain');
     assert.match(ctx, /Read-first|Read the file first/i, 'reminder must also appear');
+    assert.ok(ctx.length < 220, `reminder should stay compact, got ${ctx.length} chars`);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -512,7 +566,7 @@ test('T2-I1: block reason directs agent to invoke skill instead of editing state
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// G — git commit / human-check gate (pre-tool-enforcer.mjs §v3.1 commit gate)
+// G — git commit / human-check gate (current commit gate contract)
 //
 // These tests pin the contract between the `workflow-human-check` skill's
 // `complete` exit and the pretool commit gate. The skill is the only halting
@@ -887,7 +941,7 @@ test('T2-F3: raw code-write block reason does not ask user to type slash command
     const out = parseOut(r.stdout);
     assert.equal(out?.decision, 'block');
     assert.doesNotMatch(out.reason, /Required action: invoke/i);
-    assert.doesNotMatch(out.reason, /`\/(?:fix|implement|dobby)\s+<description>`/);
+    assert.doesNotMatch(out.reason, /`\/(?:fix|implement|infra|dobby)\s+<description>`/);
     assert.match(out.reason, /agent recovery|Skill\(fix\|implement\|dobby\)/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

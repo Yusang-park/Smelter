@@ -12,6 +12,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 const CACHE_DIR = join(homedir(), '.claude', 'hud', 'task-summary');
 const MIN_PROMPT_LENGTH = 5;
@@ -73,7 +74,7 @@ try {
     const cwd = data.cwd || data.directory || process.cwd();
     const prompt = extractPrompt(input);
     if (isSubstantive(prompt)) {
-      const sessionId = data.session_id || data.sessionId || null;
+      const sessionId = resolveHookSessionId(data) || null;
       writeCache(cwd, prompt.trim(), sessionId);
     }
   }

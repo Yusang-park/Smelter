@@ -21,6 +21,7 @@ import { existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { createHash } from 'crypto';
 import { join } from 'path';
 import { writeCancel, clearCancel } from './lib/cancel-signal.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 /**
  * Derive the shared /tmp path for the auto-confirm and legacy stop-loop
@@ -159,7 +160,7 @@ async function main() {
   const type = data.type || 'hard';
   const reason = data.reason || 'user request';
   const queuedIntent = data.queued_intent || data.queuedIntent || '';
-  const sessionId = data.session_id || data.sessionId || '';
+  const sessionId = resolveHookSessionId(data);
 
   let result;
   if (type === 'queue' && queuedIntent) {

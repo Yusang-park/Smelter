@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { printTag } from './lib/yellow-tag.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const MAX_RETRIES = 3;
@@ -308,7 +309,7 @@ async function main() {
     try { data = JSON.parse(input); } catch {}
 
     const directory = data.cwd || data.directory || process.cwd();
-    const sessionId = data.session_id || data.sessionId || '';
+    const sessionId = resolveHookSessionId(data);
     const toolName = data.tool_name || data.toolName || '';
     const toolInput = data.tool_input || data.toolInput || {};
     const stateDir = join(directory, '.smt', 'state');

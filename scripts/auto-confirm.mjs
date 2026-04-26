@@ -39,6 +39,7 @@ import { readLastAssistantText, lastAssistantQuestionShape, classifyQuestionShap
 import { inspectClassifierModel } from './lib/subagent-classifier.mjs';
 import { nextV4Transition } from './lib/workflow-v4-controller.mjs';
 import { transitionV4State } from './lib/workflow-v4-state.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 // Question shapes that mark the assistant as actively soliciting a user
 // reply. When the last message matches any of these, the spawn_sub_tasker
@@ -420,6 +421,81 @@ export function applyProseCompletionPass(state, statePath) {
   }
 }
 
+const ARTIFACT_COMPLETION_DEFERRED_SKILLS = new Set([
+  'workflow-e2e-review',
+  'workflow-agent-review',
+  'workflow-team-code-review',
+  'workflow-human-check',
+]);
+
+// Artifact-backed completion backfill.
+// Covers the common hook ordering where Skill(PostToolUse) enters a stage
+// before the agent writes that stage's canonical artifact. On Stop, the file is
+// now present, but no later Skill hook will run unless we record the event here.
+export function applyArtifactCompletionEvent(state, statePath) {
+  if (!state || !statePath) return false;
+  const stage = state.current_stage;
+  if (!stage || typeof stage !== 'string') return false;
+  const artifact = canonicalArtifactPath(statePath, stage);
+  if (!artifact) return false;
+  try {
+    if (!existsSync(artifact.absPath)) return false;
+    const st = statSync(artifact.absPath);
+    if (!st.isFile() || st.size === 0) return false;
+  } catch {
+    return false;
+  }
+
+  const events = Array.isArray(state.events) ? state.events : [];
+  const alreadySettled = events.some(e => e && e.skill === stage && (e.result === 'pass' || e.result === 'fail'));
+  if (alreadySettled) return false;
+
+  const beforeEvents = Array.isArray(state.events) ? [...state.events] : state.events;
+  const beforeCompleted = Array.isArray(state.completed_stages) ? [...state.completed_stages] : state.completed_stages;
+
+  let result = 'pass';
+  let cause = null;
+  if (/-review$/.test(stage)) {
+    try {
+      const verdict = detectReviewVerdict(readFileSync(artifact.absPath, 'utf-8'));
+      if (verdict === 'fail') {
+        result = 'fail';
+        cause = detectReviewFailCause(readFileSync(artifact.absPath, 'utf-8')) || 'review_reject';
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  if (!Array.isArray(state.events)) state.events = [];
+  const event = {
+    t: new Date().toISOString(),
+    skill: stage,
+    result,
+    declarer: 'hook',
+    evidence: { type: 'file_present', path: artifact.absPath },
+  };
+  if (cause) event.cause = cause;
+  state.events.push(event);
+
+  if (result === 'pass' && !ARTIFACT_COMPLETION_DEFERRED_SKILLS.has(stage)) {
+    if (!Array.isArray(state.completed_stages)) state.completed_stages = [];
+    if (!state.completed_stages.includes(stage)) state.completed_stages.push(stage);
+  }
+
+  try {
+    writeState(statePath, state);
+    return true;
+  } catch {
+    if (beforeEvents === undefined) delete state.events;
+    else state.events = beforeEvents;
+    if (beforeCompleted === undefined) delete state.completed_stages;
+    else state.completed_stages = beforeCompleted;
+    process.stderr.write(`\x1b[33m[smelter] auto-confirm · artifact completion writeState failed for ${stage}\x1b[0m\n`);
+    return false;
+  }
+}
+
 // Stage-completion detection gate: run the classifier only when
 //   - current_stage is set,
 //   - a lastAssistantText is available,
@@ -510,6 +586,8 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     return { action: 'halt', reason: 'awaiting user mode upgrade decision' };
   }
 
+  applyArtifactCompletionEvent(state, statePath);
+
   const events = state.events || [];
   const last = events[events.length - 1];
   if (state.mode === 'explore' && state.current_stage === 'workflow-investigate-review' && last?.result === 'pass') {
@@ -529,7 +607,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
   if (unresolved) {
     return {
       action: 'enter_skill',
-      reason: `continue: unresolved feedback for '${unresolved.target_skill}'. Read ~/.claude/skills/${unresolved.target_skill}/SKILL.md and follow its steps to resolve feedback '${unresolved.id}'.`,
+      reason: `continue: unresolved feedback '${unresolved.id}' for ${unresolved.target_skill}. Invoke that Skill and resolve it.`,
       payload: { skill: unresolved.target_skill, feedback_id: unresolved.id },
     };
   }
@@ -545,7 +623,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     if (r.target) {
       // Producer-chain → direction 'back' because the chain routes to the
       // upstream skill that owns the defect.
-      return { action: 'enter_skill', reason: `continue: route back to upstream producer '${r.target}'. Read ~/.claude/skills/${r.target}/SKILL.md and follow its steps. Cause: ${r.reason}`, payload: { skill: r.target, direction: 'back' } };
+      return { action: 'enter_skill', reason: `continue: route back to upstream producer ${r.target}. Cause: ${r.reason}`, payload: { skill: r.target, direction: 'back' } };
     }
   }
 
@@ -572,7 +650,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     const skill = pickNextStage(state);
     return {
       action: 'advance',
-      reason: `continue: previous stage passed. Next stage '${skill}'. Read ~/.claude/skills/${skill}/SKILL.md and follow its steps.`,
+      reason: `continue: previous stage passed. Next stage ${skill}.`,
       payload: { skill, direction: 'advance' },
     };
   }
@@ -581,7 +659,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     c.run_result === 'fail' && ['added_case', 'modified_case'].includes(c.action)
   );
   if (hasRed && state.current_stage !== 'workflow-coding' && state.allowed_skills.includes('workflow-coding')) {
-    return { action: 'enter_skill', reason: `continue: a failing test is ready. Read ~/.claude/skills/workflow-coding/SKILL.md and follow its steps to turn the failing test green.`, payload: { skill: 'workflow-coding' } };
+    return { action: 'enter_skill', reason: `continue: failing test ready; enter workflow-coding.`, payload: { skill: 'workflow-coding' } };
   }
 
   // Stage-completion gate: when current_stage is set, no pass event has
@@ -617,7 +695,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
         if (r.target) {
           return {
             action: 'enter_skill',
-            reason: `continue: review fail verdict — route back to upstream producer '${r.target}'. Read ~/.claude/skills/${r.target}/SKILL.md and follow its steps. Cause: ${r.reason}`,
+            reason: `continue: review fail; route back to upstream producer ${r.target}. Cause: ${r.reason}`,
             payload: { skill: r.target, direction: 'back' },
           };
         }
@@ -630,7 +708,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
       const nextSkill = pickNextStage(state);
       return {
         action: 'stage_complete',
-        reason: `continue: stage '${state.current_stage}' is done. Next stage is '${nextSkill}'. Read ~/.claude/skills/${nextSkill}/SKILL.md and follow its steps.`,
+        reason: `continue: stage ${state.current_stage} done; next ${nextSkill}.`,
         payload: {
           stage: state.current_stage,
           nextSkill,
@@ -643,7 +721,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     if (verdict && verdict.verdict === 'incomplete') {
       return {
         action: 'stage_incomplete',
-        reason: `continue: stage '${state.current_stage}' is not done yet. Re-read ~/.claude/skills/${state.current_stage}/SKILL.md and finish the work it describes.`,
+        reason: `continue: stage ${state.current_stage} incomplete; re-enter that Skill and finish it.`,
         payload: {
           stage: state.current_stage,
           summary: verdict.summary || '',
@@ -701,42 +779,6 @@ export function detectReviewFailCause(text) {
   return null;
 }
 
-// Format the MANDATORY workflow-step injection block. Called when the next
-// action is a concrete skill invocation (enter_skill / advance / continue).
-// The block is designed so the main agent cannot skip it as prose: it reads
-// as an imperative with the exact Skill tool call required.
-export function shouldEchoLastAssistantText(lastAssistantText, skill) {
-  if (!lastAssistantText || typeof lastAssistantText !== 'string') return false;
-  const text = lastAssistantText.slice(0, 800).replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-
-  // Never replay imperative transition text back into the next turn. The
-  // mandatory injection itself already carries the authoritative directive.
-  if (/\[MANDATORY WORKFLOW STEP\]/.test(text)) return false;
-  if (/\bYou MUST invoke Skill\(skill:/i.test(text)) return false;
-  if (/\bDo not answer in prose before the Skill call\b/i.test(text)) return false;
-  if (/\bThe PostToolUse:Skill hook only advances state\b/i.test(text)) return false;
-
-  // Never replay stale stage-alignment prose that claims a coding stage is
-  // active/aligned without proving the Skill tool was invoked. Echoing this
-  // text into the next mandatory injection biases the model toward prose-first
-  // continuation instead of the required Skill call.
-  if (/\bcoding stage is now aligned\b/i.test(text)) return false;
-  if (/\bstage tracker wasn.?t advanced\b/i.test(text)) return false;
-  if (/\bupdating the Smelter state\b/i.test(text)) return false;
-  if (/\bresuming the planned source edits\b/i.test(text)) return false;
-
-  // Generic stale transition claims. If the previous text already names the
-  // exact target skill as "entered/active/aligned", don't replay it.
-  const skillRe = String(skill || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (skillRe) {
-    const staleTransition = new RegExp(`\\b(?:entered|entering|active|aligned|resuming)\\b[\\s\\S]{0,80}${skillRe}`, 'i');
-    if (staleTransition.test(text)) return false;
-  }
-
-  return true;
-}
-
 export function formatMandatoryInjection({ skill, direction, subAgentModel, state, lastAssistantText }) {
   const lines = [];
   const dir = direction || 'advance';
@@ -750,21 +792,10 @@ export function formatMandatoryInjection({ skill, direction, subAgentModel, stat
     lines.push(`${directionLabel} ${skill} (direction=${dir})`);
   }
   lines.push('');
-  lines.push(`You MUST invoke Skill(skill: '${skill}') as the FIRST tool call of your reply.`);
-  lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
-  lines.push('The PostToolUse:Skill hook only advances state when the Skill tool is actually invoked.');
+  lines.push(`FIRST tool call MUST be Skill(skill: '${skill}'); no prose before it.`);
+  lines.push('State advances only after the actual Skill tool call.');
   if (subAgentModel) {
-    lines.push(`Delegate the actual work to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') when a specialist is needed.`);
-  }
-  if (shouldEchoLastAssistantText(lastAssistantText, skill)) {
-    const truncated = lastAssistantText.slice(0, 400).replace(/\s+/g, ' ').trim();
-    if (truncated.length > 0) {
-      lines.push('');
-      lines.push('Your last message (truncated):');
-      lines.push(`"""`);
-      lines.push(truncated);
-      lines.push(`"""`);
-    }
+    lines.push(`Use Task(..., model='${subAgentModel}') only when a specialist is needed.`);
   }
   return lines.join('\n');
 }
@@ -778,9 +809,9 @@ export function buildAutopickDirective(questionShape) {
   const lines = [
     '',
     '[NO-CHOICE POLICY]',
-    'Your previous message presented the user with branching options. Do NOT re-present them.',
-    'Pick the single highest-confidence option (the one with the strongest evidence / safest blast radius / fewest assumptions), state in ONE line which you picked and why, then execute it via tools immediately.',
-    'Only halt for genuinely external blockers (credentials, irreversible destructive ops awaiting confirmation). A judgement call is not a blocker — make the call.',
+    'Previous reply presented options. Do NOT repeat them.',
+    'Pick the single highest-confidence option (strongest evidence / safest blast radius / fewest assumptions), state pick + why in ONE line, then execute via tools.',
+    'Halt only for external blockers: credentials or irreversible destructive confirmation. Judgement calls are not blockers.',
   ];
   return lines.join('\n');
 }
@@ -837,15 +868,15 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
       lines.push('[MANDATORY WORKFLOW STEP]');
       lines.push(`mode=${state?.mode || '?'}, current_stage=${stage} → classifier verdict: complete (${summary})`);
       if (artifact) {
-        lines.push(`Canonical artifact ${artifact.basename} is missing at ${artifact.absPath}. Write it using the Write tool now — it must contain your actual findings (not a placeholder).`);
+        lines.push(`Write missing artifact ${artifact.basename} at ${artifact.absPath}; real findings only, no placeholder.`);
         lines.push(`After writing ${artifact.basename}, invoke Skill(skill: '${nextSkill}') as the next tool call.`);
       } else {
-        lines.push(`No canonical artifact is required for this stage (evidenced by test_cycles[] or git diff).`);
+        lines.push(`No canonical artifact required for this stage (test_cycles[] or git diff evidence).`);
         lines.push(`You MUST invoke Skill(skill: '${nextSkill}') as the FIRST tool call of your reply.`);
       }
-      lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
+      lines.push('No prose before the Skill call.');
       if (subAgentModel) {
-        lines.push(`Delegate the actual work to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') when a specialist is needed.`);
+        lines.push(`Use Task(..., model='${subAgentModel}') only when a specialist is needed.`);
       }
       return lines.join('\n');
     }
@@ -856,8 +887,8 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
       lines.push(`mode=${state?.mode || '?'}, current_stage=${stage} → classifier verdict: INCOMPLETE`);
       lines.push(`Reason: ${summary}`);
       lines.push('');
-      lines.push(`You MUST invoke Skill(skill: '${stage}') and continue the work — do not try to advance yet.`);
-      lines.push('Do not answer in prose before the Skill call — the Skill invocation IS the reply.');
+      lines.push(`Invoke Skill(skill: '${stage}') and continue; do not advance yet.`);
+      lines.push('No prose before the Skill call.');
       if (subAgentModel) {
         lines.push(`Delegate to a sub-agent using Task(subagent_type=..., model='${subAgentModel}') if a specialist is needed.`);
       }
@@ -1028,7 +1059,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   let input = {};
   try { input = JSON.parse(stdin); } catch {}
   const cwd = input.cwd || process.cwd();
-  const sessionId = input.session_id || '';
+  const sessionId = resolveHookSessionId(input);
   const statePath = findActiveTaskState(cwd, sessionId);
   const state = statePath ? readState(statePath) : null;
   // Resolve the agent's last assistant text. Test fixtures inject

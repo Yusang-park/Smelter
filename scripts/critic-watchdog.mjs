@@ -20,6 +20,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 function readStdinJson() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
@@ -292,7 +293,7 @@ function rule12_workflowStageRequired(input, state, cwd) {
   // workflow skill runs. Session-aware: prefer per-session pointer so a
   // concurrent session's workflow state doesn't trigger R12 here.
   if (!cwd) return null;
-  const sessionId = input.session_id;
+  const sessionId = resolveHookSessionId(input);
   const activePointer = sessionId
     ? join(cwd, '.smt', 'state', `active-feature-${sessionId}.json`)
     : join(cwd, '.smt', 'state', 'active-feature.json');
@@ -660,7 +661,7 @@ export function runAll(input, state, cwd) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const input = readStdinJson();
   const cwd = input.cwd || process.cwd();
-  const state = readActiveState(cwd, input.session_id);
+  const state = readActiveState(cwd, resolveHookSessionId(input));
   const hits = runAll(input, state, cwd);
 
   const critical = hits.find(h => h.severity === 'CRITICAL');

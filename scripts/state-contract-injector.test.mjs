@@ -51,6 +51,20 @@ test('H1: workflow-tasker-review skill invocation injects contract', () => {
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('H1b: injected contract stays compact to avoid repeated prompt bloat', () => {
+  const cwd = makeTempCwd();
+  try {
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' } }, cwd);
+    assert.equal(r.status, 0);
+    const out = parse(r.stdout);
+    const ctx = out.hookSpecificOutput?.additionalContext || '';
+    assert.ok(ctx.length > 0, 'workflow skill must still receive the state-write contract');
+    assert.ok(ctx.length < 900, `contract should stay compact, got ${ctx.length} chars`);
+    assert.match(ctx, /Do not write `\.state\.json` directly/i);
+    assert.match(ctx, /finalize-human-check/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('H2: every workflow-* skill name triggers injection', () => {
   const cwd = makeTempCwd();
   try {
@@ -59,6 +73,9 @@ test('H2: every workflow-* skill name triggers injection', () => {
       'workflow-investigate-review',
       'workflow-implementation-plan',
       'workflow-implementation-plan-review',
+      'workflow-infra-plan',
+      'workflow-infra-plan-review',
+      'workflow-infra-execute',
       'workflow-tasker',
       'workflow-tasker-review',
       'workflow-write-test',
@@ -88,7 +105,7 @@ test('B1: non-workflow skill (caveman) is a no-op', () => {
 });
 
 test('B2: command skills (fix, implement, ...) are no-op (do not start with workflow-)', () => {
-  for (const skill of ['fix', 'implement', 'explore', 'verify', 'brainstorm', 'queue']) {
+  for (const skill of ['fix', 'implement', 'infra', 'explore', 'verify', 'brainstorm', 'queue']) {
     const r = run({ tool_name: 'Skill', tool_input: { skill } });
     const out = parse(r.stdout);
     assert.equal(out.hookSpecificOutput, undefined, `${skill} must not receive workflow injection`);
@@ -162,6 +179,21 @@ test('H4: Skill(implement, args) seeds state.json with mode=implement', () => {
       session_id: 'test-sess-H4',
     }, cwd);
     const ptr = JSON.parse(readFileSync(join(cwd, '.smt', 'state', 'active-feature-test-sess-H4.json'), 'utf-8'));
+    const state = JSON.parse(readFileSync(
+      join(cwd, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`), 'utf-8'));
+    assert.equal(state.mode, 'implement');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('H4b: Skill(/implement, args) is normalized and seeds mode=implement', () => {
+  const cwd = makeTempCwd();
+  try {
+    runWithCwd({
+      tool_name: 'Skill',
+      tool_input: { skill: '/implement', args: 'add codex model support' },
+      session_id: 'test-sess-H4b',
+    }, cwd);
+    const ptr = JSON.parse(readFileSync(join(cwd, '.smt', 'state', 'active-feature-test-sess-H4b.json'), 'utf-8'));
     const state = JSON.parse(readFileSync(
       join(cwd, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`), 'utf-8'));
     assert.equal(state.mode, 'implement');
@@ -348,13 +380,53 @@ test('CE1 happy: current=workflow-investigate, skill=workflow-investigate-review
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('CE2 happy: current=workflow-write-test, skill=workflow-coding → allow', () => {
+test('CE2 happy: current=workflow-write-test, skill=workflow-coding with RED evidence → allow', () => {
   const cwd = makeTempCwd();
   try {
-    seedState(cwd, 'sess-CE2', { current_stage: 'workflow-write-test' });
+    seedState(cwd, 'sess-CE2', {
+      current_stage: 'workflow-write-test',
+      events: [{
+        t: new Date().toISOString(),
+        type: 'test_red',
+        skill: 'workflow-write-test',
+        result: 'pass',
+        declarer: 'hook',
+        evidence: { type: 'exit_code', code: 1 },
+      }],
+    });
     const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE2' }, cwd);
     const out = parse(r.stdout);
     assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE2b error: current=workflow-write-test, skill=workflow-coding without RED evidence → BLOCK', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE2b', { current_stage: 'workflow-write-test' });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE2b' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false, 'coding must not start before a failing test is recorded');
+    assert.match(
+      out.hookSpecificOutput?.permissionDecisionReason || out.stopReason || '',
+      /RED test evidence.*actual Bash exit code.*echo/is,
+      'block reason must explain that echo-masked failures are not RED evidence'
+    );
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE2c error: missing input session_id uses SMELTER_SESSION_ID for chain enforcement', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE2c', { current_stage: 'workflow-write-test' });
+    const r = runWithCwd(
+      { tool_name: 'Skill', tool_input: { skill: 'workflow-coding' } },
+      cwd,
+      { SMELTER_SESSION_ID: 'sess-CE2c' },
+    );
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false, 'env session id must activate the scoped chain guard');
+    assert.match(out.stopReason || out.hookSpecificOutput?.permissionDecisionReason || '', /RED|workflow-write-test|workflow-coding/i);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
