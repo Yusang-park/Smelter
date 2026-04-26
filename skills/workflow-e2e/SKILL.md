@@ -1,6 +1,6 @@
 ---
 name: workflow-e2e
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: src/** built
 produces: "artifacts/ (video, screenshots, logs, trace, io-samples)"
@@ -13,281 +13,69 @@ gate:
     - artifacts_exist: true
     - build_clean: true
     - scoped_tests_pass: true
-    - real_interface_invoked: true       # runtime evidence required per surface
-    - no_interface_mocks: true           # interfaces must not be stubbed/mocked
-    - per_surface_artifact_present: true # each exercised surface has its own artifact
-    - effect_observed: true              # ack signal alone is NOT sufficient — target effect must be asserted (see §Effect-vs-Ack)
-    - e2e_infra_present: true            # harness must exist for the surface (see §Infra Preflight) — install if missing
+    - real_interface_invoked: true
+    - no_interface_mocks: true
+    - per_surface_artifact_present: true
+    - effect_observed: true
+    - e2e_infra_present: true
 surface_mapping:
-  UI: "Playwright (real browser)"
+  UI: "Playwright real browser"
   CLI: "subprocess stdin/argv/exit_code"
   HTTP_API: "real server + curl/fetch"
   Database: "real or in-process test DB"
-  Hook: "stdin JSON → stdout JSON"
+  Hook: "stdin JSON -> stdout JSON"
 exempt_if_surface: [style, typography, typo, dialogue]
 ---
 
 # workflow-e2e
 
-## Overview
+Drive the real interface and save artifacts proving the target effect happened. Test-runner stdout alone is not E2E.
 
-> **This stage is NOT a test-code run.**
-> `vitest run`, `jest`, or `pytest` alone DO NOT satisfy E2E. They exercise test files, not the real interface.
->
-> E2E means the **actual interface** that a real user / caller / client touches — a real browser, a real shell, a real HTTP port, a real database engine, a real hook stdin/stdout pipe — is driven with real inputs and the real output is captured as evidence.
+Announce: `I'm using workflow-e2e to drive the real interface and capture artifacts proving the target effect materialized.`
 
-Verifies user scenarios at the real interface. Runner selection depends on the surface.
+## Surface Contract
 
-**Core principle:** Test-runner stdout is not truth. Artifacts on disk, captured from the real interface, are truth. An ack signal (toast, banner, 2xx, exit 0) is not an effect — the target state must be independently asserted.
+| Surface | Real interface | Required artifact |
+|---|---|---|
+| UI | Playwright real browser | video + screenshot + console log |
+| CLI/script | real subprocess | argv/stdin/stdout/stderr/exit transcript |
+| HTTP API | real server on a port | request/response log + follow-up observation |
+| Database | real compatible DB engine | SQL log + SELECT/readback evidence |
+| Hook | actual stdin/stdout pipe | input JSON + output JSON + exit code |
 
-**Violating the letter of this rule is violating the spirit of this rule.**
+No mocks for the interface under test. No dry-run. No handler-only calls when the real surface is browser, shell, HTTP, DB, or hook I/O.
 
-**Announce at start:** "I'm using workflow-e2e to drive the real interface and capture artifacts proving the target effect materialized."
+## Execution Checklist
 
-## The Iron Law
+1. Identify affected surfaces from state, diff, and plan.
+2. Verify the required harness exists. If missing, record `cause: e2e_infra_missing` and route to `workflow-coding` to install/configure it; do not skip E2E.
+3. Build/run prerequisite scoped tests.
+4. Run the real scenario through the real interface.
+5. Save artifacts under `.smt/features/<slug>/artifacts/`.
+6. Assert both acknowledgement and effect. Ack-only signals (toast, 2xx, exit 0, banner) are insufficient unless the effect is a local UI toggle.
+7. Record scenario evidence with non-empty references.
 
-```
-NO E2E PASS WITHOUT ARTIFACTS ON DISK AND A TARGET-EFFECT ASSERTION
-```
+## Effect Evidence
 
-Every exercised surface must produce its required artifact (video, transcript, HTTP log, SQL log, or hook I/O JSON). Every scenario claiming success must populate `state.json.scenarios[].effect_evidence` with a valid type and reference. Ack-only observations fail the gate with `cause: effect_unverified`.
+- UI: DOM state or screenshot diff proving the target state changed.
+- API: follow-up GET/list query or DB SELECT confirming state.
+- CLI: follow-up command or filesystem diff showing the result.
+- DB: SELECT reads back the inserted/updated value.
+- Hook: stdout JSON parses and matches expected shape.
+- Local UI toggle: absence/presence is the effect; declare it explicitly.
 
-## Infra Preflight (v3)
+## Credentials
 
-**Before any scenario runs, verify the surface's E2E harness exists. If missing, install it.** A missing harness is not an excuse to skip — it is a setup task that blocks E2E.
+If auth/API secrets are required, ask the user to populate `.env.e2e` with only needed `E2E_*` keys. Never read `.env`, echo secrets, fabricate credentials, or stub auth to pass.
 
-| Surface | Required artifact on disk | Install command (when missing) |
-|---------|---------------------------|-------------------------------|
-| UI / Web frontend | `playwright.config.*` + `@playwright/test` dep | `npm install -D @playwright/test && npx playwright install` |
-| CLI / shell | none (process + stdin runner) | — |
-| HTTP API | HTTP client available (curl, fetch built-in) | — |
-| Hook / script | `scripts/__test-harness.mjs` or equivalent | generate via subagent if missing |
-| Database | test DB connection string (env or config) | invoke `workflow-coding` with "wire test DB config" |
+## Forbidden
 
-### Flow when infra is missing
+- Claiming pass with zero artifacts.
+- Treating unit/integration runner output as E2E.
+- Using mocks/stubs for the exercised interface.
+- Skipping because infra is absent.
+- Using ack-only evidence for durable effects.
 
-1. Detect absence (file not present, package not in `node_modules`, import throws).
-2. Emit `cause: e2e_infra_missing` fail event with `evidence.type: file_absent`.
-3. Producer chain routes to `workflow-coding` with the synthetic task **"Install and configure <harness> for <surface>"**.
-4. `workflow-coding` runs the install, commits config, and re-enters `workflow-e2e`.
-5. Second entry passes the preflight and the scenario executes.
+## Terminal State
 
-### Absolute prohibitions
-
-- **Do NOT skip E2E because "infra isn't set up"** — that is the single fail mode this block was written to eliminate.
-- **Do NOT mock the harness to bypass installation** — `cause: mocked_interface` fires.
-- **Do NOT exempt `ui` surface from this check** — UI regressions are the most user-visible and the visual-verification layer (`workflow-e2e-review`) depends on real browser screenshots.
-
-## Red Flags - STOP
-
-| Thought | Reality |
-|---------|---------|
-| "Tests pass is enough" | That's Phase 1 of `workflow-verify`, not E2E. E2E needs the real interface. |
-| "Banner visible = effect proved" | Banner = ack. Effect = the new data / DOM / row / file the operation was supposed to produce. Assert both. |
-| "No artifacts needed, logs look good" | Zero artifacts = gate fail, even if the runner reported success. |
-| "Mocking HTTP is fine" | If the HTTP surface IS the subject, mocks are disallowed. See `no_interface_mocks`. |
-| "I'll skip the screenshot" | Per-surface artifacts are mandatory. UI needs video + screenshot. |
-| "Scenario passed in dry-run mode" | Playwright `--list` or any dry-run is disallowed. Real browser launch required. |
-| "The agent reported success" | Trust but verify: check VCS diff + artifact files on disk. Agent reports are not evidence. |
-
-## Rationalization Prevention
-
-| Excuse | Reality |
-|--------|---------|
-| "The operation is too simple for effect assertion" | `local_ui_toggle` is the only effect_type that accepts "no separate effect evidence" — and only when the operation has no durable external effect. Anything else must produce effect_evidence. |
-| "Ack and effect are the same in this case" | Rare. Declare `local_ui_toggle` explicitly or produce separate effect_evidence. |
-| "Full regression next, scoped E2E suffices" | Scoped E2E on changed surfaces IS the contract. Full regression is opt-in at `workflow-human-check`. |
-| "I'm tired" | Re-run. Evidence before claims. |
-
-## Common Failures
-
-| Claim | Requires | Not Sufficient |
-|-------|----------|----------------|
-| "UI scenario passed" | Video + screenshot on disk + DOM state assertion | Banner regex match alone |
-| "API scenario passed" | HTTP request/response log + follow-up GET or DB SELECT confirming state | 2xx status alone |
-| "Hook scenario passed" | input.json + output.json + exit code file + stdout_parse assertion | Exit 0 alone |
-| "DB scenario passed" | Query log + SELECT that reads back the new row's content | `rowcount > 0` alone |
-
-## 5-Surface Mapping — Real Interface Contract
-
-## 5-Surface Mapping — Real Interface Contract
-
-Every E2E run MUST exercise the real interface for the affected surface(s). A run that does not produce the **required artifact** for its surface is **not a valid E2E pass**, even if a test file returned zero failures.
-
-| Surface | Real interface | Runner | Required artifact |
-|---------|----------------|--------|-------------------|
-| UI / Frontend | A real browser, launched by Playwright, actually clicking/typing | `npx playwright test` | **video recording** + **screenshot per scenario** + browser console log |
-| CLI / Script | Real subprocess, real stdin/argv, real exit code | subprocess spawn | **command transcript** (argv + stdin + stdout + stderr + exit code) |
-| HTTP API | Real HTTP server on a real port, real fetch/curl client | start server → real request | **request/response log** (method, path, status, headers, body, duration) |
-| Database | A real DB engine (real Postgres/SQLite/in-process same engine) | real queries | **query log** (SQL executed, rows affected, before/after state samples) |
-| Hook script | Actual stdin pipe, actual stdout/exit code capture | `cat payload.json \| node hook.mjs` | **input + output JSON samples** + exit code |
-
-### What DOES NOT count as E2E
-
-- Running `pnpm test` / `vitest run` / `jest` alone — that's `workflow-write-test` or `workflow-verify` Phase 1, **not E2E**.
-- Calling a handler function directly in-process without the real interface wrapper (no browser, no network, no shell).
-- Using mocks for the interface under test (e.g., MSW-mocked HTTP when the HTTP surface IS the subject).
-- Stubbing the database driver when the DB layer IS the subject.
-- Asserting on return values of functions without observing the externally visible side effect (rendered DOM, HTTP response body, CLI exit code, DB row change, hook stdout).
-- "Dry run" mode of Playwright (`--list`) or skipping browser launch.
-- **Ack-only assertion** — observing ONLY an acknowledgement signal (toast, banner, success-text regex, spinner-resolved → idle, modal-closed, HTTP 2xx status, "no error thrown") WITHOUT also asserting that the target state the operation was supposed to produce actually materialized. Banner text "You are impersonating X" is an ack; X's data actually rendering in the DOM is the effect. An ack without an effect assertion is **not a valid E2E pass** (gate `effect_observed` fails).
-
-### What DOES count
-
-- UI: Playwright launched a real browser, navigated to a real URL (localhost or fixture server), the screenshot PNG and video MP4/WebM are saved under `.smt/features/<slug>/artifacts/` and dereferenced in `events[].evidence`.
-- CLI: the command was spawned as a child process; the transcript file contains the exact argv, the piped stdin, the captured stdout+stderr, and the exit code.
-- HTTP: a real server bound a real port (even a random one); the request was issued over the network loopback; request+response are logged with status code and body length.
-- DB: queries ran against a real engine (Postgres/SQLite/whatever prod uses or a compatible in-process version — NOT a stub); before/after state was captured or verified.
-- Hook: payload was actually piped via `cat | node hook.mjs`; both the input payload and the captured output/exit were written to disk as artifacts.
-
-## Effect-vs-Ack — per-surface observation rubric
-
-Every scenario that claims an operation succeeded MUST assert on BOTH:
-1. The **ack** (operation was accepted), and
-2. The **effect** (the new externally-visible state the operation was supposed to produce).
-
-If the operation has no durable effect beyond the ack itself (e.g., "Cancel closes the modal" — the closed-modal IS the effect), the scenario must explicitly declare `effect_type: local_ui_toggle` in `state.json.scenarios[].effect_evidence.type` and the gate accepts the absence of separate effect evidence. Every other scenario MUST populate `effect_evidence` with one of the types below.
-
-| Surface | Ack (not sufficient alone) | Effect (MUST be asserted) | `effect_evidence.type` |
-|---------|----------------------------|---------------------------|------------------------|
-| UI | Toast / banner text / modal closed / spinner → idle / success-route reached | New DOM content that reflects the target state change. Before/after screenshot diff, or assertion on a `data-testid` value/count that encodes the new state. Example: after "Impersonate X" → assert X's sheet titles (or empty-state message if X has none) render in the sheet list, NOT just the banner. | `dom_diff` or `dom_state_query` |
-| HTTP API | 2xx status code | Follow-up GET or list query returning the new resource state, or DB SELECT confirming the row. | `http_get_after` or `db_select` |
-| CLI | Exit code 0 / stdout contains "done" | Subsequent command (or filesystem scan) reflects the change. | `fs_diff` or `followup_cmd` |
-| DB | INSERT/UPDATE rowcount > 0 | SELECT that reads back the new row/value and asserts on its content. | `db_select` |
-| Hook | Exit code 0 | Captured `stdout` JSON parsed and matched against expected shape/fields. | `stdout_parse` |
-| Local UI toggle (exemption) | Modal closed, input cleared, dropdown collapsed — no external effect | The UI absence/presence IS the effect — document as such. | `local_ui_toggle` |
-
-### Why this matters (concrete case, 2026-04-20)
-
-`admin-impersonate-menu-item` E2E was declared pass because:
-- Screenshot `07-impersonation-active-banner.png` contained the banner text "You are impersonating dfhilder@gmail.com.".
-- Banner-text regex matched → `bannerVisible = true` → gate checks passed.
-
-But the target effect — dfhilder's sheets/folders/plan rendering in the dashboard — was never asserted. The screenshot happened to show "Loading..." and an empty sidebar. No follow-up assertion read the sheet list after load. A broken impersonation flow that only fires the banner but never swaps the data would pass the old gate. This is exactly the failure the `effect_observed` postcondition now blocks.
-
-### Recording the evidence
-
-For each scenario in `state.json.scenarios[]`:
-
-```jsonc
-{
-  "name": "admin-impersonates-dfhilder",
-  "surface": "ui",
-  "ack_evidence": {
-    "type": "dom_state_query",
-    "reference": "artifacts/screenshots/07-impersonation-active-banner.png",
-    "note": "banner text visible"
-  },
-  "effect_evidence": {
-    "type": "dom_diff",
-    "reference": "artifacts/screenshots/07a-impersonation-dashboard-loaded.png",
-    "assertion": "dfhilderSheetTitles !== adminSheetTitles && planBoxText includes 'Lite'"
-  }
-}
-```
-
-If `effect_evidence` is `null`, `{}`, or its `type` is missing, the gate `effect_observed` check fails with `cause: effect_unverified`. Reviewers and the R14 watchdog use this field.
-
-## Artifacts directory (required)
-
-```
-.smt/features/<slug>/artifacts/
-├── ui/
-│   ├── <scenario>.webm           (video recording — Playwright)
-│   ├── <scenario>-<step>.png     (screenshot per decisive moment)
-│   └── console.log               (browser console)
-├── cli/
-│   └── <scenario>.transcript     (argv + stdin + stdout + stderr + exit)
-├── api/
-│   └── <scenario>.log            (request/response trace)
-├── db/
-│   └── <scenario>.sql.log        (queries + before/after state)
-└── hook/
-    ├── <scenario>.input.json
-    ├── <scenario>.output.json
-    └── <scenario>.exit            (exit code, one integer)
-```
-
-Per exercised surface at least one artifact file must exist. Zero artifacts for an exercised surface = **gate fail**.
-
-## Gate enforcement (hook)
-
-The E2E gate verifies (rejects on any miss):
-
-1. `build_clean` — `npm run build` (or equivalent) exit 0
-2. `artifacts_exist` — the artifacts/ directory exists and contains at least one of the required files for each surface the test claims to have exercised
-3. `real_interface_invoked` — `state.json.events` entry for this skill includes `evidence.type: exit_code | parse | diff` referencing an artifact path (not `file_present` pointing to a test file)
-4. `no_interface_mocks` — code paths exercised during E2E do not go through stub/mock modules for the surface under test (static check on imports during run logs)
-5. `per_surface_artifact_present` — if the tasker declared `surface: [ui, api]`, both `ui/*` and `api/*` artifacts must exist
-6. `effect_observed` — every `state.json.scenarios[]` entry has a populated `effect_evidence` object with a valid `type` (one of: `dom_diff`, `dom_state_query`, `http_get_after`, `fs_diff`, `followup_cmd`, `db_select`, `stdout_parse`, `local_ui_toggle`) and a non-empty `reference`. `local_ui_toggle` is accepted only when the operation has no durable external effect. An entry with `effect_evidence: null` or `effect_evidence.type: ack_only` fails the gate with `cause: effect_unverified`.
-
-If a run reports "all tests passed" but produces no artifacts, the gate flips the event to `result: fail`, `cause: artifact_missing` or `cause: mocked_interface` or `cause: effect_unverified`, and routes via the producer chain.
-
-## Iron Law compliance
-
-- **No evasion** (Principle #2): claiming E2E pass without artifacts is a Critic Watchdog violation (see `scripts/critic-watchdog.mjs` R11). CRITICAL-severity block.
-- **File is truth** (Principle #5): test-runner stdout alone is not truth. Artifacts on disk are.
-- **No retry** (Principle #4): on fail, the producer chain routes to `workflow-coding`; do not re-run the same runner hoping for a different result.
-
-## Constraints (unchanged from prior versions)
-
-- No modification or deletion of PROD data (explicit user permission required).
-- When data is missing, ask the user to insert it — do not fabricate fixtures to silently pass.
-
-### Credentials for authenticated E2E
-
-If a scenario needs a login account, session cookie, API key, or any other secret the runner cannot obtain on its own, **halt the scenario and ask the user to populate `.env.e2e` at the project root** before retrying.
-
-- Canonical filename: `.env.e2e` (project root, git-ignored — NEVER commit).
-- Canonical variable names (use only what the scenario needs):
-  - `E2E_ACCOUNT_ID` — login identifier (email / username).
-  - `E2E_ACCOUNT_PW` — login password.
-  - `E2E_COOKIE` — pre-authenticated session cookie (string or header value).
-  - `E2E_KEY` — API key / bearer token for HTTP surfaces.
-  - Extra scenario-specific keys may be added with an `E2E_` prefix.
-- Loader: the runner reads `.env.e2e` via `dotenv` / `process.env` (or equivalent) — do NOT read secrets from `.env`, do NOT inline them into test code, do NOT echo them into artifacts.
-- Missing file → emit `cause: missing_credentials` with `evidence.type: file_absent` and `evidence.path: .env.e2e`. Missing required key inside an existing file → `cause: missing_credentials` with `evidence.type: parse` and a reference naming the absent variable(s). In both cases, surface a single message to the user listing the exact variable names required, and wait for `.env.e2e` to be populated before re-entering.
-- Fabricating fake credentials, stubbing the auth layer, or running a downgraded "anonymous" path to bypass the missing secret is disallowed (`cause: mocked_interface`).
-
-## Scoped execution (principle 8)
-
-```bash
-# Only specs related to changed files — scoped by surface
-npx playwright test <changed_specs>            # UI
-node scripts/cli-e2e.mjs <scenario>            # CLI
-pytest tests/http/<scenario>.py                # HTTP API
-```
-
-Full regression runs only when `workflow-human-check` explicitly requests it.
-
-## Fail routing (producer)
-
-| Cause | Route |
-|-------|-------|
-| `assertion` | `workflow-coding` |
-| `build` | `workflow-coding` |
-| `typecheck` | `workflow-coding` |
-| `artifact_missing` | `workflow-e2e` (self-rerun with correct runner) |
-| `mocked_interface` | `workflow-e2e` (self-rerun without mocks) |
-| `insufficient_scenario` | `workflow-e2e-review` signals this; route to coding |
-
-## Relationship to other skills
-
-- `workflow-write-test` — writes RED unit/integration tests. **Not E2E**.
-- `workflow-verify` Phase 1 — runs existing test suites. **Not E2E** (that's Phase 3).
-- `workflow-verify` Phase 3 — a light-touch E2E smoke reusing this skill's contract. Same real-interface rules apply.
-
-## Terminal State — Required Next Skill
-
-**REQUIRED NEXT SKILL on gate pass:** `workflow-e2e-review`
-
-**On `artifact_missing`:** self re-run with correct runner.
-**On `mocked_interface`:** self re-run without mocks.
-**On `assertion` / `build` / `typecheck`:** route to `workflow-coding`.
-
-Do NOT:
-- Skip to `workflow-team-code-review` — artifacts need review first
-- Stop after artifacts exist, report "E2E passed", or ask "shall I review?"
-- Offer A/B/continue choices — Iron Law #1 forbids pausing at non-human-check stages
-
-Artifacts on disk alone are not the gate — `workflow-e2e-review` 2-round pass is.
+On pass, invoke `workflow-e2e-review`. On gate fail, route to the producer (`workflow-coding`) with cause and artifact evidence.

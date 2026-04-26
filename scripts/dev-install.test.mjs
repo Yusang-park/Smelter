@@ -99,17 +99,15 @@ section('Install: first run creates symlinks + hooks section');
     });
     // realpath-aware comparison (macOS /var ↔ /private/var)
     const expectedRepo = realpathSync(e.fakeRepo);
-    test('symlink skills created', () => {
-      const target = realpathSync(join(e.home, '.claude', 'skills'));
-      assert.equal(target, join(expectedRepo, 'skills'));
+    test('skills are NOT symlinked globally', () => {
+      assert.ok(!existsSync(join(e.home, '.claude', 'skills')));
     });
     test('symlink commands created', () => {
       const target = realpathSync(join(e.home, '.claude', 'commands'));
       assert.equal(target, join(expectedRepo, 'commands'));
     });
-    test('symlink agents created', () => {
-      const target = realpathSync(join(e.home, '.claude', 'agents'));
-      assert.equal(target, join(expectedRepo, 'agents'));
+    test('agents are NOT symlinked globally', () => {
+      assert.ok(!existsSync(join(e.home, '.claude', 'agents')));
     });
   } finally { e.cleanup(); }
 }
@@ -130,6 +128,38 @@ section('Idempotency: second run does not duplicate');
         assert.equal(second.hooks[event].length, first.hooks[event].length);
       });
     }
+  } finally { e.cleanup(); }
+}
+
+// ----------------------------------------------------------------------------
+section('Migration: untagged legacy Smelter hooks are replaced');
+// ----------------------------------------------------------------------------
+{
+  const e = stageEnv();
+  try {
+    mkdirSync(join(e.home, '.claude'), { recursive: true });
+    writeFileSync(join(e.home, '.claude', 'settings.json'), JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [
+          { matcher: '*', hooks: [{ type: 'command', command: `node "${e.fakeRepo}/scripts/bar.mjs"`, timeout: 5 }] },
+          { matcher: '*', hooks: [{ type: 'command', command: 'foreign', timeout: 5 }] },
+        ],
+      },
+    }, null, 2));
+    const r = e.run();
+    test('migration run exit 0', () => assert.equal(r.status, 0, r.stderr));
+    const after = JSON.parse(readFileSync(join(e.home, '.claude', 'settings.json'), 'utf-8'));
+    const userPrompt = after.hooks.UserPromptSubmit || [];
+    test('legacy untagged Smelter hook removed', () => {
+      const legacy = userPrompt.filter((entry) => !entry._smelter_dev_managed && JSON.stringify(entry).includes(e.fakeRepo));
+      assert.equal(legacy.length, 0);
+    });
+    test('foreign hook preserved', () => {
+      assert.ok(userPrompt.some((entry) => entry.hooks?.[0]?.command === 'foreign'));
+    });
+    test('single managed UserPromptSubmit hook installed', () => {
+      assert.equal(userPrompt.filter((entry) => entry._smelter_dev_managed).length, 1);
+    });
   } finally { e.cleanup(); }
 }
 
@@ -192,7 +222,7 @@ section('--uninstall: removes dev-managed entries only');
     test('foreign entry preserved', () => {
       assert.ok((after.hooks?.Stop || []).some(e => e.hooks?.[0]?.command === 'other'));
     });
-    test('symlinks removed', () => {
+    test('global command symlink removed', () => {
       assert.ok(!existsSync(join(e.home, '.claude', 'skills')));
       assert.ok(!existsSync(join(e.home, '.claude', 'commands')));
       assert.ok(!existsSync(join(e.home, '.claude', 'agents')));

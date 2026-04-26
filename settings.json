@@ -35,11 +35,6 @@
             "type": "command",
             "command": "node \"/Users/yusang/Smelter/scripts/auto-confirm-consumer.mjs\"",
             "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "node \"/Users/yusang/Smelter/scripts/skill-injector.mjs\"",
-            "timeout": 3
           }
         ]
       }

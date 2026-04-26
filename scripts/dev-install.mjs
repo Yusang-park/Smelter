@@ -12,9 +12,9 @@
  *      already installed as a plugin (that would cause double-fire).
  *
  * What it does:
- *   - Creates symlinks `~/.claude/{skills,commands,agents}` → `<repo>/...`
- *     (skills/commands/agents are auto-discovered by Claude Code; symlinking
- *      avoids any sync step for day-to-day edits.)
+ *   - Creates a symlink `~/.claude/commands` → `<repo>/commands`.
+ *     Skills/agents are not symlinked globally; workflow resources should
+ *     enter context only through the active flow, not global auto-discovery.
  *   - Reads `<repo>/hooks/hooks.json`, substitutes `${CLAUDE_PLUGIN_ROOT}` with
  *     the absolute repo path, and merges the result into the `hooks` key of
  *     `~/.claude/settings.json`.
@@ -53,9 +53,12 @@ const INSTALLED_PLUGINS = join(CLAUDE_DIR, 'plugins', 'installed_plugins.json');
 const DEV_TAG = '_smelter_dev_managed';
 
 const SYMLINK_TARGETS = [
-  { link: join(CLAUDE_DIR, 'skills'),   target: join(REPO_ROOT, 'skills') },
   { link: join(CLAUDE_DIR, 'commands'), target: join(REPO_ROOT, 'commands') },
-  { link: join(CLAUDE_DIR, 'agents'),   target: join(REPO_ROOT, 'agents') },
+];
+
+const LEGACY_GLOBAL_RESOURCE_LINKS = [
+  { link: join(CLAUDE_DIR, 'skills'), target: join(REPO_ROOT, 'skills') },
+  { link: join(CLAUDE_DIR, 'agents'), target: join(REPO_ROOT, 'agents') },
 ];
 
 const args = new Set(process.argv.slice(2));
@@ -132,6 +135,15 @@ function substituteHookPaths(hooksJson) {
   return JSON.parse(str);
 }
 
+function isLegacySmelterDevEntry(entry) {
+  if (entry?.[DEV_TAG]) return true;
+  const blob = JSON.stringify(entry || {});
+  const roots = [REPO_ROOT];
+  if (REPO_ROOT.startsWith('/private/var/')) roots.push(REPO_ROOT.replace(/^\/private\/var\//, '/var/'));
+  if (REPO_ROOT.startsWith('/var/')) roots.push(REPO_ROOT.replace(/^\/var\//, '/private/var/'));
+  return roots.some((root) => blob.includes(root));
+}
+
 function detectPluginConflict() {
   const data = readJsonSafe(INSTALLED_PLUGINS, { version: 2, plugins: {} });
   const plugins = data.plugins || {};
@@ -154,7 +166,10 @@ function install() {
     warn(conflict + ' (proceeding due to --force)');
   }
 
-  // 2. Symlinks for skills/commands/agents.
+  // 2. Remove old dev-mode global resource symlinks, then keep commands only.
+  for (const { link, target } of LEGACY_GLOBAL_RESOURCE_LINKS) {
+    if (isSymlinkTo(link, target)) removeSymlink(link);
+  }
   for (const { link, target } of SYMLINK_TARGETS) {
     if (!existsSync(target)) die(`expected repo path missing: ${target}`);
     ensureSymlink(link, target);
@@ -178,8 +193,9 @@ function install() {
   for (const event of eventNames) {
     const prevEntries = Array.isArray(existing[event]) ? existing[event] : [];
     const nextEntries = Array.isArray(resolved[event]) ? resolved[event] : [];
-    // Drop previous dev-managed entries for this event; keep foreign entries.
-    const keptPrev = prevEntries.filter(e => !e?.[DEV_TAG]);
+    // Drop previous dev-managed entries and older untagged Smelter dev entries;
+    // keep foreign entries.
+    const keptPrev = prevEntries.filter(e => !isLegacySmelterDevEntry(e));
     // Tag new entries so later uninstall can find them.
     const taggedNext = nextEntries.map(e => ({ ...e, [DEV_TAG]: true }));
     merged[event] = [...keptPrev, ...taggedNext];
@@ -201,7 +217,7 @@ function install() {
 
 function uninstall() {
   // 1. Remove symlinks.
-  for (const { link, target } of SYMLINK_TARGETS) {
+  for (const { link, target } of [...SYMLINK_TARGETS, ...LEGACY_GLOBAL_RESOURCE_LINKS]) {
     if (isSymlinkTo(link, target)) removeSymlink(link);
   }
 

@@ -1,6 +1,6 @@
 ---
 name: workflow-investigate
-version: 0.4.0
+version: 0.4.1
 type: workflow
 consumes: brainstorm.md OR trigger_prompt
 produces: investigation.md
@@ -25,7 +25,7 @@ gate:
 
 ## Overview
 
-Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is `investigation.md`, consumed by the active mode's next stage: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-write-test` for `/fix`, or mode transition for `/explore`.
+Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is `investigation.md`, consumed by the active mode's next stage: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-infra-plan` for `/infra`, `workflow-write-test` for `/fix`, or mode transition for `/explore`.
 
 **Core principle:** Evidence from the current codebase, not memory or assumption, is the source of truth for the plan. Every finding must cite a file path or external reference.
 

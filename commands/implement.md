@@ -15,6 +15,10 @@ $ARGUMENTS
 4. Flow: investigate → investigate-review → implementation-plan → implementation-plan-review → write-test → coding → agent-review → e2e → e2e-review → team-code-review → human-check.
 5. Review skills run **Multi-Pass Verification** with the global 2-round policy.
 
+## No Premature Requirement-Gap Halt
+
+For repo-local names, package names, command names, model ids, wrapper names, and paths mentioned by the user, do **not** halt or ask for clarification before local evidence search. First search the current workspace with `Glob`/`Grep`/`Read` using reasonable variants: exact text, dashed forms, underscored forms, spaced forms, and nearby domain nouns. Only ask the user after documenting that local search found no target or found multiple incompatible targets that cannot be disambiguated from files.
+
 ## Magic-keyword branches
 
 - `extend` / `add to` / `덧붙여` → `target_type: extend_existing`; implementation-plan prefers the existing feature's plan/pattern when sufficient.

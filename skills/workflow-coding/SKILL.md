@@ -1,8 +1,8 @@
 ---
 name: workflow-coding
-version: 0.4.0
+version: 0.4.1
 type: workflow
-consumes: "*.test.*" (RED) OR active_feedback
+consumes: "*.test.* (RED) OR active_feedback"
 produces: src files changed
 default_pattern: C
 default_agent: executor
@@ -14,11 +14,11 @@ team_template:
     aggregator: architect
     conflict_resolver: conflict-resolver
     sync_point: "api-contract"
-watchdog: E  # Pattern E Critic Watchdog always active
+watchdog: E
 can_delegate_to: [ui-ux-pro-max, copywriting, vercel-react-best-practices, designer]
 gate:
   pre:
-    - tdd_cycle: "test_cycles has action=added_case|modified_case + run_result=fail"
+    - tdd_cycle: "events[].type=test_red or legacy failing test_cycles[] exists"
     - allowed_in_mode: true
   post:
     - src_changed: true
@@ -28,142 +28,51 @@ gate:
 
 # workflow-coding
 
-## Overview
+Implement the smallest source change that turns RED tests GREEN. This is not a terminal stage.
 
-Implements real code that turns RED tests GREEN. This is the implementation stage — but it is NOT the terminal stage. `workflow-agent-review`, `workflow-e2e`, `workflow-e2e-review`, `workflow-team-code-review`, and `workflow-human-check` all still need to run before completion.
+Announce: `I'm using workflow-coding to turn RED tests GREEN. Next skill on pass: workflow-agent-review.`
 
-**Core principle:** Tests passing is not done. The workflow has 5+ more skills after this one. Stopping here is a completion lie.
+## Required Inputs
 
-**Violating the letter of this rule is violating the spirit of this rule.**
+- RED evidence from `workflow-write-test`: real failing command exit, not `; echo "exit=$?"` masking.
+- Or unresolved `active_feedback` targeting `workflow-coding`.
+- Current investigation/plan artifacts relevant to the change.
 
-**Announce at start:** "I'm using workflow-coding to turn RED tests GREEN. Next skill on pass: workflow-agent-review."
+## Execution Checklist
 
-## The Iron Law
+1. Read the failing test and related source before editing.
+2. Change only source files needed for the RED case or active feedback.
+3. Do not edit tests in this stage. If tests are wrong or missing, route back to `workflow-write-test`.
+4. Keep the patch minimal: no hardcoded secrets, no silent error swallowing, validate external input at boundaries, avoid deep nesting.
+5. Run scoped tests for changed surface.
+6. Run typecheck (`tsc --noEmit` or repo equivalent) when applicable.
+7. If typecheck/scoped tests fail, fix and rerun; this is not a retry because code changed.
 
-```
-TESTS GREEN ≠ DONE. NO COMPLETION CLAIM WHILE STAGE < workflow-human-check
-```
+## Gates
 
-"Tests pass so the task is done" is the primary failure mode this skill prevents. The full chain from here:
+- Pre-gate: RED evidence exists; otherwise route to `workflow-write-test`.
+- Post-gate: source changed, typecheck clean, scoped tests pass.
+- Full regression is opt-in at `workflow-human-check`; do not speculate it would pass.
 
-```
-workflow-coding → workflow-agent-review → workflow-e2e → workflow-e2e-review → workflow-team-code-review → workflow-human-check
-```
+## Forbidden
 
-If `workflow-human-check` has not run and returned a user `complete` decision, the task is NOT done. Claiming otherwise is a Critic Watchdog violation.
+- Claiming done/fixed/complete before `workflow-human-check` returns `complete`.
+- Skipping `workflow-agent-review` because the change is small.
+- Skipping `workflow-e2e` for UI/CLI/API/hook/script behavior changes.
+- Asking the user whether to continue; the chain is autonomous until `workflow-human-check`.
+- Using TODOs or broad fallbacks to hide the defect.
 
-## Pre-Gate (hook enforced)
+## Subagents
 
-- At least one entry in `state.json.test_cycles` with `action ∈ {added_case, modified_case}` + `run_result: fail`
-- If absent, `declarer: hook, cause: tdd_cycle` → routes to `workflow-write-test`
+For independent `/implement` modules, dispatch executor subagents only when parallelization is safe. Give exact task text, file map, acceptance criteria, and excerpts from `implementation-plan.md`; require self-review and test output. Subagent self-review never replaces Smelter review/E2E/human-check.
 
-## Post-Gate (hook enforced)
+## Fail Routing
 
-- Source file changed (`git diff --cached --name-only | grep -v '\.test\.'`)
-- `tsc --noEmit` exit 0
-- Scoped tests pass (only those related to changed files)
+- Missing RED evidence -> `workflow-write-test`
+- Scope mismatch in `/implement` -> `workflow-implementation-plan`
+- Scope mismatch in `/fix` -> `workflow-investigate` or mode upgrade
+- Persistent verification failure after code changes -> stay in `workflow-coding` with evidence
 
-## Coding Quality Gate
+## Terminal State
 
-These are coding-stage constraints, not generic per-file prompt injections:
-
-- No hardcoded secrets, tokens, credentials, or environment-specific constants.
-- Handle errors explicitly; never silently swallow failures.
-- Keep functions short and readable; avoid deep nesting.
-- Keep files below 800 lines unless the surrounding codebase already requires a larger generated or declarative file.
-- Validate external input at system boundaries before use.
-
-## Red Flags - STOP
-
-These thoughts mean STOP — you're rationalizing:
-
-| Thought | Reality |
-|---------|---------|
-| "Tests pass so I'm done" | Tests passing is the GREEN transition, not completion. 5 more skills must run. |
-| "The fix is small, skip review" | `workflow-agent-review` is non-optional. Size is not a demotion criterion. |
-| "I'll skip E2E, nothing visible changed" | If the surface is UI / CLI / API / hook / script, `workflow-e2e` is mandatory. The exempt list is: css, style, typography, i18n, copy, typo, dialogue. Everything else runs E2E. |
-| "I already verified locally, human-check isn't needed" | `workflow-human-check` is the ONLY allowed halting point. Skipping it is Iron Law #1 violation. |
-| "Shall I continue?" / "Would you like me to proceed?" | Never ask this. The workflow chain runs autonomously until `workflow-human-check`. Iron Law #1 + autonomous chain completion. |
-| "Just this once" | No exceptions. Every task every run. |
-| "Code change is defensive, low-risk" | Low risk ≠ no risk. Reviewer decides severity. |
-| "User will verify anyway" | That is what `workflow-human-check` is for. Not what "stopping after coding" is for. |
-| "Turns out tests need to change too" | Test changes must go back through `workflow-write-test`. Do not edit tests mid-`workflow-coding`. |
-
-## Rationalization Prevention
-
-| Excuse | Reality |
-|--------|---------|
-| "Should work now" | Run the post-gate verifications. Evidence before claims. |
-| "Linter passed" | Linter ≠ typecheck ≠ test run. Three separate checks. |
-| "Scoped tests pass, full run would too" | Don't speculate. Scoped is the contract. Full regression is only on user request at human-check. |
-| "The diff is clean" | Cleanness is not correctness. Review catches what diff reading misses. |
-| "Review would just rubber-stamp" | If it's truly trivial, review passes in seconds. Skipping to save 30s costs hours in rework when review catches something. |
-| "I'm tired and want this over" | Exhaustion ≠ excuse. Continue the chain. The session only halts at human-check. |
-
-## Common Failures
-
-| Claim | Requires | Not Sufficient |
-|-------|----------|----------------|
-| "Code change complete" | Post-gate passes + next skill dispatched | Only tests GREEN |
-| "Bug fixed" | `workflow-e2e` reproduces original symptom and sees fix | Defensive code diff, assumed fixed |
-| "Security-safe change" | `workflow-agent-review` Pattern B pass with security-reviewer | `code-reviewer` alone passed |
-| "No regression" | `workflow-team-code-review` 95% consensus pass | Scoped tests green |
-
-## Pattern C (parallel module split)
-
-When tasker declares a frontend/backend split:
-
-- Per-module agent assignment (team_runtime)
-- sync_point: "api-contract" — converges at the API/interface agreement point
-- Aggregator (architect) integrates; on conflict, invokes conflict-resolver
-
-## Subagent execution discipline
-
-For `/implement` tasks with independent queue items, follow the superpowers subagent-driven development experience without changing Smelter's gates:
-
-- Dispatch a fresh executor context per independent task or module when parallelization is safe.
-- Give each executor the exact task text, file map, acceptance criteria, and relevant excerpts from `implementation-plan.md`; do not make the subagent rediscover the whole plan from session history.
-- Require implementer self-review before handoff: spec compliance, tests run, and concerns explicitly reported.
-- Run Smelter's existing review chain after coding; implementer self-review never replaces `workflow-agent-review`, `workflow-e2e`, or `workflow-team-code-review`.
-- If a subagent reports `NEEDS_CONTEXT` or `BLOCKED`, provide missing context, narrow the task, or route back to the producer skill. Do not blindly retry the same prompt.
-
-## Critic Watchdog (Pattern E, always active)
-
-The `scripts/critic-watchdog.mjs` hook watches every Edit/Write/Bash:
-
-- Immediately blocks test deletion, `--no-verify`, `.env` access, etc.
-- Blocks declarations of "done", "complete", "finished", "fixed" when stage < `workflow-human-check`
-- On violation, appends a `skill: critic-watchdog, result: fail` event
-
-## Iron Law compliance
-
-- **No halt on fail** (#1): on gate fail, route to producer, do not stop the session
-- **No evasion** (#2): never work around via TODO, never lean on `??` fallbacks to hide bugs
-- **No self-failure** (#3): cannot declare "impossible" — specific cause + evidence required
-- **No retry** (#4): `typecheck`/`lint`/`test_run` self re-run is **not a retry** (code has changed between runs)
-- **File is truth** (#5): `.smt/features/*/task/*.state.json` drives routing, not the model's impression
-- **Scoped testing** (#8): run only tests related to changed files; full regression is opt-in at human-check
-
-## Active Feedback consumption
-
-On entry, inject `active_feedback` entries where `target_skill == workflow-coding && resolved == false` into the prompt. On completion, mark them `resolved: true`.
-
-## Fail routing
-
-- `tdd_cycle` → `workflow-write-test`
-- `scope_mismatch` in `/fix` → `workflow-investigate` or mode upgrade to `/implement`
-- `scope_mismatch` in `/implement` → `workflow-implementation-plan`
-- `typecheck`/`lint`/`test_run` → self re-run (same skill, different attempt; **not a retry** — code has changed)
-
-## Terminal State — Required Next Skill
-
-**REQUIRED NEXT SKILL:** `workflow-agent-review`
-
-After the post-gate passes (src changed + typecheck clean + scoped tests pass), the ONLY valid next action is dispatching `workflow-agent-review`. Do NOT:
-
-- Stop the session, report completion, say "bug fixed", "task done", or "implementation complete"
-- Invoke `workflow-e2e` directly (it comes after agent-review)
-- Ask the user "would you like me to continue with review?" — Iron Law #1, autonomous chain completion
-- Offer A/B/complete/skip choices — never
-
-The only halting point in the full chain is `workflow-human-check`. Until then, the next skill is always already determined — in this case, `workflow-agent-review`.
+After post-gate passes, invoke `workflow-agent-review`. Do not stop, summarize as complete, or jump directly to E2E.

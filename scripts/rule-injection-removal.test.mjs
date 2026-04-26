@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,8 +26,11 @@ function readProjectFile(relativePath) {
 check('project CLAUDE.md is not a symlink to global CLAUDE.md', () => {
   const projectClaude = join(PROJECT_ROOT, 'CLAUDE.md');
   const globalClaude = join(homedir(), '.claude', 'CLAUDE.md');
+  const stat = lstatSync(projectClaude);
 
-  assert.equal(lstatSync(projectClaude).isSymbolicLink(), false);
+  if (stat.isSymbolicLink()) {
+    assert.equal(readlinkSync(projectClaude), 'AGENTS.md');
+  }
   if (existsSync(globalClaude)) {
     assert.notEqual(projectClaude, globalClaude);
   }

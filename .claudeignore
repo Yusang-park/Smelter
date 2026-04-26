@@ -19,6 +19,11 @@ dist/
 document-backup/
 document/reference-topics/
 document/나중에 구현할것.md
+document/implementation-v2.md
+document/workflow.ko.md
+document/Introduce.md
+README.ko.md
+RELEASE_NOTES*.md
 
 # Vendored sub-projects (separate codebases)
 codex-for-claude-code/

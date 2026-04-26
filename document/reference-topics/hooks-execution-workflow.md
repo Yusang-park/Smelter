@@ -136,7 +136,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
    - `data.prompt`, `data.message.content`, 또는 `data.parts[].text` 에서 추출
 
 2. **명시적 커맨드 매칭** (`extractExplicitHarnessCommand`)
-   - 허용 커맨드: `/brainstorm`, `/fix`, `/explore`, `/implement`, `/verify`, `/dobby`, `/cancel`, `/queue`
+   - 허용 커맨드: `/brainstorm`, `/fix`, `/infra`, `/explore`, `/implement`, `/verify`, `/dobby`, `/cancel`, `/queue`
    - 정규식: `^/(brainstorm|fix|explore|implement|verify|dobby|cancel|queue)\\b`; retired workflow commands are not aliases and fail closed.
    - 자연어 질문이나 메타 대화는 감지하지 않음
 
@@ -150,61 +150,16 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 
 5. **출력 생성**
    - `[MAGIC KEYWORD: XXX]` 형식의 additionalContext를 만들어 해당 command를 즉시 invoke하도록 지시
-   - 고신뢰 자연어는 deterministic local routing으로 먼저 처리한다. 예: design/planning wording → `/brainstorm`, read-only analysis wording → `/explore`, explicit fix wording → `/fix`, mixed `check and fix` → `/fix`
+   - 고신뢰 자연어는 deterministic local routing으로 먼저 처리한다. 예: design/planning wording → `/brainstorm`, infra/cloud/IaC wording → `/infra`, read-only analysis wording → `/explore`, explicit fix wording → `/fix`, mixed `check and fix` → `/fix`
    - 나머지 비-slash 프롬프트는 classifier fallback을 사용한다
 
 **출력:** `{ continue: true, hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: "..." } }`
 
 ---
 
-### 2-B. `skill-injector.mjs` (timeout: 3s)
+### 2-B. Learned-skill pre-injection removed
 
-학습된 스킬(Learned Skills)을 프롬프트 트리거와 매칭하여 자동 주입.
-
-**입력:** stdin으로 `{ prompt, cwd, session_id }` 수신
-
-**실행 순서:**
-
-1. **컴파일된 브릿지 로드 시도** (`dist/hooks/skill-bridge.cjs`)
-   - 성공 시: 재귀 탐색 + 영속 세션 캐시 사용
-   - 실패 시: 인라인 폴백 (비재귀 + 인메모리 캐시)
-
-2. **스킬 파일 탐색** (`findSkillFiles`)
-   - 프로젝트 스킬: `{project}/.smt/skills/*.md` (높은 우선순위)
-   - 글로벌 스킬: `~/.smt/skills/*.md`
-   - 레거시 스킬: `~/.claude/skills/omc-learned/*.md`
-   - 심볼릭 링크 해석 → 중복 파일 제거 (`realpathSync`)
-
-3. **YAML 프론트매터 파싱** (`parseSkillFrontmatter`)
-   - 각 `.md` 파일에서 `triggers:` 목록 추출
-   ```yaml
-   ---
-   name: My Skill
-   triggers:
-     - keyword1
-     - keyword2
-   ---
-   ```
-
-4. **트리거 매칭 및 점수화**
-   - 프롬프트(소문자) 안에 트리거 문자열이 포함되면 +10점
-   - 이미 이 세션에서 주입된 스킬은 스킵
-   - 점수 내림차순 정렬 → 최대 5개 선택
-
-5. **`<mnemosyne>` 블록으로 포맷**
-   ```xml
-   <mnemosyne>
-   ## Relevant Learned Skills
-   ### Skill Name (scope)
-   <skill-metadata>{"path":"...", "triggers":[...], "score":10}</skill-metadata>
-   (스킬 본문)
-   ---
-   </mnemosyne>
-   ```
-
-6. **Flow Trace 기록** (best-effort) — 스킬 활성화 이벤트 기록
-
-**출력:** `{ continue: true, hookSpecificOutput: { additionalContext: "<mnemosyne>..." } }` 또는 매칭 없으면 `{ continue: true }`
+`skill-injector.mjs` was removed from `UserPromptSubmit`. Workflow skill bodies are loaded only by explicit Skill invocation from the active flow; no learned-skill body is pre-injected from prompt keyword matching.
 
 ---
 
@@ -474,7 +429,6 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
   │                          │──② UserPromptSubmit──────────→│
   │                          │   keyword-detector.mjs        │ "/ralph" 감지
   │                          │                               │ → harness-state / persistent-state 생성
-  │                          │   skill-injector.mjs          │ 학습된 스킬 트리거 매칭
   │                          │←──(스킬 호출 지시)────────────│
   │                          │                               │
   │                          │──[Claude: Read 호출 결정]     │
@@ -588,7 +542,6 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 | session-start.mjs | `~/.claude/scripts/` | SessionStart | 5s |
 | session-start-smelter.mjs | `~/.claude/scripts/` | SessionStart | 5s |
 | keyword-detector.mjs | `~/.claude/scripts/` | UserPromptSubmit | 5s |
-| skill-injector.mjs | `~/.claude/scripts/` | UserPromptSubmit | 3s |
 | pre-tool-enforcer.mjs | `~/.claude/scripts/` | PreToolUse | 3s |
 | permission-handler.mjs | `~/.claude/scripts/` | PermissionRequest | 5s |
 | post-tool-verifier.mjs | `~/.claude/scripts/` | PostToolUse | 3s |
@@ -609,8 +562,7 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 │   │   ├── harness-state.json        ← keyword-detector.mjs가 현재 command 상태 기록
 │   │   └── subagent-tracking.json    ← subagent-tracker.mjs가 읽고 쓰기
 │   ├── notepad.md                    ← session-start.mjs가 Priority Context 읽기
-│   ├── todos.json                    ← pre-tool-enforcer가 읽기
-│   └── skills/*.md                   ← skill-injector.mjs가 탐색
+│   └── todos.json                    ← pre-tool-enforcer가 읽기
 ├── .smelter/
 │   ├── task/{기능명}.md              ← persistent-mode.cjs Priority 1 (미완료 태스크 체크)
 │   └── todos.json                    ← persistent-mode.cjs Priority 2 (Todo 체크)
@@ -622,6 +574,4 @@ Claude가 "~~~도 할까요?" 라고 묻고 멈추는 상황을 자동화 — Ha
 │   ├── .smt/update-state.json        ← session-start.mjs가 드리프트 알림 캐시
 │   └── .smt/update-check.json        ← session-start.mjs가 npm 업데이트 캐시
 │
-~/.smt/
-│   └── skills/*.md                   ← skill-injector.mjs가 글로벌 스킬 탐색
 ```
