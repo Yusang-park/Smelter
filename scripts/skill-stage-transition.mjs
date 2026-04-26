@@ -30,6 +30,7 @@ import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { detectReviewVerdict, detectReviewFailCause } from './auto-confirm.mjs';
 import { loadWorkflowConfig, getMode as getV3Mode, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
 import { transitionV4State } from './lib/workflow-v4-state.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 import yaml from 'js-yaml';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,11 +45,16 @@ const PLUGIN_ROOT = dirname(__dirname);
 const COMMAND_TO_MODE_ENTRY = Object.freeze({
   brainstorm: 'brainstorm',
   fix: 'fix',
+  infra: 'infra',
   explore: 'explore',
   implement: 'implement',
   verify: 'verify',
   dobby: 'dobby',
 });
+
+function normalizeSkillName(skill) {
+  return String(skill || '').replace(/^\/+/, '');
+}
 
 function loadModeEntrySkill(mode) {
   try {
@@ -146,12 +152,12 @@ function resolveArtifactPath(statePath, skill) {
 }
 
 function stepForWorkflowSkill(skill) {
-  if (skill === 'workflow-brainstorm' || skill === 'workflow-brainstorm-review' || skill === 'workflow-tasker' || skill === 'workflow-tasker-review' || skill === 'workflow-implementation-plan' || skill === 'workflow-implementation-plan-review') {
+  if (skill === 'workflow-brainstorm' || skill === 'workflow-brainstorm-review' || skill === 'workflow-tasker' || skill === 'workflow-tasker-review' || skill === 'workflow-implementation-plan' || skill === 'workflow-implementation-plan-review' || skill === 'workflow-infra-plan' || skill === 'workflow-infra-plan-review') {
     return 'PLAN';
   }
   if (skill === 'workflow-investigate' || skill === 'workflow-investigate-review') return 'DISCOVERY';
   if (skill === 'workflow-write-test') return 'TEST_DESIGN';
-  if (skill === 'workflow-coding') return 'EXECUTE';
+  if (skill === 'workflow-coding' || skill === 'workflow-infra-execute') return 'EXECUTE';
   if (skill === 'workflow-verify' || skill === 'workflow-e2e' || skill === 'workflow-e2e-review' || skill === 'workflow-agent-review' || skill === 'workflow-team-code-review') {
     return 'VERIFY';
   }
@@ -175,7 +181,7 @@ function main() {
       return;
     }
 
-    const skill = input.tool_input?.skill || '';
+    const skill = normalizeSkillName(input.tool_input?.skill || '');
     const isWorkflowSkill = skill.startsWith('workflow-');
     const isEntryCommand = Object.prototype.hasOwnProperty.call(COMMAND_TO_MODE_ENTRY, skill);
     if (!isWorkflowSkill && !isEntryCommand) {
@@ -184,7 +190,7 @@ function main() {
     }
 
     const cwd = input.cwd || process.cwd();
-    const active = resolveActiveState(cwd, input.session_id);
+    const active = resolveActiveState(cwd, resolveHookSessionId(input));
     if (!active) {
       printTag(`no valid active state — skipping`);
       process.stdout.write(JSON.stringify({ continue: true }));
@@ -209,12 +215,9 @@ function main() {
         process.stdout.write(JSON.stringify({ continue: true }));
         return;
       }
-      if (state.current_stage === entrySkill) {
-        // Idempotent — already at entry stage.
-        process.stdout.write(JSON.stringify({ continue: true }));
-        return;
-      }
+      const alreadyAtEntry = state.current_stage === entrySkill;
       state.current_stage = entrySkill;
+      transitionBridgedV4Step(state, entrySkill);
       const prevFlag = process.env.SMT_HOOK_WRITE;
       process.env.SMT_HOOK_WRITE = '1';
       try {
@@ -223,7 +226,7 @@ function main() {
         if (prevFlag === undefined) delete process.env.SMT_HOOK_WRITE;
         else process.env.SMT_HOOK_WRITE = prevFlag;
       }
-      printTag(`entry-command ${skill} → current_stage=${entrySkill}`);
+      printTag(`entry-command ${skill} → current_stage=${entrySkill}${alreadyAtEntry ? ' (idempotent)' : ''}`);
       process.stdout.write(JSON.stringify({ continue: true }));
       return;
     }
@@ -277,7 +280,8 @@ function main() {
       state.events.push(event);
     }
 
-    // v3.1 — post-investigate pipeline re-selection for target_type_dispatch modes.
+    // Historical pipeline re-selection behavior, retained in v0.4 for
+    // target_type_dispatch modes after investigate.
     // After workflow-investigate-review passes, the investigation.md frontmatter
     // may declare target_type + file_count + surface. If the mode declares
     // target_type_dispatch, we re-run selectPipeline with those signals and, if

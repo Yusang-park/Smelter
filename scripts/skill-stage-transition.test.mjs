@@ -61,7 +61,7 @@ function seedArtifact(statePath, skill, content = '# artifact\n') {
 
 function runTransition({ cwd, skill, sessionId = 't3' }) {
   const payload = JSON.stringify({
-    cwd, session_id: sessionId,
+    cwd, ...(sessionId !== undefined ? { session_id: sessionId } : {}),
     tool_name: 'Skill',
     tool_input: { skill },
     tool_response: 'ok',
@@ -249,6 +249,78 @@ test('ST-E2: repeated entry-command invocation is idempotent', async () => {
     assert.equal(state.current_stage, 'workflow-investigate');
     assert.deepEqual(state.completed_stages, []);
   } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E2b: slash-prefixed entry command is normalized and advances v0.4 step', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e2b-'));
+  try {
+    const sp = seedState(cwd, { mode: 'implement' });
+    const state = readState(sp);
+    state.user_mode = 'implement';
+    state.task_type = 'write';
+    state.step = 'INTENT';
+    state.step_flow = ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.allowed_actions = ['classify_intent'];
+    state.allowed_skills = ['workflow-investigate', 'workflow-implementation-plan', 'workflow-write-test', 'workflow-coding'];
+    writeFileSync(sp, JSON.stringify(state, null, 2));
+
+    const r = runTransition({ cwd, skill: '/implement' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.current_stage, 'workflow-investigate');
+    assert.equal(after.step, 'DISCOVERY');
+    assert.deepEqual(after.completed_stages, []);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E2c: entry command advances v0.4 step even when current_stage is already seeded', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e2c-'));
+  try {
+    const sp = seedState(cwd, { mode: 'implement' });
+    const state = readState(sp);
+    state.current_stage = 'workflow-investigate';
+    state.user_mode = 'implement';
+    state.task_type = 'write';
+    state.step = 'INTENT';
+    state.step_flow = ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.allowed_actions = ['classify_intent'];
+    state.allowed_skills = ['workflow-investigate', 'workflow-implementation-plan', 'workflow-write-test', 'workflow-coding'];
+    writeFileSync(sp, JSON.stringify(state, null, 2));
+
+    const r = runTransition({ cwd, skill: '/implement' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.current_stage, 'workflow-investigate');
+    assert.equal(after.step, 'DISCOVERY');
+    assert.deepEqual(after.completed_stages, []);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E2d: missing input session_id uses SMELTER_SESSION_ID for state transition', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e2d-'));
+  const prevSid = process.env.SMELTER_SESSION_ID;
+  try {
+    const sp = seedState(cwd, { mode: 'implement', sessionId: 'env-st' });
+    const state = readState(sp);
+    state.user_mode = 'implement';
+    state.task_type = 'write';
+    state.step = 'INTENT';
+    state.step_flow = ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.allowed_actions = ['classify_intent'];
+    state.allowed_skills = ['workflow-investigate', 'workflow-implementation-plan', 'workflow-write-test', 'workflow-coding'];
+    writeFileSync(sp, JSON.stringify(state, null, 2));
+
+    process.env.SMELTER_SESSION_ID = 'env-st';
+    const r = runTransition({ cwd, skill: '/implement', sessionId: null });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.current_stage, 'workflow-investigate');
+    assert.equal(after.step, 'DISCOVERY');
+  } finally {
+    if (prevSid === undefined) delete process.env.SMELTER_SESSION_ID;
+    else process.env.SMELTER_SESSION_ID = prevSid;
+    await rm(cwd, { recursive: true, force: true });
+  }
 });
 
 test('ST-E3: unknown skill (non-workflow, non-entry) is ignored', async () => {

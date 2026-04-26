@@ -42,6 +42,7 @@ export const PLUGIN_ROOT = dirname(SCRIPTS_DIR);
 const COMMAND_TO_MODE = Object.freeze({
   brainstorm: 'brainstorm',
   fix: 'fix',
+  infra: 'infra',
   explore: 'explore',
   implement: 'implement',
   verify: 'verify',
@@ -54,7 +55,7 @@ const COMMAND_TO_MODE = Object.freeze({
 // pre-tool-enforcer's code-file gate would then block every subsequent edit
 // — the deadlock this branch fixes.
 const READONLY_MODES = Object.freeze(new Set(['verify', 'explore', 'brainstorm']));
-const WRITE_MODES = Object.freeze(new Set(['fix', 'implement', 'dobby']));
+const WRITE_MODES = Object.freeze(new Set(['fix', 'implement', 'infra', 'dobby']));
 
 const LEADING_FILLER_TOKENS = new Set([
   'a','an','the','is','are','was','were','be','been','being','do','does','did',
@@ -342,7 +343,7 @@ export function seedWorkflowState({
       e2e_done: false,
       tests_required: commandName === 'fix' || commandName === 'implement',
       tests_pass: false,
-      review_required: commandName === 'fix' || commandName === 'implement',
+      review_required: commandName === 'fix' || commandName === 'implement' || commandName === 'infra',
       review_done: false,
       surface: [],
       updated_at: new Date().toISOString(),

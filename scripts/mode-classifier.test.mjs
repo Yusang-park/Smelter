@@ -55,6 +55,7 @@ section('Layer 1 — Explicit slash commands (no LLM call)');
   assert('/fix overridden=true', classify('/fix login bug').overridden, true);
   assert('/brainstorm → brainstorm', classify('/brainstorm redesign auth').mode, 'brainstorm');
   assert('/implement → implement', classify('/implement extend foo').mode, 'implement');
+  assert('/infra → infra', classify('/infra remove aws stack').mode, 'infra');
   assert('/explore → explore', classify('/explore race cond').mode, 'explore');
   assert('/verify → verify', classify('/verify suite').mode, 'verify');
   assert('slash trigger prefix', classify('/fix x').trigger.startsWith('command:/fix'), true);
@@ -137,6 +138,26 @@ section('Layer 3 — LLM single-mode (stub)');
     assert('LLM single-mode → fix', r.mode, 'fix');
     assert('LLM trigger prefixed with llm:', r.trigger.startsWith('llm:'), true);
     assert('LLM single-mode no chained_modes', r.chained_modes, undefined);
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+section('Layer 3 — LLM infra mode (stub)');
+// ---------------------------------------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-infra-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() {
+      return { schema_version: 2, mode: 'infra', trigger: 'infra:teardown', chained_modes: null, passthrough: false, target_type: null, exempt: null, skip_brainstorm: false };
+    }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('AWS ChartmetricN 전부 내려줘', { cwd: dir, sessionId: 'infra1' });
+    assert('LLM infra-mode → infra', r.mode, 'infra');
+    assert('LLM infra trigger prefixed', r.trigger.startsWith('llm:'), true);
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });

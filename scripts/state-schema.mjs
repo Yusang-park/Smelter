@@ -22,6 +22,9 @@ export const WORKFLOW_SKILLS = Object.freeze([
   'workflow-investigate-review',
   'workflow-implementation-plan',
   'workflow-implementation-plan-review',
+  'workflow-infra-plan',
+  'workflow-infra-plan-review',
+  'workflow-infra-execute',
   'workflow-tasker',
   'workflow-tasker-review',
   'workflow-write-test',
@@ -38,7 +41,7 @@ export const WORKFLOW_SKILLS = Object.freeze([
 // `dobby` (v3.4) is a no-pipeline escape hatch: only workflow-human-check runs
 // as the terminal gate; code edits are permitted like fix/implement.
 export const MODES = Object.freeze([
-  'brainstorm', 'fix', 'implement', 'explore', 'verify', 'dobby',
+  'brainstorm', 'fix', 'implement', 'infra', 'explore', 'verify', 'dobby',
 ]);
 
 export const CAUSE_ENUM = Object.freeze([

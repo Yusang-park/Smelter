@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * workflow-loader.mjs — Load the v3.1 unified workflow config:
+ * workflow-loader.mjs — Load the current unified workflow config:
  *   modes/workflow.yaml  — skills + pipelines + modes + target-type routing
  *                          + verification_rounds in a single file.
  *
- * Replaces the legacy `modes/<mode>.json` loader AND the v3.0 split-file variant.
+ * Replaces the legacy `modes/<mode>.json` loader and earlier split-file variants.
  *
  * Public API:
  *   - loadWorkflowConfig({ root? })      → full composite
@@ -110,7 +110,7 @@ export function getMode(name, cfg = loadWorkflowConfig()) {
 }
 
 // ---------------------------------------------------------------------------
-// v3.1 — Target-type dispatch for /fix mode.
+// Target-type dispatch for /fix mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -160,7 +160,7 @@ export function selectPipeline(modeName, scope = {}, cfg = loadWorkflowConfig())
 }
 
 // ---------------------------------------------------------------------------
-// v3.1 — Verification rounds.
+// Verification rounds.
 // ---------------------------------------------------------------------------
 
 /**
@@ -190,6 +190,9 @@ const ARTIFACT_TO_SKILL = Object.freeze({
   'investigation-review.md': 'workflow-investigate-review',
   'implementation-plan.md': 'workflow-implementation-plan',
   'implementation-plan-review.md': 'workflow-implementation-plan-review',
+  'infra-plan.md': 'workflow-infra-plan',
+  'infra-plan-review.md': 'workflow-infra-plan-review',
+  'infra-execute.md': 'workflow-infra-execute',
   'tasks.md': 'workflow-tasker',
   'tasks-review.md': 'workflow-tasker-review',
 });

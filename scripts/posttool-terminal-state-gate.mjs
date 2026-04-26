@@ -19,7 +19,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, basename } from 'node:path';
-import { resolveActiveState, terminalReminderPath, sanitizeSessionId } from './lib/session-paths.mjs';
+import { resolveActiveState, resolveHookSessionId, terminalReminderPath } from './lib/session-paths.mjs';
 import { nextSkillForState } from './lib/workflow-chain.mjs';
 
 // Canonical artifact basenames + accepted variants per skill. Only review
@@ -33,6 +33,9 @@ const SKILL_ARTIFACTS = {
   'workflow-investigate-review':  ['investigate_review.md', 'investigation-review.md', 'investigation_review.md'],
   'workflow-implementation-plan': ['implementation-plan.md'],
   'workflow-implementation-plan-review': ['implementation-plan-review.md'],
+  'workflow-infra-plan':          ['infra-plan.md'],
+  'workflow-infra-plan-review':   ['infra-plan-review.md'],
+  'workflow-infra-execute':       ['infra-execute.md'],
   'workflow-tasker':              ['plan.md', 'tasks.md'],
   'workflow-tasker-review':       ['tasker_review.md', 'tasks-review.md'],
   'workflow-agent-review':        ['agent_review.md', 'agent-review.md'],
@@ -137,10 +140,11 @@ function main() {
   const mode = getMode();
   if (mode === 'off') emitNoOp();
 
-  const { session_id, cwd } = input;
-  if (!cwd || !sanitizeSessionId(session_id)) emitNoOp();
+  const { cwd } = input;
+  const sessionId = resolveHookSessionId(input);
+  if (!cwd || !sessionId) emitNoOp();
 
-  const active = resolveActiveState(cwd, session_id);
+  const active = resolveActiveState(cwd, sessionId);
   if (!active || !active.state) emitNoOp();
 
   const currentStage = active.state.current_stage;
@@ -162,7 +166,7 @@ function main() {
 
   if (artifactOk && dispatched) { emitNoOp(); return; }
 
-  if (recentlyReminded(cwd, session_id, currentStage)) {
+  if (recentlyReminded(cwd, sessionId, currentStage)) {
     logStderr('dedupe', { stage: currentStage });
     emitNoOp(); return;
   }
@@ -174,9 +178,9 @@ function main() {
   }
   if (!dispatched && nextSkill) missing.push(`Skill(skill: '${nextSkill}')`);
   if (missing.length === 0) { emitNoOp(); return; } // nothing actionable
-  const reminder = `[${currentStage}] Terminal state incomplete. Next required actions:\n- ${missing.join('\n- ')}\nPer Iron Law #1, do not end the turn without these. Do NOT ask the user A/B choices — autonomous chain completion is mandatory until workflow-human-check.`;
+  const reminder = `[${currentStage}] Missing: ${missing.join('; ')}. Continue now; no user question.`;
 
-  markReminded(cwd, session_id, currentStage);
+  markReminded(cwd, sessionId, currentStage);
   logStderr('inject', { stage: currentStage, missing });
   emitReminder(reminder);
 }

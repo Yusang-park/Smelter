@@ -60,6 +60,31 @@ test('SL1b: seedWorkflowState supports live v0.4 modes explore and dobby', async
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('SL1c: seedWorkflowState supports infra mode without TDD step', async () => {
+  const { seedWorkflowState } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const infra = seedWorkflowState({ directory: cwd, commandName: 'infra', args: 'aws teardown', sessionId: 'sl1c', source: 'skill-tool' });
+    assert.ok(infra?.statePath && existsSync(infra.statePath), 'infra state is written');
+    const state = JSON.parse(readFileSync(infra.statePath, 'utf-8'));
+    assert.equal(state.mode, 'infra');
+    assert.equal(state.user_mode, 'infra');
+    assert.equal(state.task_type, 'infra');
+    assert.deepEqual(state.step_flow, ['INTENT', 'DISCOVERY', 'PLAN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
+    assert.equal(state.step_flow.includes('TEST_DESIGN'), false);
+    assert.equal(state.exempt.tdd, true);
+    assert.deepEqual(state.allowed_skills, [
+      'workflow-investigate',
+      'workflow-investigate-review',
+      'workflow-infra-plan',
+      'workflow-infra-plan-review',
+      'workflow-infra-execute',
+      'workflow-verify',
+      'workflow-human-check',
+    ]);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('SL2: deriveSlug always returns UUID-fixed slug regardless of prompt', async () => {
   const { deriveSlug } = await import(MODULE);
   const UUID_SLUG = /^feature-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

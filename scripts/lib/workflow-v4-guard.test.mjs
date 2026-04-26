@@ -68,8 +68,22 @@ test('write contract accepts legacy test_cycles red evidence in bridged runtime 
   assert.equal(result.decision, 'allow');
 });
 
-test('git commit is blocked until HUMAN_CHECK is done for write and freeform contracts', () => {
-  for (const userMode of ['fix', 'dobby']) {
+test('infra contract allows infrastructure source edits during EXECUTE without red test evidence', () => {
+  const state = createV4State({ taskId: 't-infra', userMode: 'infra' });
+  transitionV4State(state, 'EXECUTE');
+  const result = evaluateToolUse(state, { toolName: 'Write', filePath: '/repo/infra/main.tf' });
+  assert.equal(result.decision, 'allow');
+});
+
+test('infra contract blocks infrastructure source edits before EXECUTE', () => {
+  const state = createV4State({ taskId: 't-infra-plan', userMode: 'infra' });
+  transitionV4State(state, 'PLAN');
+  const result = evaluateToolUse(state, { toolName: 'Write', filePath: '/repo/infra/main.tf' });
+  assert.equal(result.decision, 'block');
+});
+
+test('git commit is blocked until HUMAN_CHECK is done for mutating contracts', () => {
+  for (const userMode of ['fix', 'infra', 'dobby']) {
     const state = createV4State({ taskId: `t-${userMode}`, userMode });
     transitionV4State(state, 'HUMAN_CHECK');
     assert.equal(evaluateToolUse(state, { toolName: 'Bash', command: 'git commit -m x' }).decision, 'block');

@@ -15,6 +15,7 @@ const PRODUCER_CHAIN = Object.freeze({
   'workflow-brainstorm-review':   { onFail: 'workflow-brainstorm' },
   'workflow-investigate-review':  { onFail: 'workflow-investigate' },
   'workflow-implementation-plan-review': { onFail: 'workflow-implementation-plan' },
+  'workflow-infra-plan-review': { onFail: 'workflow-infra-plan' },
   'workflow-tasker-review':       { onFail: 'workflow-tasker' },
   'workflow-write-test':          { onFail: 'dynamic:planning_producer' },
   'workflow-coding': {
@@ -81,6 +82,8 @@ const PRODUCER_CHAIN = Object.freeze({
   'workflow-brainstorm':    { onFail: 'workflow-brainstorm' },   // self-rerun
   'workflow-investigate':   { onFail: 'workflow-investigate' },  // self-rerun
   'workflow-implementation-plan': { onFail: 'workflow-implementation-plan' },
+  'workflow-infra-plan': { onFail: 'workflow-infra-plan' },
+  'workflow-infra-execute': { onFail: 'workflow-infra-execute' },
   'workflow-tasker':        { onFail: 'workflow-tasker' },       // self-rerun
 });
 
@@ -92,6 +95,7 @@ const RESHAPE_TARGETS = Object.freeze({
   'workflow-brainstorm-review': ['workflow-brainstorm'],
   'workflow-investigate-review': ['workflow-brainstorm', 'workflow-investigate'],
   'workflow-implementation-plan-review': ['workflow-implementation-plan', 'workflow-investigate'],
+  'workflow-infra-plan-review': ['workflow-infra-plan', 'workflow-investigate'],
   'workflow-tasker-review': ['workflow-investigate', 'workflow-brainstorm'],
 });
 
@@ -125,6 +129,10 @@ export function route({ event, state, allowedSkills }) {
   const rule = PRODUCER_CHAIN[skill];
   if (!rule) {
     return { target: null, reason: 'unknown_skill', info: `no producer rule for ${skill}` };
+  }
+
+  if (skill === 'workflow-verify' && allowedSkills.includes('workflow-infra-execute')) {
+    return checkWhitelist('workflow-infra-execute', allowedSkills, 'producer:infra-verify');
   }
 
   // severity-based (team-code-review)

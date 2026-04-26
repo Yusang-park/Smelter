@@ -9,7 +9,7 @@
  * Priority: (1) explicit slash command → (2) magic keyword (natural language).
  *
  * Supported slash commands:
- *   brainstorm, fix, explore, verify, implement, cancel, queue.
+ *   brainstorm, fix, infra, explore, verify, implement, cancel, queue.
  *
  * Supported magic-keyword (natural-language) mapping:
  *   brainstorm / deep interview / 설계해줘 / 계획부터 -> brainstorm
@@ -18,6 +18,7 @@
  *   fix / bug / 버그                                 -> fix (E2E forced for interface surface)
  *   typo / dialogue / 텍스트 / copy / i18n           -> fix (surface exemption)
  *   css / style / design / 디자인                    -> fix (surface exemption)
+ *   infra / aws / terraform / 내려줘 / 삭제           -> infra
  *   verify / validate / 검증 / 점검                  -> verify
  *   analyze / investigate / 파악 / 분석              -> explore
  *   cancel / stop                                    -> cancel
@@ -38,6 +39,7 @@ import { createInitialState, writeState } from './state-schema.mjs';
 import { getMode as getV3Mode, loadWorkflowConfig, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
 import { parseSlashArgs, mergeSurface } from './lib/surface-extraction.mjs';
 import { writeLastDetection } from './lib/hook-guards.mjs';
+import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,6 +50,7 @@ const PLUGIN_ROOT = dirname(__dirname);
 const COMMAND_TO_MODE = {
   brainstorm: 'brainstorm',
   fix: 'fix',
+  infra: 'infra',
   explore: 'explore',
   implement: 'implement',
   verify: 'verify',
@@ -105,7 +108,7 @@ function extractExplicitHarnessCommand(prompt) {
   // starting with `/fix` followed by a pasted multi-line transcript still
   // matches the slash command and bypasses the transcript-paste heuristic
   // (TPP6).
-  const match = trimmed.match(/^\/(brainstorm|fix|explore|implement|verify|dobby|cancel|queue)\b(?:[:\s-]*([\s\S]*))?$/i);
+  const match = trimmed.match(/^\/(brainstorm|fix|infra|explore|implement|verify|dobby|cancel|queue)\b(?:[:\s-]*([\s\S]*))?$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase(),
@@ -119,6 +122,7 @@ function extractExplicitHarnessCommand(prompt) {
 const MODE_TO_COMMAND = {
   brainstorm: 'brainstorm',
   fix: 'fix',
+  infra: 'infra',
   explore: 'explore',
   verify: 'verify',
   implement: 'implement',
@@ -180,6 +184,21 @@ export function isCommunicationIntent(text) {
   ].some((re) => re.test(s));
 }
 
+function detectCurrentDirectiveInTranscript(text) {
+  const s = String(text || '');
+  // Transcript markers can dominate a pasted prompt while the user's fresh
+  // instruction is still a short Korean directive before/after the paste.
+  // Keep this narrow so old transcript content such as commit subjects or
+  // hook diagnostics does not re-enter workflow mode by accident.
+  if (/(?:구현|지원)(?:을|를)?\s*(?:진행|해|해줘|하도록\s*해줘)|구현\s*진행해/i.test(s)) {
+    return { name: 'implement', matched: 'transcript-current-directive:implement' };
+  }
+  if (/(?:이걸|이거|해당\s*(?:문제|내용)?|문제)?\s*(?:고쳐줘|수정해줘|고쳐|수정해|fix\s+this)/i.test(s)) {
+    return { name: 'fix', matched: 'transcript-current-directive:fix' };
+  }
+  return null;
+}
+
 function hasExplicitNewWorkflowIntent(text) {
   return /새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작|중단하고\s*(?:새로|다른)/i.test(String(text || ''));
 }
@@ -221,10 +240,7 @@ An unfinished ${active.state.mode} workflow is already active (${active.slug}). 
 
 The user is asking to revisit discovery/investigation inside the current workflow. Invoke the workflow stage skill as the first tool call:
 
-Skill: workflow-investigate
-
-User request:
-${prompt}`;
+Skill: workflow-investigate`;
 }
 
 // Strip ANSI escape sequences and C0/C1 control characters before emitting
@@ -245,6 +261,17 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
   // markers (≥2 distinct patterns) is passed through without mode seeding.
   // Rollback lever: set SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 to disable.
   if (process.env.SMELTER_SKIP_TRANSCRIPT_HEURISTIC !== '1' && isTranscriptPaste(text)) {
+    const currentDirective = detectCurrentDirectiveInTranscript(text);
+    if (currentDirective) {
+      return {
+        name: currentDirective.name,
+        args: '',
+        hint: null,
+        matched: currentDirective.matched,
+        source: 'magic',
+        chained_modes: null,
+      };
+    }
     return { passthrough: true, matched: 'transcript-paste', source: 'passthrough' };
   }
 
@@ -324,6 +351,7 @@ export function detectNaturalLanguageCommand(prompt, { cwd = process.cwd(), sess
 const COMMAND_CONFIG = {
   brainstorm: { mode: 'brainstorm' },
   fix:         { mode: 'fix' },
+  infra:       { mode: 'infra' },
   explore:     { mode: 'explore' },
   verify:      { mode: 'verify' },
   implement:   { mode: 'implement' },
@@ -447,7 +475,7 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
     // accidentally get a new feature when the mode classifier reroutes.
     const requestedMode = COMMAND_TO_MODE[commandName];
     if (source === 'skill-tool' &&
-        (requestedMode === 'fix' || requestedMode === 'implement') &&
+        (requestedMode === 'fix' || requestedMode === 'implement' || requestedMode === 'infra') &&
         (state.mode === 'verify' || state.mode === 'explore' || state.mode === 'brainstorm')) {
       return { create: true, reason: 'mode-upgrade' };
     }
@@ -602,7 +630,8 @@ function seedWorkflowState(directory, commandName, prompt, sessionId, args = '',
         machineState.exempt = merged.exempt;
         machineState.skip_brainstorm = merged.skip_brainstorm;
 
-        // v3.1 — if target_type_dispatch is set and surface extraction produced a
+        // Historical dispatch logic, still used in the current v0.4 flow:
+        // if target_type_dispatch is set and surface extraction produced a
         // target_type, resolve the runtime pipeline via selectPipeline. Otherwise
         // fall back to the mode's default allowed_skills.
         let resolvedAllowedSkills = modeCfg?.allowed_skills ?? [];
@@ -726,7 +755,7 @@ async function main() {
     let data = {};
     try { data = JSON.parse(input); } catch {}
     const directory = data.cwd || data.directory || process.cwd();
-    const sessionId = data.session_id || data.sessionId || '';
+    const sessionId = resolveHookSessionId(data);
 
     const prompt = extractPrompt(input);
     if (!prompt) {

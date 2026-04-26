@@ -32,6 +32,7 @@ import { classifyMode } from './lib/subagent-classifier.mjs';
 const EXPLICIT_COMMANDS = {
   '/brainstorm': 'brainstorm',
   '/fix': 'fix',
+  '/infra': 'infra',
   '/explore': 'explore',
   '/verify': 'verify',
   '/implement': 'implement',
@@ -42,7 +43,7 @@ const RETIRED_COMMANDS = new Set(['/investigate', '/think', '/plan', '/simple-fi
 
 // Mode whitelist — kept in sync with state-schema MODES (v3 canonical set).
 const MODES_WHITELIST = Object.freeze([
-  'brainstorm', 'fix', 'explore', 'verify', 'implement', 'dobby',
+  'brainstorm', 'fix', 'infra', 'explore', 'verify', 'implement', 'dobby',
 ]);
 
 // ---------------------------------------------------------------------------

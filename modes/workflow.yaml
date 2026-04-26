@@ -11,7 +11,7 @@
 #   modes.<name>        — thin composition (entry + pipeline + flags + team_hints)
 #   command_aliases     — /slash → mode
 
-schema_version: "0.4.0"
+schema_version: "0.4.1"
 
 verification_rounds:
   rounds: 2             # global policy for every review skill and mode
@@ -57,6 +57,23 @@ skills:
       pattern: B
       default_agents: [advocate, critic, arbitrator]
       aggregator: arbitrator
+
+  workflow-infra-plan:
+    team:
+      pattern: C
+      default_agent: architect
+      aggregator: security-reviewer
+
+  workflow-infra-plan-review:
+    team:
+      pattern: B
+      default_agents: [security-reviewer, critic, arbitrator]
+      aggregator: arbitrator
+
+  workflow-infra-execute:
+    team:
+      pattern: A
+      default_agent: executor
 
   workflow-tasker:
     teams:
@@ -193,6 +210,19 @@ pipelines:
     - workflow-e2e-review
     - workflow-human-check
 
+  # Infra — infrastructure operations and infrastructure-as-code changes.
+  # Separate from /fix and /implement because destructive/shared resources need
+  # inventory, risk/backup planning, explicit approval, and post-change evidence,
+  # not product-code TDD.
+  infra_ops:
+    - workflow-investigate
+    - workflow-investigate-review
+    - workflow-infra-plan
+    - workflow-infra-plan-review
+    - workflow-infra-execute
+    - workflow-verify
+    - workflow-human-check
+
   # Dobby — /dobby. Free-form edits with ONLY workflow-human-check as the terminal
   # gate. No TDD / investigate / review / e2e pipeline. Used when the user wants
   # to unblock code edits without running the full workflow but still wants the
@@ -276,6 +306,16 @@ modes:
       upgrade_to: [brainstorm]
       downgrade_to: [fix]
 
+  infra:
+    description: Infrastructure changes, cloud teardown/provisioning, deployment resources, and IaC edits. Requires inventory, risk/backup plan, explicit approval, execution evidence, and verification.
+    entry_skill: workflow-investigate
+    pipeline: infra_ops
+    read_only: false
+    default_exempt: { tdd: true, e2e: false }
+    transitions:
+      upgrade_to: [brainstorm]
+      downgrade_to: [explore]
+
   explore:
     description: Static read only. Exits via user-chosen mode transition.
     entry_skill: workflow-investigate
@@ -313,6 +353,7 @@ modes:
 command_aliases:
   /brainstorm: brainstorm
   /fix:         fix
+  /infra:      infra
   /implement:   implement
   /explore:     explore
   /verify:      verify

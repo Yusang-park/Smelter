@@ -181,6 +181,7 @@ section('integration');
   }, dir, { SMT_TERMINAL_GATE_MODE: 'enforce' });
   const ctx = r.stdout?.hookSpecificOutput?.additionalContext ?? '';
   assert('investigate-review reminder mentions canonical artifact', ctx.includes('investigate_review.md') || ctx.includes('investigation'), true);
+  assert('terminal reminder stays compact', ctx.length < 180, true);
   rmSync(dir, { recursive: true, force: true });
 }
 

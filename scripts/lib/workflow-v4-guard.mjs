@@ -36,7 +36,7 @@ export function evaluateToolUse(state, { toolName, filePath = '', command = '' }
   if (!state) return { decision: 'allow', reason: 'no v0.4 state' };
 
   if (toolName === 'Bash' && looksLikeGitCommit(command)) {
-    if (['write', 'freeform'].includes(state.task_type) && state.step !== 'DONE') {
+    if (['write', 'infra', 'freeform'].includes(state.task_type) && state.step !== 'DONE') {
       return { decision: 'block', reason: `git commit blocked until HUMAN_CHECK passes (task_type=${state.task_type}, step=${state.step})` };
     }
     return { decision: 'allow', reason: 'commit allowed' };
@@ -53,6 +53,12 @@ export function evaluateToolUse(state, { toolName, filePath = '', command = '' }
     if (state.task_type === 'read') return { decision: 'block', reason: 'source write blocked for task_type=read' };
     if (state.task_type === 'design') return { decision: 'block', reason: 'source write blocked for task_type=design' };
     if (state.task_type === 'verify') return { decision: 'block', reason: 'source write blocked for task_type=verify' };
+    if (state.task_type === 'infra') {
+      if (state.step === 'EXECUTE' && state.allowed_actions?.includes('write_source')) {
+        return { decision: 'allow', reason: 'infra EXECUTE write allowed' };
+      }
+      return { decision: 'block', reason: `infra source write blocked at step=${state.step}` };
+    }
     if (state.task_type === 'write') {
       if (isTestPath(filePath)) {
         if (state.step === 'TEST_DESIGN' && state.allowed_actions?.includes('write_test')) {

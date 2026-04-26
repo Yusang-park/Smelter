@@ -21,7 +21,7 @@ import {
 
 test('loadWorkflowConfig parses the unified workflow.yaml', () => {
   const cfg = loadWorkflowConfig();
-  assert.equal(cfg.schema_version, '0.4.0');
+  assert.equal(cfg.schema_version, '0.4.1');
   assert.ok(cfg.skills, 'skills present');
   assert.ok(cfg.pipelines, 'pipelines present');
   assert.ok(cfg.modes, 'modes present');
@@ -31,7 +31,7 @@ test('loadWorkflowConfig parses the unified workflow.yaml', () => {
 
   assert.deepEqual(
     Object.keys(cfg.modes).sort(),
-    ['brainstorm', 'fix', 'implement', 'explore', 'verify', 'dobby'].sort(),
+    ['brainstorm', 'fix', 'implement', 'infra', 'explore', 'verify', 'dobby'].sort(),
   );
 });
 
@@ -86,6 +86,24 @@ test('getMode(brainstorm) read-only + planning_only pipeline', () => {
 test('getMode(explore) + getMode(verify) read-only', () => {
   assert.equal(getMode('explore').read_only, true);
   assert.equal(getMode('verify').read_only, true);
+});
+
+test('getMode(infra) uses the dedicated infrastructure workflow', () => {
+  const infra = getMode('infra');
+  assert.equal(infra.entry_skill, 'workflow-investigate');
+  assert.equal(infra.pipeline, 'infra_ops');
+  assert.equal(infra.read_only, false);
+  assert.equal(infra.default_exempt.tdd, true);
+  assert.equal(infra.default_exempt.e2e, false);
+  assert.deepEqual(infra.allowed_skills, [
+    'workflow-investigate',
+    'workflow-investigate-review',
+    'workflow-infra-plan',
+    'workflow-infra-plan-review',
+    'workflow-infra-execute',
+    'workflow-verify',
+    'workflow-human-check',
+  ]);
 });
 
 test('pipeline set: fix / fix_simple / full exist; extend_light and medium removed', () => {
@@ -170,6 +188,7 @@ test('selectPipeline: non-dispatching modes always return declared pipeline', ()
   assert.equal(selectPipeline('brainstorm', { target_type: 'text' }), 'planning_only');
   assert.equal(selectPipeline('explore', {}), 'explore_only');
   assert.equal(selectPipeline('verify', {}), 'verify_only');
+  assert.equal(selectPipeline('infra', { target_type: 'bug_fix' }), 'infra_ops');
 });
 
 test('getVerificationRounds: every skill uses the global 2-round policy', () => {
@@ -252,6 +271,7 @@ test('resolveCommandAlias v0.4 canonical set only', () => {
   assert.equal(resolveCommandAlias('/think'), null);
   assert.equal(resolveCommandAlias('/fix'), 'fix');
   assert.equal(resolveCommandAlias('/implement'), 'implement');
+  assert.equal(resolveCommandAlias('/infra'), 'infra');
   assert.equal(resolveCommandAlias('/explore'), 'explore');
   assert.equal(resolveCommandAlias('/investigate'), null);
   assert.equal(resolveCommandAlias('/verify'), 'verify');

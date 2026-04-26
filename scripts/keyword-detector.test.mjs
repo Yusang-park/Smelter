@@ -141,6 +141,7 @@ test('active workflow rollback intent injects current-mode investigate stage', a
     const ctx = second.hookSpecificOutput?.additionalContext ?? '';
     assert.match(ctx, /ACTIVE WORKFLOW CONTINUATION/);
     assert.match(ctx, /Skill: workflow-investigate/);
+    assert.doesNotMatch(ctx, /다시 탐색해보자/, 'continuation must inject only the command, not replay the user prompt');
 
     const slugs = readdirSync(join(cwd, '.smt', 'features'));
     assert.equal(slugs.length, 1, 'rollback intent must stay inside the active feature');
@@ -414,10 +415,18 @@ test('TPP9 isTranscriptPaste: false on empty / whitespace-only', () => {
   assert.equal(isTranscriptPaste('   \n  \t  '), false);
 });
 
-test('TPP10 mixed paste+question with transcript-dominant markers → passthrough (pinned decision)', () => {
+test('TPP10 mixed paste+current fix directive seeds fix instead of passthrough', () => {
   const mixed = `${VERBATIM_TRANSCRIPT}\n이걸 고쳐줘`;
   const result = detectNaturalLanguageCommand(mixed);
-  assert.equal(result?.passthrough, true, `transcript-dominant paste must win; got ${JSON.stringify(result)}`);
+  assert.equal(result?.name, 'fix', `current directive must win; got ${JSON.stringify(result)}`);
+  assert.equal(result?.source, 'magic');
+});
+
+test('TPP10b mixed paste+current implement directive seeds implement instead of passthrough', () => {
+  const mixed = `확인해서 구현 진행해.\n${VERBATIM_TRANSCRIPT}`;
+  const result = detectNaturalLanguageCommand(mixed);
+  assert.equal(result?.name, 'implement', `current implement directive must win; got ${JSON.stringify(result)}`);
+  assert.equal(result?.source, 'magic');
 });
 
 test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async () => {
@@ -440,7 +449,7 @@ test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async (
 });
 
 // ---------------------------------------------------------------------------
-// Magic-keyword → target_type → pipeline dispatch (v3.1).
+// Magic-keyword → target_type → pipeline dispatch (retained historical dispatch path).
 // Verifies `/fix typo ...` resolves to the fix_simple pipeline, `/fix css ...`
 // sets TDD exemption without shrinking the pipeline, and an unmatched /fix
 // prompt falls through to the default fix pipeline.

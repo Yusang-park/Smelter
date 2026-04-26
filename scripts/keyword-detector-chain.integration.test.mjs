@@ -6,8 +6,8 @@
  * communication file. LLM is stubbed via SMELTER_MODE_CLASSIFIER_MODULE.
  *
  * Order: keyword-detector → cancel-handler → state-seeder → magic-keyword-injector
- * (auto-confirm-consumer + mnemosyne skill-injector are NOT in the test chain;
- *  they are independent of detection state.)
+ * (auto-confirm-consumer is NOT in the test chain; it is independent of
+ *  detection state.)
  */
 
 import test from 'node:test';

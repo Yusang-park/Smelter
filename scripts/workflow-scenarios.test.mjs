@@ -599,9 +599,9 @@ section('SCENARIO 11 — Multi-Pass Verification gate (§9-3)');
 section('SCENARIO 12 — State-schema consistency with spec');
 // ============================================================================
 {
-  test('16 workflow skills, 6 modes exposed in schema', () => {
-    assert.equal(WORKFLOW_SKILLS.length, 16);
-    assert.equal(MODES.length, 6);
+  test('19 workflow skills, 7 modes exposed in schema', () => {
+    assert.equal(WORKFLOW_SKILLS.length, 19);
+    assert.equal(MODES.length, 7);
   });
   test('all 5 Team Agent Patterns present', () => {
     assert.deepEqual([...PATTERNS].sort(), ['A', 'B', 'C', 'D', 'E']);

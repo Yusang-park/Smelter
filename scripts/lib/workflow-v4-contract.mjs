@@ -4,6 +4,7 @@ export const USER_MODES = Object.freeze([
   'brainstorm',
   'implement',
   'fix',
+  'infra',
   'explore',
   'verify',
   'dobby',
@@ -14,6 +15,7 @@ export const TASK_TYPES = Object.freeze([
   'write',
   'design',
   'verify',
+  'infra',
   'freeform',
 ]);
 
@@ -33,6 +35,7 @@ export const COMMAND_TO_USER_MODE = Object.freeze({
   '/brainstorm': 'brainstorm',
   '/implement': 'implement',
   '/fix': 'fix',
+  '/infra': 'infra',
   '/explore': 'explore',
   '/verify': 'verify',
   '/dobby': 'dobby',
@@ -42,6 +45,7 @@ const MODE_TO_TASK_TYPE = Object.freeze({
   brainstorm: 'design',
   explore: 'read',
   verify: 'verify',
+  infra: 'infra',
   implement: 'write',
   fix: 'write',
   dobby: 'freeform',
@@ -51,6 +55,7 @@ const TASK_TYPE_TO_STEPS = Object.freeze({
   read: Object.freeze(['INTENT', 'DISCOVERY', 'DONE']),
   design: Object.freeze(['INTENT', 'PLAN', 'DONE']),
   verify: Object.freeze(['INTENT', 'DISCOVERY', 'VERIFY', 'HUMAN_CHECK', 'DONE']),
+  infra: Object.freeze(['INTENT', 'DISCOVERY', 'PLAN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']),
   write: Object.freeze(['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']),
   freeform: Object.freeze(['INTENT', 'EXECUTE', 'HUMAN_CHECK', 'DONE']),
 });
@@ -105,5 +110,6 @@ export function allowedActionsFor({ task_type, step }) {
   if (!STEPS.includes(step)) throw new Error(`invalid step: ${step}`);
   if (task_type === 'read' && step === 'DONE') return ['read'];
   if (task_type === 'design' && step === 'DONE') return ['read'];
+  if (task_type === 'infra' && step === 'EXECUTE') return ['read', 'write_source', 'run_infra', 'write_artifact'];
   return [...(STEP_ACTIONS[step] ?? [])];
 }

@@ -195,7 +195,7 @@ function writeSessionCache(stateDir, sessionId, cacheFile, cache) {
 
 export const CLASSIFICATION_PROMPT = `You are a command classifier for a CLI tool called "smelter". Classify the user's prompt as either a command or a question/explanation request.
 
-Commands available: brainstorm (deep planning), implement (full dev workflow), fix (bug fix / simple edit), explore (read-only analysis), verify, dobby, cancel, queue.
+Commands available: brainstorm (deep planning), implement (full dev workflow), fix (bug fix / simple edit), infra (infrastructure/cloud/IaC operations), explore (read-only analysis), verify, dobby, cancel, queue.
 
 Rules:
 - If the user is ASKING about a command (e.g. "how does brainstorm work?", "explain implement") → question
@@ -240,6 +240,10 @@ Strong implement signals (any of these → command:implement):
   JA: 追加, 作成, 新機能, 実装, 開発, リファクタ
   ES: agregar, crear, nueva funcionalidad, implementar, desarrollar
   DE: hinzufügen, erstellen, neue Funktion, implementieren, entwickeln
+
+Strong infra signals (any of these → command:infra):
+  EN: infra, infrastructure, aws, cloud, terraform, pulumi, cloudformation, serverless remove, teardown, destroy stack, provision, deploy resources, route53, iam, s3, dynamodb, lambda
+  KO: 인프라, AWS, 클라우드, 테라폼, 서버리스, 스택 삭제, 내려줘, 제거, 리소스 삭제, 프로비저닝, 배포 리소스, 람다, 다이나모DB, S3, IAM, Route53
 
 Branch hints for commands:
 - implement + "extend/add to/덧붙여/확장" → branch: "extend"
@@ -312,9 +316,9 @@ export function classifyPrompt(prompt, { cwd = process.cwd(), sessionId = '' } =
 // ambiguous natural language.
 
 const MODE_CLASSIFIER_CACHE_FILE = 'mode-classifier-cache.json';
-const VALID_MODES = new Set(['brainstorm', 'fix', 'explore', 'verify', 'implement']);
+const VALID_MODES = new Set(['brainstorm', 'fix', 'infra', 'explore', 'verify', 'implement']);
 
-const MODE_CLASSIFIER_PROMPT = `You classify a user's natural-language prompt into one of Smelter's 5 workflow modes, and simultaneously extract optional surface fields used by the mode pipeline.
+const MODE_CLASSIFIER_PROMPT = `You classify a user's natural-language prompt into one of Smelter's 6 workflow modes, and simultaneously extract optional surface fields used by the mode pipeline.
 
 Return ONLY valid JSON (no markdown, no prose):
 {
@@ -331,6 +335,7 @@ Return ONLY valid JSON (no markdown, no prose):
 Modes (pick exactly one for "mode"):
 - "brainstorm" — Ideation & planning without code. New feature design, major refactor scoping, architectural exploration.
 - "fix" — Bug repair, regression, logic error, crash, deploy failure. ALSO covers trivial text edits (텍스트 수정 — typo/copy/dialogue/i18n) and design edits (디자인 수정 — CSS/style/typography).
+- "infra" — Infrastructure/cloud/IaC operations: AWS/GCP/Azure resources, Terraform/Pulumi/CloudFormation/Serverless, teardown/destroy/remove/provision/deployment resources. Use for destructive/shared infrastructure even when phrased as a fix.
 - "explore" — Static code reading / inspection. User wants to UNDERSTAND, not change code. The executor skill remains workflow-investigate.
 - "verify" — Run tests, health check, sanity check. Execute verification, not modify.
 - "implement" — Build new functionality ON TOP OF existing code. Lightweight planning.
@@ -353,6 +358,7 @@ Examples:
 - "버튼 색깔 바꿔" → {"schema_version":2,"mode":"fix","chained_modes":null,"passthrough":false,"trigger":"surface:design","target_type":"design","exempt":{"tdd":true,"e2e":false},"skip_brainstorm":false}
 - "덧붙여서 추가해" → {"schema_version":2,"mode":"implement","chained_modes":null,"passthrough":false,"trigger":"imperative:extend","target_type":"extend_existing","exempt":null,"skip_brainstorm":true}
 - "새 기능 설계해" → {"schema_version":2,"mode":"brainstorm","chained_modes":null,"passthrough":false,"trigger":"imperative:design-new","target_type":null,"exempt":null,"skip_brainstorm":false}
+- "AWS 스택 전부 내려줘" → {"schema_version":2,"mode":"infra","chained_modes":null,"passthrough":false,"trigger":"infra:teardown","target_type":null,"exempt":null,"skip_brainstorm":false}
 - "이 함수 어떻게 동작해?" → {"schema_version":2,"mode":"explore","chained_modes":null,"passthrough":false,"trigger":"interrogative:how-question","target_type":null,"exempt":null,"skip_brainstorm":false}
 - "workflow-tasker가 뭐야?" → {"schema_version":2,"mode":"explore","chained_modes":null,"passthrough":true,"trigger":"passthrough:lookup","target_type":null,"exempt":null,"skip_brainstorm":false}`;
 
