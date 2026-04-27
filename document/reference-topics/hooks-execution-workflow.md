@@ -159,7 +159,7 @@ Smelter TDD 강제 + 응답 스타일 + 파일 기반 메모리 주입.
 
 ### 2-B. Learned-skill pre-injection removed
 
-`skill-injector.mjs` was removed from `UserPromptSubmit`. Workflow skill bodies are loaded only by explicit Skill invocation from the active flow; no learned-skill body is pre-injected from prompt keyword matching.
+The legacy learned-skill pre-injection hook was removed from `UserPromptSubmit`. Workflow skill bodies are loaded only by explicit Skill invocation from the active flow; no learned-skill body is pre-injected from prompt keyword matching.
 
 ---
 

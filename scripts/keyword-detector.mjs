@@ -712,7 +712,15 @@ function createSkillInvocation(skillName, originalPrompt, args = '', hint = null
   const hintSection = hint ? `\nBranch hint: ${hint}` : '';
   return `[MAGIC KEYWORD: ${skillName.toUpperCase()}]
 
-You MUST invoke the skill using the Skill tool:
+MANDATORY WORKFLOW ENTRY
+
+Your FIRST tool call must be exactly:
+
+Skill(skill: '${skillName}')
+
+Read/search tools are allowed before choosing if the requested mode needs clarification. Do not edit or run mutating commands before the selected Skill call. The workflow state has already been seeded by UserPromptSubmit; if the seeded mode is wrong, invoke the correct Skill(fix|implement|infra|dobby) before any source edit so the state can be corrected.
+
+Legacy display form:
 
 Skill: ${skillName}${argsSection}${hintSection}
 

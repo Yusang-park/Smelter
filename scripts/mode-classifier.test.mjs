@@ -124,6 +124,31 @@ section('Layer 2 — Mixed-intent NOT passthrough (falls to LLM)');
 }
 
 // ---------------------------------------------------------------------------
+section('Layer 2b — High-confidence short edit intents');
+// ---------------------------------------------------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mc-short-edit-'));
+  try {
+    const stub = mkStub(dir, `export function classifyMode() { throw new Error('LLM should not be called for short edit intent'); }`);
+    process.env.SMELTER_MODE_CLASSIFIER_MODULE = stub;
+    const { classify } = await freshImport();
+    const r = classify('select만 적용.', { cwd: dir, sessionId: 'short1' });
+    assert('select만 적용 → implement', r.mode, 'implement');
+    assert('short edit trigger prefix', r.trigger, 'local:apply-only');
+    assert('short edit target_type', r.target_type, 'extend_existing');
+    assert('short edit skip brainstorm', r.skip_brainstorm, true);
+
+    const editor = classify('edit-artist/artist-info에서 description이 html임. html을 수정하는 text editor를 설치해서 UI로 bold와 같은 수정사항 조작할 수 있도록 편의성을 높여줘.', { cwd: dir, sessionId: 'short2' });
+    assert('rich text editor UI → implement', editor.mode, 'implement');
+    assert('rich text editor trigger', editor.trigger, 'local:rich-text-editor-ui');
+    assert('rich text editor target_type', editor.target_type, 'extend_existing');
+  } finally {
+    delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
 section('Layer 3 — LLM single-mode (stub)');
 // ---------------------------------------------------------------------------
 {

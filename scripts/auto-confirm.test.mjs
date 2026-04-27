@@ -413,11 +413,63 @@ test('workflow-human-check with empty events → halt (Fix B defensive)', () => 
   const d = decide({ state: s, lastAssistantText: '' });
   assert.equal(d.action, 'halt');
 });
+test('workflow-human-check plain text menu is rejected and re-enters native decision skill', () => {
+  const s = baseState({ current_stage: 'workflow-human-check', events: [], completed_stages: [] });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'Decide: complete / rework / hold / upgrade?',
+    questionShape: 'multi_choice',
+  });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.skill, 'workflow-human-check');
+  assert.equal(d.payload.forceNativeDecision, true);
+});
 test('_awaiting_mode_upgrade flag → halt', () => {
   const s = baseState();
   s._awaiting_mode_upgrade = true;
   const d = decide({ state: s, lastAssistantText: '' });
   assert.equal(d.action, 'halt');
+});
+test('dobby/freeform initial state enters workflow-human-check before user-facing git confirmation', () => {
+  const s = baseState({ mode: 'dobby', current_stage: null, events: [], completed_stages: [] });
+  s.user_mode = 'dobby';
+  s.task_type = 'freeform';
+  s.step = 'EXECUTE';
+  s.step_flow = ['INTENT', 'EXECUTE', 'HUMAN_CHECK', 'DONE'];
+  s.allowed_skills = ['workflow-human-check'];
+  const d = decide({
+    state: s,
+    lastAssistantText: [
+      'Risky actions ahead. Confirm push and merge?',
+      '1. complete',
+      '2. hold',
+    ].join('\n'),
+    questionShape: 'multi_choice',
+  });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.skill, 'workflow-human-check');
+});
+test('initial write workflow enters first allowed workflow skill instead of halting on choices', () => {
+  const s = baseState({ mode: 'fix', current_stage: null, events: [], completed_stages: [] });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'Pick one:\n- continue\n- hold',
+    questionShape: 'multi_choice',
+  });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.skill, 'workflow-investigate');
+});
+test('unentered seeded workflow cannot stop on plan confirmation before Skill entry', () => {
+  const s = baseState({ mode: 'implement', current_stage: 'workflow-investigate', events: [], completed_stages: [] });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'Plan: install TipTap and replace textarea. Confirm install + approach?',
+    questionShape: 'open_question',
+    stageClassifier: () => { throw new Error('stage classifier must not run before initial Skill entry'); },
+  });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.skill, 'workflow-investigate');
+  assert.equal(d.payload.direction, 'enter');
 });
 test('workflow-human-check completed → session_wrap (canonical terminal shape)', () => {
   // The canonical terminal shape after finalize-human-check.mjs runs is:
@@ -1558,6 +1610,10 @@ test('stage_complete injection contains Write-tool directive when artifact non-n
     'injection must contain "Write" tool directive when artifact is non-null');
   assert.match(text, /investigation\.md/,
     'injection must name the canonical artifact basename');
+  assert.match(text, /Write missing artifact at absolute path: \/tmp\/t\/investigation\.md/,
+    'injection must put the absolute artifact path first so agents do not call Write(investigation.md)');
+  assert.doesNotMatch(text, /Write missing artifact\s+investigation\.md\b/,
+    'injection must not present the basename as the Write target');
   // The directive must not say "auto-written" (that's the bug being fixed).
   assert.doesNotMatch(text, /auto-written/,
     'injection must NOT claim the artifact was auto-written (removed by Fix #2)');

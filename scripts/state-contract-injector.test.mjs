@@ -409,9 +409,29 @@ test('CE2b error: current=workflow-write-test, skill=workflow-coding without RED
     assert.equal(out.continue, false, 'coding must not start before a failing test is recorded');
     assert.match(
       out.hookSpecificOutput?.permissionDecisionReason || out.stopReason || '',
-      /RED test evidence.*actual Bash exit code.*echo/is,
+      /TDD entry evidence.*test_red.*tdd_adopted.*echo/is,
       'block reason must explain that echo-masked failures are not RED evidence'
     );
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE2d happy: current=workflow-write-test, skill=workflow-coding with adopted dirty-worktree evidence → allow', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE2d', {
+      current_stage: 'workflow-write-test',
+      events: [{
+        t: new Date().toISOString(),
+        type: 'tdd_adopted',
+        skill: 'workflow-write-test',
+        result: 'pass',
+        declarer: 'hook',
+        evidence: { type: 'diff', summary: 'pre-existing user test/source changes adopted' },
+      }],
+    });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE2d' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 

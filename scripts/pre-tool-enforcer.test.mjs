@@ -312,7 +312,8 @@ test('T2-V1: Write on code file with NO active workflow is blocked (v3.3 gate)',
     assert.ok(out);
     assert.equal(out.decision, 'block', 'code file without workflow must block');
     assert.match(out.reason, /Raw Write of code file/i);
-    assert.match(out.reason, /Skill\(fix\|implement\|infra\|dobby\)/);
+    assert.match(out.reason, /normal feature work, invoke Skill\(implement\)/i);
+    assert.match(out.reason, /only for explicit freeform recovery/i);
     assert.doesNotMatch(out.reason, /`\/(?:fix|implement|infra|dobby)\s+<description>`/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

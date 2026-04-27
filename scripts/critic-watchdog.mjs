@@ -21,6 +21,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { resolveHookSessionId } from './lib/session-paths.mjs';
+import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 
 function readStdinJson() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); } catch { return {}; }
@@ -128,12 +129,25 @@ function rule07_scopeLeak(input, state, cwd) {
   if (!planPath || !existsSync(planPath)) return null;
   const plan = readFileSync(planPath, 'utf-8');
   const relTarget = target.replace(cwd + '/', '');
+  if (isCanonicalWorkflowArtifact(relTarget)) return null;
   // Heuristic: if target's basename doesn't appear in plan at all, flag as HIGH.
   const base = relTarget.split('/').pop();
   if (base && !plan.includes(base)) {
     return { rule: 'R07', severity: 'HIGH', reason: `file '${relTarget}' not referenced in plan.md Queue (possible scope leak)` };
   }
   return null;
+}
+
+function isCanonicalWorkflowArtifact(relTarget) {
+  const match = String(relTarget || '').match(/^\.smt[\/\\]features[\/\\][^\/\\]+[\/\\]task[\/\\]([^\/\\]+)$/);
+  if (!match) return false;
+  const basename = match[1];
+  const canonical = new Set([
+    'plan.md',
+    'results.md',
+    ...Object.values(SKILL_ARTIFACT_BASENAME).filter(Boolean),
+  ]);
+  return canonical.has(basename);
 }
 
 function rule08_evasionPatterns(input) {
@@ -358,12 +372,12 @@ function rule13_bashStateJsonWrite(input) {
   // Mutating primitives (language-agnostic). Path-mention + mutating-verb
   // beats per-language verb enumeration.
   //
-  // Interpreter flags that evaluate arbitrary code: -e / -c / -m / -i.
+  // Interpreter flags that evaluate arbitrary code: -e / -c / -i.
   // `python -c`, `perl -e`, `ruby -e`, `node -e`, `bash -c`, etc. Checked
   // on the unwrapped body so `bash -c 'ls'` does NOT look like interpreter
   // exec of a mutating script.
-  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|awk)\s+-(?:[iIemc]|-eval|-exec)\b/.test(body)
-    || /\b(?:bash|sh|zsh)\s+-(?:[iIemc]|-eval|-exec)\b/.test(body);
+  const interpreterExec = /\b(?:node|python[23]?|perl|ruby|deno|bun|php|awk)\s+-(?:[iIec]|-eval|-exec)\b/.test(body)
+    || /\b(?:bash|sh|zsh)\s+-(?:[iIec]|-eval|-exec)\b/.test(body);
   const shellMutators = /\b(?:cp|mv|install|rsync|ln|touch|truncate|dd|tee|shred|rm|sed)\b/.test(body);
   const apiWriters = /\bwriteFile(?:Sync)?\b/.test(body) || /\bcreateWriteStream\b/.test(body);
   const openForWrite = /\bopen\s*\(\s*['"][^'"]+['"]\s*,\s*['"][wa]/.test(body);

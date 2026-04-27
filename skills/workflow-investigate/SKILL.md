@@ -17,7 +17,7 @@ team_template:
 can_delegate_to: [explore-high, researcher]
 gate:
   postcondition:
-    - file_exists: "investigation.md"
+    - file_exists: ".smt/features/<active-slug>/task/investigation.md"
     - min_sections: 2
 ---
 
@@ -25,13 +25,13 @@ gate:
 
 ## Overview
 
-Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is `investigation.md`, consumed by the active mode's next stage: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-infra-plan` for `/infra`, `workflow-write-test` for `/fix`, or mode transition for `/explore`.
+Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is the active task's canonical `.smt/features/<active-slug>/task/investigation.md`, consumed by the active mode's next stage: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-infra-plan` for `/infra`, `workflow-write-test` for `/fix`, or mode transition for `/explore`.
 
 **Core principle:** Evidence from the current codebase, not memory or assumption, is the source of truth for the plan. Every finding must cite a file path or external reference.
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
-**Announce at start:** "I'm using workflow-investigate to gather evidence from the code and external docs into `investigation.md`."
+**Announce at start:** "I'm using workflow-investigate to gather evidence from the code and external docs into the active task's canonical `investigation.md`."
 
 ## `/fix` systematic debugging flow
 
@@ -45,7 +45,7 @@ When active mode is `/fix`, this skill follows the superpowers systematic-debugg
 6. **State one root-cause hypothesis** — write why this is the root cause and what observation supports it.
 7. **Define the regression test target** — specify the exact RED test or interface assertion `workflow-write-test` must create.
 
-For `/fix`, `investigation.md` must include `## Reproduction`, `## Root Cause`, and `## Regression Test Target` in addition to the standard sections.
+For `/fix`, the canonical `investigation.md` must include `## Reproduction`, `## Root Cause`, and `## Regression Test Target` in addition to the standard sections.
 
 ## The Iron Law
 
@@ -53,7 +53,7 @@ For `/fix`, `investigation.md` must include `## Reproduction`, `## Root Cause`, 
 NO PLAN WITHOUT EVIDENCE FROM CODE — EVERY FINDING CITES A FILE
 ```
 
-You may not hand off to `workflow-tasker` until `investigation.md` lists actual files, actual schemas, actual existing behaviors — not "I believe X", "typically X does Y", or "the pattern seems to be X". Pattern guesses without a grep or a file path are not evidence.
+You may not hand off to `workflow-tasker` until the canonical `investigation.md` lists actual files, actual schemas, actual existing behaviors — not "I believe X", "typically X does Y", or "the pattern seems to be X". Pattern guesses without a grep or a file path are not evidence.
 
 ## Split criteria (`parallel_split_by: area`)
 
@@ -69,7 +69,13 @@ On re-entry after `workflow-tasker`, a restricted run limited to a specific area
 
 ## Output
 
-`investigation.md`:
+Write exactly one canonical artifact:
+
+`.smt/features/<active-slug>/task/investigation.md`
+
+Resolve `<active-slug>` from the active workflow pointer (`.smt/state/active-feature-<session_id>.json`, falling back to `.smt/state/active-feature.json` only when no session id is available). Do not write `investigation.md` in the repository root or current working directory.
+
+`investigation.md` must contain:
 
 - `## Findings by Area` — per-area summary (each item cites path or URL)
 - `## Relevant Files` — path list

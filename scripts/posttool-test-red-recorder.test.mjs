@@ -279,7 +279,7 @@ test('TR7 top-level exit_code exit≠0 appends test_red event', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('TR8 object error text without structured exit code does NOT append', async () => {
+test('TR8 object error text with tool failure exit text appends test_red event', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
   try {
     const slug = 'feature-tr8-test';
@@ -298,9 +298,11 @@ test('TR8 object error text without structured exit code does NOT append', async
     });
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
     const reds = (state.events || []).filter((e) => e.type === 'test_red');
-    assert.equal(reds.length, 0, 'text-only exit code must not be trusted as RED evidence');
+    assert.equal(reds.length, 1, 'Claude Bash failure text must be accepted when the command is a test runner');
+    assert.equal(reds[0].evidence?.type, 'exit_code');
+    assert.equal(reds[0].evidence?.source, 'tool_failure_text');
     const out = JSON.parse(r.stdout || '{}');
-    assert.match(out.systemMessage || '', /RED not recorded|structured exit code/i);
+    assert.equal(out.systemMessage, undefined);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -387,5 +389,39 @@ test('TR11 pointer conflict chooses same-session recordable write-test state', a
     const writeState = JSON.parse(readFileSync(writePath, 'utf8'));
     const reds = (writeState.events || []).filter((e) => e.type === 'test_red');
     assert.equal(reds.length, 1, 'same-session write-test state must receive RED event');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR12 missing session_id scans session pointers for newest recordable write-test state', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    seedUnscopedFeature(cwd, 'feature-tr12-stale-design');
+
+    const oldPath = seedActiveFeature(cwd, 'sess-tr12-old', 'feature-tr12-old', {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    const newPath = seedActiveFeature(cwd, 'sess-tr12-new', 'feature-tr12-new', {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    writeFileSync(join(cwd, '.smt', 'state', 'active-feature-sess-tr12-old.json'), JSON.stringify({ slug: 'feature-tr12-old', session_id: 'sess-tr12-old', updated_at: 1 }));
+    writeFileSync(join(cwd, '.smt', 'state', 'active-feature-sess-tr12-new.json'), JSON.stringify({ slug: 'feature-tr12-new', session_id: 'sess-tr12-new', updated_at: 2 }));
+
+    runRecorder({
+      cwd, sessionId: undefined,
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'npx vitest run client/src/components/image-upload-with-crop-utils.test.ts' },
+        tool_response: { exit_code: 1 },
+      },
+    });
+
+    const oldState = JSON.parse(readFileSync(oldPath, 'utf8'));
+    const newState = JSON.parse(readFileSync(newPath, 'utf8'));
+    assert.equal((oldState.events || []).filter((e) => e.type === 'test_red').length, 0, 'older session must not receive RED event');
+    assert.equal((newState.events || []).filter((e) => e.type === 'test_red').length, 1, 'newest recordable session must receive RED event');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

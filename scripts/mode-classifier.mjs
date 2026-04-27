@@ -78,6 +78,46 @@ export function classifyPassthrough(input) {
   return null;
 }
 
+function stripTerminalPunctuation(input) {
+  return String(input || '').trim().replace(/[.!?。！？]+$/g, '').trim();
+}
+
+function classifyHighConfidenceEditIntent(input) {
+  const text = stripTerminalPunctuation(input);
+  if (!text) return null;
+
+  // Short imperative work orders like "select만 적용" are too terse for the
+  // LLM classifier to route reliably, but they are unambiguously edit intents.
+  // Keep this narrow: target token + "only" + apply/reflect verb.
+  const applyOnly = /^(?:[\w@/._:-]+|[가-힣A-Za-z][가-힣\w@/._:-]*)\s*만\s*(?:적용|반영)(?:해|해줘|하세요|하자|해라)?$/i;
+  if (applyOnly.test(text)) {
+    return {
+      mode: 'implement',
+      trigger: 'local:apply-only',
+      overridden: false,
+      target_type: 'extend_existing',
+      exempt: null,
+      skip_brainstorm: true,
+    };
+  }
+
+  // Concrete UI capability request: install/add a text/rich editor so users can
+  // edit HTML formatting (bold, etc.) through the interface. This is a feature
+  // implementation request, not a bug-fix, and should seed before any edit gate.
+  if (/(?:html|description|bio|본문|설명)[\s\S]{0,80}(?:text editor|rich text|wysiwyg|에디터|editor)|(?:text editor|rich text|wysiwyg|에디터|editor)[\s\S]{0,80}(?:설치|추가|붙여|적용|수정|편집|bold|굵게|html)/i.test(text) && /(?:설치|추가|붙여|적용|수정|편집|조작|가능|편의|bold|굵게)/i.test(text)) {
+    return {
+      mode: 'implement',
+      trigger: 'local:rich-text-editor-ui',
+      overridden: false,
+      target_type: 'extend_existing',
+      exempt: null,
+      skip_brainstorm: true,
+    };
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -121,6 +161,9 @@ export function classify(input, { cwd = process.cwd(), sessionId = '' } = {}) {
   if (passthrough) {
     return { mode: null, trigger: passthrough.trigger, overridden: false, passthrough: true };
   }
+
+  const localEditIntent = classifyHighConfidenceEditIntent(trimmed);
+  if (localEditIntent) return { schema_version: 2, ...localEditIntent };
 
   // Layer 3 — LLM classifier. Errors propagate: there is no regex fallback.
   const llm = classifyMode(trimmed, { cwd, sessionId });

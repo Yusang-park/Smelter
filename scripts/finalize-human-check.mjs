@@ -21,8 +21,8 @@
  *     `.smt/features/<slug>/task/results.md` inside the project cwd.
  *   - Preconditions (all must hold; otherwise no-op):
  *       (a) the adjacent `<slug>.state.json` exists and parses;
- *       (b) `state.mode` ∈ {'fix', 'implement', 'infra'};
- *       (c) `state.current_stage === 'workflow-human-check'`;
+ *       (b) `state.mode` ∈ {'fix', 'implement', 'infra', 'dobby'};
+ *       (c) current stage is `workflow-human-check` or its penultimate skill;
  *       (d) no existing `workflow-human-check pass` event in `state.events`.
  *   - Effect (atomic, idempotent):
  *       - Append pass event: {skill:'workflow-human-check', result:'pass',
@@ -132,7 +132,7 @@ function main() {
     if (!state || typeof state !== 'object') {
       process.stdout.write(JSON.stringify({ continue: true })); return;
     }
-    if (state.mode !== 'fix' && state.mode !== 'implement' && state.mode !== 'infra') {
+    if (state.mode !== 'fix' && state.mode !== 'implement' && state.mode !== 'infra' && state.mode !== 'dobby') {
       process.stdout.write(JSON.stringify({ continue: true })); return;
     }
     // Accept finalize when workflow-human-check is the terminal skill of this

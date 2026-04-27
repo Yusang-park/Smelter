@@ -9,7 +9,7 @@
  * Idempotent within a 5s window. Uses SMT_HOOK_WRITE=1 escape hatch.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { appendEvent, writeState } from './state-schema.mjs';
@@ -73,6 +73,12 @@ function extractStructuredExitCode(input) {
   return undefined;
 }
 
+function extractToolFailureTextExitCode(input) {
+  const text = outputText(input);
+  const match = text.match(/(?:Error:\s*)?(?:Command failed with )?Exit code\s+([1-9]\d*)\b/i);
+  return match ? Number(match[1]) : undefined;
+}
+
 function isBashToolName(toolName) {
   return /^Bash(?:\b|\()/i.test(String(toolName || ''));
 }
@@ -116,6 +122,34 @@ function resolveActiveStatePath(cwd, sessionId) {
     catch { continue; }
     if (shouldRecord(state)) return target;
   }
+
+  if (!sessionId) {
+    const stateDir = join(root, '.smt', 'state');
+    let scopedPointers = [];
+    try {
+      scopedPointers = readdirSync(stateDir)
+        .filter((name) => /^active-feature-.+\.json$/.test(name))
+        .map((name) => join(stateDir, name));
+    } catch { scopedPointers = []; }
+
+    const recordable = [];
+    for (const p of scopedPointers) {
+      let ptr;
+      try { ptr = JSON.parse(readFileSync(p, 'utf-8')); }
+      catch { continue; }
+      if (!ptr?.slug) continue;
+
+      const target = join(root, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`);
+      if (!existsSync(target)) continue;
+
+      let state;
+      try { state = JSON.parse(readFileSync(target, 'utf-8')); }
+      catch { continue; }
+      if (shouldRecord(state)) recordable.push({ path: target, updatedAt: Number(ptr.updated_at) || 0 });
+    }
+    recordable.sort((a, b) => b.updatedAt - a.updatedAt);
+    if (recordable[0]) return recordable[0].path;
+  }
   return null;
 }
 
@@ -146,7 +180,22 @@ function main() {
   const command = input.tool_input?.command ?? input.toolInput?.command ?? '';
   if (!TEST_COMMAND_RE.test(command)) { emit({ continue: true }); return; }
 
-  const exitCode = extractStructuredExitCode(input);
+  let exitCode = extractStructuredExitCode(input);
+  let exitCodeSource = 'structured';
+  if (exitCode === undefined || exitCode === null) {
+    if (hasMaskedFailureOutput(input)) {
+      emit({
+        continue: true,
+        systemMessage: '[SMELTER] RED not recorded: the Bash command printed a non-zero exit=... line but the actual tool exit code was unavailable. Remove `; echo "exit=$?"` and let the test command itself exit non-zero.',
+      });
+      return;
+    }
+    const textExitCode = extractToolFailureTextExitCode(input);
+    if (textExitCode !== undefined) {
+      exitCode = textExitCode;
+      exitCodeSource = 'tool_failure_text';
+    }
+  }
   if (exitCode === 0 || exitCode === undefined || exitCode === null) {
     if (exitCode === 0 && hasMaskedFailureOutput(input)) {
       emit({
@@ -181,7 +230,7 @@ function main() {
     skill: 'workflow-write-test',
     result: 'pass',
     declarer: 'hook',
-    evidence: { type: 'exit_code', code: exitCode },
+    evidence: { type: 'exit_code', code: exitCode, source: exitCodeSource },
   });
 
   const prevFlag = process.env.SMT_HOOK_WRITE;

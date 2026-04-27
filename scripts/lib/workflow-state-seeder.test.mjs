@@ -60,6 +60,52 @@ test('SL1b: seedWorkflowState supports live v0.4 modes explore and dobby', async
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('SL1d: Skill(dobby) reseeds when existing dobby state is stuck in HUMAN_CHECK', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const first = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1d', source: 'skill-tool' });
+    const stuck = JSON.parse(readFileSync(first.statePath, 'utf-8'));
+    stuck.current_stage = 'workflow-human-check';
+    stuck.step = 'HUMAN_CHECK';
+    stuck.allowed_actions = ['read', 'write_artifact', 'ask_user'];
+    stuck.completed_stages = [];
+    stuck.events = [];
+    writeFileSync(first.statePath, JSON.stringify(stuck, null, 2));
+
+    const decision = shouldCreateNewFeature(cwd, 'sl1d', 'manual recovery', 'skill-tool', 'dobby');
+    assert.equal(decision.create, true);
+    assert.equal(decision.reason, 'dobby-human-check-recovery');
+
+    const second = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual recovery', sessionId: 'sl1d', source: 'skill-tool' });
+    assert.notEqual(second.slug, first.slug, 'recovery must not reuse the HUMAN_CHECK-stuck slug');
+    const state = JSON.parse(readFileSync(second.statePath, 'utf-8'));
+    assert.equal(state.mode, 'dobby');
+    assert.equal(state.step, 'EXECUTE');
+    assert.deepEqual(state.allowed_actions, ['read', 'write_source', 'run_test']);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL1e: Skill(dobby) reseeds over active implement state as freeform escape hatch', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const first = seedWorkflowState({ directory: cwd, commandName: 'implement', args: 'build feature', sessionId: 'sl1e', source: 'skill-tool' });
+
+    const decision = shouldCreateNewFeature(cwd, 'sl1e', 'manual freeform recovery', 'skill-tool', 'dobby');
+    assert.equal(decision.create, true);
+    assert.equal(decision.reason, 'dobby-explicit-reseed');
+
+    const second = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual freeform recovery', sessionId: 'sl1e', source: 'skill-tool' });
+    assert.notEqual(second.slug, first.slug, 'dobby escape must not reuse implement state');
+    const state = JSON.parse(readFileSync(second.statePath, 'utf-8'));
+    assert.equal(state.mode, 'dobby');
+    assert.equal(state.task_type, 'freeform');
+    assert.equal(state.step, 'EXECUTE');
+    assert.deepEqual(state.allowed_actions, ['read', 'write_source', 'run_test']);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('SL1c: seedWorkflowState supports infra mode without TDD step', async () => {
   const { seedWorkflowState } = await import(MODULE);
   const cwd = tmp();
@@ -205,13 +251,33 @@ test('SL10 (boundary): fix state + Skill(fix) → stays reuse (idempotency)', as
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL11 (boundary): fix state + Skill(implement) → stays reuse (cross write-mode not upgraded)', async () => {
+test('SL11 (happy): unstarted fix state + Skill(implement) → write-mode correction creates new', async () => {
   const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
   const cwd = tmp();
   try {
-    seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'first bug', sessionId: 'sl11', source: 'skill-tool' });
+    const first = seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'first bug', sessionId: 'sl11', source: 'skill-tool' });
     const d = shouldCreateNewFeature(cwd, 'sl11', 'now build a feature', 'skill-tool', 'implement');
-    assert.equal(d.create, false, 'cross write-mode stays reuse — user must explicit new-feature');
+    assert.equal(d.create, true, 'agent-selected write mode must correct an unstarted seeded write workflow');
+    assert.equal(d.reason, 'write-mode-correction');
+
+    const second = seedWorkflowState({ directory: cwd, commandName: 'implement', args: 'now build a feature', sessionId: 'sl11', source: 'skill-tool' });
+    assert.notEqual(second.slug, first.slug, 'write-mode correction must produce a state with the selected mode');
+    const state = JSON.parse(readFileSync(second.statePath, 'utf-8'));
+    assert.equal(state.mode, 'implement');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL11b (boundary): progressed fix state + Skill(implement) → stays reuse', async () => {
+  const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const first = seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'first bug', sessionId: 'sl11b', source: 'skill-tool' });
+    const state = JSON.parse(readFileSync(first.statePath, 'utf-8'));
+    state.events = [{ skill: 'workflow-investigate', result: 'pass', declarer: 'hook', evidence: { path: '/tmp/investigation.md' } }];
+    writeFileSync(first.statePath, JSON.stringify(state, null, 2));
+
+    const d = shouldCreateNewFeature(cwd, 'sl11b', 'now build a feature', 'skill-tool', 'implement');
+    assert.equal(d.create, false, 'cross write-mode must not discard an already-progressed workflow');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 

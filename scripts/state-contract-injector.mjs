@@ -62,10 +62,11 @@ function isLastEventFail(events, stage) {
 
 function hasRedTestEvidence(state) {
   const hasV4RedEvent = Array.isArray(state?.events) && state.events.some((e) => e?.type === 'test_red');
+  const hasAdoptedDirtyWorktree = Array.isArray(state?.events) && state.events.some((e) => e?.type === 'tdd_adopted');
   const hasLegacyRedCycle = Array.isArray(state?.test_cycles) && state.test_cycles.some((c) =>
     c?.run_result === 'fail' && ['added_case', 'modified_case'].includes(c?.action)
   );
-  return hasV4RedEvent || hasLegacyRedCycle;
+  return hasV4RedEvent || hasAdoptedDirtyWorktree || hasLegacyRedCycle;
 }
 
 // Returns null when the move is legal, or a human-readable reason string when
@@ -77,7 +78,7 @@ function chainBlockReason(state, requested) {
   if (requested === currentStage) return null;        // idempotent re-entry
   if (ALWAYS_ALLOWED.has(requested)) return null;     // user escape
   if (currentStage === 'workflow-write-test' && requested === 'workflow-coding' && !hasRedTestEvidence(state)) {
-    return `[Smelter chain] Skill('workflow-coding') requires RED test evidence from 'workflow-write-test' before entering EXECUTE. Run the new/modified test so the actual Bash exit code is non-zero and let the test-red recorder write events[].type='test_red'. Do not append \`; echo "exit=$?"\`; that masks the failing test as a successful Bash command.`;
+    return `[Smelter chain] Skill('workflow-coding') requires TDD entry evidence from 'workflow-write-test' before entering EXECUTE. Run the new/modified test so the actual Bash exit code is non-zero and let the test-red recorder write events[].type='test_red', or enter workflow-write-test with pre-existing dirty source+test changes so the transition hook records events[].type='tdd_adopted'. Do not append \`; echo "exit=$?"\`; that masks the failing test as a successful Bash command.`;
   }
   const expectedNext = nextSkillForState(state, currentStage);
   if (!expectedNext) return null;

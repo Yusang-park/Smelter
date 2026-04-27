@@ -29,7 +29,7 @@ test('high-traffic workflow skill prompts stay compact without losing gates', ()
     {
       name: 'workflow-human-check',
       maxWords: 900,
-      required: ['results.md', 'finalize-human-check.mjs', 'complete', 'rework', 'hold', 'upgrade'],
+      required: ['AskUserQuestion', 'results.md', 'finalize-human-check.mjs', 'git commit', 'complete', 'rework', 'hold', 'upgrade'],
     },
   ];
 
@@ -40,4 +40,14 @@ test('high-traffic workflow skill prompts stay compact without losing gates', ()
       assert.match(text, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `${c.name} missing ${token}`);
     }
   }
+});
+
+test('workflow-human-check complete path uses native choice and auto-commits locally', () => {
+  const text = readSkill('workflow-human-check');
+  assert.match(text, /AskUserQuestion/);
+  assert.match(text, /Plain-text menus.*invalid/i);
+  assert.match(text, /Do not render the options as Markdown\/plain text/i);
+  assert.match(text, /complete[\s\S]*git commit/i);
+  assert.doesNotMatch(text, /commit-local|push-pr|keep-as-is/i, 'complete must not ask a second git-options question');
+  assert.doesNotMatch(text, /If unavailable, present the exact labels/i, 'human-check must not allow prose fallback menus');
 });

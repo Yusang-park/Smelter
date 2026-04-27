@@ -129,6 +129,29 @@ export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, 
     if (Array.isArray(state.completed_stages) && state.completed_stages.includes('workflow-human-check')) {
       return { create: true, reason: 'prior-completed' };
     }
+    if (source === 'skill-tool' && commandName === 'dobby' && state.mode === 'dobby' &&
+        (state.step === 'HUMAN_CHECK' || state.current_stage === 'workflow-human-check')) {
+      return { create: true, reason: 'dobby-human-check-recovery' };
+    }
+    if (source === 'skill-tool' && commandName === 'dobby' && state.mode !== 'dobby') {
+      return { create: true, reason: 'dobby-explicit-reseed' };
+    }
+    const hasProgress = (s) => {
+      return (Array.isArray(s.completed_stages) && s.completed_stages.length > 0) ||
+        (Array.isArray(s.events) && s.events.length > 0) ||
+        (Array.isArray(s.test_cycles) && s.test_cycles.length > 0) ||
+        (Array.isArray(s.active_feedback) && s.active_feedback.length > 0);
+    };
+
+    // Write-mode correction: UserPromptSubmit may seed a best-effort write mode
+    // before file context is known. If the main agent immediately chooses a
+    // different write-mode Skill before any workflow evidence exists, honor the
+    // agent's more informed choice by creating a fresh state with that mode.
+    const requestedMode = COMMAND_TO_MODE[commandName];
+    if (source === 'skill-tool' && requestedMode && WRITE_MODES.has(requestedMode) && WRITE_MODES.has(state.mode) && requestedMode !== state.mode && !hasProgress(state)) {
+      return { create: true, reason: 'write-mode-correction' };
+    }
+
     // Mode-upgrade: the agent escalated from a read-only exploration mode
     // (verify/explore/brainstorm) to a write mode (fix/implement). Reusing
     // would leave state.mode at the read-only value, and pre-tool-enforcer
@@ -141,7 +164,6 @@ export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, 
     // feature even if the mode classifier routes the follow-up to a
     // different mode. Slash commands never reach this line — the earlier
     // slash-command branch returns create:true unconditionally.
-    const requestedMode = COMMAND_TO_MODE[commandName];
     if (source === 'skill-tool' && requestedMode && WRITE_MODES.has(requestedMode) && READONLY_MODES.has(state.mode)) {
       return { create: true, reason: 'mode-upgrade' };
     }

@@ -108,9 +108,7 @@ export function buildClassifierPrompt(lastMessage) {
 export function pickSubAgentModel() {
   if (process.env.CODEX_MODE === '1') return 'gpt-5.4-mini';
   if (process.env.SMELTER_MODEL_MODE === 'codex') return 'gpt-5.4-mini';
-  const settings = readJson('/Users/yusang/smelter/settings.json');
-  const model = String(settings?.model ?? '');
-  return inspectClassifierModel(model);
+  return inspectClassifierModel('');
 }
 
 // Resolve a runnable claude binary path. The user's shell wraps `claude` as a
@@ -513,6 +511,16 @@ export function shouldRunStageCompletionClassifier(state, lastAssistantText) {
   return !alreadyPassed;
 }
 
+export function detectPlainHumanCheckMenu(text) {
+  const s = String(text || '').toLowerCase();
+  if (!s) return false;
+  const hasAllLabels = ['complete', 'rework', 'hold', 'upgrade'].every((label) => s.includes(label));
+  if (!hasAllLabels) return false;
+  const looksLikeQuestion = /decide|choose|select|선택|결정|\?/.test(s);
+  const mentionsNativeTool = /askuserquestion|toolsearch\(\s*['"]select:askuserquestion/i.test(String(text || ''));
+  return looksLikeQuestion && !mentionsNativeTool;
+}
+
 function applyV4ControllerTransition(state, statePath, event) {
   if (!state || typeof state.task_type !== 'string' || typeof state.step !== 'string') return null;
   const transition = nextV4Transition(state, event);
@@ -577,6 +585,13 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
     );
     const legacyCompleted = completed.includes('workflow-human-check');
     if (!humanCheckPassed && !legacyCompleted) {
+      if (detectPlainHumanCheckMenu(lastAssistantText)) {
+        return {
+          action: 'enter_skill',
+          reason: 'workflow-human-check rendered a plain-text decision menu; re-enter and use native AskUserQuestion.',
+          payload: { skill: 'workflow-human-check', direction: 'enter', forceNativeDecision: true },
+        };
+      }
       return { action: 'halt', reason: 'awaiting user decision in workflow-human-check' };
     }
     applyV4ControllerTransition(state, statePath, { type: 'human_pass' });
@@ -584,6 +599,27 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
   }
   if (state._awaiting_mode_upgrade) {
     return { action: 'halt', reason: 'awaiting user mode upgrade decision' };
+  }
+
+  const hasAnyEvent = Array.isArray(state.events) && state.events.length > 0;
+  if (!state.current_stage && !hasAnyEvent && Array.isArray(state.allowed_skills) && state.allowed_skills.length > 0) {
+    const skill = pickNextStage(state);
+    return {
+      action: 'enter_skill',
+      reason: `continue: active workflow has not entered its first stage. Enter ${skill} before any user-facing confirmation or side effect.`,
+      payload: { skill, direction: 'enter' },
+    };
+  }
+  const hasAnyProgress = hasAnyEvent ||
+    (Array.isArray(state.completed_stages) && state.completed_stages.length > 0) ||
+    (Array.isArray(state.test_cycles) && state.test_cycles.length > 0) ||
+    (Array.isArray(state.active_feedback) && state.active_feedback.length > 0);
+  if (state.current_stage && !hasAnyProgress && Array.isArray(state.allowed_skills) && state.allowed_skills.includes(state.current_stage) && INTERACTIVE_QUESTION_SHAPES.has(questionShape)) {
+    return {
+      action: 'enter_skill',
+      reason: `continue: seeded workflow asked for confirmation before entering ${state.current_stage}. Enter the Skill before user-facing confirmation or side effects.`,
+      payload: { skill: state.current_stage, direction: 'enter' },
+    };
   }
 
   applyArtifactCompletionEvent(state, statePath);
@@ -657,7 +693,7 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
 
   const hasRed = (state.test_cycles || []).some(c =>
     c.run_result === 'fail' && ['added_case', 'modified_case'].includes(c.action)
-  );
+  ) || (state.events || []).some(e => e?.type === 'test_red' || e?.type === 'tdd_adopted');
   if (hasRed && state.current_stage !== 'workflow-coding' && state.allowed_skills.includes('workflow-coding')) {
     return { action: 'enter_skill', reason: `continue: failing test ready; enter workflow-coding.`, payload: { skill: 'workflow-coding' } };
   }
@@ -794,6 +830,9 @@ export function formatMandatoryInjection({ skill, direction, subAgentModel, stat
   lines.push('');
   lines.push(`FIRST tool call MUST be Skill(skill: '${skill}'); no prose before it.`);
   lines.push('State advances only after the actual Skill tool call.');
+  if (skill === 'workflow-human-check') {
+    lines.push('Human-check decision MUST use native AskUserQuestion with exactly: rework, complete, hold, upgrade. Plain-text menus are invalid.');
+  }
   if (subAgentModel) {
     lines.push(`Use Task(..., model='${subAgentModel}') only when a specialist is needed.`);
   }
@@ -868,7 +907,7 @@ export function buildPromptInjection(decision, state, { subAgentModel = 'sonnet'
       lines.push('[MANDATORY WORKFLOW STEP]');
       lines.push(`mode=${state?.mode || '?'}, current_stage=${stage} → classifier verdict: complete (${summary})`);
       if (artifact) {
-        lines.push(`Write missing artifact ${artifact.basename} at ${artifact.absPath}; real findings only, no placeholder.`);
+        lines.push(`Write missing artifact at absolute path: ${artifact.absPath} (basename: ${artifact.basename}); real findings only, no placeholder.`);
         lines.push(`After writing ${artifact.basename}, invoke Skill(skill: '${nextSkill}') as the next tool call.`);
       } else {
         lines.push(`No canonical artifact required for this stage (test_cycles[] or git diff evidence).`);

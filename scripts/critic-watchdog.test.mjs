@@ -233,6 +233,47 @@ test('R13: python -c mutating state is blocked', () => {
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('R13: git stash pop followed by protected-path read is NOT blocked', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'git stash pop; ls .smt/features/demo/task/' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R13'), undefined, 'R13 must only block mutations targeting protected paths');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('R13: cat protected state through python -m json.tool is NOT blocked', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'cat .smt/features/demo/task/demo.state.json | python3 -m json.tool' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R13'), undefined, 'read-only formatters must not count as protected-state mutation');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('R07: canonical workflow task artifacts are not scope leaks', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    const taskDir = seedFeatureDir(cwd, 'demo');
+    writeFileSync(join(taskDir, 'plan.md'), '# Plan\n\nQueue:\n- inspect bug\n');
+    const state = stateWith({ current_stage: 'workflow-investigate' });
+    const input = {
+      tool_name: 'Write',
+      tool_input: { file_path: join(taskDir, 'investigation.md'), content: '# Investigation\n' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R07'), undefined, 'canonical artifacts need not be listed in plan queue');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('R15: block src edit when current_stage != workflow-coding but mode allows it', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
   try {

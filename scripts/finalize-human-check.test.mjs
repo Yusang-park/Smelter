@@ -130,6 +130,18 @@ test('H3b: infra mode also finalizes', async () => {
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+test('H3c: dobby/freeform mode also finalizes for complete auto-commit', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'fhc-h3c-'));
+  try {
+    const { statePath, resultsPath } = seedFeature(cwd, { mode: 'dobby', allowedSkills: ['workflow-human-check'] });
+    writeFileSync(resultsPath, 'ok');
+    runHook({ cwd, filePath: resultsPath });
+    const state = readState(statePath);
+    assert.ok(state.completed_stages.includes('workflow-human-check'));
+    assert.ok(state.events.some(e => e.skill === 'workflow-human-check' && e.result === 'pass'));
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
 // ── Boundary ───────────────────────────────────────────────────────────────
 test('B1: non-Write tool (Edit) is a no-op', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'fhc-b1-'));

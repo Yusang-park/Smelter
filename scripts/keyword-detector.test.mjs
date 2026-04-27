@@ -91,6 +91,48 @@ test('single-mode prompt produces no chain on state', async () => {
   }
 });
 
+test('short apply-only prompt seeds implement before first code edit', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-short-apply-'));
+  try {
+    const out = runDetector({ cwd, prompt: 'select만 적용.', sessionId: 'short-apply' });
+    assert.equal(out.continue, true);
+    assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Skill: implement/);
+    assert.match(out.hookSpecificOutput?.additionalContext ?? '', /FIRST tool call/i);
+    assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Skill\(skill: 'implement'\)/);
+    assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Read\/search tools are allowed before choosing/i);
+    assert.match(out.hookSpecificOutput?.additionalContext ?? '', /Do not edit or run mutating commands before the selected Skill call/);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file must be seeded before any code edit attempt');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.equal(state.mode, 'implement');
+    assert.equal(state.target_type, 'extend_existing');
+    assert.equal(state.skip_brainstorm, true);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('rich text editor UI request seeds implement before plan confirmation', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-rich-editor-'));
+  try {
+    const prompt = 'edit-artist/artist-info에서 description이 html임. html을 수정하는 text editor를 설치해서 UI로 bold와 같은 수정사항 조작할 수 있도록 편의성을 높여줘.';
+    const out = runDetector({ cwd, prompt, sessionId: 'rich-editor' });
+    assert.equal(out.continue, true);
+    const ctx = out.hookSpecificOutput?.additionalContext ?? '';
+    assert.match(ctx, /Skill: implement/);
+    assert.match(ctx, /selected Skill call/);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file must be seeded for concrete UI feature request');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.equal(state.mode, 'implement');
+    assert.equal(state.target_type, 'extend_existing');
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test('communication-only prompt does not seed a workflow', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-comm-'));
   try {

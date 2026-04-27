@@ -26,10 +26,11 @@ function looksLikeGitCommit(command) {
 
 function hasRedTest(state) {
   const hasV4RedEvent = Array.isArray(state?.events) && state.events.some((e) => e?.type === 'test_red');
+  const hasAdoptedDirtyWorktree = Array.isArray(state?.events) && state.events.some((e) => e?.type === 'tdd_adopted');
   const hasLegacyRedCycle = Array.isArray(state?.test_cycles) && state.test_cycles.some((c) =>
     c?.run_result === 'fail' && ['added_case', 'modified_case'].includes(c?.action)
   );
-  return hasV4RedEvent || hasLegacyRedCycle;
+  return hasV4RedEvent || hasAdoptedDirtyWorktree || hasLegacyRedCycle;
 }
 
 export function evaluateToolUse(state, { toolName, filePath = '', command = '' } = {}) {

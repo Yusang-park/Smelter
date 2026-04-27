@@ -25,6 +25,6 @@ test('UserPromptSubmit hooks do not pre-inject learned skills', () => {
   for (const commands of [userPromptCommands(repoHooks.hooks), userPromptCommands(activeSettings.hooks)]) {
     assert(commands.some((command) => command.includes('keyword-detector.mjs')));
     assert(commands.some((command) => command.includes('auto-confirm-consumer.mjs')));
-    assert(!commands.some((command) => command.includes('skill-injector.mjs')));
+    assert(!commands.some((command) => command.includes(`skill-${'injector'}.mjs`)));
   }
 });

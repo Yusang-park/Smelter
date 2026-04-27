@@ -378,7 +378,7 @@ function main() {
             reason: `[SMELTER] Raw ${toolName} of code file is blocked: ${filePath}\n` +
               `v0.4 guard requires task_type=write, task_type=infra, or task_type=freeform for source edits.${v4Suffix}\n` +
               `All code-file modifications — including trivial text / design edits within code — require an active Smelter write/infra/freeform workflow so workflow-human-check is the terminal gate.\n` +
-              `Agent recovery: invoke Skill(fix|implement|infra|dobby) yourself to seed active state, or continue only after an existing active workflow pointer is present. Do not ask the user to type a slash command. Then re-issue the ${toolName}.\n` +
+              `Agent recovery: for normal feature work, invoke Skill(implement); for bug fixes, invoke Skill(fix); for infrastructure work, invoke Skill(infra). Use Skill(dobby) only for explicit freeform recovery. If an existing active workflow pointer is present, continue that workflow instead. Do not ask the user to type a slash command. Then re-issue the ${toolName}.\n` +
               `Docs (.md / .txt / .rst) are NOT gated by this rule — only code files.\n` +
               `Iron Law #1 — never complete without workflow-human-check. Surface-exempt text/design fixes and dobby freeform work also count as workflow runs.`,
           }));

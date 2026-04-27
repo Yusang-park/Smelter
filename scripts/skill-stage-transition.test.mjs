@@ -136,6 +136,26 @@ test('T3-B3: workflow-agent-review in exception list — current_stage only', as
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+test('T3-B4: workflow-write-test adopts pre-existing dirty source+test changes', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't3-b4-'));
+  try {
+    spawnSync('git', ['init'], { cwd, encoding: 'utf8' });
+    mkdirSync(join(cwd, 'src'), { recursive: true });
+    writeFileSync(join(cwd, 'src', 'bug.ts'), 'export const bug = true;\n');
+    writeFileSync(join(cwd, 'src', 'bug.test.ts'), 'import { bug } from "./bug";\n');
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.allowed_skills = ['workflow-investigate', 'workflow-write-test', 'workflow-coding'];
+    writeFileSync(sp, JSON.stringify(state, null, 2), 'utf-8');
+
+    const r = runTransition({ cwd, skill: 'workflow-write-test' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.current_stage, 'workflow-write-test');
+    assert.ok(after.events.some(e => e.type === 'tdd_adopted' && e.skill === 'workflow-write-test'));
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
 // ── Error path ─────────────────────────────────────────────────────────────
 test('T3-E1: skill not in mode allowed_skills → warn, no mutation', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-e1-'));
@@ -387,6 +407,29 @@ test('ST-E4: entry command "brainstorm" maps to brainstorm mode entry_skill (wor
     const state = readState(sp);
     // modes.yaml → brainstorm.entry_skill = workflow-brainstorm
     assert.equal(state.current_stage, 'workflow-brainstorm');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('ST-E5: entry command "dobby" does NOT advance freeform state to HUMAN_CHECK', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'st-e5-'));
+  try {
+    const sp = seedState(cwd, { mode: 'dobby' });
+    const state = readState(sp);
+    state.user_mode = 'dobby';
+    state.task_type = 'freeform';
+    state.step = 'EXECUTE';
+    state.step_flow = ['INTENT', 'EXECUTE', 'HUMAN_CHECK', 'DONE'];
+    state.allowed_actions = ['read', 'write_source', 'run_test'];
+    state.allowed_skills = ['workflow-human-check'];
+    state.current_stage = null;
+    writeFileSync(sp, JSON.stringify(state, null, 2));
+
+    const r = runTransition({ cwd, skill: 'dobby' });
+    assert.equal(r.status, 0);
+    const after = readState(sp);
+    assert.equal(after.current_stage, null);
+    assert.equal(after.step, 'EXECUTE');
+    assert.deepEqual(after.allowed_actions, ['read', 'write_source', 'run_test']);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

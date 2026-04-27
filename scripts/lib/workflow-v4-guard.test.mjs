@@ -68,6 +68,21 @@ test('write contract accepts legacy test_cycles red evidence in bridged runtime 
   assert.equal(result.decision, 'allow');
 });
 
+test('write contract accepts adopted dirty-worktree TDD evidence', () => {
+  const state = createV4State({ taskId: 't4c', userMode: 'fix' });
+  state.events.push({
+    t: new Date().toISOString(),
+    type: 'tdd_adopted',
+    skill: 'workflow-write-test',
+    result: 'pass',
+    declarer: 'hook',
+    evidence: { type: 'diff', summary: 'pre-existing user test/source changes adopted' },
+  });
+  transitionV4State(state, 'EXECUTE');
+  const result = evaluateToolUse(state, { toolName: 'Edit', filePath: '/repo/src/app.ts' });
+  assert.equal(result.decision, 'allow');
+});
+
 test('infra contract allows infrastructure source edits during EXECUTE without red test evidence', () => {
   const state = createV4State({ taskId: 't-infra', userMode: 'infra' });
   transitionV4State(state, 'EXECUTE');

@@ -25,6 +25,7 @@
 import { readFileSync, existsSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname, basename, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { writeState, appendEvent, markComplete } from './state-schema.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 import { detectReviewVerdict, detectReviewFailCause } from './auto-confirm.mjs';
@@ -172,6 +173,34 @@ function transitionBridgedV4Step(state, skill) {
   transitionV4State(state, nextStep);
 }
 
+function hasTddEntryEvidence(state) {
+  return (state.events || []).some(e => e?.type === 'test_red' || e?.type === 'tdd_adopted') ||
+    (state.test_cycles || []).some(c => c?.run_result === 'fail' && ['added_case', 'modified_case'].includes(c?.action));
+}
+
+function dirtyWorktreeHasSourceAndTest(cwd) {
+  let out = '';
+  try {
+    out = execFileSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return false;
+  }
+  const files = out.split('\n')
+    .map(line => line.trimEnd())
+    .filter(Boolean)
+    .map(line => line.slice(3).split(' -> ').pop())
+    .filter(path => path && !path.startsWith('.smt/'));
+  const sourceExt = /\.(?:ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|sh)$/i;
+  const isTest = (path) => /(?:^|[\/\\])(?:test|tests|spec|e2e)[\/\\]/i.test(path) ||
+    /(?:^|[\/\\])[^\/\\]+\.(?:test|spec)\.(?:ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|sh)$/i.test(path);
+  const hasTest = files.some(path => sourceExt.test(path) && isTest(path));
+  const hasSource = files.some(path => sourceExt.test(path) && !isTest(path));
+  return hasSource && hasTest;
+}
+
 function main() {
   printTag('enter');
   try {
@@ -206,6 +235,11 @@ function main() {
       const expectedMode = COMMAND_TO_MODE_ENTRY[skill];
       if (state.mode !== expectedMode) {
         printTag(`entry-command ${skill} does not match state.mode=${state.mode} — no-op`);
+        process.stdout.write(JSON.stringify({ continue: true }));
+        return;
+      }
+      if (expectedMode === 'dobby') {
+        printTag('entry-command dobby keeps freeform EXECUTE state; workflow-human-check is entered by Stop hook');
         process.stdout.write(JSON.stringify({ continue: true }));
         return;
       }
@@ -278,6 +312,19 @@ function main() {
       };
       if (cause) event.cause = cause;
       state.events.push(event);
+    }
+
+    if (skill === 'workflow-write-test' && !hasTddEntryEvidence(state) && dirtyWorktreeHasSourceAndTest(cwd)) {
+      if (!Array.isArray(state.events)) state.events = [];
+      state.events.push({
+        t: now,
+        type: 'tdd_adopted',
+        skill: 'workflow-write-test',
+        result: 'pass',
+        declarer: 'hook',
+        evidence: { type: 'diff', summary: 'pre-existing dirty source and test changes adopted' },
+      });
+      printTag('workflow-write-test adopted pre-existing dirty source+test changes');
     }
 
     // Historical pipeline re-selection behavior, retained in v0.4 for

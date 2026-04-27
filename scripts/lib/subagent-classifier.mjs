@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { validateSurfaceFields, SURFACE_SCHEMA_VERSION } from './surface-extraction.mjs';
 import { sanitizeSessionId } from '../auto-confirm.mjs';
-const SETTINGS_PATH = '/Users/yusang/smelter/settings.json';
 const CODEX_SUBAGENT_MODEL = 'gpt-5.4-mini';
 const DEFAULT_SUBAGENT_MODEL = 'haiku';
 
@@ -51,12 +50,7 @@ function readMainModel() {
   const projectMode = readProjectModelMode({ sessionId });
   if (projectMode) return projectMode;
 
-  try {
-    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
-    return String(settings.model ?? '');
-  } catch {
-    return '';
-  }
+  return '';
 }
 
 export function inspectClassifierModel(settingsModel = '') {

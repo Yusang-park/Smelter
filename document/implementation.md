@@ -18,6 +18,12 @@ This release packages the dedicated `/infra` workflow, compact prompt/runtime gu
 - [x] v0.4.1-2. **Hook recovery** — command-skill slash normalization, effective session-id fallback, compact state-write contracts, and stale-state avoidance keep agent-driven workflow continuation aligned with scoped task state.
 - [x] v0.4.1-3. **Verification coverage** — hook registration, prompt-budget, infra pipeline, RED recorder, stage transition, and workflow contract tests cover the new release surface.
 - [x] v0.4.1-4. **Release metadata** — package/plugin manifests, README files, and workflow schema now identify the release as `0.4.1` / `v0.4.1`.
+- [x] v0.4.1-5. **Stop-hook first-stage enforcement** — `auto-confirm.mjs` now enters the first allowed workflow skill whenever an active task has `current_stage: null`, before the proceed/halt classifier can accept user-facing confirmation questions. This fixes `/dobby` sessions where the main agent asked for git push/merge confirmation, then attempted the side effect and only discovered the missing `workflow-human-check` at the commit gate.
+- [x] v0.4.1-6. **Dobby reseed recovery** — `skill-stage-transition.mjs` no longer turns command-skill `Skill(dobby)` into immediate `workflow-human-check`; freeform dobby stays in `EXECUTE` until Stop enters human-check. `workflow-state-seeder.mjs` also creates a fresh dobby feature when an existing dobby pointer is stuck at `HUMAN_CHECK` without completion, so `Skill(/dobby)` can recover edit permission instead of reusing the blocked state.
+- [x] v0.4.1-7. **Human-check native complete flow** — `workflow-human-check` now requires the native `AskUserQuestion` decision UI and treats `complete` as finalize-then-local-commit, without a second git-options prompt. `finalize-human-check.mjs` now accepts `dobby` mode in addition to `fix`, `implement`, and `infra`, so `/dobby` complete can write the pass shape before the commit gate runs.
+- [x] v0.4.1-8. **Explicit dobby escape reseed** — `workflow-state-seeder.mjs` now creates a fresh freeform `dobby` feature when the agent invokes `Skill(dobby)` over an active non-dobby workflow, so manual recovery does not stay trapped in an `implement` DISCOVERY/TEST_DESIGN gate.
+- [x] v0.4.1-9. **Sessionless RED recorder recovery** — `posttool-test-red-recorder.mjs` now scans session-scoped active pointers for the newest recordable write-test state when hook payloads omit `session_id` and the unscoped pointer is stale or non-recordable.
+- [x] v0.4.1-10. **Short edit intent pre-routing** — `mode-classifier.mjs` now routes narrow `target만 적용/반영` prompts such as `select만 적용` to `/implement` before the LLM layer, so workflow state is seeded on UserPromptSubmit instead of waiting for a source-edit block.
 
 ## Phase v0.4.0 — infrastructure workflow routing (2026-04-26)
 
@@ -56,7 +62,8 @@ Fresh sessions can start from a pasted prior-session transcript plus a short cur
 - [x] v0.4.0-transcript-recovery-8. **Regression coverage** — `keyword-detector.test.mjs` covers mixed paste + fix/implement directives; `state-contract-injector.test.mjs` covers `Skill(/implement)` state seeding, RED-gated `workflow-coding`, and env session fallback; `skill-stage-transition.test.mjs` covers slash-prefixed entry transition and env-backed v0.4 step advancement; `pretool-stage-gate.test.mjs`, `pre-tool-enforcer.test.mjs`, and `posttool-test-red-recorder.test.mjs` cover env session fallback for loaded-skill gating, source-edit gating, and RED recording.
 - [x] v0.4.0-transcript-recovery-9. **Masked RED diagnostics** — `posttool-test-red-recorder.mjs` now warns when a test command exits `0` while stdout contains a non-zero `exit=...` line, and `state-contract-injector.mjs` names the `; echo "exit=$?"` masking trap in the `workflow-coding` RED-evidence block reason.
 - [x] v0.4.0-transcript-recovery-10. **Stale registry assertions refreshed** — `test-model-mode-switch.mjs` derives codex model count from `CODEX_MODEL_OPTIONS` and asserts the new `gpt-5.5` option; `workflow-scenarios.test.mjs` now matches the current 19 workflow skills / 7 modes exposed by `state-schema.mjs`; `pre-tool-enforcer.test.mjs` matches the current agent-owned recovery set `Skill(fix|implement|infra|dobby)`.
-- [x] v0.4.0-transcript-recovery-11. **Vitest RED recorder recovery** — `posttool-test-red-recorder.mjs` recognizes direct Vitest commands such as `pnpm vitest run` and package test scripts such as `pnpm test:run`, and extracts exit codes only from structured hook payload fields (`exit_code`, `exitCode`, or `status` under `tool_response`, `toolResponse`, `tool_output`, `toolOutput`, `output`, or the top-level payload). It rejects stdout/stderr/error-text exit-code inference, accepts UI-decorated Bash tool labels, resolves the nearest ancestor `.smt` root before writing, and reconciles pointer conflicts by selecting a same-session state that is actually recordable (`task_type=write`, `step=TEST_DESIGN|EXECUTE`). Regression tests TR6-TR11 reproduce the `workflow-write-test → workflow-coding` block loop without fallback parsing.
+- [x] v0.4.0-transcript-recovery-11. **Vitest RED recorder recovery** — `posttool-test-red-recorder.mjs` recognizes direct Vitest commands such as `pnpm vitest run` and package test scripts such as `pnpm test:run`, accepts structured exit-code fields, and also accepts Claude Bash failure text such as `Error: Exit code 1` for known test commands only. It still rejects masked `exit=...` stdout, accepts UI-decorated Bash tool labels, resolves the nearest ancestor `.smt` root before writing, and reconciles pointer conflicts by selecting a same-session state that is actually recordable (`task_type=write`, `step=TEST_DESIGN|EXECUTE`). Regression tests TR6-TR12 reproduce the `workflow-write-test → workflow-coding` block loop without fallback parsing.
+- [x] v0.4.0-transcript-recovery-12. **Dirty-worktree adoption + watchdog noise reduction** — `skill-stage-transition.mjs` records `events[].type='tdd_adopted'` when `workflow-write-test` is entered with pre-existing dirty source and test changes, and both `state-contract-injector.mjs` and `workflow-v4-guard.mjs` accept that as TDD entry evidence. `critic-watchdog.mjs` no longer flags canonical task artifacts (`investigation.md`, reviews, plans) as scope leaks and no longer treats read-only protected-state formatting (`python -m json.tool`) as a state mutation.
 
 ## Phase v0.4.0 — superpowers brainstorming experience (2026-04-26)
 
@@ -337,7 +344,7 @@ User reported `/fix` still felt slow despite v3.1 target-type dispatch. Root cau
 - [x] Replaced the hardcoded SessionStart concise prompt with vendored upstream Caveman skill content from `skills/caveman/SKILL.md`.
 - [x] `src/rules/defaults.ts` now exports `CAVEMAN_SYSTEM_PROMPT` from the same vendored skill source.
 - [x] Added targeted regression tests for SessionStart Caveman injection and defaults export behavior.
-- [x] Removed learned-skill pre-injection from `UserPromptSubmit`: `scripts/skill-injector.mjs`, its bridge builder, and its hook registrations were deleted. Workflow skill bodies now enter context only through explicit Skill invocation by the active flow.
+- [x] Removed learned-skill pre-injection from `UserPromptSubmit`: the legacy pre-injection script, its bridge builder, and its hook registrations were deleted. Workflow skill bodies now enter context only through explicit Skill invocation by the active flow.
 - [x] Reduced global resource exposure: `scripts/dev-install.mjs` now symlinks only `commands/` into `~/.claude` and removes legacy repo-pointing `~/.claude/skills` / `~/.claude/agents` symlinks. PreToolUse and Stop-hook continuation prompts were compacted without changing their blocking/advance semantics.
 - [x] Previously synced Codex model-mode into `~/.smt/config.json.codexMode` during `SessionStart`. Reverted in v3.3.8 (2026-04-23): the global shared file caused a cross-session bleed where a running `claude-codex` session would flip plain-`claude` sibling sessions into selecting `gpt-5.4-mini` for their classifier subprocesses, which then failed with "gpt-5.4 temporarily unavailable" (no proxy in plain sessions). Detection now relies solely on per-process env (`CODEX_MODE` / `SMELTER_MODEL_MODE`) plus the session-scoped `.smt/state/model-mode-${SMELTER_SESSION_ID}.json`.
 - [x] Extended `scripts/auto-confirm.mjs::pickSubAgentModel()` to treat `SMELTER_MODEL_MODE=codex` the same as `CODEX_MODE=1`, forcing queued sub-agents onto `haiku` in codex windows.
@@ -807,3 +814,50 @@ Verification (live hook invocation via stdin, fresh `.smt/` dirs):
 Tests: `scripts/keyword-detector.test.mjs` + `scripts/mode-classifier.test.mjs` 32/32 green (no test changes needed — existing coverage exercises the corrected paths).
 
 - [x] P24-5. **Hook timeout vs Haiku budget** — `hooks/hooks.json` UserPromptSubmit `keyword-detector.mjs` had `timeout: 5` (5 s). `lib/subagent-classifier.mjs::TIMEOUT_MS` for the Haiku subprocess is 20 s. Any ambiguous Korean prompt where Haiku took longer than 5 s (empirically common) got SIGKILL'd mid-classification → hook produced no output → Claude Code continued without state seeding. Short prompts (<5 s round trip) routed fine; longer ones silently dropped. Session cache evidence: only **one** Haiku classification (`passthrough: true`) landed in `mode-classifier-cache.json` across an entire multi-turn debugging session, and its hash matched none of the user's messages — the rest were killed before cache write. Raised `timeout` to `20` so the hook budget covers the classifier. Reflection: requires Claude Code session restart to take effect (hooks.json loaded once at session start per CLAUDE.md).
+
+## Phase 25 — Artifact path disambiguation (v2.4.12)
+
+User report: `workflow-investigate` attempted `Write(investigation.md)` and failed instead of writing the active task artifact. Root cause was ambiguous basename-first guidance: the skill contract and Stop recovery prompt both named `investigation.md` before the canonical `.smt/features/<slug>/task/` path.
+
+- [x] P25-1. `scripts/auto-confirm.mjs::buildPromptInjection` now emits `Write missing artifact at absolute path: <absPath> (basename: <basename>)`, putting the actual Write target before the basename.
+- [x] P25-2. `scripts/auto-confirm.test.mjs` regression asserts the absolute path appears first and rejects the old `Write missing artifact investigation.md` wording.
+- [x] P25-3. `skills/workflow-investigate/SKILL.md` and installed copy `~/.claude/skills/workflow-investigate/SKILL.md` now define the artifact as `.smt/features/<active-slug>/task/investigation.md` and explicitly forbid writing root/CWD `investigation.md`.
+- [x] P25-4. `document/workflow.md` §11-2 documents absolute-path-first artifact recovery prompts.
+
+Verification: `scripts/auto-confirm.test.mjs` shows the new regression went RED before the source change. After the fix, the artifact prompt regression passes; the full file still has one environment-dependent pre-existing failure in `pickSubAgentModel` because the current shell exports a Codex model signal and the test expects plain Claude defaults.
+
+## Phase 26 — Main-agent write-mode correction (v2.4.13)
+
+Observation: PreToolUse is more accurate than UserPromptSubmit for write-mode routing because it sees the actual tool and file path. UserPromptSubmit should prevent naked source edits, but it should not make an irreversible final choice when the main agent can inspect context first.
+
+- [x] P26-1. `scripts/keyword-detector.mjs::createSkillInvocation` changed from hard “first tool must be Skill” language to a routing gate: read/search is allowed for clarification, but source edits and mutating commands require the selected `Skill(fix|implement|infra|dobby)` first.
+- [x] P26-2. `scripts/lib/workflow-state-seeder.mjs::shouldCreateNewFeature` now supports `write-mode-correction`: if a seeded write workflow has no evidence yet and the main agent invokes a different write-mode command skill, a fresh state is created for the agent-selected mode.
+- [x] P26-3. Once evidence exists (`events`, `completed_stages`, `test_cycles`, `active_feedback`), cross-write-mode Skill calls reuse the active workflow instead of discarding progress.
+- [x] P26-4. Regression coverage: `keyword-detector.test.mjs` asserts the routing-gate wording; `workflow-state-seeder.test.mjs` asserts unstarted write-mode correction and progressed-workflow reuse.
+
+Verification: `node --test scripts/lib/workflow-state-seeder.test.mjs scripts/keyword-detector.test.mjs` → 61/61 pass.
+
+## Phase 27 — Pre-workflow plan-confirmation trap (v2.4.14)
+
+User report: the main agent read files, produced a reasonable implementation plan, then asked “Confirm install + approach?” without entering the Smelter workflow. Because no `workflow-investigate` artifact existed, the result was a stalled non-workflow plan instead of an executable TDD chain.
+
+- [x] P27-1. `scripts/auto-confirm.mjs::decide` now detects an unentered seeded workflow (`current_stage` set, no `events`, no `completed_stages`, no `test_cycles`, no `active_feedback`) plus an interactive assistant question. It returns `enter_skill` for the current stage before the stage-completion classifier or proceed/halt classifier can treat the plan as a legitimate pause.
+- [x] P27-2. `scripts/auto-confirm.test.mjs` regression covers the rich-editor-style plan confirmation and asserts the stage classifier is not called before initial Skill entry.
+- [x] P27-3. `scripts/auto-confirm.mjs::pickSubAgentModel` no longer reads the shared `/Users/yusang/smelter/settings.json`; env-only selection prevents Codex model bleed into plain Claude sessions and fixes the environment-dependent test failure.
+- [x] P27-4. `scripts/mode-classifier.mjs` adds a narrow high-confidence local route for concrete rich text/text editor UI feature requests (`local:rich-text-editor-ui`) so prompts like “description is HTML; install a text editor so UI can bold/edit” seed `/implement` before the agent reaches a plan-confirmation pause.
+- [x] P27-5. `scripts/mode-classifier.test.mjs` and `scripts/keyword-detector.test.mjs` cover that rich-editor request end-to-end.
+
+Verification: `node scripts/auto-confirm.test.mjs` → 166/166 pass; `node scripts/mode-classifier.test.mjs` → 55/55 pass; `node --test scripts/keyword-detector.test.mjs` → 41/41 pass.
+
+## Phase 28 — Human-check native decision enforcement (v2.4.15)
+
+User report: `/dobby` reached human-check but rendered `Decide: complete / rework / hold / upgrade?` as plain text instead of the native selectable prompt. That is not a real human-check decision UI.
+
+- [x] P28-1. `skills/workflow-human-check/SKILL.md` and installed copy `~/.claude/skills/workflow-human-check/SKILL.md` now reject plain-text decision menus and require native `AskUserQuestion`. The old fallback “If unavailable, present labels as plain text” is removed.
+- [x] P28-2. `scripts/auto-confirm.mjs` detects human-check plain-text menus containing all four labels and routes back to `workflow-human-check` with `forceNativeDecision`, instead of halting as if user input were legitimately awaited.
+- [x] P28-3. `formatMandatoryInjection` now adds a human-check-specific reminder: decision must use native `AskUserQuestion` with exactly `rework`, `complete`, `hold`, `upgrade`; plain-text menus are invalid.
+- [x] P28-4. `scripts/auto-confirm.test.mjs` covers the reported `Decide: complete / rework / hold / upgrade?` failure shape.
+- [x] P28-5. `scripts/skill-prompt-budget.test.mjs` asserts the skill keeps `AskUserQuestion` and does not reintroduce prose fallback menus.
+- [x] P28-6. `document/workflow.md` §10-2 documents plain-text menu rejection and updates `complete` to finalize+local-commit only, not a second git-options prompt.
+
+Verification: `node scripts/auto-confirm.test.mjs` → 167/167 pass; `node --test scripts/skill-prompt-budget.test.mjs` → 2/2 pass.
