@@ -17,6 +17,7 @@ import { resolveHookSessionId } from './lib/session-paths.mjs';
 
 const TEST_COMMAND_RE = /\b(?:node\s+--test|node\s+--experimental-test|(?:npm|pnpm|yarn)\s+(?:run\s+)?test(?::[\w-]+)?|(?:npm|pnpm|yarn)\s+(?:exec\s+)?vitest\b|bun\s+test|vitest\b|npx\s+vitest\b)/;
 const DEDUPE_WINDOW_MS = 5_000;
+const RED_RECOVERY_PROMPT = "Do NOT claim RED recorded. Do NOT invoke Skill(skill: 'workflow-coding'). RED evidence is still missing. Rerun the failing test command directly as one Bash command whose test runner is the final process; use no pipes, redirects, tail, or echo.";
 
 function readStdin() {
   try { return JSON.parse(readFileSync('/dev/stdin', 'utf-8')); }
@@ -186,7 +187,7 @@ function main() {
     if (hasMaskedFailureOutput(input)) {
       emit({
         continue: true,
-        systemMessage: '[SMELTER] RED not recorded: the Bash command printed a non-zero exit=... line but the actual tool exit code was unavailable. Remove `; echo "exit=$?"` and let the test command itself exit non-zero.',
+        systemMessage: `[SMELTER] RED not recorded: the Bash command printed a non-zero exit=... line but the actual tool exit code was unavailable. Remove \`; echo "exit=$?"\` and let the test command itself exit non-zero. ${RED_RECOVERY_PROMPT}`,
       });
       return;
     }
@@ -200,14 +201,14 @@ function main() {
     if (exitCode === 0 && hasMaskedFailureOutput(input)) {
       emit({
         continue: true,
-        systemMessage: '[SMELTER] RED not recorded: the actual Bash exit code was 0 even though output contained a non-zero exit=... line. Remove `; echo "exit=$?"` and let the test command itself exit non-zero, e.g. `set -o pipefail && node --test path/to/test.mjs`.',
+        systemMessage: `[SMELTER] RED not recorded: the actual Bash exit code was 0 even though output contained a non-zero exit=... line. Remove \`; echo "exit=$?"\` and let the test command itself exit non-zero. ${RED_RECOVERY_PROMPT}`,
       });
       return;
     }
     if (exitCode === undefined || exitCode === null) {
       emit({
         continue: true,
-        systemMessage: '[SMELTER] RED not recorded: Bash PostToolUse payload had no structured exit code field. Trusted fields are tool_response/toolResponse/tool_output/toolOutput/output/top-level exit_code, exitCode, or status. Text output is not parsed as RED evidence.',
+        systemMessage: `[SMELTER] RED not recorded: Bash PostToolUse payload had no structured exit code field. Trusted fields are tool_response/toolResponse/tool_output/toolOutput/output/top-level exit_code, exitCode, or status. Text output is not parsed as RED evidence. ${RED_RECOVERY_PROMPT}`,
       });
       return;
     }

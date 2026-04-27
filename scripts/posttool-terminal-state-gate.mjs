@@ -36,8 +36,8 @@ const SKILL_ARTIFACTS = {
   'workflow-infra-plan':          ['infra-plan.md'],
   'workflow-infra-plan-review':   ['infra-plan-review.md'],
   'workflow-infra-execute':       ['infra-execute.md'],
-  'workflow-tasker':              ['plan.md', 'tasks.md'],
-  'workflow-tasker-review':       ['tasker_review.md', 'tasks-review.md'],
+  'workflow-tasker':              ['tasks.md'],
+  'workflow-tasker-review':       ['tasks-review.md'],
   'workflow-agent-review':        ['agent_review.md', 'agent-review.md'],
   'workflow-e2e-review':          ['e2e_review.md', 'e2e-review.md'],
   'workflow-team-code-review':    ['team_code_review.md', 'team-code-review.md']

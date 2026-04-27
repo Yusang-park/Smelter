@@ -17,7 +17,7 @@ test('createV4State persists user_mode, task_type, step, allowed_actions, and ve
   assert.equal(state.user_mode, 'brainstorm');
   assert.equal(state.task_type, 'design');
   assert.equal(state.step, 'INTENT');
-  assert.deepEqual(state.step_flow, ['INTENT', 'PLAN', 'DONE']);
+  assert.deepEqual(state.step_flow, ['INTENT', 'DISCOVERY', 'PLAN', 'DONE']);
   assert.deepEqual(state.allowed_actions, ['classify_intent']);
   assert.equal(state.verification.unit, 'not_required');
   assert.deepEqual(validateV4State(state), []);

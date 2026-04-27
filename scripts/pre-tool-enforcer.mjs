@@ -360,7 +360,7 @@ function main() {
                     return;
                   }
                   if (isWorkflowArtifactPath) return;
-                  if (verdict.decision === 'allow' && (state.task_type === 'write' || state.task_type === 'freeform')) {
+                  if (verdict.decision === 'allow' && (state.task_type === 'write' || state.task_type === 'infra' || state.task_type === 'freeform')) {
                     allowedMode = state.user_mode || state.mode || state.task_type;
                   }
                 } else if (state?.mode === 'fix' || state?.mode === 'implement' || state?.mode === 'dobby') {
@@ -424,7 +424,7 @@ function main() {
                 stateFileExists = true;
                 const state = JSON.parse(readFileSync(statePath, 'utf-8'));
                 const needsHumanCheck = typeof state?.task_type === 'string'
-                  ? (state.task_type === 'write' || state.task_type === 'freeform')
+                  ? (state.task_type === 'write' || state.task_type === 'infra' || state.task_type === 'freeform')
                   : (state?.mode === 'fix' || state?.mode === 'implement' || state?.mode === 'dobby');
                 if (needsHumanCheck) {
                   const completed = Array.isArray(state.completed_stages) ? state.completed_stages : [];

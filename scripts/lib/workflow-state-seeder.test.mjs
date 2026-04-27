@@ -36,7 +36,7 @@ test('SL1: seedWorkflowState creates state.json, pointer, plan.md', async () => 
     assert.equal(state.user_mode, 'fix');
     assert.equal(state.task_type, 'write');
     assert.equal(state.step, 'INTENT');
-    assert.deepEqual(state.step_flow, ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
+    assert.deepEqual(state.step_flow, ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
     assert.deepEqual(state.allowed_actions, ['classify_intent']);
     assert.equal(state.task_id, result.slug);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -310,15 +310,76 @@ test('SL13 (integration): seedWorkflowState verify→fix e2e — new slug + stat
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('SL13b (integration): explore→fix adopts completed investigation instead of restarting discovery', async () => {
+  const { seedWorkflowState } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const e = seedWorkflowState({ directory: cwd, commandName: 'explore', args: 'check /news-link parity', sessionId: 'sl13b', source: 'skill-tool' });
+    const oldTaskDir = join(cwd, '.smt', 'features', e.slug, 'task');
+    const investigationPath = join(oldTaskDir, 'investigation.md');
+    const reviewPath = join(oldTaskDir, 'investigation-review.md');
+    writeFileSync(investigationPath, '---\ntarget_type: bug_fix\nsurface: ["src/news.ts"]\n---\n\nEvidence gathered.\n');
+    writeFileSync(reviewPath, 'Verdict: pass\n\nEvidence is sufficient.\n');
+    const explored = JSON.parse(readFileSync(e.statePath, 'utf-8'));
+    explored.target_type = 'bug_fix';
+    explored.surface = ['src/news.ts'];
+    explored.completed_stages = ['workflow-investigate', 'workflow-investigate-review'];
+    explored.events = [
+      { t: new Date().toISOString(), skill: 'workflow-investigate', result: 'pass', declarer: 'hook', evidence: { type: 'file_present', path: investigationPath } },
+      { t: new Date().toISOString(), skill: 'workflow-investigate-review', result: 'pass', declarer: 'hook', evidence: { type: 'file_present', path: reviewPath } },
+    ];
+    writeFileSync(e.statePath, JSON.stringify(explored, null, 2));
+
+    const f = seedWorkflowState({ directory: cwd, commandName: 'fix', args: 'fix /news-link parity', sessionId: 'sl13b', source: 'skill-tool' });
+    assert.notEqual(f.slug, e.slug, 'mode-upgrade still creates a write-mode feature');
+    const state = JSON.parse(readFileSync(f.statePath, 'utf-8'));
+    assert.equal(state.mode, 'fix');
+    assert.deepEqual(state.completed_stages.slice(0, 2), ['workflow-investigate', 'workflow-investigate-review']);
+    assert.equal(state.current_stage, 'workflow-tasker');
+    assert.equal(state.step, 'PLAN');
+    assert.ok(existsSync(join(cwd, '.smt', 'features', f.slug, 'task', 'investigation.md')), 'investigation copied into new task');
+    assert.ok(existsSync(join(cwd, '.smt', 'features', f.slug, 'task', 'investigation-review.md')), 'review copied into new task');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('SL13c (integration): explore→implement adopts completed investigation and starts planning', async () => {
+  const { seedWorkflowState } = await import(MODULE);
+  const cwd = tmp();
+  try {
+    const e = seedWorkflowState({ directory: cwd, commandName: 'explore', args: 'inspect old flow', sessionId: 'sl13c', source: 'skill-tool' });
+    const oldTaskDir = join(cwd, '.smt', 'features', e.slug, 'task');
+    const investigationPath = join(oldTaskDir, 'investigation.md');
+    const reviewPath = join(oldTaskDir, 'investigation-review.md');
+    writeFileSync(investigationPath, '---\ntarget_type: extend_existing\nsurface: ["src/flow.ts"]\n---\n\nExisting flow mapped.\n');
+    writeFileSync(reviewPath, 'Verdict: pass\n\nSufficient for implementation planning.\n');
+    const explored = JSON.parse(readFileSync(e.statePath, 'utf-8'));
+    explored.target_type = 'extend_existing';
+    explored.surface = ['src/flow.ts'];
+    explored.completed_stages = ['workflow-investigate', 'workflow-investigate-review'];
+    explored.events = [
+      { t: new Date().toISOString(), skill: 'workflow-investigate', result: 'pass', declarer: 'hook', evidence: { type: 'file_present', path: investigationPath } },
+      { t: new Date().toISOString(), skill: 'workflow-investigate-review', result: 'pass', declarer: 'hook', evidence: { type: 'file_present', path: reviewPath } },
+    ];
+    writeFileSync(e.statePath, JSON.stringify(explored, null, 2));
+
+    const impl = seedWorkflowState({ directory: cwd, commandName: 'implement', args: 'implement old flow extension', sessionId: 'sl13c', source: 'skill-tool' });
+    const state = JSON.parse(readFileSync(impl.statePath, 'utf-8'));
+    assert.equal(state.mode, 'implement');
+    assert.deepEqual(state.completed_stages.slice(0, 2), ['workflow-investigate', 'workflow-investigate-review']);
+    assert.equal(state.current_stage, 'workflow-implementation-plan');
+    assert.equal(state.step, 'PLAN');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('SL14 (boundary): explore→explore via Skill(explore) keeps explicit reseed precedence', async () => {
   const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
   const cwd = tmp();
   try {
     seedWorkflowState({ directory: cwd, commandName: 'explore', args: 'probe', sessionId: 'sl14', source: 'skill-tool' });
     const d = shouldCreateNewFeature(cwd, 'sl14', 'probe again', 'skill-tool', 'explore');
-    // explore-command-reseed must not be shadowed by mode-upgrade.
+    // read-only command reseed must not be shadowed by mode-upgrade.
     assert.equal(d.create, true);
-    assert.equal(d.reason, 'explore-command-reseed', 'existing explore-reseed precedence preserved');
+    assert.equal(d.reason, 'read-only-command-reseed', 'existing read-only reseed precedence preserved');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 

@@ -1,6 +1,6 @@
 ---
 name: workflow-brainstorm
-version: 0.4.1
+version: 0.51
 type: workflow
 consumes: trigger_prompt
 produces: brainstorm.md

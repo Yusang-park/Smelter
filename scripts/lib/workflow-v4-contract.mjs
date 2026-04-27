@@ -53,7 +53,7 @@ const MODE_TO_TASK_TYPE = Object.freeze({
 
 const TASK_TYPE_TO_STEPS = Object.freeze({
   read: Object.freeze(['INTENT', 'DISCOVERY', 'DONE']),
-  design: Object.freeze(['INTENT', 'PLAN', 'DONE']),
+  design: Object.freeze(['INTENT', 'DISCOVERY', 'PLAN', 'DONE']),
   verify: Object.freeze(['INTENT', 'DISCOVERY', 'VERIFY', 'HUMAN_CHECK', 'DONE']),
   infra: Object.freeze(['INTENT', 'DISCOVERY', 'PLAN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']),
   write: Object.freeze(['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']),
@@ -90,9 +90,6 @@ export function resolveTaskType(userMode) {
 
 export function resolveStepFlow(taskType, { userMode = '' } = {}) {
   if (!TASK_TYPES.includes(taskType)) throw new Error(`invalid task_type: ${taskType}`);
-  if (userMode === 'fix') {
-    return ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
-  }
   return [...TASK_TYPE_TO_STEPS[taskType]];
 }
 

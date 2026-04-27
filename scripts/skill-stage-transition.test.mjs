@@ -32,7 +32,7 @@ function seedState(cwd, { mode = 'explore', slug = 'feat', sessionId = 't3' } = 
   const state = createInitialState({ taskId: slug, mode });
   state.allowed_skills = { explore: ['workflow-investigate', 'workflow-investigate-review'],
     fix: ['workflow-investigate', 'workflow-coding', 'workflow-agent-review', 'workflow-e2e', 'workflow-human-check'],
-    brainstorm: ['workflow-brainstorm', 'workflow-investigate', 'workflow-tasker'],
+    brainstorm: ['workflow-investigate', 'workflow-investigate-review', 'workflow-brainstorm', 'workflow-brainstorm-review', 'workflow-tasker'],
     implement: ['workflow-coding', 'workflow-e2e'],
     verify: ['workflow-verify', 'workflow-e2e', 'workflow-human-check'],
   }[mode] || [];
@@ -77,6 +77,37 @@ function readState(statePath) {
   return JSON.parse(readFileSync(statePath, 'utf-8'));
 }
 
+const VALID_TASKS_V052 = `---
+schema_version: "0.51"
+target_type: bug_fix
+---
+
+# tasks
+
+- [x] goal: fix behavior
+- [x] approach: minimal guarded change
+- [ ] queue: add RED test, patch source, run checks
+- [x] works: acceptance path named
+- [x] omissions: no reviewed feature omitted
+- [x] verified: test/typecheck/e2e commands listed
+- [x] team_runtime: write-test=A, coding=A, agent-review=B, e2e=A
+`;
+
+const VALID_TASK_REVIEW_V052 = `---
+schema_version: "0.51"
+verdict: pass
+consensus: 0.95
+---
+
+# tasks-review
+
+- [x] works: queue covers expected behavior
+- [x] omissions: no feature or review concern is missing
+- [x] verified: validation commands are named
+- [x] side_effects: none beyond scoped surface
+- [x] decision: pass
+`;
+
 // ── Happy path ─────────────────────────────────────────────────────────────
 test('T3-H1: workflow-investigate with artifact → completed_stages append', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-h1-'));
@@ -101,6 +132,42 @@ test('T3-H2: workflow-investigate WITHOUT artifact → current_stage only, defer
     const state = readState(sp);
     assert.equal(state.current_stage, 'workflow-investigate', 'stage entered');
     assert.ok(!state.completed_stages.includes('workflow-investigate'), 'must NOT mark complete without artifact');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T3-H3: workflow-tasker requires v0.51 compact checklist before completion', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't3-h3-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.allowed_skills = ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker', 'workflow-tasker-review'];
+    writeFileSync(sp, JSON.stringify(state, null, 2), 'utf-8');
+    seedArtifact(sp, 'workflow-tasker', '# legacy prose\n');
+
+    const r = runTransition({ cwd, skill: 'workflow-tasker' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.equal(after.current_stage, 'workflow-tasker');
+    assert.ok(!after.completed_stages.includes('workflow-tasker'));
+    assert.ok(!after.events.some(e => e.skill === 'workflow-tasker' && e.result === 'pass'));
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T3-H4: workflow-tasker-review requires v0.51 review checklist before completion', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't3-h4-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.allowed_skills = ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker', 'workflow-tasker-review'];
+    writeFileSync(sp, JSON.stringify(state, null, 2), 'utf-8');
+    seedArtifact(sp, 'workflow-tasker', VALID_TASKS_V052);
+    seedArtifact(sp, 'workflow-tasker-review', VALID_TASK_REVIEW_V052);
+
+    const r = runTransition({ cwd, skill: 'workflow-tasker-review' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.ok(after.completed_stages.includes('workflow-tasker-review'));
+    assert.ok(after.events.some(e => e.skill === 'workflow-tasker-review' && e.result === 'pass'));
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -153,6 +220,38 @@ test('T3-B4: workflow-write-test adopts pre-existing dirty source+test changes',
     const after = readState(sp);
     assert.equal(after.current_stage, 'workflow-write-test');
     assert.ok(after.events.some(e => e.type === 'tdd_adopted' && e.skill === 'workflow-write-test'));
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T3-B5: workflow-write-test records TDD exemption for design/text target', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't3-b5-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.target_type = 'design';
+    state.allowed_skills = ['workflow-investigate', 'workflow-write-test', 'workflow-coding'];
+    writeFileSync(sp, JSON.stringify(state, null, 2), 'utf-8');
+
+    const r = runTransition({ cwd, skill: 'workflow-write-test' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.ok(after.events.some(e => e.type === 'tdd_exempt' && e.skill === 'workflow-write-test'));
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T3-B6: workflow-write-test records TDD exemption for CSS/style surface', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't3-b6-'));
+  try {
+    const sp = seedState(cwd, { mode: 'fix' });
+    const state = readState(sp);
+    state.surface = ['src/app.css'];
+    state.allowed_skills = ['workflow-investigate', 'workflow-write-test', 'workflow-coding'];
+    writeFileSync(sp, JSON.stringify(state, null, 2), 'utf-8');
+
+    const r = runTransition({ cwd, skill: 'workflow-write-test' });
+    assert.equal(r.status, 0, `status=${r.status} stderr=${r.stderr}`);
+    const after = readState(sp);
+    assert.ok(after.events.some(e => e.type === 'tdd_exempt' && e.skill === 'workflow-write-test' && /style|css/i.test(e.evidence?.summary || '')));
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -363,7 +462,7 @@ test('V04-I1: workflow-coding invocation advances bridged v0.4 step to EXECUTE',
     state.user_mode = 'fix';
     state.task_type = 'write';
     state.step = 'TEST_DESIGN';
-    state.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.step_flow = ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
     state.allowed_actions = ['read', 'write_test', 'run_test'];
     state.allowed_skills.push('workflow-coding');
     state.test_cycles = [{ action: 'added_case', run_result: 'fail' }];
@@ -385,7 +484,7 @@ test('V04-I2: workflow-human-check invocation advances bridged v0.4 step to HUMA
     state.user_mode = 'fix';
     state.task_type = 'write';
     state.step = 'VERIFY';
-    state.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    state.step_flow = ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
     state.allowed_actions = ['read', 'run_test', 'run_e2e', 'write_artifact'];
     state.allowed_skills.push('workflow-human-check');
     writeFileSync(sp, JSON.stringify(state, null, 2));
@@ -398,15 +497,23 @@ test('V04-I2: workflow-human-check invocation advances bridged v0.4 step to HUMA
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('ST-E4: entry command "brainstorm" maps to brainstorm mode entry_skill (workflow-brainstorm)', async () => {
+test('ST-E4: entry command "brainstorm" maps to DISCOVERY entry_skill', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'st-e4-'));
   try {
     const sp = seedState(cwd, { mode: 'brainstorm' });
+    const before = readState(sp);
+    before.user_mode = 'brainstorm';
+    before.task_type = 'design';
+    before.step = 'INTENT';
+    before.step_flow = ['INTENT', 'DISCOVERY', 'PLAN', 'DONE'];
+    before.allowed_actions = ['classify_intent'];
+    writeFileSync(sp, JSON.stringify(before, null, 2));
+
     const r = runTransition({ cwd, skill: 'brainstorm' });
     assert.equal(r.status, 0);
     const state = readState(sp);
-    // modes.yaml → brainstorm.entry_skill = workflow-brainstorm
-    assert.equal(state.current_stage, 'workflow-brainstorm');
+    assert.equal(state.current_stage, 'workflow-investigate');
+    assert.equal(state.step, 'DISCOVERY');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

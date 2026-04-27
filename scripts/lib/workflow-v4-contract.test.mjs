@@ -47,7 +47,7 @@ test('UserMode maps to TaskType by side-effect contract', () => {
 
 test('TaskType resolves to deterministic step flow', () => {
   assert.deepEqual(resolveStepFlow('read'), ['INTENT', 'DISCOVERY', 'DONE']);
-  assert.deepEqual(resolveStepFlow('design'), ['INTENT', 'PLAN', 'DONE']);
+  assert.deepEqual(resolveStepFlow('design'), ['INTENT', 'DISCOVERY', 'PLAN', 'DONE']);
   assert.deepEqual(resolveStepFlow('verify'), ['INTENT', 'DISCOVERY', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
   assert.deepEqual(resolveStepFlow('write'), ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
   assert.deepEqual(resolveStepFlow('infra'), ['INTENT', 'DISCOVERY', 'PLAN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
@@ -62,12 +62,11 @@ test('infra contract separates infrastructure work from code TDD flow', () => {
   assert.equal(contract.steps.includes('TEST_DESIGN'), false);
 });
 
-test('fix is a write contract with no brainstorm planning step but keeps test/verify/human gates', () => {
+test('fix is a write contract with compact tasker PLAN plus test/verify/human gates', () => {
   const contract = resolveContract('fix');
   assert.equal(contract.user_mode, 'fix');
   assert.equal(contract.task_type, 'write');
-  assert.deepEqual(contract.steps, ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
-  assert.equal(contract.steps.includes('PLAN'), false);
+  assert.deepEqual(contract.steps, ['INTENT', 'DISCOVERY', 'PLAN', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE']);
 });
 
 test('allowedActionsFor derives actions from TaskType and Step, not mode names', () => {

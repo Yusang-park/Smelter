@@ -1,6 +1,6 @@
 ---
 name: workflow-e2e-review
-version: 0.4.1
+version: 0.51
 type: workflow
 consumes: artifacts/
 produces: e2e-review.md

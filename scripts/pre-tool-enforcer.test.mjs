@@ -177,6 +177,21 @@ test('T2-H1e: v0.4 write task allows EXECUTE source edit with legacy red test ev
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+test('T2-H1g: v0.4 infra task allows source edit during EXECUTE in actual pretool gate', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-h1g-'));
+  try {
+    seedActiveWorkflow(cwd, {
+      mode: 'infra',
+      task_type: 'infra',
+      step: 'EXECUTE',
+      allowed_actions: ['read', 'write_source', 'run_infra', 'write_artifact'],
+    });
+    const r = runEnforcer({ cwd, toolName: 'Edit', toolInput: { file_path: `${cwd}/infra/main.tf`, old_string: 'a', new_string: 'b' } });
+    const out = parseOut(r.stdout);
+    assert.notEqual(out?.decision, 'block', `infra EXECUTE source edit should be allowed by actual pretool gate: ${JSON.stringify(out)}`);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
 test('T2-H1f: missing input session_id uses SMELTER_SESSION_ID before stale unscoped design state', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't2-h1f-'));
   try {
@@ -585,7 +600,7 @@ test('T2-I1: block reason directs agent to invoke skill instead of editing state
 // treats it as suspicious and still blocks.
 // ═══════════════════════════════════════════════════════════════════════════
 
-function seedHumanCheckState(cwd, { mode = 'fix', sessionId = 't-gate', slug = 'feat', completed_stages = [], events = [], current_stage = 'workflow-coding', corrupt = false } = {}) {
+function seedHumanCheckState(cwd, { mode = 'fix', task_type = undefined, sessionId = 't-gate', slug = 'feat', completed_stages = [], events = [], current_stage = 'workflow-coding', corrupt = false } = {}) {
   const stateDir = `${cwd}/.smt/state`;
   const taskDir = `${cwd}/.smt/features/${slug}/task`;
   mkdirSync(stateDir, { recursive: true });
@@ -597,6 +612,7 @@ function seedHumanCheckState(cwd, { mode = 'fix', sessionId = 't-gate', slug = '
     current_stage, completed_stages, events,
     test_cycles: [], active_feedback: [], sub_tasks: [],
   };
+  if (task_type !== undefined) state.task_type = task_type;
   writeFileSync(`${taskDir}/${slug}.state.json`, corrupt ? '{ not valid json' : JSON.stringify(state));
   return { sessionId, slug };
 }
@@ -663,6 +679,17 @@ test('G-E2: git commit blocked when mode=implement with empty events/completed a
     const r = runEnforcer({ cwd, sessionId, toolName: 'Bash', toolInput: { command: 'git commit -m "x"' } });
     const out = parseOut(r.stdout);
     assert.equal(out?.decision, 'block');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('G-E2b: git commit blocked for v0.4 infra task until workflow-human-check passes', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'g-e2b-'));
+  try {
+    const { sessionId } = seedHumanCheckState(cwd, { mode: 'infra', task_type: 'infra', current_stage: 'workflow-infra-execute' });
+    const r = runEnforcer({ cwd, sessionId, toolName: 'Bash', toolInput: { command: 'git commit -m "x"' } });
+    const out = parseOut(r.stdout);
+    assert.equal(out?.decision, 'block', `infra commit must wait for workflow-human-check: ${JSON.stringify(out)}`);
+    assert.match(out.reason, /human-check/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -944,5 +971,25 @@ test('T2-F3: raw code-write block reason does not ask user to type slash command
     assert.doesNotMatch(out.reason, /Required action: invoke/i);
     assert.doesNotMatch(out.reason, /`\/(?:fix|implement|infra|dobby)\s+<description>`/);
     assert.match(out.reason, /agent recovery|Skill\(fix\|implement\|dobby\)/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('T2-F4: raw code-write block reason does not expose dobby as agent recovery', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 't2-f4-'));
+  try {
+    const r = runEnforcer({
+      cwd,
+      sessionId: 'abc123',
+      toolName: 'Write',
+      toolInput: { file_path: `${cwd}/scripts/lib/hook-guards.test.mjs`, content: 'x' },
+    });
+    const out = parseOut(r.stdout);
+
+    assert.equal(out?.decision, 'block');
+    assert.match(out.reason, /Skill\(fix\)/);
+    assert.match(out.reason, /Skill\(implement\)/);
+    assert.match(out.reason, /Skill\(infra\)/);
+    assert.doesNotMatch(out.reason, /Skill\(dobby\)/);
+    assert.doesNotMatch(out.reason, /freeform recovery/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });

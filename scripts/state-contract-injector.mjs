@@ -44,6 +44,7 @@ import { readFileSync } from 'node:fs';
 import { seedWorkflowState } from './lib/workflow-state-seeder.mjs';
 import { resolveHookSessionId, resolveActiveState } from './lib/session-paths.mjs';
 import { ALWAYS_ALLOWED, nextSkillForState, producerForState } from './lib/workflow-chain.mjs';
+import { canEnterPhase, currentPhase, hasTddEntryEvidence, nextRequiredPhase, phaseForSkill } from './lib/phase-gate.mjs';
 
 const COMMAND_SKILLS = new Set(['fix', 'implement', 'infra', 'explore', 'verify', 'brainstorm', 'dobby']);
 
@@ -60,15 +61,6 @@ function isLastEventFail(events, stage) {
   return false;
 }
 
-function hasRedTestEvidence(state) {
-  const hasV4RedEvent = Array.isArray(state?.events) && state.events.some((e) => e?.type === 'test_red');
-  const hasAdoptedDirtyWorktree = Array.isArray(state?.events) && state.events.some((e) => e?.type === 'tdd_adopted');
-  const hasLegacyRedCycle = Array.isArray(state?.test_cycles) && state.test_cycles.some((c) =>
-    c?.run_result === 'fail' && ['added_case', 'modified_case'].includes(c?.action)
-  );
-  return hasV4RedEvent || hasAdoptedDirtyWorktree || hasLegacyRedCycle;
-}
-
 // Returns null when the move is legal, or a human-readable reason string when
 // it is not. Caller decides the emit shape.
 function chainBlockReason(state, requested) {
@@ -77,8 +69,20 @@ function chainBlockReason(state, requested) {
   if (currentStage == null) return null;              // no chain yet
   if (requested === currentStage) return null;        // idempotent re-entry
   if (ALWAYS_ALLOWED.has(requested)) return null;     // user escape
-  if (currentStage === 'workflow-write-test' && requested === 'workflow-coding' && !hasRedTestEvidence(state)) {
-    return `[Smelter chain] Skill('workflow-coding') requires TDD entry evidence from 'workflow-write-test' before entering EXECUTE. Run the new/modified test so the actual Bash exit code is non-zero and let the test-red recorder write events[].type='test_red', or enter workflow-write-test with pre-existing dirty source+test changes so the transition hook records events[].type='tdd_adopted'. Do not append \`; echo "exit=$?"\`; that masks the failing test as a successful Bash command.`;
+  const targetPhase = phaseForSkill(requested);
+  const activePhase = currentPhase(state);
+  const expectedPhase = nextRequiredPhase(state);
+  if (targetPhase && activePhase && targetPhase !== activePhase) {
+    if (expectedPhase && targetPhase !== expectedPhase) {
+      return `[Smelter phase] Skill('${requested}') requires phase ${targetPhase}, but current phase is ${activePhase}; expected next phase is ${expectedPhase}. Phase skip blocked.`;
+    }
+    const phaseVerdict = canEnterPhase(state, targetPhase);
+    if (phaseVerdict.decision === 'block') {
+      return `[Smelter phase] Skill('${requested}') cannot enter phase ${targetPhase}: ${phaseVerdict.reason}`;
+    }
+  }
+  if (currentStage === 'workflow-write-test' && requested === 'workflow-coding' && !hasTddEntryEvidence(state)) {
+    return `[Smelter chain] Skill('workflow-coding') requires TDD entry evidence from 'workflow-write-test' before entering EXECUTE. Run the new/modified test so the actual Bash exit code is non-zero and let the test-red recorder write events[].type='test_red', enter workflow-write-test with pre-existing dirty source+test changes so the transition hook records events[].type='tdd_adopted', or use a text/design/style TDD-exempt target so the hook records events[].type='tdd_exempt'. Do not append \`; echo "exit=$?"\`; that masks the failing test as a successful Bash command.`;
   }
   const expectedNext = nextSkillForState(state, currentStage);
   if (!expectedNext) return null;

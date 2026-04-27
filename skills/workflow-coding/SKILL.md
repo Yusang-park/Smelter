@@ -1,6 +1,6 @@
 ---
 name: workflow-coding
-version: 0.4.1
+version: 0.51
 type: workflow
 consumes: "*.test.* (RED) OR active_feedback"
 produces: src files changed
@@ -36,7 +36,7 @@ Announce: `I'm using workflow-coding to turn RED tests GREEN. Next skill on pass
 
 - RED evidence from `workflow-write-test`: real failing command exit, not `; echo "exit=$?"` masking.
 - Or unresolved `active_feedback` targeting `workflow-coding`.
-- Current investigation/plan artifacts relevant to the change.
+- Current `tasks.md` or implementation-plan artifact relevant to the change.
 
 ## Execution Checklist
 

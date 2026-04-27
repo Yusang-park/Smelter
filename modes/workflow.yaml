@@ -1,17 +1,19 @@
-# Smelter v0.4 — unified workflow configuration.
+# Smelter v0.51 — unified workflow configuration.
 #
 # Single source of truth for: skills, pipelines, modes, target-type routing,
-# verification rounds, and command aliases. Consumers: scripts/lib/workflow-loader.mjs.
+# transition adoption, verification rounds, and command aliases.
+# Consumers: scripts/lib/workflow-loader.mjs.
 #
 # Schema shape:
-#   verification_rounds — global defaults per review phase
-#   skills.<name>       — team pattern + default agents, optional round override
-#   pipelines.<name>    — ordered skill sequence
-#   target_type_routing — in /fix mode, pick pipeline by target_type + scope signals
-#   modes.<name>        — thin composition (entry + pipeline + flags + team_hints)
-#   command_aliases     — /slash → mode
+#   verification_rounds  — global defaults per review phase
+#   skills.<name>        — team pattern + default agents, optional round override
+#   pipelines.<name>     — ordered skill sequence
+#   target_type_routing  — in /fix mode, pick pipeline by target_type + scope signals
+#   transition_adoptions — file-verified stage reuse across mode transitions
+#   modes.<name>         — thin composition (entry + pipeline + flags + team_hints)
+#   command_aliases      — /slash → mode
 
-schema_version: "0.4.1"
+schema_version: "0.51"
 
 verification_rounds:
   rounds: 2             # global policy for every review skill and mode
@@ -163,16 +165,14 @@ pipelines:
     - workflow-team-code-review
     - workflow-human-check
 
-  # fix — default /fix pipeline (all bug_fix regardless of scope). 8 skills —
-  # investigate-review retained as a cheap sanity gate; tasker + tasker-review +
-  # team-code-review dropped because /fix scope is narrow enough that scoped
-  # agent-review + terminal e2e-review + human-check suffice. v0.4: /fix has
-  # only two pipelines (`fix` and `fix_simple`); the former `medium`/`light` split
-  # is gone (complex bug_fix rides the same `fix` path; /implement handles
-  # extensions through the full code-based implementation-plan path).
+  # fix — default /fix pipeline (all bug_fix regardless of scope). v0.51 records
+  # a compact task checklist before tests so fixes have explicit scope, omission,
+  # verification, and team-runtime evidence without the old verbose tasker prose.
   fix:
     - workflow-investigate
     - workflow-investigate-review
+    - workflow-tasker
+    - workflow-tasker-review
     - workflow-write-test
     - workflow-coding
     - workflow-agent-review
@@ -180,21 +180,22 @@ pipelines:
     - workflow-e2e-review
     - workflow-human-check
 
-  # fix_simple — typo / dialogue / pure-copy change. 4 skills — TDD exempt, no
-  # tasker, no review phases that verify logic (copy changes have no logic).
-  # v0.4: /fix has only `fix` and `fix_simple`.
+  # fix_simple — text/design change. TDD exempt, but still records the compact
+  # v0.51 checklist before coding so no fix path loses scope/review evidence.
   fix_simple:
     - workflow-investigate
+    - workflow-tasker
+    - workflow-tasker-review
     - workflow-coding
     - workflow-e2e
     - workflow-human-check
 
   # Planning-only — /brainstorm. Terminal, no code.
   planning_only:
-    - workflow-brainstorm
-    - workflow-brainstorm-review
     - workflow-investigate
     - workflow-investigate-review
+    - workflow-brainstorm
+    - workflow-brainstorm-review
     - workflow-tasker
     - workflow-tasker-review
 
@@ -252,17 +253,31 @@ target_type_routing:
   migration: upgrade_required       # /fix → escalate to /brainstorm
 
 # -----------------------------------------------------------------------------
+# Transition adoption — file-verified stage reuse across mode transitions.
+# Runtime executes these policies; agents cannot skip stages by prose.
+# -----------------------------------------------------------------------------
+transition_adoptions:
+  - id: explore_discovery_to_write
+    from_modes: [explore]
+    to_modes: [fix, implement]
+    stages: [workflow-investigate, workflow-investigate-review]
+    copy_artifacts: true
+    advance_to_next_uncompleted: true
+    metadata: [target_type, surface, file_count]
+
+# -----------------------------------------------------------------------------
 # Mode definitions — thin composition.
 # -----------------------------------------------------------------------------
 modes:
   brainstorm:
     description: Ideation + planning. No code changes. Produces brainstorm.md + tasks.md.
-    entry_skill: workflow-brainstorm
-    entry_params: { workflow-brainstorm: { depth: deep } }
+    entry_skill: workflow-investigate
+    entry_params: { workflow-investigate: { depth: deep } }
     pipeline: planning_only
     read_only: true
     default_exempt: { tdd: true, e2e: true }
     team_hints:
+      workflow-investigate: deep
       workflow-brainstorm: deep
       workflow-tasker: deep
     terminal_actions: [mode_transition_to_implement]

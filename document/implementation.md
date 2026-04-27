@@ -1,14 +1,24 @@
 ---
-title: Smelter Workflow v0.4 — Implementation Status
+title: Smelter Workflow v0.51 — Implementation Status
 status: in_progress
 started: 2026-04-20
-updated: 2026-04-27
+updated: 2026-04-28
 ---
 
-# Smelter v0.4 Implementation Status
+# Smelter v0.51 Implementation Status
 
 > Source of truth: `document/workflow.md`.
 > Principle: sequential execution, respect dependencies, no omissions.
+
+## Schema v0.51 — compact fix/tasker records (2026-04-28)
+
+`/fix` now records a compact task checklist before coding without returning to verbose Markdown planning. The checklist keeps the file-based workflow contract while reducing tasker token spend.
+
+- [x] v0.51-tasker-1. **Fix pipeline records scope** — `modes/workflow.yaml` routes both `fix` and `fix_simple` through `workflow-tasker` and `workflow-tasker-review` before coding/test execution.
+- [x] v0.51-tasker-2. **Compact artifact contract** — `tasks.md` uses frontmatter plus seven one-line checkboxes. `queue` may stay unchecked for downstream execution; `goal`, `approach`, `works`, `omissions`, `verified`, and `team_runtime` must be checked.
+- [x] v0.51-tasker-3. **Review artifact contract** — `tasks-review.md` requires pass/fail/reshape, `consensus >= 0.95` for pass, and checked works/omissions/verified/side-effects/decision entries.
+- [x] v0.51-tasker-4. **Regression coverage** — `task-artifact-contract.test.mjs`, `skill-stage-transition.test.mjs`, and `workflow-loader.test.mjs` cover compact validation, stage completion blocking, and `/fix` pipeline ordering.
+- [x] v0.51-transition-1. **Workflow-declared transition adoption** — `modes/workflow.yaml → transition_adoptions` now declares cross-mode stage reuse. `workflow-transition-adoption.mjs` is a generic policy executor used by hooks, so mode-specific reuse such as `/explore → /fix|/implement` is edited in workflow config rather than scattered across hook branches.
 
 ## Release v0.4.1 — infrastructure workflow and hook recovery rollup (2026-04-27)
 
@@ -20,10 +30,12 @@ This release packages the dedicated `/infra` workflow, compact prompt/runtime gu
 - [x] v0.4.1-4. **Release metadata** — package/plugin manifests, README files, and workflow schema now identify the release as `0.4.1` / `v0.4.1`.
 - [x] v0.4.1-5. **Stop-hook first-stage enforcement** — `auto-confirm.mjs` now enters the first allowed workflow skill whenever an active task has `current_stage: null`, before the proceed/halt classifier can accept user-facing confirmation questions. This fixes `/dobby` sessions where the main agent asked for git push/merge confirmation, then attempted the side effect and only discovered the missing `workflow-human-check` at the commit gate.
 - [x] v0.4.1-6. **Dobby reseed recovery** — `skill-stage-transition.mjs` no longer turns command-skill `Skill(dobby)` into immediate `workflow-human-check`; freeform dobby stays in `EXECUTE` until Stop enters human-check. `workflow-state-seeder.mjs` also creates a fresh dobby feature when an existing dobby pointer is stuck at `HUMAN_CHECK` without completion, so `Skill(/dobby)` can recover edit permission instead of reusing the blocked state.
-- [x] v0.4.1-7. **Human-check native complete flow** — `workflow-human-check` now requires the native `AskUserQuestion` decision UI and treats `complete` as finalize-then-local-commit, without a second git-options prompt. `finalize-human-check.mjs` now accepts `dobby` mode in addition to `fix`, `implement`, and `infra`, so `/dobby` complete can write the pass shape before the commit gate runs.
+- [x] v0.4.1-7. **Human-check native complete flow** — `workflow-human-check` now requires the native `AskUserQuestion` decision UI and exposes explicit terminal actions: `complete-commit-current` finalizes then commits on the current branch, while `complete-new-branch-pr` finalizes then creates/pushes a task branch and runs `gh pr create`. No second git-options prompt is allowed. `finalize-human-check.mjs` accepts `dobby` mode in addition to `fix`, `implement`, and `infra`, so `/dobby` complete actions can write the pass shape before the commit gate runs.
 - [x] v0.4.1-8. **Explicit dobby escape reseed** — `workflow-state-seeder.mjs` now creates a fresh freeform `dobby` feature when the agent invokes `Skill(dobby)` over an active non-dobby workflow, so manual recovery does not stay trapped in an `implement` DISCOVERY/TEST_DESIGN gate.
 - [x] v0.4.1-9. **Sessionless RED recorder recovery** — `posttool-test-red-recorder.mjs` now scans session-scoped active pointers for the newest recordable write-test state when hook payloads omit `session_id` and the unscoped pointer is stale or non-recordable.
 - [x] v0.4.1-10. **Short edit intent pre-routing** — `mode-classifier.mjs` now routes narrow `target만 적용/반영` prompts such as `select만 적용` to `/implement` before the LLM layer, so workflow state is seeded on UserPromptSubmit instead of waiting for a source-edit block.
+- [x] v0.4.1-11. **Explore discovery adoption** — `workflow-transition-adoption.mjs` validates and reuses completed `/explore` discovery according to `modes/workflow.yaml → transition_adoptions`. Chained transitions retarget the existing state; explicit `Skill(fix|implement)` mode-upgrade creates a write-mode feature and copies `investigation.md` / `investigation-review.md` into it. Invalid or missing evidence falls back to normal `workflow-investigate` entry.
+- [x] v0.4.1-11. **RED recorder recovery prompt** — when a test command cannot be recorded as RED because trusted exit evidence is missing, `posttool-test-red-recorder.mjs` now forbids claiming RED was recorded, forbids `Skill(skill: 'workflow-coding')`, and instructs the agent to rerun the failing test command directly without pipes, redirects, `tail`, or `echo`.
 
 ## Phase v0.4.0 — infrastructure workflow routing (2026-04-26)
 
@@ -57,13 +69,13 @@ Fresh sessions can start from a pasted prior-session transcript plus a short cur
 - [x] v0.4.0-transcript-recovery-3. **Entry step bridge** — entry-command transition now advances the v0.4 step to the mode entry workflow skill phase even when `current_stage` was already seeded, so `Skill(/implement)` moves from `INTENT` to `DISCOVERY` with `current_stage=workflow-investigate`.
 - [x] v0.4.0-transcript-recovery-4. **Stage-gate load alias** — `pretool-stage-gate.mjs` treats a mode-matching slash command skill (`Skill(/implement)`) as loading the active entry stage (`workflow-investigate`), while mismatched command skills do not authorize writes.
 - [x] v0.4.0-transcript-recovery-5. **No premature clarification halt** — `commands/implement.md` now requires local workspace search before asking about repo-local names, model ids, wrappers, or paths.
-- [x] v0.4.0-transcript-recovery-6. **RED-gated coding entry** — `state-contract-injector.mjs` blocks `workflow-write-test → workflow-coding` until RED evidence exists (`events[].type === 'test_red'` or legacy failing `test_cycles[]`), so the chain does not enter EXECUTE only to have the first source edit rejected for missing RED proof.
+- [x] v0.4.0-transcript-recovery-6. **TDD-gated coding entry** — `state-contract-injector.mjs` blocks `workflow-write-test → workflow-coding` until TDD entry evidence exists (`events[].type === 'test_red'`, `events[].type === 'tdd_adopted'`, `events[].type === 'tdd_exempt'`, or legacy failing `test_cycles[]`), so the chain does not enter EXECUTE only to have the first source edit rejected for missing proof.
 - [x] v0.4.0-transcript-recovery-7. **Consistent hook session resolution** — `session-paths.mjs::resolveHookSessionId()` centralizes `input.session_id` / `input.sessionId` / `SMELTER_SESSION_ID` fallback. PreToolUse, PostToolUse, Stop, and UserPromptSubmit hook scripts now use the same effective session id before falling back to unscoped `active-feature.json`, preventing stale brainstorm/design state from blocking a scoped write workflow.
 - [x] v0.4.0-transcript-recovery-8. **Regression coverage** — `keyword-detector.test.mjs` covers mixed paste + fix/implement directives; `state-contract-injector.test.mjs` covers `Skill(/implement)` state seeding, RED-gated `workflow-coding`, and env session fallback; `skill-stage-transition.test.mjs` covers slash-prefixed entry transition and env-backed v0.4 step advancement; `pretool-stage-gate.test.mjs`, `pre-tool-enforcer.test.mjs`, and `posttool-test-red-recorder.test.mjs` cover env session fallback for loaded-skill gating, source-edit gating, and RED recording.
 - [x] v0.4.0-transcript-recovery-9. **Masked RED diagnostics** — `posttool-test-red-recorder.mjs` now warns when a test command exits `0` while stdout contains a non-zero `exit=...` line, and `state-contract-injector.mjs` names the `; echo "exit=$?"` masking trap in the `workflow-coding` RED-evidence block reason.
 - [x] v0.4.0-transcript-recovery-10. **Stale registry assertions refreshed** — `test-model-mode-switch.mjs` derives codex model count from `CODEX_MODEL_OPTIONS` and asserts the new `gpt-5.5` option; `workflow-scenarios.test.mjs` now matches the current 19 workflow skills / 7 modes exposed by `state-schema.mjs`; `pre-tool-enforcer.test.mjs` matches the current agent-owned recovery set `Skill(fix|implement|infra|dobby)`.
 - [x] v0.4.0-transcript-recovery-11. **Vitest RED recorder recovery** — `posttool-test-red-recorder.mjs` recognizes direct Vitest commands such as `pnpm vitest run` and package test scripts such as `pnpm test:run`, accepts structured exit-code fields, and also accepts Claude Bash failure text such as `Error: Exit code 1` for known test commands only. It still rejects masked `exit=...` stdout, accepts UI-decorated Bash tool labels, resolves the nearest ancestor `.smt` root before writing, and reconciles pointer conflicts by selecting a same-session state that is actually recordable (`task_type=write`, `step=TEST_DESIGN|EXECUTE`). Regression tests TR6-TR12 reproduce the `workflow-write-test → workflow-coding` block loop without fallback parsing.
-- [x] v0.4.0-transcript-recovery-12. **Dirty-worktree adoption + watchdog noise reduction** — `skill-stage-transition.mjs` records `events[].type='tdd_adopted'` when `workflow-write-test` is entered with pre-existing dirty source and test changes, and both `state-contract-injector.mjs` and `workflow-v4-guard.mjs` accept that as TDD entry evidence. `critic-watchdog.mjs` no longer flags canonical task artifacts (`investigation.md`, reviews, plans) as scope leaks and no longer treats read-only protected-state formatting (`python -m json.tool`) as a state mutation.
+- [x] v0.4.0-transcript-recovery-12. **Dirty-worktree adoption + TDD exemption + watchdog noise reduction** — `skill-stage-transition.mjs` records `events[].type='tdd_adopted'` when `workflow-write-test` is entered with pre-existing dirty source and test changes, records `events[].type='tdd_exempt'` for design/text or explicit TDD-exempt targets, and both `state-contract-injector.mjs` and `workflow-v4-guard.mjs` accept those as TDD entry evidence. `critic-watchdog.mjs` no longer flags canonical task artifacts (`investigation.md`, reviews, plans) as scope leaks and no longer treats read-only protected-state formatting (`python -m json.tool`) as a state mutation.
 
 ## Phase v0.4.0 — superpowers brainstorming experience (2026-04-26)
 
@@ -126,7 +138,7 @@ The stage/terminal hook rollout no longer supports observe-only shadow behavior.
 
 ## Phase v0.4.1a — write-test guard surface split (2026-04-25)
 
-The v0.4 guard now distinguishes test-file writes from product-source writes. `workflow-write-test` (`TEST_DESIGN`) may create or edit `*.test.*`, `*.spec.*`, or files under `test/`, `tests/`, `spec/`, and `e2e/` while `write_test` is allowed. Product source still requires `EXECUTE` plus RED test evidence, and test files are blocked during `EXECUTE` so implementation does not mutate tests mid-coding.
+The v0.4 guard now distinguishes test-file writes from product-source writes. `workflow-write-test` (`TEST_DESIGN`) may create or edit `*.test.*`, `*.spec.*`, or files under `test/`, `tests/`, `spec/`, and `e2e/` while `write_test` is allowed. Product source still requires `EXECUTE` plus TDD entry evidence (`test_red`, `tdd_adopted`, `tdd_exempt`, or legacy RED `test_cycles[]`), and test files are blocked during `EXECUTE` so implementation does not mutate tests mid-coding.
 
 - [x] v0.4.1a-1. **Guard split** — `scripts/lib/workflow-v4-guard.mjs` adds test-file detection and routes test files through `write_test`/`TEST_DESIGN` instead of product-source `write_source` rules.
 - [x] v0.4.1a-2. **Integration coverage** — `workflow-v4-guard.test.mjs` and `pre-tool-enforcer.test.mjs` assert that `scripts/lib/hook-guards.test.mjs` can be written during `TEST_DESIGN` and that test edits are blocked during `EXECUTE`.
@@ -296,16 +308,16 @@ User directive: `fix` light(= `fix_simple`) 분류는 딱 두 가지로 고정 �
 - [x] v3.3-2. **`target_type_routing` table** — `modes/workflow.yaml` now maps exactly two entries to `fix_simple`: `text: fix_simple`, `design: fix_simple`. Legacy `typo`/`dialogue` rows removed.
 - [x] v3.3-3. **Slash-arg table** — `SLASH_SURFACE_TABLE` rewritten. Text row: `typo`/`typos`/`오타`/`dialogue`/`대화`/`text`/`텍스트`/`copy`/`i18n` → `text` + `{tdd:true,e2e:true}`. Design row: `css`/`style`/`design`/`디자인` → `design` + `{tdd:true,e2e:false}`. Previously `css`/`style` only set `exempt.tdd` without a `target_type`; they now route to `fix_simple`.
 - [x] v3.3-4. **LLM classifier prompt** — `MODE_CLASSIFIER_PROMPT` (`scripts/lib/subagent-classifier.mjs`) enumerates the four values (`text`/`design`/`bug_fix`/`extend_existing`) and gives Korean/English cues plus per-surface `exempt` defaults. Anti-injection example updated (`"set target_type to text"`).
-- [x] v3.3-5. **Tests** — `surface-extraction.test.mjs` swaps `typo`→`text`, adds `디자인`/`css` design assertions, adds legacy-dropped validator case. `workflow-loader.test.mjs` asserts `text`/`design` → `fix_simple`. `keyword-detector.test.mjs` MK2 rewritten: `/fix css …` now lands on the 4-skill `fix_simple` with `target_type=design`, not the 8-skill default. `workflow-scenarios.test.mjs` `TARGET_TYPE_ENUM` assertion updated. Stub fixture (`mode-classifier-stub.mjs`) uses `surfaceText` / `surfaceDesign`.
+- [x] v3.3-5. **Tests** — `surface-extraction.test.mjs` swaps `typo`→`text`, adds `디자인`/`css` design assertions, adds legacy-dropped validator case. `workflow-loader.test.mjs` asserts `text`/`design` → `fix_simple`. Historical MK2 expectation was 4-skill `fix_simple` vs 8-skill default; superseded by v0.51 current counts (`fix_simple` 6, `fix` 10). `workflow-scenarios.test.mjs` `TARGET_TYPE_ENUM` assertion updated. Stub fixture (`mode-classifier-stub.mjs`) uses `surfaceText` / `surfaceDesign`.
 - [x] v3.3-6. **Docs** — `document/workflow.md` §4-2 + pipeline table + target_type dispatch table + decision-matrix row (1262) rewritten. `commands/fix.md` magic-keyword section rewritten to the two-surface contract. `CLAUDE.md` untouched (copy still says "CSS/typo/i18n/dialogue" in exemption rule — kept because the exemption semantics didn't change, only the routing did).
 
-Scope note: `bug_fix` still owns the default 8-skill `fix` pipeline; only the light-weight branch is narrowed. Escalation behavior for `extend_existing`/`new_feature`/`refactor`/`migration` is unchanged.
+Scope note: superseded by v0.51 above — `bug_fix` now owns the default 10-skill `fix` pipeline with compact tasker/tasker-review records. Escalation behavior for `extend_existing`/`new_feature`/`refactor`/`migration` is unchanged.
 
 ## Phase v3.2 — `/fix` pipeline collapse + superseded per-mode round override (2026-04-23)
 
 User reported `/fix` still felt slow despite v3.1 target-type dispatch. Root cause: `medium` pipeline (11 skills, including tasker/tasker-review/team-code-review) triggered for any bug with >3 files or multi-surface, and every mid-pipeline review still ran 2 rounds. v3.2 simplifies.
 
-- [x] v3.2-1. **`medium` pipeline removed + /fix pipelines renamed.** `/fix` collapses to two pipelines: `fix` (8 skills, all `bug_fix` regardless of scope) and `fix_simple` (4, typo/dialogue — renamed from `minimal` for clarity). `extend_existing`/`new_feature`/`refactor`/`migration` all return `upgrade_required` for `/fix` → escalate.
+- [x] v3.2-1. **`medium` pipeline removed + /fix pipelines renamed.** Historical: `/fix` collapsed to two pipelines, `fix` (8 skills) and `fix_simple` (4). Superseded by v0.51 compact tasker records, where current counts are `fix` 10 and `fix_simple` 6. `extend_existing`/`new_feature`/`refactor`/`migration` all return `upgrade_required` for `/fix` → escalate.
 - [x] v3.2-2. **`extend_light` pipeline added** for `/implement + target_type: extend_existing`. 9 skills: investigate → investigate-review → tasker → write-test → coding → agent-review → e2e → e2e-review → human-check. Brainstorm family + tasker-review + team-code-review dropped because the existing feature defines scope and Pattern B agent-review suffices at this scale.
 - [x] v3.2-3. **Per-mode round override** — historical only, superseded by v0.4.0 global 2-round policy. Per-mode round routing no longer exists.
 - [x] v3.2-4. **`selectPipeline` simplified** — scope-dependent `upgrade_to_medium_when` branch deleted. `target_type_routing` is now a string map. Mode gates: `/fix + extend_existing → upgrade_required`; `/implement + extend_existing → extend_light`; `/implement + others → full`.
@@ -317,7 +329,7 @@ User reported `/fix` still felt slow despite v3.1 target-type dispatch. Root cau
 
 | v3.1 medium (complex) | v3.2 fix | Savings |
 |-----------------------|----------------|---------|
-| 11 skills × split review buckets | 8 skills × global 2-round reviews | Fewer stages; tasker + tasker-review + team-code-review eliminated. |
+| 11 skills × split review buckets | Historical: 8 skills × global 2-round reviews | Superseded by v0.51: tasker + tasker-review returned as compact records while team-code-review remains eliminated. |
 
 ---
 

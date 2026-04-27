@@ -40,6 +40,7 @@ export function loadWorkflowConfig({ root = PLUGIN_ROOT, fresh = false } = {}) {
   const modes = doc.modes ?? {};
   const commandAliases = doc.command_aliases ?? {};
   const targetTypeRouting = doc.target_type_routing ?? {};
+  const transitionAdoptions = Array.isArray(doc.transition_adoptions) ? doc.transition_adoptions : [];
   const verificationRounds = doc.verification_rounds ?? { rounds: 2 };
   const schemaVersion = doc.schema_version ?? 'unknown';
 
@@ -51,6 +52,16 @@ export function loadWorkflowConfig({ root = PLUGIN_ROOT, fresh = false } = {}) {
     if (!skills[m.entry_skill]) throw new Error(`mode ${modeName}: entry_skill ${m.entry_skill} not in skills`);
   }
 
+  for (const policy of transitionAdoptions) {
+    if (!policy?.id) throw new Error('transition_adoptions entry missing id');
+    for (const modeName of [...(policy.from_modes ?? []), ...(policy.to_modes ?? [])]) {
+      if (!modes[modeName]) throw new Error(`transition_adoptions.${policy.id}: unknown mode ${modeName}`);
+    }
+    for (const stage of policy.stages ?? []) {
+      if (!skills[stage]) throw new Error(`transition_adoptions.${policy.id}: unknown stage ${stage}`);
+    }
+  }
+
   const cfg = {
     schema_version: schemaVersion,
     skills,
@@ -58,6 +69,7 @@ export function loadWorkflowConfig({ root = PLUGIN_ROOT, fresh = false } = {}) {
     modes,
     command_aliases: commandAliases,
     target_type_routing: targetTypeRouting,
+    transition_adoptions: transitionAdoptions,
     verification_rounds: verificationRounds,
     _root: root,
   };

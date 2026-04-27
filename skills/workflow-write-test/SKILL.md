@@ -1,8 +1,8 @@
 ---
 name: workflow-write-test
-version: 0.4.1
+version: 0.51
 type: workflow
-consumes: investigation.md OR implementation-plan.md OR tasks.md
+consumes: tasks.md OR implementation-plan.md
 produces: "*.test.*" files (RED), test_cycles entries
 default_pattern: C
 default_agent: executor
@@ -39,11 +39,11 @@ Test-first principle. Write failing tests before any implementation file. `workf
 
 Read the active mode's persisted planning source before writing tests:
 
-- `/fix` → `investigation.md` is the source of the bug, reproduction evidence, and expected corrected behavior.
+- `/fix` → `tasks.md` is the compact v0.51 checklist; use `investigation.md` only as supporting evidence.
 - `/implement` → `implementation-plan.md` is the source of the file map, chosen approach, task queue, and test strategy.
 - `/brainstorm` does not invoke this skill directly; its `tasks.md` is consumed later by `/implement` as requirements context.
 
-Do not route `/fix` through `workflow-tasker`. Fix scope is intentionally narrow: investigation evidence is enough to design the RED regression test. If the fix scope is too large for that, request a mode upgrade instead of silently widening `/fix`.
+Do not bypass `/fix` tasker records. v0.51 keeps the artifact compact but requires explicit works/omissions/verified checkboxes before RED tests.
 
 ## The Iron Law
 

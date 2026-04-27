@@ -2,7 +2,7 @@
 title: Smelter — Philosophy & Direction
 type: canonical
 tags: [smelter, philosophy, workflow, skill-composition]
-updated: 2026-04-26
+updated: 2026-04-28
 ---
 
 # Smelter — Philosophy & Direction
@@ -22,7 +22,7 @@ Smelter composes atomic **workflow skills** (`workflow-*`) into modes:
 | `fix` | `workflow-investigate` | Bug / logic repair |
 | `explore` | `workflow-investigate` | Static investigation (맥락·근거 파악) |
 | `verify` | `workflow-verify` | Non-modifying verification (tests + static inspect + E2E) |
-| `brainstorm` | `workflow-brainstorm` (deep) | New feature / refactor, planning first |
+| `brainstorm` | `workflow-investigate` (deep) → `workflow-brainstorm` | New feature / refactor, planning first |
 | `implement` | `workflow-investigate` → `workflow-implementation-plan` | Code-based implementation planning and build |
 
 Each skill declares a contract (`consumes`, `produces`, `gate`). Failures route via **producer chain** — no retries, no evasion, no self-failure. See `document/workflow.md` §5.
@@ -40,7 +40,7 @@ All plans, decisions, and execution state live on disk under `.smt/`:
 │       ├── task/
 │       │   ├── plan.md                   ← feature goal, scope, acceptance criteria
 │       │   ├── <task-name>.md            ← human-readable task record
-│       │   └── <task-name>.state.json    ← machine state (v0.4.0 schema)
+│       │   └── <task-name>.state.json    ← machine state (v0.51 schema)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e video, screenshots, logs
 └── state/                                ← global session state

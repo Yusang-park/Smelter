@@ -32,29 +32,27 @@ import { detectReviewVerdict, detectReviewFailCause } from './auto-confirm.mjs';
 import { loadWorkflowConfig, getMode as getV3Mode, selectPipeline as v3SelectPipeline } from './lib/workflow-loader.mjs';
 import { transitionV4State } from './lib/workflow-v4-state.mjs';
 import { resolveHookSessionId } from './lib/session-paths.mjs';
+import { hasTddEntryEvidence, phaseForSkill, tddExemptionReason } from './lib/phase-gate.mjs';
+import { validateTaskArtifact, validateTaskReviewArtifact } from './lib/task-artifact-contract.mjs';
 import yaml from 'js-yaml';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PLUGIN_ROOT = dirname(__dirname);
 
-// Entry-command skills (UserPromptSubmit routes `/fix`, `/explore`, etc.
-// as `Skill(skill: '<command>')`). When the agent invokes one of these, the
-// hook seeds `current_stage` from the mode's `entry_skill` so the Stop hook
-// does not loop on a stale null/seeded stage, while `completed_stages` is
-// kept empty (Iron Law #5 — no forged completion).
-const COMMAND_TO_MODE_ENTRY = Object.freeze({
-  brainstorm: 'brainstorm',
-  fix: 'fix',
-  infra: 'infra',
-  explore: 'explore',
-  implement: 'implement',
-  verify: 'verify',
-  dobby: 'dobby',
-});
-
 function normalizeSkillName(skill) {
   return String(skill || '').replace(/^\/+/, '');
+}
+
+function commandToModeEntry(skill) {
+  const clean = normalizeSkillName(skill);
+  if (!clean) return null;
+  try {
+    const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+    return cfg.command_aliases?.[`/${clean}`] ?? cfg.command_aliases?.[clean] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function loadModeEntrySkill(mode) {
@@ -153,17 +151,7 @@ function resolveArtifactPath(statePath, skill) {
 }
 
 function stepForWorkflowSkill(skill) {
-  if (skill === 'workflow-brainstorm' || skill === 'workflow-brainstorm-review' || skill === 'workflow-tasker' || skill === 'workflow-tasker-review' || skill === 'workflow-implementation-plan' || skill === 'workflow-implementation-plan-review' || skill === 'workflow-infra-plan' || skill === 'workflow-infra-plan-review') {
-    return 'PLAN';
-  }
-  if (skill === 'workflow-investigate' || skill === 'workflow-investigate-review') return 'DISCOVERY';
-  if (skill === 'workflow-write-test') return 'TEST_DESIGN';
-  if (skill === 'workflow-coding' || skill === 'workflow-infra-execute') return 'EXECUTE';
-  if (skill === 'workflow-verify' || skill === 'workflow-e2e' || skill === 'workflow-e2e-review' || skill === 'workflow-agent-review' || skill === 'workflow-team-code-review') {
-    return 'VERIFY';
-  }
-  if (skill === 'workflow-human-check') return 'HUMAN_CHECK';
-  return null;
+  return phaseForSkill(skill);
 }
 
 function transitionBridgedV4Step(state, skill) {
@@ -171,11 +159,6 @@ function transitionBridgedV4Step(state, skill) {
   const nextStep = stepForWorkflowSkill(skill);
   if (!nextStep || !state.step_flow.includes(nextStep)) return;
   transitionV4State(state, nextStep);
-}
-
-function hasTddEntryEvidence(state) {
-  return (state.events || []).some(e => e?.type === 'test_red' || e?.type === 'tdd_adopted') ||
-    (state.test_cycles || []).some(c => c?.run_result === 'fail' && ['added_case', 'modified_case'].includes(c?.action));
 }
 
 function dirtyWorktreeHasSourceAndTest(cwd) {
@@ -201,6 +184,11 @@ function dirtyWorktreeHasSourceAndTest(cwd) {
   return hasSource && hasTest;
 }
 
+function hasExplicitTddEntryEvent(state) {
+  return (state.events || []).some(e => e?.type === 'test_red' || e?.type === 'tdd_adopted' || e?.type === 'tdd_exempt') ||
+    (state.test_cycles || []).some(c => c?.run_result === 'fail' && ['added_case', 'modified_case'].includes(c?.action));
+}
+
 function main() {
   printTag('enter');
   try {
@@ -212,7 +200,8 @@ function main() {
 
     const skill = normalizeSkillName(input.tool_input?.skill || '');
     const isWorkflowSkill = skill.startsWith('workflow-');
-    const isEntryCommand = Object.prototype.hasOwnProperty.call(COMMAND_TO_MODE_ENTRY, skill);
+    const entryMode = commandToModeEntry(skill);
+    const isEntryCommand = Boolean(entryMode);
     if (!isWorkflowSkill && !isEntryCommand) {
       process.stdout.write(JSON.stringify({ continue: true }));
       return;
@@ -232,7 +221,7 @@ function main() {
     // completed_stages is NOT touched — Iron Law #5 requires artifact-backed
     // completion which entry seeding cannot provide.
     if (isEntryCommand) {
-      const expectedMode = COMMAND_TO_MODE_ENTRY[skill];
+      const expectedMode = entryMode;
       if (state.mode !== expectedMode) {
         printTag(`entry-command ${skill} does not match state.mode=${state.mode} — no-op`);
         process.stdout.write(JSON.stringify({ continue: true }));
@@ -280,13 +269,29 @@ function main() {
     // explicitly forbidden.
     const artifactPath = resolveArtifactPath(statePath, skill);
     const artifactExists = artifactPath ? (existsSync(artifactPath) && statSync(artifactPath).isFile() && statSync(artifactPath).size > 0) : false;
+    let artifactReady = artifactExists;
+    if (artifactExists && (skill === 'workflow-tasker' || skill === 'workflow-tasker-review')) {
+      try {
+        const artifactText = readFileSync(artifactPath, 'utf-8');
+        const errors = skill === 'workflow-tasker'
+          ? validateTaskArtifact(artifactText)
+          : validateTaskReviewArtifact(artifactText);
+        if (errors.length > 0) {
+          artifactReady = false;
+          printTag(`${skill} artifact contract failed: ${errors.join('; ')}`);
+        }
+      } catch (err) {
+        artifactReady = false;
+        printTag(`${skill} artifact contract read failed: ${err.message}`);
+      }
+    }
 
     // Only write a pass event when we have a real artifact to cite. Skills
     // without a canonical artifact (workflow-coding / workflow-write-test)
     // must produce their own pass event via separate mechanisms.
     const alreadyHasPass = (state.events || []).some(e => e.skill === skill && e.result === 'pass');
     const alreadyHasFail = (state.events || []).some(e => e.skill === skill && e.result === 'fail');
-    if (artifactExists && !alreadyHasPass && !alreadyHasFail) {
+    if (artifactReady && !alreadyHasPass && !alreadyHasFail) {
       if (!Array.isArray(state.events)) state.events = [];
       // Review-skill verdict inspection: for *-review artifacts the stage's
       // canonical output is the verdict itself. If the review artifact
@@ -325,6 +330,22 @@ function main() {
         evidence: { type: 'diff', summary: 'pre-existing dirty source and test changes adopted' },
       });
       printTag('workflow-write-test adopted pre-existing dirty source+test changes');
+    }
+
+    const tddExemptReason = skill === 'workflow-write-test' && !hasExplicitTddEntryEvent(state)
+      ? tddExemptionReason(state)
+      : null;
+    if (tddExemptReason) {
+      if (!Array.isArray(state.events)) state.events = [];
+      state.events.push({
+        t: now,
+        type: 'tdd_exempt',
+        skill: 'workflow-write-test',
+        result: 'pass',
+        declarer: 'hook',
+        evidence: { type: 'diff', summary: tddExemptReason },
+      });
+      printTag(`workflow-write-test recorded TDD exemption: ${tddExemptReason}`);
     }
 
     // Historical pipeline re-selection behavior, retained in v0.4 for

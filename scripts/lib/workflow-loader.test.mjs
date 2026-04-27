@@ -21,18 +21,30 @@ import {
 
 test('loadWorkflowConfig parses the unified workflow.yaml', () => {
   const cfg = loadWorkflowConfig();
-  assert.equal(cfg.schema_version, '0.4.1');
+  assert.equal(cfg.schema_version, '0.51');
   assert.ok(cfg.skills, 'skills present');
   assert.ok(cfg.pipelines, 'pipelines present');
   assert.ok(cfg.modes, 'modes present');
   assert.ok(cfg.command_aliases, 'command_aliases present');
   assert.ok(cfg.target_type_routing, 'target_type_routing present');
   assert.ok(cfg.verification_rounds, 'verification_rounds present');
+  assert.ok(Array.isArray(cfg.transition_adoptions), 'transition_adoptions present');
 
   assert.deepEqual(
     Object.keys(cfg.modes).sort(),
     ['brainstorm', 'fix', 'implement', 'infra', 'explore', 'verify', 'dobby'].sort(),
   );
+});
+
+test('transition_adoptions declares explore discovery reuse in workflow.yaml', () => {
+  const cfg = loadWorkflowConfig();
+  const policy = cfg.transition_adoptions.find(p => p.id === 'explore_discovery_to_write');
+  assert.ok(policy, 'explore discovery adoption policy must be declared');
+  assert.deepEqual(policy.from_modes, ['explore']);
+  assert.deepEqual(policy.to_modes, ['fix', 'implement']);
+  assert.deepEqual(policy.stages, ['workflow-investigate', 'workflow-investigate-review']);
+  assert.equal(policy.copy_artifacts, true);
+  assert.equal(policy.advance_to_next_uncompleted, true);
 });
 
 test('verification_rounds globals', () => {
@@ -79,6 +91,13 @@ test('getMode(brainstorm) read-only + planning_only pipeline', () => {
   const brainstorm = getMode('brainstorm');
   assert.equal(brainstorm.read_only, true);
   assert.equal(brainstorm.pipeline, 'planning_only');
+  assert.equal(brainstorm.entry_skill, 'workflow-investigate');
+  assert.deepEqual(brainstorm.allowed_skills.slice(0, 4), [
+    'workflow-investigate',
+    'workflow-investigate-review',
+    'workflow-brainstorm',
+    'workflow-brainstorm-review',
+  ]);
   assert.ok(!brainstorm.allowed_skills.includes('workflow-coding'));
   assert.ok(brainstorm.allowed_skills.includes('workflow-tasker'));
 });
@@ -124,15 +143,30 @@ test('all fix/implement pipelines terminate with workflow-human-check', () => {
   }
 });
 
-test('fix pipeline is 8 skills including investigate-review, no tasker, no team-code-review', () => {
+test('fix pipeline records compact task checklist before write-test', () => {
   const cfg = loadWorkflowConfig();
   const steps = cfg.pipelines.fix;
-  assert.equal(steps.length, 8);
-  assert.ok(steps.includes('workflow-investigate-review'));
-  assert.ok(!steps.includes('workflow-tasker'));
-  assert.ok(!steps.includes('workflow-tasker-review'));
+  assert.equal(steps.length, 10);
+  assert.deepEqual(steps.slice(0, 4), [
+    'workflow-investigate',
+    'workflow-investigate-review',
+    'workflow-tasker',
+    'workflow-tasker-review',
+  ]);
+  assert.equal(steps[4], 'workflow-write-test');
   assert.ok(!steps.includes('workflow-team-code-review'));
   assert.ok(!steps.includes('workflow-brainstorm'));
+});
+
+test('fix_simple also records compact task checklist before coding', () => {
+  const cfg = loadWorkflowConfig();
+  const steps = cfg.pipelines.fix_simple;
+  assert.deepEqual(steps.slice(0, 3), [
+    'workflow-investigate',
+    'workflow-tasker',
+    'workflow-tasker-review',
+  ]);
+  assert.equal(steps[3], 'workflow-coding');
 });
 
 test('implement full pipeline is code-based and does not include PM brainstorm or tasker stages', () => {
@@ -224,13 +258,13 @@ test('getVerificationRounds ignores mode-specific branching', () => {
 test('nextSkill returns first skill of pipeline when nothing completed', () => {
   assert.equal(nextSkill('fix', []), 'workflow-investigate');
   assert.equal(nextSkill('implement', []), 'workflow-investigate');
-  assert.equal(nextSkill('brainstorm', []), 'workflow-brainstorm');
+  assert.equal(nextSkill('brainstorm', []), 'workflow-investigate');
 });
 
 test('nextSkill skips completed stages', () => {
-  // fix default pipeline = fix (no tasker); next after investigate + investigate-review is write-test.
+  // fix default pipeline records a compact task checklist before write-test.
   const completed = ['workflow-investigate', 'workflow-investigate-review'];
-  assert.equal(nextSkill('fix', completed), 'workflow-write-test');
+  assert.equal(nextSkill('fix', completed), 'workflow-tasker');
 });
 
 test('nextSkill returns null when pipeline exhausted', () => {

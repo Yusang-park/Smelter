@@ -49,7 +49,7 @@ test('write contract blocks test file edits during EXECUTE', () => {
   transitionV4State(state, 'EXECUTE');
   const result = evaluateToolUse(state, { toolName: 'Edit', filePath: '/repo/src/app.test.ts' });
   assert.equal(result.decision, 'block');
-  assert.match(result.reason, /test write blocked at step=EXECUTE/);
+  assert.match(result.reason, /test write blocked at phase=EXECUTE/);
 });
 
 test('write contract allows source edits in EXECUTE after red test evidence', () => {
@@ -77,6 +77,21 @@ test('write contract accepts adopted dirty-worktree TDD evidence', () => {
     result: 'pass',
     declarer: 'hook',
     evidence: { type: 'diff', summary: 'pre-existing user test/source changes adopted' },
+  });
+  transitionV4State(state, 'EXECUTE');
+  const result = evaluateToolUse(state, { toolName: 'Edit', filePath: '/repo/src/app.ts' });
+  assert.equal(result.decision, 'allow');
+});
+
+test('write contract accepts TDD exemption evidence in EXECUTE', () => {
+  const state = createV4State({ taskId: 't4d', userMode: 'fix' });
+  state.events.push({
+    t: new Date().toISOString(),
+    type: 'tdd_exempt',
+    skill: 'workflow-write-test',
+    result: 'pass',
+    declarer: 'hook',
+    evidence: { type: 'diff', summary: 'css_only' },
   });
   transitionV4State(state, 'EXECUTE');
   const result = evaluateToolUse(state, { toolName: 'Edit', filePath: '/repo/src/app.ts' });

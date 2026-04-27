@@ -5,15 +5,15 @@ lang: ko
 base: document/workflow.md
 tags: [smelter, workflow, skill-composition, producer-routing, tdd, e2e, auto-confirm, korean]
 status: translation
-version: 0.4.0
+version: 0.51
 created: 2026-04-19
-updated: 2026-04-26
+updated: 2026-04-28
 ---
 
 > **Note**: 이 문서는 `document/workflow.md` (English canonical) 의 한국어 번역본입니다.
 > 원본이 항상 최신이며, 번역과 상충 시 원본을 따릅니다.
 
-# Smelter Workflow — Skill-Composition Model
+# Smelter Workflow — v0.51 Skill-Composition Model
 
 > Smelter는 **Skill을 조합**하여 모드를 구성한다. 각 스킬은 자기 contract (`consumes` / `produces` / `gate`)를 선언하고, 실패 시 **producer chain**으로 라우팅된다.
 > **Workflow 스킬** (`workflow-*` 접두사)만 mode whitelist의 제약을 받으며, 일반 유틸리티 스킬은 자유롭게 사용 가능하다.
@@ -83,14 +83,14 @@ v0.4 (2026-04-26): 기획/설계 커맨드는 `/brainstorm`만 사용하고, 읽
 
 **분류기 단일 소스**: `scripts/mode-classifier.mjs` — `classify(input)`을 내보내는 순수 모듈. `scripts/keyword-detector.mjs` (UserPromptSubmit 훅)가 명령 해석 step 2에서 이를 호출한다. LLM 분류가 실패하면 fallback 없이 해당 prompt는 unseeded로 통과한다.
 
-**복합 의도 (chained modes)**: 연결어가 결합된 체인 (예: "분석하고 구현해줘" → `[explore, implement]`, "테스트하고 문제 있으면 고쳐" → `[verify, fix]`) 감지 시 분류기는 `chained_modes: MODES[]`를 반환한다. `keyword-detector`는 이 값을 엔트리 시점에 `.state.json`에 기록하고, `auto-confirm.decide()`가 `mode_transition` 시그널에서 이를 읽어 `consumeNextChainedMode`로 사용자 프롬프트 없이 자동 진행한다 (`chain_advance`). 진입 모드는 항상 `chained_modes[0]`.
+**복합 의도 (chained modes)**: 연결어가 결합된 체인 (예: "분석하고 구현해줘" → `[explore, implement]`, "테스트하고 문제 있으면 고쳐" → `[verify, fix]`) 감지 시 분류기는 `chained_modes: MODES[]`를 반환한다. `keyword-detector`는 이 값을 엔트리 시점에 `.state.json`에 기록하고, `auto-confirm.decide()`가 `mode_transition` 시그널에서 이를 읽어 `consumeNextChainedMode`로 사용자 프롬프트 없이 자동 진행한다 (`chain_advance`). 진입 모드는 항상 `chained_modes[0]`. 전환 시 stage reuse는 `modes/workflow.yaml → transition_adoptions`에 선언하고 `workflow-transition-adoption.mjs`가 실행한다. hook은 모드별 reuse topology를 하드코딩하지 않는다.
 
 #### 모드 요약
 
 | Mode | 진입 스킬 | Pipeline | 용도 |
 |------|---------|----------|------|
-| `brainstorm` | `workflow-brainstorm` (deep) | `planning_only` | 기획·설계 (코드 변경 없음). `brainstorm.md`+`tasks.md` 산출. |
-| `fix` | `workflow-investigate` | `fix` / `fix_simple` | 버그·회귀 수정. text/design 표면은 `fix_simple`, 나머지 `bug_fix`는 8-skill `fix`. |
+| `brainstorm` | `workflow-investigate` (deep) → `workflow-brainstorm` | `planning_only` | 기획·설계 (코드 변경 없음). `brainstorm.md`+`tasks.md` 산출. |
+| `fix` | `workflow-investigate` | `fix` / `fix_simple` | 버그·회귀 수정. text/design 표면은 `fix_simple`, 나머지 `bug_fix`는 10-skill `fix`. |
 | `implement` | `workflow-investigate` → `workflow-implementation-plan` | `full` | 기존 코드 기반 구현 계획과 기능 개발. |
 | `explore` | `workflow-investigate` | `explore_only` | 정적 파악만 수행 (맥락·근거). mode transition으로 종료. |
 | `verify` | `workflow-verify` | `verify_only` | 비수정 검증 (테스트·점검·real-interface E2E). |
@@ -287,8 +287,8 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 | 2 | `workflow-brainstorm-review` | `brainstorm.md` | `brainstorm-review.md` | pass/fail/reshape |
 | 3 | `workflow-investigate` | `brainstorm.md` OR `<trigger_prompt>` | `investigation.md` | 기존 코드·데이터 조사 |
 | 4 | `workflow-investigate-review` | `investigation.md` | `investigation-review.md` | pass/fail/reshape |
-| 5 | `workflow-tasker` | `investigation.md` [+`brainstorm.md`] | `tasks.md` (Queue + Approaches), `target_type`, `team_runtime` 초기 할당 | `target_type: new_feature\|refactor\|extend_existing\|migration\|bug_fix` |
-| 6 | `workflow-tasker-review` | `tasks.md` | `tasks-review.md` | side-effect 검토 포함. pass/fail/reshape |
+| 5 | `workflow-tasker` | `investigation.md` [+`brainstorm.md`] | `tasks.md` (compact checklist), `target_type`, `team_runtime` 초기 할당 | `/fix`와 `/brainstorm`의 scope 기록 |
+| 6 | `workflow-tasker-review` | `tasks.md` | `tasks-review.md` | works/omissions/verified 확인. pass/fail/reshape |
 | 7 | `workflow-implementation-plan` | `investigation.md` | `implementation-plan.md` | 코드 기반 구현 계획 |
 | 8 | `workflow-implementation-plan-review` | `implementation-plan.md` | `implementation-plan-review.md` | 구현 계획 검토 |
 | 9 | `workflow-write-test` | `investigation.md` / `implementation-plan.md` | `*.test.*` files (RED), `test_cycles` 엔트리 | surface-based 면제 적용 |
@@ -320,24 +320,26 @@ can_delegate_to: [ui-ux-pro-max, copywriting, vercel-react-best-practices]
 ## 4. Mode Definitions (v0.4)
 
 v0.4는 단일 YAML 파일 구성:
-- `modes/workflow.yaml` — 단일 소스: skills + pipelines + modes + target_type_routing + verification_rounds + command_aliases
+- `modes/workflow.yaml` — 단일 소스: skills + pipelines + modes + target_type_routing + transition_adoptions + verification_rounds + command_aliases
 
 정식 파이프라인/스킬 오버라이드 스펙은 영문 `workflow.md` §4 참조 — 아래는 한국어 개요.
 
 ### 4-1. brainstorm (`/brainstorm`)
 
-**pipeline**: `planning_only` (brainstorm → brainstorm-review → investigate → investigate-review → tasker → tasker-review)
+**pipeline**: `planning_only` (investigate → investigate-review → brainstorm → brainstorm-review → tasker → tasker-review)
 **defaults**: `exempt.tdd: true`, `exempt.e2e: true`, `read_only: true`
-**entry**: `workflow-brainstorm` (depth: deep)
+**entry**: `workflow-investigate` (depth: deep), discovery/review 후 `workflow-brainstorm` 진행
 **용도**: 코드 변경 없는 기획. `brainstorm.md`+`tasks.md` 산출. 사용자가 `tasks.md` 승인 후 `mode_transition_to_implement`로 종료.
 
 ### 4-2. fix (`/fix`)
 
-**allowed_skills**: 기본 `fix` pipeline은 `workflow-investigate`, `workflow-investigate-review`, `workflow-write-test`, `workflow-coding`, `workflow-agent-review`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`이다. `fix_simple`은 `text`/`design` 표면에서 `workflow-investigate`, `workflow-coding`, `workflow-e2e`, `workflow-human-check`만 사용한다.
+**allowed_skills**: 기본 `fix` pipeline은 `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`, `workflow-write-test`, `workflow-coding`, `workflow-agent-review`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`이다. `fix_simple`은 `text`/`design` 표면에서 `workflow-investigate`, `workflow-tasker`, `workflow-tasker-review`, `workflow-coding`, `workflow-e2e`, `workflow-human-check`를 사용한다.
 
 ```
 workflow-investigate
 → workflow-investigate-review
+→ workflow-tasker
+→ workflow-tasker-review
 → workflow-write-test
 → workflow-coding
 → workflow-agent-review
@@ -345,6 +347,8 @@ workflow-investigate
 → workflow-e2e-review
 → workflow-human-check
 ```
+
+v0.51 `tasks.md`는 긴 Markdown 계획이 아니라 frontmatter + 7개 한 줄 체크박스다. `queue`는 downstream 실행 항목이라 미체크 가능하지만, `goal`, `approach`, `works`, `omissions`, `verified`, `team_runtime`은 체크되어야 tasker 완료가 인정된다. `tasks-review.md`는 기능 동작, 누락 없음, 검증 명령, side effect, 결정을 별도 체크한다.
 
 ### 4-3. explore (entry: `/explore` 또는 자동 분기)
 
@@ -361,29 +365,20 @@ workflow-investigate
 
 **출구**: 정적 파악 결과를 제시하고 종료한다. 필요 시 다음 입력에서 `/fix`, `/infra`, `/brainstorm`, `/implement`, `/verify` 중 하나로 새 workflow를 시작한다.
 
+`/explore`가 `/fix` 또는 `/implement`로 이어질 때는 완료된 discovery를 반복하지 않는다. 이 정책은 `modes/workflow.yaml → transition_adoptions.explore_discovery_to_write`가 선언한다. 조건은 파일 기반이다: `completed_stages`에 선언된 stage가 있고, `events[]`에 같은 stage의 pass + `evidence.path`가 있으며, artifact basename이 `investigation.md` / `investigation-review.md`와 일치해야 한다. chained-mode 전환은 같은 state를 write mode로 retarget하고, 명시 `Skill(fix|implement)` mode-upgrade는 새 write feature를 만들면서 정책 artifact를 새 task 디렉터리로 복사한다. 증거가 없거나 깨져 있으면 기존처럼 `workflow-investigate`부터 시작한다.
+
 ### 4-4. brainstorm (entry: `/brainstorm` 또는 자동 분기)
 
-**allowed_skills**: `workflow-brainstorm`, `workflow-brainstorm-review`, `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`
+**allowed_skills**: `workflow-investigate`, `workflow-investigate-review`, `workflow-brainstorm`, `workflow-brainstorm-review`, `workflow-tasker`, `workflow-tasker-review`
 
 ```
-  ╭─────────────────────╮      ╭────────────────────────────╮      ╭──────────────────────╮
-  │ workflow-brainstorm │─────▶│ workflow-brainstorm-review │─────▶│ workflow-investigate │
-  ╰─────────────────────╯      ╰────────────────────────────╯      ╰──────────────────────╯
-           ▲                          │ ▲                                     │
-           │ fail                     │ │ reshape                             │
-           └──────────────────────────┘ └─────────────────────────────────────┤
-                                                                              ▼
-  ╭────────────────────────────╮    ╭─────────────────╮    ╭─────────────────────────╮
-  │ workflow-investigate-review│───▶│ workflow-tasker │───▶│ workflow-tasker-review  │
-  ╰────────────────────────────╯    ╰─────────────────╯    ╰─────────────────────────╯
-              ▲                                                         │ pass
-              │ fail                                                    ▼
-              └─────────────────                              ╭──────────────────╮
-                                                             │ mode_transition  │
-                                                             ╰──────────────────╯
-                                                                      │
-                                                                      ▼
-                                                                  /implement
+workflow-investigate
+  → workflow-investigate-review
+  → workflow-brainstorm
+  → workflow-brainstorm-review
+  → workflow-tasker
+  → workflow-tasker-review
+  → mode_transition_to_implement
 ```
 
 **특징**:
@@ -795,19 +790,16 @@ E2E      : <surface + pass/fail + 산출물>
 선택지:
 
 ```
-[1] rework   → 재작업 대상 명시 → active_feedback 생성 → target_skill 라우팅
-[2] complete → Git 옵션
-[3] hold     → status: blocked 기록
-[4] upgrade  → 현재 모드가 부족 → 상위 모드로 전환
+[1] rework                 → 재작업 대상 명시 → active_feedback 생성 → target_skill 라우팅
+[2] complete-commit-current → results.md finalize → human-check pass 기록 → 현재 브랜치에 git commit
+[3] complete-new-branch-pr → results.md finalize → human-check pass 기록 → 새 브랜치 push → gh pr create
+[4] hold                   → status: blocked 기록
+[5] upgrade                → 현재 모드가 부족 → 상위 모드로 전환
 ```
 
-### 10-3. Git 옵션 (complete)
+### 10-3. 마무리 동작
 
-```
-[a] 현재 브랜치 push
-[b] 새 브랜치 push  (브랜치명 입력)
-[c] 로컬 완료 (push 없음)
-```
+`complete-*` 선택 시 먼저 `results.md`를 작성하고 `finalize-human-check.mjs`가 human-check pass shape를 기록하게 둔 뒤, 선택한 Git 동작만 수행한다. `complete-commit-current`는 push 없이 현재 브랜치에 commit한다. `complete-new-branch-pr`는 feature slug 기반의 새 작업 브랜치를 만들거나 전환해 commit하고 upstream push 후 `gh pr create`를 실행한다.
 
 ### 10-4. 마무리
 

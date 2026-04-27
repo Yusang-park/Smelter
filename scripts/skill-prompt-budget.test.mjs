@@ -42,12 +42,13 @@ test('high-traffic workflow skill prompts stay compact without losing gates', ()
   }
 });
 
-test('workflow-human-check complete path uses native choice and auto-commits locally', () => {
+test('workflow-human-check complete path uses native choice with explicit git actions', () => {
   const text = readSkill('workflow-human-check');
   assert.match(text, /AskUserQuestion/);
   assert.match(text, /Plain-text menus.*invalid/i);
   assert.match(text, /Do not render the options as Markdown\/plain text/i);
-  assert.match(text, /complete[\s\S]*git commit/i);
-  assert.doesNotMatch(text, /commit-local|push-pr|keep-as-is/i, 'complete must not ask a second git-options question');
+  assert.match(text, /complete-commit-current[\s\S]*git commit/i);
+  assert.match(text, /complete-new-branch-pr[\s\S]*gh pr create/i);
+  assert.match(text, /Do not ask a second git-options question/i);
   assert.doesNotMatch(text, /If unavailable, present the exact labels/i, 'human-check must not allow prose fallback menus');
 });

@@ -45,19 +45,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PLUGIN_ROOT = dirname(__dirname);
 
-// Command name (on disk) → v0.4 mode id. Retired planning/simple-fix command
-// spellings are removed entirely and are not accepted as aliases.
-const COMMAND_TO_MODE = {
-  brainstorm: 'brainstorm',
-  fix: 'fix',
-  infra: 'infra',
-  explore: 'explore',
-  implement: 'implement',
-  verify: 'verify',
-  dobby: 'dobby',
-};
-
 const RETIRED_SLASH_COMMAND_RE = /^\/(?:investigate|think|plan|simple-fix)\b/i;
+
+function commandToMode(commandName) {
+  const clean = String(commandName || '').replace(/^\/+/, '');
+  if (!clean) return null;
+  const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+  return cfg.command_aliases?.[`/${clean}`] ?? cfg.command_aliases?.[clean] ?? null;
+}
+
+function isReadOnlyMode(mode) {
+  const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+  return Boolean(cfg.modes?.[mode]?.read_only);
+}
+
+function isWriteMode(mode) {
+  const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+  return Boolean(cfg.modes?.[mode]) && !isReadOnlyMode(mode);
+}
 
 // v3 loader: reads modes/{skills,pipelines,modes}.yaml via workflow-loader.mjs.
 // No legacy JSON fallback — modes/*.json has been removed.
@@ -442,7 +447,8 @@ function writeAtomic(path, content) {
 // session does not drag another session's active feature around.
 function shouldCreateNewFeature(directory, sessionId, prompt, source, commandName = '') {
   if (source === 'slash') return { create: true, reason: 'slash-command' };
-  if (commandName === 'explore' && source !== 'magic') return { create: true, reason: 'explore-command-reseed' };
+  const requestedMode = commandToMode(commandName);
+  if (requestedMode && isReadOnlyMode(requestedMode) && source !== 'magic') return { create: true, reason: 'read-only-command-reseed' };
   const text = String(prompt || '');
   if (/새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작/i.test(text)) {
     return { create: true, reason: 'explicit-new-intent' };
@@ -464,19 +470,14 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
     if (Array.isArray(state.completed_stages) && state.completed_stages.includes('workflow-human-check')) {
       return { create: true, reason: 'prior-completed' };
     }
-    // Mode-upgrade: read-only exploration (verify/explore/brainstorm) → write
-    // mode (fix/implement). Reusing would leave state.mode at the read-only
-    // value and pre-tool-enforcer would block every code Edit/Write. Must
-    // match the branch in lib/workflow-state-seeder.mjs (duplicated pending
-    // deduplication of this local copy).
+    // Mode-upgrade: read-only mode → write mode. Reusing would leave state.mode at the read-only
+    // value and pre-tool-enforcer would block every code Edit/Write. Mode
+    // categories come from workflow.yaml, not from a local hook table.
     //
     // Gated on source==='skill-tool' only — natural-language follow-ups
     // (source==='magic') stay reuse so users sending a second prompt do not
     // accidentally get a new feature when the mode classifier reroutes.
-    const requestedMode = COMMAND_TO_MODE[commandName];
-    if (source === 'skill-tool' &&
-        (requestedMode === 'fix' || requestedMode === 'implement' || requestedMode === 'infra') &&
-        (state.mode === 'verify' || state.mode === 'explore' || state.mode === 'brainstorm')) {
+    if (source === 'skill-tool' && requestedMode && isWriteMode(requestedMode) && isReadOnlyMode(state.mode)) {
       return { create: true, reason: 'mode-upgrade' };
     }
     return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath, state };
@@ -484,7 +485,7 @@ function shouldCreateNewFeature(directory, sessionId, prompt, source, commandNam
 }
 
 function seedWorkflowState(directory, commandName, prompt, sessionId, args = '', chainedModes = null, source = 'magic', preClassification = null) {
-  const mode = COMMAND_TO_MODE[commandName];
+  const mode = commandToMode(commandName);
   if (!mode) return; // cancel, queue — utility commands, not v2 workflow modes
 
   // Phase 11 C: reuse active feature for natural-language follow-ups.

@@ -409,8 +409,8 @@ test('CE2b error: current=workflow-write-test, skill=workflow-coding without RED
     assert.equal(out.continue, false, 'coding must not start before a failing test is recorded');
     assert.match(
       out.hookSpecificOutput?.permissionDecisionReason || out.stopReason || '',
-      /TDD entry evidence.*test_red.*tdd_adopted.*echo/is,
-      'block reason must explain that echo-masked failures are not RED evidence'
+      /TDD entry evidence.*test_red.*tdd_adopted.*tdd_exempt.*echo/is,
+      'block reason must explain TDD evidence options and echo-masked failures'
     );
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
@@ -430,6 +430,26 @@ test('CE2d happy: current=workflow-write-test, skill=workflow-coding with adopte
       }],
     });
     const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE2d' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE2e happy: current=workflow-write-test, skill=workflow-coding with TDD exemption evidence → allow', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE2e', {
+      current_stage: 'workflow-write-test',
+      events: [{
+        t: new Date().toISOString(),
+        type: 'tdd_exempt',
+        skill: 'workflow-write-test',
+        result: 'pass',
+        declarer: 'hook',
+        evidence: { type: 'diff', summary: 'css_only' },
+      }],
+    });
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE2e' }, cwd);
     const out = parse(r.stdout);
     assert.equal(out.continue, true);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -482,6 +502,28 @@ test('CE5 error: current=workflow-investigate, skill=workflow-coding (skip) → 
       /chain|workflow-investigate-review|expected/i,
       'block reason must name the expected next skill'
     );
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('CE5b error: phase skip blocks workflow-coding even when allowed_skills order would allow it', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-CE5b', {
+      current_stage: 'workflow-investigate',
+      allowed_skills: ['workflow-investigate', 'workflow-coding'],
+      events: [{ type: 'tdd_exempt', skill: 'workflow-write-test', result: 'pass', declarer: 'hook', t: new Date().toISOString() }],
+    });
+    const statePath = join(cwd, '.smt', 'features', 'ce-test-slug', 'task', 'ce-test-slug.state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    state.task_type = 'write';
+    state.step = 'DISCOVERY';
+    state.step_flow = ['INTENT', 'DISCOVERY', 'TEST_DESIGN', 'EXECUTE', 'VERIFY', 'HUMAN_CHECK', 'DONE'];
+    writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'workflow-coding' }, session_id: 'sess-CE5b' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false, 'phase gate must beat allowed_skills order');
+    assert.match(out.stopReason || out.hookSpecificOutput?.permissionDecisionReason || '', /phase skip|TEST_DESIGN|EXECUTE/i);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 

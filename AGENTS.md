@@ -1,4 +1,4 @@
-# Smelter — Agent Instructions v0.4.1
+# Smelter — Agent Instructions v0.51
 
 **"Agents do not memorize. Agents read files."** Plans/tasks/decisions -> `.smt/`. Progress in `features/<slug>/task/{name}.md` + `.state.json`.
 
@@ -17,7 +17,7 @@ Exemption: CSS/style, i18n/copy, typo, pure-dialogue — skip TDD. See `document
 
 | Command | Mode | Task type | Entry skill | Use |
 |---------|------|-----------|-------------|-----|
-| `/brainstorm` | brainstorm | design | `workflow-brainstorm` (deep) | New features/refactors |
+| `/brainstorm` | brainstorm | design | `workflow-investigate` -> `workflow-brainstorm` | New features/refactors |
 | `/implement` | implement | write | `workflow-investigate` -> `workflow-implementation-plan` | Build on existing code |
 | `/fix` | fix | write | `workflow-investigate` | Bug/logic repair, trivial text/CSS |
 | `/infra` | infra | infra | `workflow-investigate` -> `workflow-infra-plan` | Infrastructure/cloud/IaC operations |
@@ -26,6 +26,8 @@ Exemption: CSS/style, i18n/copy, typo, pure-dialogue — skip TDD. See `document
 | `/dobby` | dobby | freeform | `workflow-human-check` | Explicit no-pipeline escape hatch |
 
 Mode classifier (`scripts/mode-classifier.mjs`) auto-routes; slash commands override. State in `.smt/features/<slug>/task/<task>.state.json`. Contracts in `document/workflow.md`.
+
+**Workflow source of truth:** workflow topology belongs in `modes/workflow.yaml` (`skills`, `pipelines`, `modes`, `target_type_routing`, `transition_adoptions`, `verification_rounds`, `command_aliases`). Hooks/scripts should load and execute this config; do not scatter mode-specific workflow branches in individual hooks unless the hook is only enforcing a generic runtime safety rule.
 
 **Auto-Confirm:** `auto-confirm.mjs` on Stop -> `.smt/state/auto-confirm-queue-<session_id>.json` -> injected by `auto-confirm-consumer.mjs`. Gate: default **ON** — set `~/.smt/config.json { "autoConfirm": false }` to disable. Cancel: `/cancel [hard]`. Redirect: `/queue <intent>`.
 

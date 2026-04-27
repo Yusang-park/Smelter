@@ -1,20 +1,20 @@
 ---
 name: workflow-human-check
-version: 0.4.1
+version: 0.51
 type: workflow
 consumes: all artifacts + team_review.md
-produces: user decision (rework | complete | hold | upgrade)
+produces: user decision (rework | complete-commit-current | complete-new-branch-pr | hold | upgrade)
 default_pattern: User
 supports_patterns: [User]
 halts_session: true
 gate:
   postcondition:
-    - user_decision: "rework | complete | hold | upgrade"
+    - user_decision: "rework | complete-commit-current | complete-new-branch-pr | hold | upgrade"
 ---
 
 # workflow-human-check
 
-Final user review. This is the only allowed halting point. No task is complete until the user chooses `complete` here.
+Final user review. This is the only allowed halting point. No task is complete until the user chooses one of the `complete-*` actions here.
 
 Announce: `I'm using workflow-human-check to render the summary report and collect the user's complete / rework / hold / upgrade decision.`
 
@@ -65,30 +65,41 @@ Risks: bullets only, severity `[LOW|MEDIUM|HIGH|CRITICAL]`, omit if empty.
 Ask one native `AskUserQuestion` with exactly these options and no free-form catch-all:
 
 1. `rework` - create `active_feedback`, route to target skill.
-2. `complete` - finalize and auto-commit locally.
-3. `hold` - record blocked/paused status.
-4. `upgrade` - move to a stronger mode and re-enter the proper skill.
+2. `complete-commit-current` - finalize, then `git commit` on the current branch.
+3. `complete-new-branch-pr` - finalize, create a new branch, commit, push with upstream, then run `gh pr create`.
+4. `hold` - record blocked/paused status.
+5. `upgrade` - move to a stronger mode and re-enter the proper skill.
 
 Do not paraphrase option labels. Do not ask a free-form “continue?” question. Do not ask a second git-options question. Do not render the options as Markdown/plain text; the decision must be collected through native `AskUserQuestion`.
 
 ## Complete Path
 
-On `complete`, write non-empty `results.md`. `finalize-human-check.mjs` observes that write for `fix`, `implement`, `infra`, and `dobby`, then records the `workflow-human-check` pass event and `completed_stages` entry. Do not edit `.state.json` yourself.
+On either `complete-*` action, write non-empty `results.md`. `finalize-human-check.mjs` observes that write for `fix`, `implement`, `infra`, and `dobby`, then records the `workflow-human-check` pass event and `completed_stages` entry. Do not edit `.state.json` yourself.
 
-After finalize evidence exists, auto-commit locally:
+For `complete-commit-current`, after finalize evidence exists:
 
 1. Run `git status --short`.
 2. Add only relevant files for this task.
 3. Run `git commit` with the repository's `<type>: <description>` style.
 4. Run `git status --short` to verify.
 
-Never commit before the finalize pass shape exists. Never push, PR, merge, delete branches, or discard unless the user explicitly asks for it.
+For `complete-new-branch-pr`, after finalize evidence exists:
+
+1. Run `git status --short`.
+2. Create/switch to a new task-named branch derived from the feature slug; if it already exists, use a unique suffix.
+3. Add only relevant files for this task.
+4. Run `git commit` with the repository's `<type>: <description>` style.
+5. Push with upstream and run `gh pr create` with a concise title and summary.
+6. Return the PR URL.
+
+Never commit before the finalize pass shape exists. Never push, PR, merge, delete branches, or discard unless the user explicitly chooses `complete-new-branch-pr` or separately requests it.
 
 ## Terminal Routing
 
 | Decision | Next action |
 |---|---|
-| `complete` | write `results.md`, let finalize hook pass, then `git commit` locally |
+| `complete-commit-current` | write `results.md`, let finalize hook pass, then `git commit` locally |
+| `complete-new-branch-pr` | write `results.md`, let finalize hook pass, create/switch to a new task branch, push, then `gh pr create` |
 | `rework` | add unresolved feedback and route to target skill |
 | `hold` | stop with blocked/paused status |
 | `upgrade` | transition mode and continue |

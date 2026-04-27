@@ -4,7 +4,7 @@ type: translation
 lang: ko
 base: document/Introduce.md
 tags: [smelter, philosophy, workflow, skill-composition, korean]
-updated: 2026-04-26
+updated: 2026-04-28
 ---
 
 > 이 문서는 [`document/Introduce.md`](Introduce.md) (영문 canonical)의 한국어 번역본입니다.
@@ -27,7 +27,7 @@ Smelter는 원자 단위의 **workflow 스킬** (`workflow-*`)을 모드로 조�
 | `fix` | `workflow-investigate` | 버그 / 로직 수리 |
 | `explore` | `workflow-investigate` | 정적 조사 (맥락·근거 파악) |
 | `verify` | `workflow-verify` | 비수정 검증 (테스트 + 정적 점검 + E2E) |
-| `brainstorm` | `workflow-brainstorm` (deep) | 신규 기능 / 리팩토링, 기획 우선 |
+| `brainstorm` | `workflow-investigate` (deep) → `workflow-brainstorm` | 신규 기능 / 리팩토링, 기획 우선 |
 | `implement` | `workflow-investigate` → `workflow-implementation-plan` | 기존 코드 기반 구현 계획과 빌드 |
 
 각 스킬은 계약 (`consumes`, `produces`, `gate`)을 선언한다. 실패는 **producer chain**으로 라우팅 — 재시도 없음, 회피 없음, 자기 포기 없음. `document/workflow.md` §5 참조.
@@ -45,7 +45,7 @@ Smelter는 원자 단위의 **workflow 스킬** (`workflow-*`)을 모드로 조�
 │       ├── task/
 │       │   ├── plan.md                   ← feature 목표, 범위, acceptance criteria
 │       │   ├── <task-name>.md            ← 사람이 읽는 작업 기록
-│       │   └── <task-name>.state.json    ← 기계 상태 (v0.4.0 스키마)
+│       │   └── <task-name>.state.json    ← 기계 상태 (v0.51 스키마)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e 영상, 스크린샷, 로그
 └── state/                                ← 전역 세션 상태

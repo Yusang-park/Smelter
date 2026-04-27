@@ -1,6 +1,6 @@
 ---
 name: workflow-e2e
-version: 0.4.1
+version: 0.51
 type: workflow
 consumes: src/** built
 produces: "artifacts/ (video, screenshots, logs, trace, io-samples)"

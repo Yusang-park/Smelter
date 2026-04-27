@@ -29,6 +29,7 @@ import { parseSlashArgs, mergeSurface } from './surface-extraction.mjs';
 import { sanitizeSessionId as safeSessionId } from './session-paths.mjs';
 import { allowedActionsFor } from './workflow-v4-contract.mjs';
 import { createInitialState, writeState } from '../state-schema.mjs';
+import { applyTransitionAdoption, copyPolicyMetadata, findTransitionAdoptionPolicy } from './workflow-transition-adoption.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const LIB_DIR = dirname(__filename);
@@ -39,23 +40,22 @@ export const PLUGIN_ROOT = dirname(SCRIPTS_DIR);
 // delegated to `./session-paths.mjs` as the single source of truth so
 // allow-list drift across callers is impossible.
 
-const COMMAND_TO_MODE = Object.freeze({
-  brainstorm: 'brainstorm',
-  fix: 'fix',
-  infra: 'infra',
-  explore: 'explore',
-  implement: 'implement',
-  verify: 'verify',
-  dobby: 'dobby',
-});
+function commandToMode(commandName) {
+  const clean = String(commandName || '').replace(/^\/+/, '');
+  if (!clean) return null;
+  const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+  return cfg.command_aliases?.[`/${clean}`] ?? cfg.command_aliases?.[clean] ?? null;
+}
 
-// Modes that do not mutate code. Used to detect when a user/agent escalates
-// from exploration to execution. Reusing a verify/explore/brainstorm state
-// under Skill(fix|implement) leaves state.mode at the read-only value, and
-// pre-tool-enforcer's code-file gate would then block every subsequent edit
-// — the deadlock this branch fixes.
-const READONLY_MODES = Object.freeze(new Set(['verify', 'explore', 'brainstorm']));
-const WRITE_MODES = Object.freeze(new Set(['fix', 'implement', 'infra', 'dobby']));
+function isReadOnlyMode(mode) {
+  const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+  return Boolean(cfg.modes?.[mode]?.read_only);
+}
+
+function isWriteMode(mode) {
+  const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
+  return Boolean(cfg.modes?.[mode]) && !isReadOnlyMode(mode);
+}
 
 const LEADING_FILLER_TOKENS = new Set([
   'a','an','the','is','are','was','were','be','been','being','do','does','did',
@@ -112,7 +112,8 @@ function writeAtomic(path, content) {
 export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, commandName = '') {
   const sessionId = safeSessionId(sessionIdRaw);
   if (source === 'slash') return { create: true, reason: 'slash-command' };
-  if (commandName === 'explore' && source !== 'magic') return { create: true, reason: 'explore-command-reseed' };
+  const requestedMode = commandToMode(commandName);
+  if (requestedMode && isReadOnlyMode(requestedMode) && source !== 'magic') return { create: true, reason: 'read-only-command-reseed' };
   const text = String(prompt || '');
   if (/새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작/i.test(text)) {
     return { create: true, reason: 'explicit-new-intent' };
@@ -147,13 +148,12 @@ export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, 
     // before file context is known. If the main agent immediately chooses a
     // different write-mode Skill before any workflow evidence exists, honor the
     // agent's more informed choice by creating a fresh state with that mode.
-    const requestedMode = COMMAND_TO_MODE[commandName];
-    if (source === 'skill-tool' && requestedMode && WRITE_MODES.has(requestedMode) && WRITE_MODES.has(state.mode) && requestedMode !== state.mode && !hasProgress(state)) {
+    if (source === 'skill-tool' && requestedMode && isWriteMode(requestedMode) && isWriteMode(state.mode) && requestedMode !== state.mode && !hasProgress(state)) {
       return { create: true, reason: 'write-mode-correction' };
     }
 
-    // Mode-upgrade: the agent escalated from a read-only exploration mode
-    // (verify/explore/brainstorm) to a write mode (fix/implement). Reusing
+    // Mode-upgrade: the agent escalated from a workflow.yaml read-only mode
+    // to a write mode. Reusing
     // would leave state.mode at the read-only value, and pre-tool-enforcer
     // would then block every code Edit/Write. Create a fresh feature so the
     // new state.mode matches the command.
@@ -164,8 +164,8 @@ export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, 
     // feature even if the mode classifier routes the follow-up to a
     // different mode. Slash commands never reach this line — the earlier
     // slash-command branch returns create:true unconditionally.
-    if (source === 'skill-tool' && requestedMode && WRITE_MODES.has(requestedMode) && READONLY_MODES.has(state.mode)) {
-      return { create: true, reason: 'mode-upgrade' };
+    if (source === 'skill-tool' && requestedMode && isWriteMode(requestedMode) && isReadOnlyMode(state.mode)) {
+      return { create: true, reason: 'mode-upgrade', fromSlug: ptr.slug, fromStatePath: statePath, fromState: state };
     }
     return { create: false, reuseSlug: ptr.slug, reuseStatePath: statePath, state };
   } catch {
@@ -216,7 +216,7 @@ export function seedWorkflowState({
   preClassification = null,
   silent = false,
 } = {}) {
-  const mode = COMMAND_TO_MODE[commandName];
+  const mode = commandToMode(commandName);
   if (!mode) return null;
   const sessionId = safeSessionId(sessionIdRaw);
   const log = silent ? () => {} : printTag;
@@ -333,15 +333,21 @@ export function seedWorkflowState({
         machineState.target_type = merged.target_type;
         machineState.exempt = merged.exempt;
         machineState.skip_brainstorm = merged.skip_brainstorm;
+        const adoptionPolicy = decision.reason === 'mode-upgrade' && decision.fromState
+          ? findTransitionAdoptionPolicy(decision.fromState.mode, mode)
+          : null;
+        if (adoptionPolicy) {
+          copyPolicyMetadata(decision.fromState, machineState, adoptionPolicy);
+        }
 
         let resolvedAllowedSkills = modeCfg?.allowed_skills ?? [];
-        if (modeCfg?.target_type_dispatch && merged.target_type) {
+        if (modeCfg?.target_type_dispatch && machineState.target_type) {
           try {
             const cfg = loadWorkflowConfig({ root: PLUGIN_ROOT });
-            const pipelineName = v3SelectPipeline(mode, { target_type: merged.target_type }, cfg);
+            const pipelineName = v3SelectPipeline(mode, { target_type: machineState.target_type }, cfg);
             if (pipelineName && pipelineName !== 'upgrade_required' && cfg.pipelines[pipelineName]) {
               resolvedAllowedSkills = [...cfg.pipelines[pipelineName]];
-              log(`Pipeline: ${pipelineName} (target_type=${merged.target_type})`);
+              log(`Pipeline: ${pipelineName} (target_type=${machineState.target_type})`);
             }
           } catch (err) {
             log(`Pipeline resolution failed: ${err.message}`);
@@ -350,6 +356,15 @@ export function seedWorkflowState({
         if (resolvedAllowedSkills.length) machineState.allowed_skills = resolvedAllowedSkills;
         if (typeof modeCfg?.entry_skill === 'string' && machineState.allowed_skills.includes(modeCfg.entry_skill)) {
           machineState.current_stage = modeCfg.entry_skill;
+        }
+        if (adoptionPolicy && decision.fromStatePath && decision.fromState) {
+          applyTransitionAdoption({
+            sourceState: decision.fromState,
+            sourceStatePath: decision.fromStatePath,
+            targetState: machineState,
+            targetStatePath: statePath,
+            toMode: mode,
+          });
         }
         writeState(statePath, machineState);
       } catch (err) {

@@ -325,6 +325,31 @@ test('two-element chain advances to next mode', () => {
     assert.equal(reloaded.mode, 'fix');
   });
 });
+test('explore→fix chain adopts completed investigation and retargets by workflow.yaml policy', () => {
+  withTempState(baseState({ mode: 'explore', chained_modes: ['explore', 'fix'], current_stage: 'workflow-investigate-review' }), (path, state) => {
+    const investigationPath = join(dirname(path), 'investigation.md');
+    const reviewPath = join(dirname(path), 'investigation-review.md');
+    writeFileSync(investigationPath, '---\ntarget_type: bug_fix\nsurface: ["src/news.ts"]\n---\n\nEvidence gathered.\n');
+    writeFileSync(reviewPath, 'Verdict: pass\n');
+    state.target_type = 'bug_fix';
+    state.surface = ['src/news.ts'];
+    state.completed_stages = ['workflow-investigate', 'workflow-investigate-review'];
+    state.events = [
+      { t: new Date().toISOString(), skill: 'workflow-investigate', result: 'pass', declarer: 'hook', evidence: { type: 'file_present', path: investigationPath } },
+      { t: new Date().toISOString(), skill: 'workflow-investigate-review', result: 'pass', declarer: 'hook', evidence: { type: 'file_present', path: reviewPath } },
+    ];
+
+    const next = consumeNextChainedMode(path, state, 'fix');
+    assert.equal(next, 'fix');
+    assert.equal(state.mode, 'fix');
+    assert.equal(state.current_stage, 'workflow-tasker');
+    assert.equal(state.step, 'PLAN');
+    assert.deepEqual(state.allowed_skills.slice(0, 4), ['workflow-investigate', 'workflow-investigate-review', 'workflow-tasker', 'workflow-tasker-review']);
+    const reloaded = JSON.parse(readFileSync(path, 'utf-8'));
+    assert.equal(reloaded.current_stage, 'workflow-tasker');
+    assert.deepEqual(reloaded.completed_stages.slice(0, 2), ['workflow-investigate', 'workflow-investigate-review']);
+  });
+});
 test('requestedMode "*" takes the immediate next in chain', () => {
   withTempState(baseState({ mode: 'brainstorm', chained_modes: ['brainstorm', 'implement'] }), (path, state) => {
     const next = consumeNextChainedMode(path, state, '*');
@@ -732,6 +757,28 @@ test('test_cycles RED without coding entry → enter_skill workflow-coding', () 
   const d = decide({ state: s, lastAssistantText: '' });
   assert.equal(d.action, 'enter_skill');
   assert.equal(d.payload.skill, 'workflow-coding');
+});
+test('test_cycles RED after coding does not interrupt E2E with workflow-coding re-entry', () => {
+  const s = baseState({
+    current_stage: 'workflow-e2e',
+    completed_stages: [
+      'workflow-investigate', 'workflow-investigate-review',
+      'workflow-tasker', 'workflow-tasker-review',
+      'workflow-write-test', 'workflow-coding', 'workflow-agent-review',
+    ],
+    events: [passEvent('workflow-coding'), passEvent('workflow-agent-review')],
+    test_cycles: [{
+      t: new Date().toISOString(),
+      file: 'src/x.test.ts',
+      action: 'added_case',
+      case_name: 'new',
+      run_result: 'fail',
+      error: 'expected',
+    }],
+  });
+  const d = decide({ state: s, lastAssistantText: '' });
+  assert.notEqual(d.payload?.skill, 'workflow-coding');
+  assert.notEqual(d.reason, 'continue: failing test ready; enter workflow-coding.');
 });
 test('no signal → classify_needed (delegates to LLM sub-agent)', () => {
   const s = baseState({ current_stage: 'workflow-tasker', events: [] });

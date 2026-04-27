@@ -80,7 +80,7 @@ function seedUnscopedFeature(cwd, slug, stateOverrides = {}) {
     user_mode: 'brainstorm',
     task_type: 'design',
     step: 'INTENT',
-    step_flow: ['INTENT','PLAN','DONE'],
+    step_flow: ['INTENT','DISCOVERY','PLAN','DONE'],
     allowed_actions: ['classify_intent'],
     allowed_skills: ['workflow-brainstorm'],
     current_stage: 'workflow-brainstorm',
@@ -163,6 +163,34 @@ test('TR2b masked RED via echo exit does NOT append and emits diagnostic', async
     assert.equal(reds.length, 0, 'masked RED must not be recorded as evidence');
     const out = JSON.parse(r.stdout || '{}');
     assert.match(out.systemMessage || out.hookSpecificOutput?.additionalContext || '', /RED not recorded|remove.*echo|actual Bash exit code/i);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('TR2c missing exit evidence diagnostic forbids coding handoff and gives rerun command shape', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'tr-'));
+  try {
+    const slug = 'feature-tr2c-test';
+    const statePath = seedActiveFeature(cwd, 'sess-tr2c', slug, {
+      current_stage: 'workflow-write-test',
+      allowed_skills: ['workflow-write-test', 'workflow-coding'],
+      step: 'TEST_DESIGN',
+    });
+    const r = runRecorder({
+      cwd, sessionId: 'sess-tr2c',
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'npm run test:rt -- src/features/foo.test.tsx' },
+        tool_response: 'Jest failed but payload has no structured exit field',
+      },
+    });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.equal((state.events || []).filter((e) => e.type === 'test_red').length, 0);
+    const out = JSON.parse(r.stdout || '{}');
+    const message = out.systemMessage || out.hookSpecificOutput?.additionalContext || '';
+    assert.match(message, /Do NOT claim RED recorded/i);
+    assert.match(message, /Do NOT invoke Skill\(skill: 'workflow-coding'\)/);
+    assert.match(message, /rerun the failing test command directly/i);
+    assert.match(message, /no pipes, redirects, tail, or echo/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

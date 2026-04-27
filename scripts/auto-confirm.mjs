@@ -40,6 +40,7 @@ import { inspectClassifierModel } from './lib/subagent-classifier.mjs';
 import { nextV4Transition } from './lib/workflow-v4-controller.mjs';
 import { transitionV4State } from './lib/workflow-v4-state.mjs';
 import { resolveHookSessionId } from './lib/session-paths.mjs';
+import { applyTransitionAdoption, retargetStateForMode } from './lib/workflow-transition-adoption.mjs';
 
 // Question shapes that mark the assistant as actively soliciting a user
 // reply. When the last message matches any of these, the spawn_sub_tasker
@@ -366,7 +367,15 @@ export function consumeNextChainedMode(path, state, requestedMode = '') {
   } else {
     state.chained_modes = rest;
   }
-  state.mode = nextMode;
+  const sourceState = JSON.parse(JSON.stringify(state));
+  retargetStateForMode(state, nextMode);
+  applyTransitionAdoption({
+    sourceState,
+    sourceStatePath: path,
+    targetState: state,
+    targetStatePath: path,
+    toMode: nextMode,
+  });
   try { writeState(path, state); } catch { return ''; }
   return nextMode;
 }
@@ -694,7 +703,12 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
   const hasRed = (state.test_cycles || []).some(c =>
     c.run_result === 'fail' && ['added_case', 'modified_case'].includes(c.action)
   ) || (state.events || []).some(e => e?.type === 'test_red' || e?.type === 'tdd_adopted');
-  if (hasRed && state.current_stage !== 'workflow-coding' && state.allowed_skills.includes('workflow-coding')) {
+  const allowed = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+  const codingIdx = allowed.indexOf('workflow-coding');
+  const currentIdx = allowed.indexOf(state.current_stage);
+  const codingNotCompleted = !Array.isArray(state.completed_stages) || !state.completed_stages.includes('workflow-coding');
+  const beforeCoding = codingIdx >= 0 && (currentIdx < 0 || currentIdx < codingIdx);
+  if (hasRed && state.current_stage !== 'workflow-coding' && codingNotCompleted && beforeCoding) {
     return { action: 'enter_skill', reason: `continue: failing test ready; enter workflow-coding.`, payload: { skill: 'workflow-coding' } };
   }
 

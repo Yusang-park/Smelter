@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "TDD-first, file-based, multi-agent development harness for Claude Code",
-    "version": "0.4.1"
+    "version": "0.51.0"
   },
   "plugins": [
     {
