@@ -23,7 +23,8 @@ Exemption: CSS/style, i18n/copy, typo, pure-dialogue — skip TDD. See `document
 | `/infra` | infra | infra | `workflow-investigate` -> `workflow-infra-plan` | Infrastructure/cloud/IaC operations |
 | `/explore` | explore | read | `workflow-investigate` | Static read-only exploration only |
 | `/verify` | verify | verify | `workflow-verify` | Test run + static + E2E |
-| `/dobby` | dobby | freeform | `workflow-human-check` | Explicit no-pipeline escape hatch |
+
+User-only no-pipeline escape hatches are handled by hooks when explicitly typed by the user; they are not agent-owned commands or recovery paths.
 
 Mode classifier (`scripts/mode-classifier.mjs`) auto-routes; slash commands override. State in `.smt/features/<slug>/task/<task>.state.json`. Contracts in `document/workflow.md`.
 
@@ -99,7 +100,7 @@ All code-file Edit/Write requires active `/fix`, `/implement`, or `/infra` workf
 **Escape hatch:** hook scripts set `SMT_HOOK_WRITE=1`.
 **Bypass blocked:** direct writes to `.smt/*.state.json` refused.
 
-If blocked: invoke `Skill(fix)`, `Skill(implement)`, `Skill(infra)`, or `Skill(dobby)` yourself to seed an active workflow; do not ask the user to type a slash command.
+If blocked: invoke `Skill(fix)`, `Skill(implement)`, or `Skill(infra)` yourself to seed an active workflow; do not ask the user to type a slash command. User-only no-pipeline escape hatches are not agent-owned recovery.
 
 ## Smelter Hook Model
 

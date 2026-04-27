@@ -111,31 +111,40 @@ function writeAtomic(path, content) {
 
 export function shouldCreateNewFeature(directory, sessionIdRaw, prompt, source, commandName = '') {
   const sessionId = safeSessionId(sessionIdRaw);
-  if (source === 'slash') return { create: true, reason: 'slash-command' };
   const requestedMode = commandToMode(commandName);
+  const isSkillToolDobby = source === 'skill-tool' && requestedMode === 'dobby';
+  if (source === 'slash') return { create: true, reason: 'slash-command' };
   if (requestedMode && isReadOnlyMode(requestedMode) && source !== 'magic') return { create: true, reason: 'read-only-command-reseed' };
   const text = String(prompt || '');
   if (/새\s*(?:feature|기능|피처)|\bnew\s+feature\b|다른\s*작업|새로\s*시작/i.test(text)) {
     return { create: true, reason: 'explicit-new-intent' };
   }
-  if (!sessionId) return { create: true, reason: 'no-session' };
+  if (!sessionId) {
+    if (isSkillToolDobby) return { create: false, blocked: true, reason: 'dobby-user-only' };
+    return { create: true, reason: 'no-session' };
+  }
   const sessionPointer = join(directory, '.smt', 'state', `active-feature-${sessionId}.json`);
-  if (!existsSync(sessionPointer)) return { create: true, reason: 'no-active-pointer' };
+  if (!existsSync(sessionPointer)) {
+    if (isSkillToolDobby) return { create: false, blocked: true, reason: 'dobby-user-only' };
+    return { create: true, reason: 'no-active-pointer' };
+  }
   try {
     const ptr = JSON.parse(readFileSync(sessionPointer, 'utf-8'));
-    if (!ptr?.slug) return { create: true, reason: 'pointer-missing-slug' };
+    if (!ptr?.slug) {
+      if (isSkillToolDobby) return { create: false, blocked: true, reason: 'dobby-user-only' };
+      return { create: true, reason: 'pointer-missing-slug' };
+    }
     const statePath = join(directory, '.smt', 'features', ptr.slug, 'task', `${ptr.slug}.state.json`);
-    if (!existsSync(statePath)) return { create: true, reason: 'state-missing' };
+    if (!existsSync(statePath)) {
+      if (isSkillToolDobby) return { create: false, blocked: true, reason: 'dobby-user-only' };
+      return { create: true, reason: 'state-missing' };
+    }
     const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    if (isSkillToolDobby) {
+      return { create: false, blocked: true, reason: 'dobby-user-only', reuseSlug: ptr.slug, reuseStatePath: statePath, state };
+    }
     if (Array.isArray(state.completed_stages) && state.completed_stages.includes('workflow-human-check')) {
       return { create: true, reason: 'prior-completed' };
-    }
-    if (source === 'skill-tool' && commandName === 'dobby' && state.mode === 'dobby' &&
-        (state.step === 'HUMAN_CHECK' || state.current_stage === 'workflow-human-check')) {
-      return { create: true, reason: 'dobby-human-check-recovery' };
-    }
-    if (source === 'skill-tool' && commandName === 'dobby' && state.mode !== 'dobby') {
-      return { create: true, reason: 'dobby-explicit-reseed' };
     }
     const hasProgress = (s) => {
       return (Array.isArray(s.completed_stages) && s.completed_stages.length > 0) ||
@@ -222,6 +231,10 @@ export function seedWorkflowState({
   const log = silent ? () => {} : printTag;
 
   const decision = shouldCreateNewFeature(directory, sessionId, prompt, source, commandName);
+  if (decision.blocked) {
+    log(`Blocked workflow state seed for ${commandName}: ${decision.reason}`);
+    return null;
+  }
   const smtStateDir = join(directory, '.smt', 'state');
 
   if (!decision.create) {

@@ -222,6 +222,50 @@ test('B4: Skill(caveman) — neither seeds nor injects contract', () => {
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('B5: Skill(dobby) cannot seed a new workflow without user slash state', () => {
+  const cwd = makeTempCwd();
+  try {
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'dobby', args: 'escape blocker' }, session_id: 'sess-B5' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, false);
+    assert.match(out.stopReason || out.hookSpecificOutput?.permissionDecisionReason || '', /user-only/i);
+    assert.ok(!existsSync(join(cwd, '.smt', 'state', 'active-feature-sess-B5.json')), 'dobby must not seed a pointer');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('B6: Skill(dobby) over active non-dobby workflow is blocked and preserves pointer', () => {
+  const cwd = makeTempCwd();
+  try {
+    runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'implement', args: 'first' }, session_id: 'sess-B6' }, cwd);
+    const ptrPath = join(cwd, '.smt', 'state', 'active-feature-sess-B6.json');
+    const before = JSON.parse(readFileSync(ptrPath, 'utf-8')).slug;
+
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'dobby', args: 'escape blocker' }, session_id: 'sess-B6' }, cwd);
+    const out = parse(r.stdout);
+    const after = JSON.parse(readFileSync(ptrPath, 'utf-8')).slug;
+
+    assert.equal(out.continue, false);
+    assert.match(out.stopReason || out.hookSpecificOutput?.permissionDecisionReason || '', /user-only/i);
+    assert.equal(after, before, 'blocked dobby must not replace the active feature');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('B7: Skill(dobby) is allowed only when /dobby already seeded active state', () => {
+  const cwd = makeTempCwd();
+  try {
+    seedState(cwd, 'sess-B7', {
+      mode: 'dobby',
+      allowed_skills: ['workflow-human-check'],
+      current_stage: null,
+    });
+
+    const r = runWithCwd({ tool_name: 'Skill', tool_input: { skill: 'dobby' }, session_id: 'sess-B7' }, cwd);
+    const out = parse(r.stdout);
+    assert.equal(out.continue, true);
+    assert.equal(out.hookSpecificOutput, undefined);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('E3: Skill(fix) with missing session_id falls back to non-scoped pointer', () => {
   const cwd = makeTempCwd();
   try {

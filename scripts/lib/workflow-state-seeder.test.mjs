@@ -42,7 +42,7 @@ test('SL1: seedWorkflowState creates state.json, pointer, plan.md', async () => 
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL1b: seedWorkflowState supports live v0.4 modes explore and dobby', async () => {
+test('SL1b: seedWorkflowState supports explore from skill-tool and dobby from slash only', async () => {
   const { seedWorkflowState } = await import(MODULE);
   const cwd = tmp();
   try {
@@ -51,7 +51,10 @@ test('SL1b: seedWorkflowState supports live v0.4 modes explore and dobby', async
     assert.equal(invState.user_mode, 'explore');
     assert.equal(invState.task_type, 'read');
 
-    const dobby = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1b-b', source: 'skill-tool' });
+    const blocked = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1b-b', source: 'skill-tool' });
+    assert.equal(blocked, null, 'agent Skill(dobby) must not seed a new workflow');
+
+    const dobby = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1b-b', source: 'slash' });
     const dobbyState = JSON.parse(readFileSync(dobby.statePath, 'utf-8'));
     assert.equal(dobbyState.user_mode, 'dobby');
     assert.equal(dobbyState.task_type, 'freeform');
@@ -60,11 +63,11 @@ test('SL1b: seedWorkflowState supports live v0.4 modes explore and dobby', async
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL1d: Skill(dobby) reseeds when existing dobby state is stuck in HUMAN_CHECK', async () => {
+test('SL1d: slash /dobby reseeds when existing dobby state is stuck in HUMAN_CHECK', async () => {
   const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
   const cwd = tmp();
   try {
-    const first = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1d', source: 'skill-tool' });
+    const first = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual edit', sessionId: 'sl1d', source: 'slash' });
     const stuck = JSON.parse(readFileSync(first.statePath, 'utf-8'));
     stuck.current_stage = 'workflow-human-check';
     stuck.step = 'HUMAN_CHECK';
@@ -73,11 +76,15 @@ test('SL1d: Skill(dobby) reseeds when existing dobby state is stuck in HUMAN_CHE
     stuck.events = [];
     writeFileSync(first.statePath, JSON.stringify(stuck, null, 2));
 
-    const decision = shouldCreateNewFeature(cwd, 'sl1d', 'manual recovery', 'skill-tool', 'dobby');
-    assert.equal(decision.create, true);
-    assert.equal(decision.reason, 'dobby-human-check-recovery');
+    const blocked = shouldCreateNewFeature(cwd, 'sl1d', 'manual recovery', 'skill-tool', 'dobby');
+    assert.equal(blocked.blocked, true);
+    assert.equal(blocked.reason, 'dobby-user-only');
 
-    const second = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual recovery', sessionId: 'sl1d', source: 'skill-tool' });
+    const decision = shouldCreateNewFeature(cwd, 'sl1d', 'manual recovery', 'slash', 'dobby');
+    assert.equal(decision.create, true);
+    assert.equal(decision.reason, 'slash-command');
+
+    const second = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual recovery', sessionId: 'sl1d', source: 'slash' });
     assert.notEqual(second.slug, first.slug, 'recovery must not reuse the HUMAN_CHECK-stuck slug');
     const state = JSON.parse(readFileSync(second.statePath, 'utf-8'));
     assert.equal(state.mode, 'dobby');
@@ -86,23 +93,21 @@ test('SL1d: Skill(dobby) reseeds when existing dobby state is stuck in HUMAN_CHE
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('SL1e: Skill(dobby) reseeds over active implement state as freeform escape hatch', async () => {
+test('SL1e: Skill(dobby) is blocked over active implement state', async () => {
   const { seedWorkflowState, shouldCreateNewFeature } = await import(MODULE);
   const cwd = tmp();
   try {
     const first = seedWorkflowState({ directory: cwd, commandName: 'implement', args: 'build feature', sessionId: 'sl1e', source: 'skill-tool' });
 
     const decision = shouldCreateNewFeature(cwd, 'sl1e', 'manual freeform recovery', 'skill-tool', 'dobby');
-    assert.equal(decision.create, true);
-    assert.equal(decision.reason, 'dobby-explicit-reseed');
+    assert.equal(decision.blocked, true);
+    assert.equal(decision.reason, 'dobby-user-only');
 
     const second = seedWorkflowState({ directory: cwd, commandName: 'dobby', args: 'manual freeform recovery', sessionId: 'sl1e', source: 'skill-tool' });
-    assert.notEqual(second.slug, first.slug, 'dobby escape must not reuse implement state');
-    const state = JSON.parse(readFileSync(second.statePath, 'utf-8'));
-    assert.equal(state.mode, 'dobby');
-    assert.equal(state.task_type, 'freeform');
-    assert.equal(state.step, 'EXECUTE');
-    assert.deepEqual(state.allowed_actions, ['read', 'write_source', 'run_test']);
+    assert.equal(second, null, 'agent Skill(dobby) must not create a replacement feature');
+
+    const pointer = JSON.parse(readFileSync(join(cwd, '.smt', 'state', 'active-feature-sl1e.json'), 'utf-8'));
+    assert.equal(pointer.slug, first.slug, 'blocked dobby must preserve active implement pointer');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 

@@ -328,7 +328,8 @@ test('T2-V1: Write on code file with NO active workflow is blocked (v3.3 gate)',
     assert.equal(out.decision, 'block', 'code file without workflow must block');
     assert.match(out.reason, /Raw Write of code file/i);
     assert.match(out.reason, /normal feature work, invoke Skill\(implement\)/i);
-    assert.match(out.reason, /only for explicit freeform recovery/i);
+    assert.match(out.reason, /infrastructure work, invoke Skill\(infra\)/i);
+    assert.doesNotMatch(out.reason, /Skill\(dobby\)/i);
     assert.doesNotMatch(out.reason, /`\/(?:fix|implement|infra|dobby)\s+<description>`/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
@@ -730,6 +731,7 @@ test('G-C3: git commit blocked when pointer exists but state.json is corrupted (
     const out = parseOut(r.stdout);
     assert.equal(out?.decision, 'block');
     assert.match(out.reason, /unreadable|corrupt/i);
+    assert.doesNotMatch(out.reason, /Skill\(dobby\)/i);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -970,7 +972,11 @@ test('T2-F3: raw code-write block reason does not ask user to type slash command
     assert.equal(out?.decision, 'block');
     assert.doesNotMatch(out.reason, /Required action: invoke/i);
     assert.doesNotMatch(out.reason, /`\/(?:fix|implement|infra|dobby)\s+<description>`/);
-    assert.match(out.reason, /agent recovery|Skill\(fix\|implement\|dobby\)/i);
+    assert.match(out.reason, /agent recovery/i);
+    assert.match(out.reason, /Skill\(fix\)/);
+    assert.match(out.reason, /Skill\(implement\)/);
+    assert.match(out.reason, /Skill\(infra\)/);
+    assert.doesNotMatch(out.reason, /Skill\(dobby\)/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 

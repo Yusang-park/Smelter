@@ -719,7 +719,7 @@ Your FIRST tool call must be exactly:
 
 Skill(skill: '${skillName}')
 
-Read/search tools are allowed before choosing if the requested mode needs clarification. Do not edit or run mutating commands before the selected Skill call. The workflow state has already been seeded by UserPromptSubmit; if the seeded mode is wrong, invoke the correct Skill(fix|implement|infra|dobby) before any source edit so the state can be corrected.
+Read/search tools are allowed before choosing if the requested mode needs clarification. Do not edit or run mutating commands before the selected Skill call. The workflow state has already been seeded by UserPromptSubmit; if the seeded mode is wrong, invoke the correct Skill(fix|implement|infra) before any source edit so the state can be corrected. Freeform escape hatches are user-initiated only.
 
 Legacy display form:
 

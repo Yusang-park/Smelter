@@ -61,6 +61,18 @@ function isLastEventFail(events, stage) {
   return false;
 }
 
+function deny(reason) {
+  emit({
+    continue: false,
+    stopReason: reason,
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    },
+  });
+}
+
 // Returns null when the move is legal, or a human-readable reason string when
 // it is not. Caller decides the emit shape.
 function chainBlockReason(state, requested) {
@@ -140,6 +152,15 @@ function main() {
     // would otherwise be missing and pre-tool-enforcer would block
     // every subsequent code edit. Seed inline, silently.
     if (COMMAND_SKILLS.has(skill)) {
+      if (skill === 'dobby') {
+        const active = resolveActiveState(cwd, sessionId);
+        if (active?.state?.mode === 'dobby') {
+          emit({ continue: true });
+          return;
+        }
+        deny('[Smelter mode] /dobby is a user-only explicit escape hatch and cannot be started through agent-owned Skill(dobby) recovery. Use Skill(fix), Skill(implement), or Skill(infra) for agent-selected recovery.');
+        return;
+      }
       try {
         seedWorkflowState({
           directory: cwd,
