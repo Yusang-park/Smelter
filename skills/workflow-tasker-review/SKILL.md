@@ -1,6 +1,6 @@
 ---
 name: workflow-tasker-review
-version: 0.51
+version: 0.55
 type: workflow
 consumes: tasks.md
 produces: tasks-review.md
@@ -25,7 +25,7 @@ verification_rounds:
 gate:
   postcondition:
     - file_exists: "tasks-review.md"
-    - schema_version: "0.51"
+    - schema_version: "0.55"
     - compact_checkbox_contract: true
     - consensus_reached: true
     - contains_decision: "pass|fail|reshape"
@@ -33,9 +33,9 @@ gate:
 
 # workflow-tasker-review
 
-Review `tasks.md` with the v0.51 compact checklist. `/fix` depends on this to prove the fix still has scope, omission, and verification evidence without a verbose plan.
+Review `tasks.md` with the v0.55 compact checklist. `/fix` depends on this to prove the fix still has scope, omission, and verification evidence without a verbose plan.
 
-Announce: `I'm using workflow-tasker-review to verify the v0.51 checklist.`
+Announce: `I'm using workflow-tasker-review to verify the v0.55 checklist.`
 
 ## Output Contract
 
@@ -43,7 +43,7 @@ Write `tasks-review.md` exactly in this compact shape:
 
 ```markdown
 ---
-schema_version: "0.51"
+schema_version: "0.55"
 verdict: pass|fail|reshape
 consensus: 0.95
 ---

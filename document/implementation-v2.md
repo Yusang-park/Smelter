@@ -74,7 +74,7 @@ Each mode declares:
 | 4 | `workflow-investigate-review`  | A               | `investigation.md` → `investigation-review.md`          |
 | 5 | `workflow-tasker`              | D (architect lead) | `investigation.md` → `tasks.md` + `target_type` + `team_runtime` |
 | 6 | `workflow-tasker-review`       | B (95% consensus) | `tasks.md` → `tasks-review.md`                        |
-| 7 | `workflow-write-test`          | C (file split)  | `investigation.md` / `implementation-plan.md` → `*.test.*` (RED) + `test_cycles[]` |
+| 7 | `workflow-write-test`          | C (file split)  | `investigation.md` / `implementation-plan.md` → executable spec tests (RED) + `test_cycles[]` |
 | 8 | `workflow-coding`              | A / C (module split) + E (watchdog) | test_files (RED) / feedback → `src/**` changes |
 | 9 | `workflow-agent-review`        | B (dual: code+security) | `src/**` diff → `agent_review.md` + `## Risks` |
 | 10 | `workflow-e2e`                | A (qa-tester)   | built `src/**` → `artifacts/` (video/log/screenshots)   |

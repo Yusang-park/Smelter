@@ -21,7 +21,7 @@ import {
 
 test('loadWorkflowConfig parses the unified workflow.yaml', () => {
   const cfg = loadWorkflowConfig();
-  assert.equal(cfg.schema_version, '0.51');
+  assert.equal(cfg.schema_version, '0.55');
   assert.ok(cfg.skills, 'skills present');
   assert.ok(cfg.pipelines, 'pipelines present');
   assert.ok(cfg.modes, 'modes present');
@@ -158,15 +158,15 @@ test('fix pipeline records compact task checklist before write-test', () => {
   assert.ok(!steps.includes('workflow-brainstorm'));
 });
 
-test('fix_simple also records compact task checklist before coding', () => {
+test('fix_simple skips tasker and goes directly from investigate to coding', () => {
   const cfg = loadWorkflowConfig();
   const steps = cfg.pipelines.fix_simple;
-  assert.deepEqual(steps.slice(0, 3), [
+  assert.deepEqual(steps, [
     'workflow-investigate',
-    'workflow-tasker',
-    'workflow-tasker-review',
+    'workflow-coding',
+    'workflow-e2e',
+    'workflow-human-check',
   ]);
-  assert.equal(steps[3], 'workflow-coding');
 });
 
 test('implement full pipeline is code-based and does not include PM brainstorm or tasker stages', () => {

@@ -1,6 +1,6 @@
 ---
 name: workflow-infra-execute
-version: 0.51
+version: 0.55
 type: workflow
 consumes: infra-plan.md, infra-plan-review.md
 produces: infra-execute.md

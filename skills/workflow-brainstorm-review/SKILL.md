@@ -1,6 +1,6 @@
 ---
 name: workflow-brainstorm-review
-version: 0.51
+version: 0.55
 type: workflow
 consumes: brainstorm.md
 produces: brainstorm-review.md

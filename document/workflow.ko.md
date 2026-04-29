@@ -5,15 +5,15 @@ lang: ko
 base: document/workflow.md
 tags: [smelter, workflow, skill-composition, producer-routing, tdd, e2e, auto-confirm, korean]
 status: translation
-version: 0.51
+version: 0.55
 created: 2026-04-19
-updated: 2026-04-28
+updated: 2026-04-29
 ---
 
 > **Note**: 이 문서는 `document/workflow.md` (English canonical) 의 한국어 번역본입니다.
 > 원본이 항상 최신이며, 번역과 상충 시 원본을 따릅니다.
 
-# Smelter Workflow — v0.51 Skill-Composition Model
+# Smelter Workflow — v0.55 Skill-Composition Model
 
 > Smelter는 **Skill을 조합**하여 모드를 구성한다. 각 스킬은 자기 contract (`consumes` / `produces` / `gate`)를 선언하고, 실패 시 **producer chain**으로 라우팅된다.
 > **Workflow 스킬** (`workflow-*` 접두사)만 mode whitelist의 제약을 받으며, 일반 유틸리티 스킬은 자유롭게 사용 가능하다.
@@ -291,7 +291,7 @@ Smelter에는 두 종류의 스킬이 있다. Mode 제약은 **workflow 스킬�
 | 6 | `workflow-tasker-review` | `tasks.md` | `tasks-review.md` | works/omissions/verified 확인. pass/fail/reshape |
 | 7 | `workflow-implementation-plan` | `investigation.md` | `implementation-plan.md` | 코드 기반 구현 계획 |
 | 8 | `workflow-implementation-plan-review` | `implementation-plan.md` | `implementation-plan-review.md` | 구현 계획 검토 |
-| 9 | `workflow-write-test` | `investigation.md` / `implementation-plan.md` | `*.test.*` files (RED), `test_cycles` 엔트리 | surface-based 면제 적용 |
+| 9 | `workflow-write-test` | `investigation.md` / `implementation-plan.md` | 실행 가능한 스펙 테스트(RED), `test_cycles` 엔트리 | Specification by Example / BDD / ATDD; surface-based 면제 적용 |
 | 10 | `workflow-coding` | `*.test.*` (RED) OR `active_feedback` | `src/**` 파일 변경 | 실제 코드 구현 |
 | 11 | `workflow-agent-review` | `src/**` diff | `agent_review.md`, `## Risks` 갱신 | Pattern B Dual Adversarial (code-reviewer + security-reviewer). "no security surface" 시 A로 격하. |
 | 12 | `workflow-e2e` | `src/**` built | `artifacts/` (비디오·스크린샷·로그·transcript·io-samples) | **실제 인터페이스** 구동 강제 (UI=브라우저, CLI=subprocess, API=실 서버·네트워크, DB=실 엔진, Hook=실제 파이프). 테스트 러너 출력만으론 pass 불가. |
@@ -333,7 +333,7 @@ v0.4는 단일 YAML 파일 구성:
 
 ### 4-2. fix (`/fix`)
 
-**allowed_skills**: 기본 `fix` pipeline은 `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`, `workflow-write-test`, `workflow-coding`, `workflow-agent-review`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`이다. `fix_simple`은 `text`/`design` 표면에서 `workflow-investigate`, `workflow-tasker`, `workflow-tasker-review`, `workflow-coding`, `workflow-e2e`, `workflow-human-check`를 사용한다.
+**allowed_skills**: 기본 `fix` pipeline은 `workflow-investigate`, `workflow-investigate-review`, `workflow-tasker`, `workflow-tasker-review`, `workflow-write-test`, `workflow-coding`, `workflow-agent-review`, `workflow-e2e`, `workflow-e2e-review`, `workflow-human-check`이다. `fix_simple`은 `text`/`design` 표면에서 `workflow-investigate`, `workflow-coding`, `workflow-e2e`, `workflow-human-check`를 사용한다.
 
 ```
 workflow-investigate
@@ -348,7 +348,7 @@ workflow-investigate
 → workflow-human-check
 ```
 
-v0.51 `tasks.md`는 긴 Markdown 계획이 아니라 frontmatter + 7개 한 줄 체크박스다. `queue`는 downstream 실행 항목이라 미체크 가능하지만, `goal`, `approach`, `works`, `omissions`, `verified`, `team_runtime`은 체크되어야 tasker 완료가 인정된다. `tasks-review.md`는 기능 동작, 누락 없음, 검증 명령, side effect, 결정을 별도 체크한다.
+v0.55 `tasks.md`는 긴 Markdown 계획이 아니라 frontmatter + 7개 한 줄 체크박스다. `queue`는 downstream 실행 항목이라 미체크 가능하지만, `goal`, `approach`, `works`, `omissions`, `verified`, `team_runtime`은 체크되어야 tasker 완료가 인정된다. `tasks-review.md`는 기능 동작, 누락 없음, 검증 명령, side effect, 결정을 별도 체크한다.
 
 ### 4-3. explore (entry: `/explore` 또는 자동 분기)
 
@@ -576,6 +576,9 @@ fix ──▶ implement ──▶ brainstorm
 - 기존 test file이 이미 존재해도 OK
 - `action: added_case` 또는 `modified_case` 엔트리 필수
 - `case_name`은 task 설명 또는 bug id와 문자열 매칭 (느슨)
+- 테스트는 실행 가능한 스펙이어야 한다. 구체적인 도메인 값, Given/When/Then 또는 Arrange/Act/Assert 구조, 외부에서 관찰 가능한 결과를 포함한다.
+- private helper, 내부 호출 순서, 임시 구조 같은 구현 세부사항을 검증하는 테스트는 그 자체가 public contract가 아닌 한 `workflow-write-test` 계약을 만족하지 않는다.
+- 열린 동작 질문이 있으면 coding을 막고, 기대 동작을 임의로 만들지 말고 clarification으로 되돌린다.
 
 ### 7-3. TDD Gate (hook 강제)
 

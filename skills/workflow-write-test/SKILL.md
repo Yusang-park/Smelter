@@ -1,9 +1,9 @@
 ---
 name: workflow-write-test
-version: 0.51
+version: 0.55
 type: workflow
 consumes: tasks.md OR implementation-plan.md
-produces: "*.test.*" files (RED), test_cycles entries
+produces: executable specification tests (RED), test_cycles entries
 default_pattern: C
 default_agent: executor
 supports_patterns: [A, C]
@@ -27,23 +27,25 @@ exempt_if_surface: [css, style, typography, i18n, copy, typo, dialogue]
 
 ## Overview
 
-Test-first principle. Write failing tests before any implementation file. `workflow-coding` refuses to start without at least one RED entry in `state.json.test_cycles`.
+Write an executable specification before any implementation file changes. The output is a failing test suite that specifies the requested behavior with concrete examples, then records RED evidence for the next skill.
 
-**Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
+Use Specification by Example, BDD, and ATDD principles: clarify behavior through examples, formulate those examples as tests, and automate them before coding.
+
+**Core principle:** If you didn't watch the executable specification fail for the intended missing behavior, you don't know if it tests the right thing.
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
-**Announce at start:** "I'm using workflow-write-test to write failing tests before any source code changes."
+**Announce at start:** "I'm using workflow-write-test to write failing executable specifications before source code changes."
 
 ## Plan source by mode
 
 Read the active mode's persisted planning source before writing tests:
 
-- `/fix` → `tasks.md` is the compact v0.51 checklist; use `investigation.md` only as supporting evidence.
+- `/fix` → `tasks.md` is the compact v0.55 checklist; use `investigation.md` only as supporting evidence.
 - `/implement` → `implementation-plan.md` is the source of the file map, chosen approach, task queue, and test strategy.
 - `/brainstorm` does not invoke this skill directly; its `tasks.md` is consumed later by `/implement` as requirements context.
 
-Do not bypass `/fix` tasker records. v0.51 keeps the artifact compact but requires explicit works/omissions/verified checkboxes before RED tests.
+Use the persisted plan as input only. If the behavior cannot be expressed as a failing test, stop and route back for clarification instead of coding.
 
 ## The Iron Law
 
@@ -51,16 +53,31 @@ Do not bypass `/fix` tasker records. v0.51 keeps the artifact compact but requir
 NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 ```
 
-Write code before the test? Delete it. Start over. No exceptions:
+Write implementation code before the executable specification? Delete it. Start over. No exceptions:
 
 - Don't keep it as "reference"
 - Don't "adapt" it while writing tests
 - Don't look at it
 - Delete means delete
 
-Implement fresh from tests. Period.
+Implement fresh from the executable specification. Period.
 
-## Minimum cases per category (10+ total)
+## Executable Specification Contract
+
+Every new or modified test must specify externally observable behavior, not implementation details. Prefer Given/When/Then for scenarios or Arrange/Act/Assert for unit-level specs.
+
+Each spec must include:
+
+- Behavior being specified
+- Concrete domain values, not vague placeholders
+- Initial state and trigger action
+- Expected observable outcome
+- Meaningful boundary, edge, and error examples
+- Exact RED command and failing output before implementation
+
+Do not assert private helpers, internal call order, temporary structure, or other implementation details unless they are the public contract. Open behavior questions block coding; return to clarification rather than inventing behavior.
+
+## Minimum Cases Per Category (10+ total)
 
 | Category | Minimum |
 |----------|---------|
@@ -72,16 +89,25 @@ Implement fresh from tests. Period.
 
 A test file with 9 cases fails the gate. A test file with 10 happy-path cases and no boundary/error coverage also fails because the distribution check runs.
 
+Choose the lowest-level test that fully specifies the behavior:
+
+- Pure logic/state transition: unit executable spec
+- API/CLI/hook/script: integration or E2E executable spec
+- Service boundary: contract test
+- UI behavior: user-observable E2E spec
+- Complex output or legacy behavior: approval, snapshot, or characterization spec
+
 ## Red Flags - STOP
 
 | Thought | Reality |
 |---------|---------|
-| "I'll write tests after the code compiles" | That's not TDD. Delete the code, write tests first. |
+| "I'll write tests after the code compiles" | That's not TDD. Delete the code, write the executable spec first. |
 | "Just this once, the code is trivial" | Triviality is rationalization. Write the test. |
 | "I'll keep the existing code as reference while writing the test" | Don't look at it. Implement fresh from tests. |
 | "10 cases is overkill for this change" | The gate checks distribution, not just count. Plan distribution before writing. |
 | "Tests don't need to fail — I know the function works" | Watch it RED. Tests that are GREEN on first run test nothing. |
 | "Mocks are fine for this test" | Prefer real code. Mocks hide the bug the test should catch. |
+| "The test can describe internals" | Specs describe behavior. Implementation details make tests brittle. |
 
 ## Rationalization Prevention
 
@@ -95,15 +121,15 @@ A test file with 9 cases fails the gate. A test file with 10 happy-path cases an
 ## When modifying existing features
 
 - Search related existing tests
-- Modify existing tests to reflect the new intent so they go RED (`action: modified_case`)
+- Modify existing tests to reflect the new executable specification so they go RED (`action: modified_case`)
 - Link `case_name` to the task/bug id
 
 ## Surface Exemption
 
 When `state.json.exempt.tdd == true`, this skill is **auto-skipped** and flow advances to the next skill.
-(Set via the mode's magic_keywords or a tasker declaration.)
+(Set via the mode's magic_keywords or persisted planning source.)
 
-Exempt surfaces: CSS/style, typography, i18n/copy-only, typo, pure dialogue. The exemption must be declared up-front by the mode or tasker — the executor cannot demote TDD mid-flow.
+Exempt surfaces: CSS/style, typography, i18n/copy-only, typo, pure dialogue. The exemption must be declared up-front; the executor cannot demote TDD mid-flow.
 
 ## Parallel execution (Pattern C)
 
@@ -112,7 +138,7 @@ When Pattern C is chosen with `parallel_split_by: file`:
 - A separate agent writes each test file
 - The aggregator (executor) verifies test suite integrity
 
-## After output
+## After Output
 
 Append to `state.json.test_cycles`:
 
@@ -120,7 +146,7 @@ Append to `state.json.test_cycles`:
 { "file": "...", "action": "added_case", "case_name": "...", "run_result": "fail", "error": "..." }
 ```
 
-`workflow-coding` pre-gate reads this array. Without at least one `{ action: added_case|modified_case, run_result: fail }` entry, coding refuses to start.
+`workflow-coding` pre-gate reads this array. Without at least one `{ action: added_case|modified_case, run_result: fail }` entry for the executable specification, coding refuses to start.
 
 ## Fail routing
 

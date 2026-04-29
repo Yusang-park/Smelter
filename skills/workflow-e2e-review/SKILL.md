@@ -1,6 +1,6 @@
 ---
 name: workflow-e2e-review
-version: 0.51
+version: 0.55
 type: workflow
 consumes: artifacts/
 produces: e2e-review.md
@@ -51,7 +51,8 @@ Round 2 includes effect verification — it catches the ack-only failure mode th
 
 1. **Every screenshot** (`.png`, `.jpg`) under `.smt/features/<slug>/artifacts/` is opened via the `Read` tool (multimodal) or delegated to the `vision` agent. The reviewer must *describe what is in the frame*.
 2. **Every video** (`.webm`, `.mp4`) has at least **3 frames sampled** — start, middle, end. The middle frame is the most diagnostic: it captures the mid-flow state.
-3. For each opened artifact, the reviewer must answer:
+3. For each opened artifact, `e2e-review.md` must include `opened:`, `observed:`, and `expected:` lines. UI placement checks must mention the viewport or bounding box.
+4. For each opened artifact, the reviewer must answer:
    - Does the frame match the expected state from `tasks.md` §§ scenarios?
    - Is the UI in a success state or an error / loading / blank state?
    - Does the captured effect match the target in `test_cycles[].case_name`?
@@ -91,6 +92,7 @@ Producer chain routes `visual_mismatch` → `workflow-coding` (UI / logic bug). 
 - `## Scenario Coverage` — list of covered scenarios
 - `## Missing Cases` — missing cases (if any)
 - `## Artifacts Quality` — video/log quality assessment
+- `## Visual Inspection` — `opened:` artifact path, `observed:` frame contents, `expected:` target state / viewport comparison
 - `## Effect Verification` — per-scenario ack vs effect classification and any ack-only failures
 - `## Verdict` — `pass` / `fail`
 

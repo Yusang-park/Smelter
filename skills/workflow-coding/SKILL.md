@@ -1,6 +1,6 @@
 ---
 name: workflow-coding
-version: 0.51
+version: 0.55
 type: workflow
 consumes: "*.test.* (RED) OR active_feedback"
 produces: src files changed

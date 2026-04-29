@@ -1,6 +1,6 @@
 ---
 name: workflow-tasker
-version: 0.51
+version: 0.55
 type: workflow
 consumes: investigation.md (+brainstorm.md optional)
 produces: tasks.md
@@ -15,15 +15,15 @@ can_delegate_to: [architect, researcher, explore-high]
 gate:
   postcondition:
     - file_exists: "tasks.md"
-    - schema_version: "0.51"
+    - schema_version: "0.55"
     - compact_checkbox_contract: true
 ---
 
 # workflow-tasker
 
-Produce one compact `tasks.md` checklist from the investigation. `/fix` also runs this stage in v0.51, so keep it terse.
+Produce one compact `tasks.md` checklist from the investigation. `/fix` also runs this stage in v0.55, so keep it terse.
 
-Announce: `I'm using workflow-tasker to write the v0.51 compact task checklist.`
+Announce: `I'm using workflow-tasker to write the v0.55 compact task checklist.`
 
 ## Output Contract
 
@@ -31,7 +31,7 @@ Write exactly this shape, with short one-line values:
 
 ```markdown
 ---
-schema_version: "0.51"
+schema_version: "0.55"
 target_type: bug_fix|text|design|extend_existing|new_feature|refactor|migration
 surface: ["path/or/surface"]
 ---
@@ -51,7 +51,7 @@ Rules:
 - No long prose, alternatives matrix, or nested rationale.
 - `queue` may stay unchecked because downstream stages execute it.
 - Every other checkbox must be checked before invoking `workflow-tasker-review`.
-- Missing `schema_version: "0.51"`, `target_type`, any checkbox label, or `team_runtime` blocks completion.
+- Missing `schema_version: "0.55"`, `target_type`, any checkbox label, or `team_runtime` blocks completion.
 
 ## Terminal State
 

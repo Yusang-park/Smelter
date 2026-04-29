@@ -2,7 +2,7 @@
 
 Run the `fix` mode on $ARGUMENTS. Use for bug fixes, regressions, and logic-flow changes that require investigation before the repair. The experience follows superpowers systematic debugging: reproduce, gather evidence, identify root cause, write a failing regression test, then fix the root cause.
 
-Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (10 skills); `fix_simple` (6 skills) routes to exactly two surfaces — `text` (텍스트 수정) and `design` (디자인 수정). Both paths record the compact v0.51 `tasks.md` checklist before coding. Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/brainstorm`.
+Backed by `modes/workflow.yaml → modes.fix`. Default pipeline `fix` (10 skills); `fix_simple` (4 skills) routes to exactly two surfaces — `text` (텍스트 수정) and `design` (디자인 수정). The default fix path records the compact v0.55 `tasks.md` checklist before coding; `fix_simple` skips tasker stages. Extensions / new features / refactors escalate out of `/fix` to `/implement` or `/brainstorm`.
 
 ## Task
 $ARGUMENTS
@@ -12,7 +12,7 @@ $ARGUMENTS
 1. `scripts/state-schema.mjs` seeds `.smt/features/<slug>/task/<task>.state.json` with `mode: fix` and default pipeline `fix`.
 2. Entry skill is `workflow-investigate`. No shortcut to coding.
 3. `fix` flow (default): investigate → investigate-review → tasker → tasker-review → write-test → coding → agent-review → e2e → e2e-review → human-check. No team-code-review.
-4. `fix_simple` flow (only `target_type ∈ {text, design}`): investigate → tasker → tasker-review → coding → e2e → human-check.
+4. `fix_simple` flow (only `target_type ∈ {text, design}`): investigate → coding → e2e → human-check.
 5. `workflow-agent-review` uses Pattern B (code-reviewer + security-reviewer).
 
 ## Debugging contract
@@ -22,7 +22,7 @@ $ARGUMENTS
 - Check recent changes, working examples, and comparable code paths before choosing a fix.
 - Form one hypothesis at a time and test it with the smallest useful observation.
 - The RED test must reproduce the original bug or prove the expected corrected behavior.
-- The compact task checklist must mark works, omissions, verified, and team runtime before coding.
+- The compact task checklist must mark works, omissions, verified, and team runtime before coding on the default `fix` path.
 - If three distinct fix attempts fail, stop patching and route back to planning or architecture review.
 
 ## Review rounds

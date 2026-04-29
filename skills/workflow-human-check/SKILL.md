@@ -1,6 +1,6 @@
 ---
 name: workflow-human-check
-version: 0.51
+version: 0.55
 type: workflow
 consumes: all artifacts + team_review.md
 produces: user decision (rework | complete-commit-current | complete-new-branch-pr | hold | upgrade)

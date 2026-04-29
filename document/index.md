@@ -1,7 +1,7 @@
 ---
 title: Smelter — Claude Code Workflow Engine
 type: index
-tags: [smelter, harness, workflow, v0.51]
+tags: [smelter, harness, workflow, v0.55]
 updated: 2026-04-28
 ---
 
@@ -15,7 +15,7 @@ updated: 2026-04-28
 
 ## Canonical documents
 
-- [[workflow]] — v0.51 specification: modes, skills, routing, verification, teams, hooks.
+- [[workflow]] — v0.55 specification: modes, skills, routing, verification, teams, hooks.
 - [[implementation]] — implementation status tracker (what is built, what ships next).
 - [[Introduce]] — philosophy, direction, and the eight Iron Laws.
 
@@ -25,7 +25,7 @@ updated: 2026-04-28
 
 Smelter is a workflow engine that orchestrates Claude Code through the real team software development process: PM intake → investigation → planning → TDD → implementation → verification → team review → human approval → deploy.
 
-## Current architecture (v0.51)
+## Current architecture (v0.55)
 
 | Item | Current state |
 |------|---------------|

@@ -1,6 +1,6 @@
 ---
 name: workflow-infra-plan-review
-version: 0.51
+version: 0.55
 type: workflow
 consumes: infra-plan.md
 produces: infra-plan-review.md

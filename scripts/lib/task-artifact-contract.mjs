@@ -2,7 +2,7 @@
 
 import yaml from 'js-yaml';
 
-const VERSION = '0.51';
+const VERSION = '0.55';
 
 const TASK_CHECKS = Object.freeze(['goal', 'approach', 'queue', 'works', 'omissions', 'verified', 'team_runtime']);
 const TASK_COMPLETED_CHECKS = Object.freeze(['goal', 'approach', 'works', 'omissions', 'verified', 'team_runtime']);

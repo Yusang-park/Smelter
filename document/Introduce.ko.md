@@ -45,7 +45,7 @@ Smelter는 원자 단위의 **workflow 스킬** (`workflow-*`)을 모드로 조�
 │       ├── task/
 │       │   ├── plan.md                   ← feature 목표, 범위, acceptance criteria
 │       │   ├── <task-name>.md            ← 사람이 읽는 작업 기록
-│       │   └── <task-name>.state.json    ← 기계 상태 (v0.51 스키마)
+│       │   └── <task-name>.state.json    ← 기계 상태 (v0.55 스키마)
 │       ├── decisions.md
 │       └── artifacts/                    ← e2e 영상, 스크린샷, 로그
 └── state/                                ← 전역 세션 상태

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { validateTaskArtifact, validateTaskReviewArtifact } from './task-artifact-contract.mjs';
 
 const VALID_TASKS = `---
-schema_version: "0.51"
+schema_version: "0.55"
 target_type: bug_fix
 surface: ["scripts/foo.mjs"]
 ---
@@ -22,7 +22,7 @@ surface: ["scripts/foo.mjs"]
 `;
 
 const VALID_REVIEW = `---
-schema_version: "0.51"
+schema_version: "0.55"
 verdict: pass
 consensus: 0.95
 ---
@@ -36,18 +36,18 @@ consensus: 0.95
 - [x] decision: pass
 `;
 
-test('v0.51 tasks.md contract accepts compact checkbox artifact', () => {
+test('v0.55 tasks.md contract accepts compact checkbox artifact', () => {
   assert.deepEqual(validateTaskArtifact(VALID_TASKS), []);
 });
 
-test('v0.51 tasks.md contract rejects prose-only legacy artifact', () => {
+test('v0.55 tasks.md contract rejects prose-only legacy artifact', () => {
   const errors = validateTaskArtifact('# Tasks\n\nLong markdown prose without checklist.\n');
   assert.ok(errors.some(e => /schema_version/.test(e)), errors.join('\n'));
   assert.ok(errors.some(e => /checkbox/.test(e)), errors.join('\n'));
   assert.ok(errors.some(e => /team_runtime/.test(e)), errors.join('\n'));
 });
 
-test('v0.51 tasks.md contract requires completed scope and verification checks', () => {
+test('v0.55 tasks.md contract requires completed scope and verification checks', () => {
   const invalid = VALID_TASKS
     .replace('- [x] works:', '- [ ] works:')
     .replace('- [x] omissions:', '- [ ] omissions:')
@@ -60,11 +60,11 @@ test('v0.51 tasks.md contract requires completed scope and verification checks',
   assert.ok(errors.some(e => /team_runtime/.test(e)), errors.join('\n'));
 });
 
-test('v0.51 tasks-review.md contract requires pass review checkboxes', () => {
+test('v0.55 tasks-review.md contract requires pass review checkboxes', () => {
   assert.deepEqual(validateTaskReviewArtifact(VALID_REVIEW), []);
 });
 
-test('v0.51 tasks-review.md contract rejects pass without omissions verification', () => {
+test('v0.55 tasks-review.md contract rejects pass without omissions verification', () => {
   const invalid = VALID_REVIEW.replace('- [x] omissions: no feature or review concern is missing\n', '');
   const errors = validateTaskReviewArtifact(invalid);
   assert.ok(errors.some(e => /omissions/.test(e)), errors.join('\n'));

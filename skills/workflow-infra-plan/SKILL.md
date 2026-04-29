@@ -1,6 +1,6 @@
 ---
 name: workflow-infra-plan
-version: 0.51
+version: 0.55
 type: workflow
 consumes: investigation.md
 produces: infra-plan.md

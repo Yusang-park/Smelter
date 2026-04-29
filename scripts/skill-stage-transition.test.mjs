@@ -78,7 +78,7 @@ function readState(statePath) {
 }
 
 const VALID_TASKS_V052 = `---
-schema_version: "0.51"
+schema_version: "0.55"
 target_type: bug_fix
 ---
 
@@ -94,7 +94,7 @@ target_type: bug_fix
 `;
 
 const VALID_TASK_REVIEW_V052 = `---
-schema_version: "0.51"
+schema_version: "0.55"
 verdict: pass
 consensus: 0.95
 ---
@@ -135,7 +135,7 @@ test('T3-H2: workflow-investigate WITHOUT artifact → current_stage only, defer
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('T3-H3: workflow-tasker requires v0.51 compact checklist before completion', async () => {
+test('T3-H3: workflow-tasker requires v0.55 compact checklist before completion', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-h3-'));
   try {
     const sp = seedState(cwd, { mode: 'fix' });
@@ -153,7 +153,7 @@ test('T3-H3: workflow-tasker requires v0.51 compact checklist before completion'
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('T3-H4: workflow-tasker-review requires v0.51 review checklist before completion', async () => {
+test('T3-H4: workflow-tasker-review requires v0.55 review checklist before completion', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't3-h4-'));
   try {
     const sp = seedState(cwd, { mode: 'fix' });

@@ -1,6 +1,6 @@
 ---
 name: workflow-implementation-plan
-version: 0.51
+version: 0.55
 type: workflow
 consumes: investigation.md (+brainstorm.md/tasks.md optional)
 produces: implementation-plan.md

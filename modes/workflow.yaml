@@ -1,4 +1,4 @@
-# Smelter v0.51 — unified workflow configuration.
+# Smelter v0.55 — unified workflow configuration.
 #
 # Single source of truth for: skills, pipelines, modes, target-type routing,
 # transition adoption, verification rounds, and command aliases.
@@ -13,7 +13,7 @@
 #   modes.<name>         — thin composition (entry + pipeline + flags + team_hints)
 #   command_aliases      — /slash → mode
 
-schema_version: "0.51"
+schema_version: "0.55"
 
 verification_rounds:
   rounds: 2             # global policy for every review skill and mode
@@ -165,7 +165,7 @@ pipelines:
     - workflow-team-code-review
     - workflow-human-check
 
-  # fix — default /fix pipeline (all bug_fix regardless of scope). v0.51 records
+  # fix — default /fix pipeline (all bug_fix regardless of scope). v0.55 records
   # a compact task checklist before tests so fixes have explicit scope, omission,
   # verification, and team-runtime evidence without the old verbose tasker prose.
   fix:
@@ -180,12 +180,10 @@ pipelines:
     - workflow-e2e-review
     - workflow-human-check
 
-  # fix_simple — text/design change. TDD exempt, but still records the compact
-  # v0.51 checklist before coding so no fix path loses scope/review evidence.
+  # fix_simple — text/design change. TDD exempt and intentionally direct:
+  # investigate -> coding -> e2e -> human-check.
   fix_simple:
     - workflow-investigate
-    - workflow-tasker
-    - workflow-tasker-review
     - workflow-coding
     - workflow-e2e
     - workflow-human-check

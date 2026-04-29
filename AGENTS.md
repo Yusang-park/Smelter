@@ -1,4 +1,4 @@
-# Smelter — Agent Instructions v0.51
+# Smelter — Agent Instructions v0.55
 
 **"Agents do not memorize. Agents read files."** Plans/tasks/decisions -> `.smt/`. Progress in `features/<slug>/task/{name}.md` + `.state.json`.
 
@@ -75,16 +75,14 @@ Workflow support: aggregator (Pattern C), conflict-resolver, critic-watchdog (§
 
 Pick highest-confidence path; state pick + reason in one line; act. Never A/B branch. Halt only for: credentials, irreversible destructive ops, genuine requirement gap. A judgement call is not a blocker.
 
-## Serena MCP (`.mcp.json`)
+## Semble MCP (`.mcp.json`)
 
-Prefer symbol tools over full-file Read. Saves 70-95% tokens.
+Prefer Semble semantic code search for broad discovery; use `Read` once a concrete file/range is identified.
 
 | Task | Tool |
 |------|------|
-| Specific symbol | `find_symbol` |
-| File overview | `get_symbols_overview` |
-| Cross-file refs | `find_referencing_symbols` |
-| Edit symbol body | `replace_symbol_body`, `insert_after_symbol` |
+| Semantic/local code search | `mcp__semble__search` with `repo: "/Users/yusang/Smelter"` |
+| Related code chunks | `mcp__semble__find_related` |
 | Full file needed | `Read` fallback |
 
 ## Images/Screenshots

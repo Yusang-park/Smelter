@@ -1,6 +1,6 @@
 ---
 name: workflow-e2e
-version: 0.51
+version: 0.55
 type: workflow
 consumes: src/** built
 produces: "artifacts/ (video, screenshots, logs, trace, io-samples)"
@@ -53,11 +53,12 @@ No mocks for the interface under test. No dry-run. No handler-only calls when th
 4. Run the real scenario through the real interface.
 5. Save artifacts under `.smt/features/<slug>/artifacts/`.
 6. Assert both acknowledgement and effect. Ack-only signals (toast, 2xx, exit 0, banner) are insufficient unless the effect is a local UI toggle.
-7. Record scenario evidence with non-empty references.
+7. For UI layout/position requirements, assert the target element's bounding box against the viewport, then save the screenshot/video proving it.
+8. Record scenario evidence with non-empty references.
 
 ## Effect Evidence
 
-- UI: DOM state or screenshot diff proving the target state changed.
+- UI: DOM state or screenshot diff proving the target state changed; for placement, include bounding box + viewport assertion.
 - API: follow-up GET/list query or DB SELECT confirming state.
 - CLI: follow-up command or filesystem diff showing the result.
 - DB: SELECT reads back the inserted/updated value.
