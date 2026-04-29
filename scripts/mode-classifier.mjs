@@ -115,6 +115,25 @@ function classifyHighConfidenceEditIntent(input) {
     };
   }
 
+  const questionLike = /^(?:어떻게|왜|뭐|무엇)\b|(?:방법|원리|이유)\s*(?:알려|설명)|\?/.test(text);
+  const bugSignal = /(?:버그|오류|에러|실패|고장|안\s*됨|안돼|안\s*돼|crash|error|bug|fail(?:ed|ing)?|broken)/i;
+
+  const featureTarget = /(?:기능|피처|플로우|패널|스토어|레이아웃|화면|버튼|폼|페이지|모달|목록|리스트|입력|상태|대화|feature|capability|flow|panel|store|layout|ui|screen|button|form|page|modal|drawer|sheet|list|input|state|conversation)/i;
+  const koActionVerb = /(?:추가|구현|생성|작성|수정|개선|변경|확장|지원|분리|교체|대체|저장|표시|연결|통합|적용|반영|붙여|넣어|바꿔|만들)(?:해|하|할|해서|하도록|해줘|해주세요|하세요|하자|해라|줘|봐|겠습니다|게|자)/i;
+  const koActionAtEnd = /(?:추가|구현|생성|작성|수정|개선|변경|확장|지원|분리|교체|대체|저장|표시|연결|통합|적용|반영)$/i;
+  const enAction = /\b(?:add|implement|build|create|modify|update|change|extend|support|wire|integrate|replace|split|save|show|render)\b/i;
+  const hasWriteAction = koActionVerb.test(text) || koActionAtEnd.test(text) || enAction.test(text);
+  if (!questionLike && !bugSignal.test(text) && featureTarget.test(text) && hasWriteAction) {
+    return {
+      mode: 'implement',
+      trigger: 'local:feature-write-intent',
+      overridden: false,
+      target_type: 'extend_existing',
+      exempt: null,
+      skip_brainstorm: true,
+    };
+  }
+
   return null;
 }
 

@@ -139,7 +139,7 @@ export function canEnterPhase(state, targetPhase) {
       return block(`EXECUTE forbidden for task_type=${taskType}`);
     }
     if (taskType === 'write' && !hasTddEntryEvidence(state)) {
-      return block('EXECUTE requires TDD entry evidence: test_red, tdd_adopted, tdd_exempt, or legacy RED test_cycles');
+      return block('EXECUTE requires executable specification RED evidence: test_red, tdd_adopted, tdd_exempt, or legacy RED test_cycles');
     }
   }
 
@@ -210,7 +210,7 @@ export function evaluatePhaseToolUse(state, { toolName, skill = '', filePath = '
     if (phase !== 'EXECUTE') return block(`source edit requires EXECUTE phase, current phase=${phase}`);
     const verdict = canEnterPhase(state, 'EXECUTE');
     if (verdict.decision === 'block') return verdict;
-    return allow('write EXECUTE with TDD entry evidence');
+    return allow('write EXECUTE with executable specification RED evidence');
   }
 
   if (state.task_type === 'freeform') {

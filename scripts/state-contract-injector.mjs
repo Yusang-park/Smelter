@@ -94,7 +94,7 @@ function chainBlockReason(state, requested) {
     }
   }
   if (currentStage === 'workflow-write-test' && requested === 'workflow-coding' && !hasTddEntryEvidence(state)) {
-    return `[Smelter chain] Skill('workflow-coding') requires TDD entry evidence from 'workflow-write-test' before entering EXECUTE. Run the new/modified test so the actual Bash exit code is non-zero and let the test-red recorder write events[].type='test_red', enter workflow-write-test with pre-existing dirty source+test changes so the transition hook records events[].type='tdd_adopted', or use a text/design/style TDD-exempt target so the hook records events[].type='tdd_exempt'. Do not append \`; echo "exit=$?"\`; that masks the failing test as a successful Bash command.`;
+    return `[Smelter chain] Skill('workflow-coding') requires executable specification RED evidence from 'workflow-write-test' before entering EXECUTE. Run the new/modified executable spec test so the actual Bash exit code is non-zero and let the test-red recorder write events[].type='test_red', enter workflow-write-test with pre-existing dirty source+test changes so the transition hook records events[].type='tdd_adopted', or use a text/design/style TDD-exempt target so the hook records events[].type='tdd_exempt'. Do not append \`; echo "exit=$?"\`; that masks the failing test as a successful Bash command.`;
   }
   const expectedNext = nextSkillForState(state, currentStage);
   if (!expectedNext) return null;

@@ -21,6 +21,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { resolveHookSessionId } from './lib/session-paths.mjs';
+import { hasTddEntryEvidence } from './lib/phase-gate.mjs';
 import { SKILL_ARTIFACT_BASENAME } from './state-validator.mjs';
 
 function readStdinJson() {
@@ -92,12 +93,9 @@ function rule04_unresolvedFeedbackComplete(input, state) {
 function rule05_tddCycleBeforeCoding(input, state) {
   if (!state) return null;
   if (state.current_stage !== 'workflow-coding') return null;
-  // If entering coding but no RED cycle recorded, block any src/** write.
-  const red = (state.test_cycles || []).filter(c =>
-    ['added_case','modified_case'].includes(c.action) && c.run_result === 'fail'
-  );
-  if (red.length > 0) return null;
-  if (state.exempt?.tdd) return null;  // surface exemption
+  // Keep this in sync with the phase gate: RED cycles, TDD adoption, and
+  // surface exemptions are all valid entry evidence for workflow-coding.
+  if (hasTddEntryEvidence(state)) return null;
   const target = input.tool_input?.file_path || '';
   if ((input.tool_name === 'Edit' || input.tool_name === 'Write') &&
       target && !/\.test\./.test(target) && /\/src\//.test(target)) {
@@ -609,7 +607,91 @@ export function rule17_prematureCompletionProse(input, state) {
   };
 }
 
+// R18 — UI E2E review pass without opened visual evidence.
+//
+// A screenshot/video existing on disk is not visual verification. For UI E2E
+// review, a pass verdict must include structured inspection notes that name an
+// opened visual artifact, state what was observed, and compare it to the
+// expected viewport state. This catches the class of failure where a floating
+// button is screenshotted but visibly clipped or positioned incorrectly.
+export function rule18_uiE2eReviewPassWithoutVisualInspection(input, state, cwd) {
+  if (!state || state.current_stage !== 'workflow-e2e-review') return null;
+  if (input.tool_name !== 'Edit' && input.tool_name !== 'Write') return null;
+
+  const target = input.tool_input?.file_path || '';
+  if (!/(?:^|\/)e2e[-_]review\.md$/.test(target)) return null;
+
+  const content = input.tool_input?.new_string || input.tool_input?.content || '';
+  if (!content) return null;
+  const passVerdict = /##\s*Verdict[\s\S]{0,120}\bpass\b/i.test(content) || /\bverdict\s*[:=-]\s*pass\b/i.test(content);
+  if (!passVerdict) return null;
+
+  const scenarios = Array.isArray(state.scenarios) ? state.scenarios : [];
+  const hasUiScenario = scenarios.some((scenario) => /^(?:ui|browser|web)$/i.test(String(scenario?.surface || '')));
+  const hasVisualFiles = hasVisualArtifact(cwd);
+  if (!hasUiScenario && !hasVisualFiles) return null;
+
+  const hasSection = /##\s*Visual Inspection\b/i.test(content);
+  const hasOpened = /\bopened\s*:/i.test(content);
+  const hasObserved = /\bobserved\s*:/i.test(content);
+  const hasExpected = /\bexpected\s*:/i.test(content);
+  const hasViewportAssertion = /\b(?:viewport|bounding box)\b/i.test(content);
+  const referencesVisual = referencesExistingVisualArtifact(content, cwd);
+
+  if (hasSection && hasOpened && hasObserved && hasExpected && hasViewportAssertion && referencesVisual) return null;
+
+  return {
+    rule: 'R18',
+    severity: 'CRITICAL',
+    reason: 'UI e2e-review pass requires ## Visual Inspection with opened:/observed:/expected:, an existing screenshot/video path, and viewport/bounding box comparison — cause: visual_mismatch',
+  };
+}
+
 // ===== Helpers =====
+
+function hasVisualArtifact(cwd) {
+  if (!cwd) return false;
+  const featuresRoot = join(cwd, '.smt', 'features');
+  if (!existsSync(featuresRoot)) return false;
+  try {
+    for (const slug of readdirSync(featuresRoot)) {
+      if (walkHasVisual(join(featuresRoot, slug, 'artifacts'))) return true;
+    }
+  } catch {}
+  return false;
+}
+
+function walkHasVisual(dir) {
+  if (!existsSync(dir)) return false;
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory() && walkHasVisual(path)) return true;
+      if (entry.isFile() && /\.(?:png|jpe?g|webm|mp4)$/i.test(entry.name)) return true;
+    }
+  } catch {}
+  return false;
+}
+
+function referencesExistingVisualArtifact(content, cwd) {
+  const matches = String(content || '').match(/[^\s"'()]+\.(?:png|jpe?g|webm|mp4)\b/gi) || [];
+  return matches.some((raw) => visualPathExists(raw.replace(/[.,;:]+$/g, ''), cwd));
+}
+
+function visualPathExists(rawPath, cwd) {
+  if (!rawPath || !cwd) return false;
+  if (rawPath.startsWith('/')) return existsSync(rawPath);
+  if (rawPath.startsWith('.smt/')) return existsSync(join(cwd, rawPath));
+  if (rawPath.startsWith('artifacts/')) {
+    const featuresRoot = join(cwd, '.smt', 'features');
+    try {
+      for (const slug of readdirSync(featuresRoot)) {
+        if (existsSync(join(featuresRoot, slug, rawPath))) return true;
+      }
+    } catch {}
+  }
+  return existsSync(join(cwd, rawPath));
+}
 
 function guessPlanPath(featuresRoot, state) {
   if (!state?.task_id) return null;
@@ -655,6 +737,7 @@ export const RULES = [
   rule15_stageSkipOnCodeEdit,
   rule16_prematureDone,
   rule17_prematureCompletionProse,
+  rule18_uiE2eReviewPassWithoutVisualInspection,
 ];
 
 export function runAll(input, state, cwd) {

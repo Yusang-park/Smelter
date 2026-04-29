@@ -570,6 +570,21 @@ test('R-I1: Read-first reminder coexists with tool description in additionalCont
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+test('R-I2: existing-file reminder tells agent to re-read stale or modified files', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'r-i2-'));
+  try {
+    seedActiveWorkflow(cwd);
+    mkdirSync(join(cwd, 'src'), { recursive: true });
+    const target = `${cwd}/src/fresh.ts`;
+    writeFileSync(target, 'existing');
+    const r = runEnforcer({ cwd, toolName: 'Write', toolInput: { file_path: target, content: 'x' } });
+    const out = parseOut(r.stdout);
+    const ctx = out?.hookSpecificOutput?.additionalContext || '';
+    assert.match(ctx, new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'reminder context must include the exact target path');
+    assert.match(ctx, /modified since read|stale|re-read/i, 'reminder must prevent file-modified-since-read failures');
+  } finally { await rm(cwd, { recursive: true, force: true }); }
+});
+
 // ── Integration ────────────────────────────────────────────────────────────
 test('T2-I1: block reason directs agent to invoke skill instead of editing state', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 't2-i1-'));

@@ -66,10 +66,10 @@ test('EXECUTE gate accepts RED, adopted, exempt-event, or state exemption', () =
   assert.equal(hasTddEntryEvidence(state({ surface: ['src/app.css'] })), true);
 });
 
-test('canEnterPhase blocks write EXECUTE without TDD entry evidence', () => {
+test('canEnterPhase blocks write EXECUTE without executable specification RED evidence', () => {
   const verdict = canEnterPhase(state({ step: 'TEST_DESIGN' }), 'EXECUTE');
   assert.equal(verdict.decision, 'block');
-  assert.match(verdict.reason, /TDD entry evidence/i);
+  assert.match(verdict.reason, /executable specification RED evidence/i);
 });
 
 test('canEnterPhase allows write EXECUTE with tdd_exempt evidence', () => {
@@ -95,4 +95,5 @@ test('evaluatePhaseToolUse allows source edits in EXECUTE with TDD exemption', (
     { toolName: 'Edit', filePath: '/repo/src/app.ts' },
   );
   assert.equal(verdict.decision, 'allow');
+  assert.match(verdict.reason, /executable specification RED evidence/i);
 });

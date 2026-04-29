@@ -530,6 +530,10 @@ export function detectPlainHumanCheckMenu(text) {
   return looksLikeQuestion && !mentionsNativeTool;
 }
 
+export function detectPhaseBlockedQuestion(text) {
+  return /(?:blocked by current phase|current phase|requires phase|source edit requires EXECUTE|phase skip blocked)/i.test(String(text || '')) && /\?/.test(String(text || ''));
+}
+
 function applyV4ControllerTransition(state, statePath, event) {
   if (!state || typeof state.task_type !== 'string' || typeof state.step !== 'string') return null;
   const transition = nextV4Transition(state, event);
@@ -655,6 +659,18 @@ export function decide({ state, lastAssistantText, statePath, stageClassifier, q
       reason: `continue: unresolved feedback '${unresolved.id}' for ${unresolved.target_skill}. Invoke that Skill and resolve it.`,
       payload: { skill: unresolved.target_skill, feedback_id: unresolved.id },
     };
+  }
+
+  if (INTERACTIVE_QUESTION_SHAPES.has(questionShape) && detectPhaseBlockedQuestion(lastAssistantText)) {
+    const allowed = Array.isArray(state.allowed_skills) ? state.allowed_skills : [];
+    const skill = allowed.includes('workflow-coding') ? 'workflow-coding' : state.current_stage;
+    if (skill) {
+      return {
+        action: 'enter_skill',
+        reason: `continue: phase-blocked work must re-enter ${skill}, not ask the user how to proceed.`,
+        payload: { skill, direction: skill === 'workflow-coding' ? 'back' : 'enter' },
+      };
+    }
   }
 
   if (last && last.result === 'fail') {

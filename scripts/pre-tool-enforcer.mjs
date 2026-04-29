@@ -493,10 +493,11 @@ function main() {
     // Prevention for the Claude Code harness error:
     //   "File has not been read yet. Read it first before writing to it."
     // The harness rejects Write/Edit of any file not Read in the current
-    // session. We inject a reminder into additionalContext whenever Write/Edit
-    // targets an EXISTING on-disk file so the agent Reads first instead of
-    // hitting the validation error. New-file writes (path does not exist)
-    // carry no reminder — there is nothing to Read.
+    // session, and can also reject stale snapshots when the file changed after
+    // the last Read. We inject a reminder whenever Write/Edit targets an
+    // EXISTING on-disk file so the agent refreshes content instead of hitting
+    // a validation error. New-file writes (path does not exist) carry no
+    // reminder — there is nothing to Read.
     const toolInput = data.toolInput || data.tool_input || null;
     const desc = generateToolDescription(toolName, toolInput);
 
@@ -507,7 +508,7 @@ function main() {
       if (fp) {
         try {
           if (existsSync(fp)) {
-            readFirstReminder = `Read-first: existing file. If not already Read this session, Read the same file before ${toolName}. New files exempt.`;
+            readFirstReminder = `Read-first: existing file. Read/re-read before ${toolName} if unread, stale, or modified since read. New files exempt.`;
           }
         } catch {}
       }

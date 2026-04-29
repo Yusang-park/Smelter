@@ -52,6 +52,10 @@ export const SLASH_SURFACE_TABLE = Object.freeze([
   { command: 'fix', tokens: ['style'],    set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
   { command: 'fix', tokens: ['design'],   set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
   { command: 'fix', tokens: ['디자인'],    set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['border'],   set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['outline'],  set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['ring'],     set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
+  { command: 'fix', tokens: ['테두리'],    set: { target_type: 'design', exempt: { tdd: true, e2e: false } } },
   // implement: extend
   { command: 'implement', tokens: ['extend'],   set: { skip_brainstorm: true } },
   { command: 'implement', tokens: ['add','to'], set: { skip_brainstorm: true } },
@@ -71,15 +75,22 @@ function tokenize(argsString) {
 }
 
 function matchConsecutive(tokens, needle) {
-  if (needle.length === 1) return tokens.includes(needle[0]);
+  if (needle.length === 1) return tokens.some((token) => tokenMatches(token, needle[0]));
   for (let i = 0; i <= tokens.length - needle.length; i++) {
     let ok = true;
     for (let j = 0; j < needle.length; j++) {
-      if (tokens[i + j] !== needle[j]) { ok = false; break; }
+      if (!tokenMatches(tokens[i + j], needle[j])) { ok = false; break; }
     }
     if (ok) return true;
   }
   return false;
+}
+
+function tokenMatches(token, needle) {
+  if (token === needle) return true;
+  if (!/^[a-z0-9_-]+$/i.test(needle)) return false;
+  const suffix = token.slice(needle.length);
+  return token.startsWith(needle) && /^[가-힣]+$/u.test(suffix);
 }
 
 /**

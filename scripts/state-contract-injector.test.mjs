@@ -453,8 +453,8 @@ test('CE2b error: current=workflow-write-test, skill=workflow-coding without RED
     assert.equal(out.continue, false, 'coding must not start before a failing test is recorded');
     assert.match(
       out.hookSpecificOutput?.permissionDecisionReason || out.stopReason || '',
-      /TDD entry evidence.*test_red.*tdd_adopted.*tdd_exempt.*echo/is,
-      'block reason must explain TDD evidence options and echo-masked failures'
+      /executable specification RED evidence.*test_red.*tdd_adopted.*tdd_exempt.*echo/is,
+      'block reason must explain executable spec RED evidence options and echo-masked failures'
     );
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

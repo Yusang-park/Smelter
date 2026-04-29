@@ -102,6 +102,25 @@ test('R12: allow src edit when inside workflow-coding stage', () => {
   }
 });
 
+test('R05: allow source edit when tdd_adopted event is present', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-coding' });
+    state.exempt = { tdd: false, e2e: false };
+    state.test_cycles = [];
+    state.events = [{ type: 'tdd_adopted', skill: 'workflow-write-test', result: 'pass' }];
+    const input = {
+      tool_name: 'Edit',
+      tool_input: { file_path: join(cwd, 'src/foo.ts'), old_string: 'a', new_string: 'b' },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R05'), undefined, 'R05 must respect event-based TDD evidence');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('R12: block src edit when .state.json missing but active-feature pointer exists', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
   try {
@@ -533,6 +552,57 @@ test('R17: do not fire on code / test files', () => {
     };
     const hits = runAll(input, state, cwd);
     assert.equal(hits.find(h => h.rule === 'R17'), undefined, 'R17 must NOT fire on src/ code edits');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R18: block UI e2e-review pass without visual inspection evidence', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    const state = stateWith({ current_stage: 'workflow-e2e-review' });
+    state.scenarios = [{ name: 'floating-action-button', surface: 'ui' }];
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/e2e-review.md'),
+        content: '## Scenario Coverage\n\n- floating-action-button\n\n## Verdict\n\npass\n',
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    const r18 = hits.find(h => h.rule === 'R18');
+    assert.ok(r18, 'R18 must fire when UI e2e-review pass has no visual inspection section');
+    assert.equal(r18.severity, 'CRITICAL');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('R18: allow UI e2e-review pass with screenshot inspection and viewport assertion', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'watchdog-'));
+  try {
+    seedFeatureDir(cwd, 'demo');
+    mkdirSync(join(cwd, '.smt/features/demo/artifacts/ui'), { recursive: true });
+    writeFileSync(join(cwd, '.smt/features/demo/artifacts/ui/fab-after.png'), 'fake-png');
+    const state = stateWith({ current_stage: 'workflow-e2e-review' });
+    state.scenarios = [{ name: 'floating-action-button', surface: 'ui' }];
+    const input = {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: join(cwd, '.smt/features/demo/task/e2e-review.md'),
+        content: [
+          '## Visual Inspection',
+          '- opened: artifacts/ui/fab-after.png',
+          '- observed: FAB is fully visible in the bottom-right corner.',
+          '- expected: bottom-right within viewport; bounding box assertion passed.',
+          '## Verdict',
+          'pass',
+        ].join('\n'),
+      },
+    };
+    const hits = runAll(input, state, cwd);
+    assert.equal(hits.find(h => h.rule === 'R18'), undefined, 'R18 must allow documented visual inspection with viewport assertion');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

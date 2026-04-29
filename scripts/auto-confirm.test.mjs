@@ -496,6 +496,17 @@ test('unentered seeded workflow cannot stop on plan confirmation before Skill en
   assert.equal(d.payload.skill, 'workflow-investigate');
   assert.equal(d.payload.direction, 'enter');
 });
+test('phase-blocked non-human-check question routes to workflow-coding instead of stopping', () => {
+  const s = baseState({ mode: 'fix', current_stage: 'workflow-e2e-review', events: [{ skill: 'workflow-e2e', result: 'pass' }], completed_stages: ['workflow-e2e'] });
+  const d = decide({
+    state: s,
+    lastAssistantText: 'One-line fix ready but blocked by current phase. How to proceed?',
+    questionShape: 'open_question',
+  });
+  assert.equal(d.action, 'enter_skill');
+  assert.equal(d.payload.skill, 'workflow-coding');
+  assert.equal(d.payload.direction, 'back');
+});
 test('workflow-human-check completed → session_wrap (canonical terminal shape)', () => {
   // The canonical terminal shape after finalize-human-check.mjs runs is:
   // current_stage stays at 'workflow-human-check' AND completed_stages

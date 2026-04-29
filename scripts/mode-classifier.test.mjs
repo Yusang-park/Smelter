@@ -142,6 +142,15 @@ section('Layer 2b — High-confidence short edit intents');
     assert('rich text editor UI → implement', editor.mode, 'implement');
     assert('rich text editor trigger', editor.trigger, 'local:rich-text-editor-ui');
     assert('rich text editor target_type', editor.target_type, 'extend_existing');
+
+    const featureChange = classify('AI panel 기능 수정해줘. 저장된 대화 목록도 보여줘.', { cwd: dir, sessionId: 'short3' });
+    assert('feature modification → implement', featureChange.mode, 'implement');
+    assert('feature modification trigger', featureChange.trigger, 'local:feature-write-intent');
+    assert('feature modification target_type', featureChange.target_type, 'extend_existing');
+
+    const bareFeatureChange = classify('특정 기능 수정', { cwd: dir, sessionId: 'short4' });
+    assert('bare feature modification → implement', bareFeatureChange.mode, 'implement');
+    assert('bare feature modification skips brainstorm', bareFeatureChange.skip_brainstorm, true);
   } finally {
     delete process.env.SMELTER_MODE_CLASSIFIER_MODULE;
     rmSync(dir, { recursive: true, force: true });

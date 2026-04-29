@@ -147,6 +147,27 @@ test('rich text editor UI request seeds implement before plan confirmation', asy
   }
 });
 
+test('feature modification request seeds implement before first code edit', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-feature-edit-'));
+  try {
+    const prompt = 'AI panel 기능 수정해줘. 저장된 대화 목록도 보여줘.';
+    const out = runDetector({ cwd, prompt, sessionId: 'feature-edit' });
+    assert.equal(out.continue, true);
+    const ctx = out.hookSpecificOutput?.additionalContext ?? '';
+    assert.match(ctx, /Skill: implement/);
+    assert.match(ctx, /FIRST tool call/i);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file must be seeded for concrete feature modification request');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.equal(state.mode, 'implement');
+    assert.equal(state.target_type, 'extend_existing');
+    assert.equal(state.skip_brainstorm, true);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test('communication-only prompt does not seed a workflow', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-comm-'));
   try {
@@ -507,11 +528,11 @@ test('TPP11 SMELTER_SKIP_TRANSCRIPT_HEURISTIC=1 bypasses the heuristic', async (
 // ---------------------------------------------------------------------------
 // Magic-keyword → target_type → pipeline dispatch (retained historical dispatch path).
 // Verifies `/fix typo ...` and `/fix css ...` resolve to fix_simple while
-// retaining the compact v0.51 tasker record, and an unmatched /fix prompt
+// skipping tasker stages, and an unmatched /fix prompt
 // falls through to the default fix pipeline.
 // ---------------------------------------------------------------------------
 
-test('MK1 /fix typo ... → target_type=text, fix_simple pipeline (6 skills), TDD+E2E exempt', async () => {
+test('MK1 /fix typo ... → target_type=text, fix_simple pipeline (4 skills), TDD+E2E exempt', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-typo-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-typo', prompt: '/fix typo 오타 하나 있어요' });
@@ -525,8 +546,8 @@ test('MK1 /fix typo ... → target_type=text, fix_simple pipeline (6 skills), TD
     assert.equal(state.target_type, 'text', 'magic keyword `typo` must set target_type=text (v3.3)');
     assert.deepEqual(
       state.allowed_skills,
-      ['workflow-investigate', 'workflow-tasker', 'workflow-tasker-review', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
-      'text must resolve to fix_simple pipeline with compact tasker record (6 skills)',
+      ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
+      'text must resolve to the simplified fix_simple pipeline (4 skills)',
     );
     assert.equal(state.exempt?.tdd, true, 'text must set exempt.tdd');
     assert.equal(state.exempt?.e2e, true, 'text must set exempt.e2e');
@@ -535,7 +556,7 @@ test('MK1 /fix typo ... → target_type=text, fix_simple pipeline (6 skills), TD
   }
 });
 
-test('MK2 /fix css ... → target_type=design, fix_simple pipeline (6 skills), tdd exempt + e2e kept (v3.3)', async () => {
+test('MK2 /fix css ... → target_type=design, fix_simple pipeline (4 skills), tdd exempt + e2e kept (v3.3)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-css-'));
   try {
     const out = runDetector({ cwd, sessionId: 'mk-css', prompt: '/fix css 버튼 색상 좀 바꿔줘' });
@@ -551,8 +572,36 @@ test('MK2 /fix css ... → target_type=design, fix_simple pipeline (6 skills), t
     assert.equal(state.exempt?.e2e, false, 'design must NOT exempt e2e (visual surface)');
     assert.deepEqual(
       state.allowed_skills,
-      ['workflow-investigate', 'workflow-tasker', 'workflow-tasker-review', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
-      'design must resolve to fix_simple pipeline with compact tasker record (6 skills)',
+      ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
+      'design must resolve to the simplified fix_simple pipeline (4 skills)',
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('MK2b /fix focus border prompt → target_type=design, fix_simple pipeline', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'kwd-mk-focus-border-'));
+  try {
+    const out = runDetector({
+      cwd,
+      sessionId: 'mk-focus-border',
+      prompt: '/fix input-ai-landing를 포커스했을때도 border가 안보여야함.',
+    });
+    assert.equal(out.continue, true);
+
+    const statePath = findStateFile(cwd);
+    assert.ok(statePath, 'state file not seeded');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+
+    assert.equal(state.mode, 'fix');
+    assert.equal(state.target_type, 'design', 'focus/border UI prompt must set target_type=design');
+    assert.equal(state.exempt?.tdd, true, 'design prompt must set exempt.tdd');
+    assert.equal(state.exempt?.e2e, false, 'design prompt must keep e2e required');
+    assert.deepEqual(
+      state.allowed_skills,
+      ['workflow-investigate', 'workflow-coding', 'workflow-e2e', 'workflow-human-check'],
+      'design prompt must resolve to the simplified fix_simple pipeline (4 skills)',
     );
   } finally {
     await rm(cwd, { recursive: true, force: true });
