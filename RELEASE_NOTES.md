@@ -3,6 +3,28 @@
 > Canonical release log. Korean translation: [`RELEASE_NOTES.ko.md`](RELEASE_NOTES.ko.md).
 > Smelter release tags use the `0.*` line. `codex-for-claude-code` is versioned independently.
 
+## v0.55.0 — Workflow Runtime Hardening
+**Released**: 2026-04-29
+
+### Highlights
+
+- `workflow-write-test` now frames RED tests as executable specifications using Specification by Example / BDD / ATDD principles.
+- Coding-entry gates now require executable specification RED evidence instead of generic TDD wording.
+- `workflow-e2e` and `workflow-e2e-review` now require opened visual artifacts plus viewport or bounding-box evidence for UI placement checks.
+- Semble MCP replaces Serena in repo configuration, permissions, ignore rules, and stage-gate assumptions.
+- Prompt routing now recognizes high-confidence feature modification requests as `/implement` and focused visual `/fix` hints such as `border`, `outline`, `ring`, and `테두리` as design work.
+- Phase-block auto-confirm recovery, stale read-first reminders, removed skill-injector assertions, and retired Serena MCP stage-gate behavior are covered by regression tests.
+
+### Compatibility Notes
+
+- Current package/plugin/workflow schema version: `0.55.0` / `0.55`.
+- The task artifact shape remains the compact checklist introduced in `v0.51`; its `schema_version` is now `0.55`.
+- `fix_simple` still skips tasker stages for text/design work; the default `fix` path keeps compact tasker and tasker-review records.
+
+### Verification
+
+- Focused workflow/runtime regression tests cover schema loading, compact task artifacts, prompt routing, visual E2E review, phase gates, and hook cleanup.
+
 ## v0.51.0 — Workflow Source Of Truth And Compact Fix Flow
 **Released**: 2026-04-28
 
@@ -17,9 +39,9 @@
 
 ### Compatibility Notes
 
-- Current package/plugin/workflow schema version: `0.51.0` / `0.51`.
+- At v0.51 release time, package/plugin/workflow schema version was `0.51.0` / `0.51`.
 - `fix` pipeline now includes tasker and tasker-review before write-test.
-- `fix_simple` still only applies to `text` and `design` surfaces, but also records compact tasker artifacts before coding.
+- `fix_simple` still only applies to `text` and `design` surfaces and now runs directly as investigate → coding → E2E → human-check.
 - `transition_adoptions` is declarative. Add future cross-mode reuse in `modes/workflow.yaml`, not inside individual hooks.
 
 ### Verification

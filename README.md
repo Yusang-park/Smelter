@@ -6,7 +6,7 @@
   <strong>TDD-first workflow engine for Claude Code: file-based state, deterministic gates, multi-agent execution.</strong>
 </p>
 
-<p align="center"><code>v0.51.0</code></p>
+<p align="center"><code>v0.55.0</code></p>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a>
@@ -32,12 +32,13 @@ node ~/Smelter/scripts/dev-install.mjs
 
 ---
 
-## What Changed In v0.51
+## What Changed In v0.55
 
-- Current release line is `v0.51.0`.
+- Current release line is `v0.55.0`.
 - User-facing read-only mode is `explore`, invoked with `/explore`.
 - Infrastructure operations use `/infra` so cloud/IaC/resource mutation does not route through product-code TDD.
-- `/fix` now records compact `tasks.md` and `tasks-review.md` scope checklists before tests/coding.
+- `/fix` records compact `tasks.md` and `tasks-review.md` scope checklists before executable spec tests/coding.
+- `workflow-write-test` now treats RED tests as executable specifications using concrete examples, observable outcomes, and no implementation-detail coupling.
 - Cross-mode reuse such as `/explore → /fix|/implement` is declared in `modes/workflow.yaml → transition_adoptions`, not hard-coded in hooks.
 - The executor skill remains `workflow-investigate`; skill names describe implementation artifacts, while modes describe user intent.
 - The retired investigate command is not an alias.
@@ -73,7 +74,7 @@ Smelter v0.4 separates four layers:
 | `Step` | Deterministic FSM position: `INTENT`, `DISCOVERY`, `PLAN`, `TEST_DESIGN`, `EXECUTE`, `VERIFY`, `HUMAN_CHECK`, `DONE` |
 | `Guard` | Tool/action validator for the current `(task_type, step, state)` |
 
-This means read/design/verify modes cannot mutate source, write modes cannot edit product code before TDD entry evidence (`test_red`, `tdd_adopted`, `tdd_exempt`, or legacy RED cycles), infra edits must reach `EXECUTE`, and commits are blocked until `workflow-human-check` passes.
+This means read/design/verify modes cannot mutate source, write modes cannot edit product code before executable specification RED evidence (`test_red`, `tdd_adopted`, `tdd_exempt`, or legacy RED cycles), infra edits must reach `EXECUTE`, and commits are blocked until `workflow-human-check` passes.
 
 ---
 
@@ -94,7 +95,7 @@ The core rule is unchanged: **agents do not memorize; agents read files.**
 
 ## TDD And Verification
 
-- Implementation work must write tests first, observe RED, implement, then reach GREEN.
+- Implementation work must write executable spec tests first, observe RED, implement, then reach GREEN.
 - Interface-changing work requires real-interface E2E: browser, subprocess, HTTP port, DB engine, or hook stdin/stdout as applicable.
 - CSS/style, i18n/copy-only, typo, and pure-dialogue changes are surface-exempt from TDD but still go through the selected workflow.
 - Multi-Pass Verification runs exactly two global rounds, omission and contradiction, for every review skill.
@@ -120,7 +121,7 @@ bin/           CLI entry point
 
 ## Status
 
-- Version: `0.51.0`
+- Version: `0.55.0`
 - Canonical spec: [`document/workflow.md`](document/workflow.md)
 - Implementation status: [`document/implementation.md`](document/implementation.md)
 - Agent instructions: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md)

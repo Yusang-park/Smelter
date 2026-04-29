@@ -3,6 +3,28 @@
 > 이 문서는 [`RELEASE_NOTES.md`](RELEASE_NOTES.md)의 한국어 번역본입니다.
 > Smelter 릴리즈 태그는 `0.*` 라인을 사용합니다. `codex-for-claude-code`는 독립 버전입니다.
 
+## v0.55.0 — Workflow Runtime Hardening
+**릴리즈**: 2026-04-29
+
+### 핵심 변경
+
+- `workflow-write-test`는 이제 Specification by Example / BDD / ATDD 원칙에 따라 RED 테스트를 실행 가능한 스펙으로 다룹니다.
+- Coding 진입 gate는 일반 TDD 표현 대신 실행 가능한 스펙 RED 증거를 요구합니다.
+- `workflow-e2e`와 `workflow-e2e-review`는 UI 위치 검증 시 열린 visual artifact와 viewport 또는 bounding-box 증거를 요구합니다.
+- Repo 설정, 권한, ignore rule, stage-gate 가정에서 Serena 대신 Semble MCP를 사용합니다.
+- Prompt routing은 명확한 기능 수정 요청을 `/implement`로, `border`, `outline`, `ring`, `테두리` 같은 visual `/fix` 힌트를 design 작업으로 분류합니다.
+- Phase-block auto-confirm recovery, stale read-first reminder, 제거된 skill-injector 검증, retired Serena MCP stage-gate 동작을 regression test로 고정했습니다.
+
+### 호환성 메모
+
+- 현재 package/plugin/workflow schema 버전: `0.55.0` / `0.55`.
+- Task artifact 형태는 `v0.51`의 compact checklist를 유지하되 `schema_version`은 `0.55`입니다.
+- `fix_simple`은 text/design 작업에서 계속 tasker stage를 건너뛰며, 기본 `fix` path는 compact tasker와 tasker-review 기록을 유지합니다.
+
+### 검증
+
+- Schema loading, compact task artifact, prompt routing, visual E2E review, phase gate, hook cleanup을 focused workflow/runtime regression test로 검증했습니다.
+
 ## v0.51.0 — Workflow Source Of Truth와 Compact Fix Flow
 **릴리즈**: 2026-04-28
 
@@ -17,9 +39,9 @@
 
 ### 호환성 메모
 
-- 현재 package/plugin/workflow schema 버전: `0.51.0` / `0.51`.
+- v0.51 릴리즈 당시 package/plugin/workflow schema 버전은 `0.51.0` / `0.51`이었습니다.
 - `fix` pipeline은 write-test 전에 tasker와 tasker-review를 포함합니다.
-- `fix_simple`은 계속 `text`, `design` 표면에만 적용되지만, coding 전에 compact tasker artifact를 기록합니다.
+- `fix_simple`은 계속 `text`, `design` 표면에만 적용되며 이제 investigate → coding → E2E → human-check로 바로 진행합니다.
 - `transition_adoptions`는 선언형입니다. 향후 cross-mode reuse는 개별 hook이 아니라 `modes/workflow.yaml`에 추가합니다.
 
 ### 검증
