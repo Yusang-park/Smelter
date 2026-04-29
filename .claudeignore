@@ -12,9 +12,6 @@ dist/
 .smt/session/
 .smt/state/
 
-# Serena project auto-config (regenerated on session start)
-.serena/
-
 # Backup / archived docs
 document-backup/
 document/reference-topics/

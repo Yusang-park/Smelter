@@ -193,7 +193,7 @@ section('edge case');
   writePointer(dir, SID, 'fx');
   writeState(dir, 'fx', { task_id: 'fx', mode: 'implement', current_stage: 'workflow-brainstorm', completed_stages: [] });
   const r = runHook({ tool_name: 'mcp__serena__replace_symbol_body', tool_input: {}, session_id: SID, cwd: dir }, dir, { SMT_STAGE_GATE_MODE: 'enforce' });
-  assert('mutating MCP w/o skill → block', r.stdout?.decision, 'block');
+  assert('retired Serena MCP tool is not stage-gated', r.stdout === null || r.stdout?.decision !== 'block', true);
   rmSync(dir, { recursive: true, force: true });
 }
 

@@ -42,16 +42,7 @@ const READONLY_BASH = new Set([
 // is in READONLY_BASH (for status/log/diff/etc.), these subcommands write.
 const MUTATING_GIT_RE = /\bgit\s+(commit|push|pull|merge|rebase|cherry-pick|revert|reset|checkout|switch|restore|add|rm|mv|clean|stash\b(?!\s+(?:list|show|diff))|fetch|clone|init|am|apply|tag\s+-[dD]|branch\s+-[dD]|remote\s+(?:add|remove|set-url)|config\s+--(?:add|set|unset|replace-all|remove-section))\b/;
 
-const MUTATING_MCP = new Set([
-  'mcp__serena__replace_symbol_body',
-  'mcp__serena__insert_after_symbol',
-  'mcp__serena__insert_before_symbol',
-  'mcp__serena__rename_symbol',
-  'mcp__serena__safe_delete_symbol',
-  'mcp__serena__write_memory',
-  'mcp__serena__edit_memory',
-  'mcp__serena__delete_memory'
-]);
+const MUTATING_MCP = new Set([]);
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit']);
 

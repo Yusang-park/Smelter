@@ -43,6 +43,20 @@ check('hook configs do not invoke rule-injector', () => {
   }
 });
 
+check('hook configs do not invoke removed skill hook', () => {
+  const files = ['hooks/hooks.json', 'settings.json'];
+  const removedHook = ['skill', 'injector'].join('-');
+  for (const file of files) {
+    assert.equal(readProjectFile(file).includes(`${removedHook}.mjs`), false);
+  }
+});
+
+check('removed skill hook script does not exist in repo', () => {
+  const removedHook = ['skill', 'injector'].join('-');
+  assert.equal(existsSync(join(PROJECT_ROOT, 'scripts', `${removedHook}.mjs`)), false);
+  assert.equal(existsSync(join(PROJECT_ROOT, 'scripts', `${removedHook}.test.mjs`)), false);
+});
+
 check('tracked docs do not describe automatic rules-lib injection', () => {
   const files = [
     'CLAUDE.md',

@@ -1,16 +1,12 @@
 {
   "mcpServers": {
-    "serena": {
+    "semble": {
       "type": "stdio",
-      "command": "serena",
+      "command": "uvx",
       "args": [
-        "start-mcp-server",
-        "--context",
-        "claude-code",
-        "--project",
-        "/Users/yusang/Smelter",
-        "--open-web-dashboard",
-        "False"
+        "--from",
+        "semble[mcp]",
+        "semble"
       ],
       "env": {}
     }

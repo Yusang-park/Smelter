@@ -5,7 +5,7 @@
   "permissions": {
     "allow": [
       "mcp__pencil",
-      "mcp__serena",
+      "mcp__semble",
       "Read",
       "Glob",
       "Grep",
