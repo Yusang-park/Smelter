@@ -1,0 +1,51 @@
+# =============================================================================
+# Smelter - Docker Compose for End Users (pre-built image)
+# =============================================================================
+#
+# Usage:
+#   1. Copy this file and .env.example to your server
+#   2. Rename .env.example to .env and configure
+#   3. Run: docker compose up -d
+#
+# For full documentation, see:
+# https://github.com/Yusang-park/Smelter
+
+services:
+  app:
+    image: ghcr.io/yusang-park/smelter:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ARCHON_DOCKER: "true"
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - ${ARCHON_DATA:-smelter_data}:/.archon
+      - ${ARCHON_USER_HOME:-smelter_user_home}:/home/appuser
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Uncomment to run PostgreSQL locally
+  # postgres:
+  #   image: postgres:17-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: remote_coding_agent
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  smelter_data:
+  smelter_user_home:
+  # postgres_data:

@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+// Smoke test — verify wrapper resolves args + proxy module loads cleanly.
+import { spawnSync, execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { CODEX_MODEL_OPTIONS } from './lib/codex-models.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const bin = join(here, '..', 'bin', 'claude-codex.mjs');
+const wrapper = join(here, 'claude-wrapper.mjs');
+const tempHome = mkdtempSync(join(tmpdir(), 'codex-for-claude-code-home-'));
+const versionsDir = join(tempHome, '.local', 'share', 'claude', 'versions');
+mkdirSync(versionsDir, { recursive: true });
+const fakeClaudeBinary = join(versionsDir, '1.0.0');
+writeFileSync(fakeClaudeBinary, '#!/bin/sh\nexit 0\n');
+chmodSync(fakeClaudeBinary, 0o755);
+
+const r = spawnSync(process.execPath, [bin, '--version'], {
+  env: { ...process.env, HOME: tempHome, SMELTER_WRAPPER_TEST: '1', CODEX_PROXY_TEST: '1' },
+  encoding: 'utf8',
+});
+
+if (r.status !== 0) {
+  process.stderr.write(`wrapper test failed (exit ${r.status})\n${r.stderr}\n`);
+  process.exit(1);
+}
+
+let parsed;
+try { parsed = JSON.parse(r.stdout); } catch {
+  process.stderr.write(`wrapper test: stdout not JSON: ${r.stdout}\n`);
+  process.exit(1);
+}
+
+if (parsed.mode !== 'codex' || !parsed.passthrough.includes('--version') || !parsed.binary) {
+  process.stderr.write(`wrapper test: unexpected payload ${JSON.stringify(parsed)}\n`);
+  process.exit(1);
+}
+
+const expectedCodexDir = join(tempHome, '.claude-codex');
+if (parsed.childEnvPreview?.CLAUDE_CONFIG_DIR !== expectedCodexDir) {
+  process.stderr.write(`wrapper test: expected codex CLAUDE_CONFIG_DIR=${expectedCodexDir}, got ${JSON.stringify(parsed.childEnvPreview)}\n`);
+  process.exit(1);
+}
+
+// Picker visibility: Claude Code v2.1+ reads `${CLAUDE_CONFIG_DIR}/.claude.json`
+// (non-hashed). Codex options must land there, not in a hashed sidecar.
+const expectedCachePath = join(expectedCodexDir, '.claude.json');
+let cachedOptions;
+try {
+  const cached = JSON.parse(readFileSync(expectedCachePath, 'utf8'));
+  cachedOptions = cached.additionalModelOptionsCache;
+} catch (err) {
+  process.stderr.write(`wrapper test: cache file missing at ${expectedCachePath}: ${err?.message ?? err}\n`);
+  process.exit(1);
+}
+if (!Array.isArray(cachedOptions) || cachedOptions.length !== CODEX_MODEL_OPTIONS.length) {
+  process.stderr.write(`wrapper test: expected additionalModelOptionsCache to include ${CODEX_MODEL_OPTIONS.length} codex models, got ${JSON.stringify(cachedOptions)}\n`);
+  process.exit(1);
+}
+const cachedValues = new Set(cachedOptions.map((opt) => opt?.value));
+for (const opt of CODEX_MODEL_OPTIONS) {
+  if (!cachedValues.has(opt.value)) {
+    process.stderr.write(`wrapper test: cache missing codex model ${opt.value}; got ${JSON.stringify(cachedOptions)}\n`);
+    process.exit(1);
+  }
+}
+
+const inheritedCodexEnv = JSON.parse(
+  execFileSync(process.execPath, [wrapper, '--claude', '--version'], {
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      SMELTER_WRAPPER_TEST: '1',
+      CODEX_MODE: '1',
+      SMELTER_MODEL_MODE: 'codex',
+      SMELTER_ACTIVE_MODEL: 'gpt-5.4',
+      CLAUDE_CONFIG_DIR: join(here, '..', '.tmp-claude-codex'),
+      ANTHROPIC_BASE_URL: 'http://127.0.0.1:3099',
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+    encoding: 'utf8',
+  }),
+);
+
+if (inheritedCodexEnv.mode !== 'claude') {
+  process.stderr.write(`wrapper test: expected explicit claude mode, got ${JSON.stringify(inheritedCodexEnv)}\n`);
+  process.exit(1);
+}
+
+if (inheritedCodexEnv.childEnvPreview?.SMELTER_MODEL_MODE !== 'claude') {
+  process.stderr.write(`wrapper test: expected SMELTER_MODEL_MODE=claude, got ${JSON.stringify(inheritedCodexEnv.childEnvPreview)}\n`);
+  process.exit(1);
+}
+
+for (const key of [
+  'CODEX_MODE',
+  'SMELTER_ACTIVE_MODEL',
+  'CLAUDE_CONFIG_DIR',
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
+]) {
+  if (inheritedCodexEnv.childEnvPreview?.[key] !== undefined) {
+    process.stderr.write(`wrapper test: expected ${key} to be cleared, got ${JSON.stringify(inheritedCodexEnv.childEnvPreview)}\n`);
+    process.exit(1);
+  }
+}
+
+// Load proxy module without starting it.
+process.env.CODEX_PROXY_TEST = '1';
+const proxy = await import('./codex-proxy.mjs');
+if (typeof proxy.createServer !== 'function') {
+  process.stderr.write('proxy module missing createServer export\n');
+  process.exit(1);
+}
+
+console.log('OK');

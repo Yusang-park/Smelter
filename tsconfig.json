@@ -2,14 +2,21 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "bundler",
-    "declaration": true,
-    "outDir": "dist",
-    "rootDir": ".",
-    "types": ["node"],
+    "lib": ["ES2022"],
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["bun-types"]
   },
-  "include": ["src", "bin"]
+  "include": ["global.d.ts"]
 }

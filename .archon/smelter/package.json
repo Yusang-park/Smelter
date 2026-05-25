@@ -1,0 +1,29 @@
+{
+  "name": "@smelter/harness",
+  "version": "0.55.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "smelter": "dist/bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "cli": "tsx bin/cli.ts",
+    "test": "node --test scripts/*.test.mjs scripts/test-*.mjs scripts/lib/*.test.mjs",
+    "test:engine": "node --test --import tsx src/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.21.0",
+    "typescript": "~6.0.2"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  }
+}

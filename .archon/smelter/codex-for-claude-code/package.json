@@ -1,0 +1,41 @@
+{
+  "name": "codex-for-claude-code",
+  "version": "0.2.6",
+  "description": "Run Claude Code against ChatGPT Codex via your Codex CLI OAuth.",
+  "type": "module",
+  "bin": {
+    "claude-codex": "bin/claude-codex.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yusang-park/codex-for-claude-code.git"
+  },
+  "homepage": "https://github.com/yusang-park/codex-for-claude-code#readme",
+  "bugs": {
+    "url": "https://github.com/yusang-park/codex-for-claude-code/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "chatgpt",
+    "proxy"
+  ],
+  "author": "Yusang Park",
+  "files": [
+    "bin",
+    "scripts",
+    "hooks",
+    "plugin.json",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test scripts/lib/*.test.mjs scripts/test-codex-split.mjs",
+    "start": "node bin/claude-codex.mjs"
+  }
+}

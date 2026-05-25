@@ -1,0 +1,40 @@
+name: smelter-verify
+description: |
+  Use when: Validate existing changes or behavior with tests, static checks, and E2E evidence.
+  Input: Verification target or changed surface.
+  Output: Evidence-backed pass/fail report and human-check decision point.
+
+nodes:
+  - id: verify
+    prompt: |
+      Use workflow-verify for this verification request.
+
+      Target:
+      $ARGUMENTS
+
+      Run scoped checks first, collect exact commands and outputs, and avoid unsupported completion claims.
+      Read .archon/smelter/document/workflow.md and .archon/smelter/modes/workflow.yaml when needed.
+    skills: [workflow-verify]
+    context: fresh
+
+  - id: e2e
+    depends_on: [verify]
+    prompt: |
+      Use workflow-e2e when the target has UI, CLI, API, hook, or script behavior.
+      Record concrete evidence and mark exemptions explicitly when no E2E applies.
+    skills: [workflow-e2e]
+    context: fresh
+
+  - id: e2e-review
+    depends_on: [e2e]
+    prompt: |
+      Use workflow-e2e-review to validate verification evidence and reject missing proof.
+    skills: [workflow-e2e-review]
+    context: fresh
+
+  - id: human-check
+    depends_on: [e2e-review]
+    prompt: |
+      Use workflow-human-check. Findings come first; completion choices only after unresolved issues are handled.
+    skills: [workflow-human-check]
+    context: fresh

@@ -1,0 +1,145 @@
+#cloud-config
+
+# =============================================================================
+# Smelter — Cloud-Init Auto-Setup
+# =============================================================================
+#
+# Paste this into your VPS provider's "User Data" field when creating a server.
+# Tested on: Ubuntu 22.04+, Debian 12+
+# Works with any cloud-init compatible provider (DigitalOcean, Hetzner, Linode,
+# Vultr, AWS EC2, Hostinger, etc.)
+#
+# What this does:
+#   1. Installs Docker + Docker Compose plugin
+#   2. Opens firewall ports (SSH, HTTP, HTTPS)
+#   3. Creates a 2GB swapfile (helps small VPS builds avoid OOM)
+#   4. Clones the repo to /opt/smelter
+#   5. Prepares .env and Caddyfile from examples
+#   6. Creates a dedicated 'smelter' user (docker group only, no sudo)
+#   7. Builds the Docker image (~5 min) as the smelter user
+#
+# Note: On VPS with <2GB RAM, the docker build step can OOM without swap.
+# Note: The 'smelter' user has docker access but NOT sudo. For administrative
+#       tasks (updates, reboots), use the default cloud user or root.
+#
+# After the server boots (~5-8 min), SSH in as the smelter user:
+#   ssh smelter@your-server-ip
+#   1. Edit /opt/smelter/.env — set your AI credentials, DOMAIN, DATABASE_URL
+#   2. cd /opt/smelter && docker compose --profile with-db --profile cloud up -d
+#   3. Open https://your-domain.com
+#
+# IMPORTANT: Before starting, point your domain's DNS A record to this server's IP.
+#           SSH keys from the default cloud user are copied to 'smelter'.
+#
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - ufw
+
+users:
+  - default
+  - name: smelter
+    gecos: Smelter Service User
+    shell: /bin/bash
+    lock_passwd: true
+
+runcmd:
+  # --- Swap (helps small VPS avoid OOM during docker build) ---
+  - |
+    if [ ! -f /swapfile ]; then
+      fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+
+  # --- Docker ---
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker smelter
+
+  # --- Copy SSH keys from default user to smelter (so login works immediately) ---
+  - |
+    DEFAULT_USER=$(getent passwd 1000 | cut -d: -f1)
+    if [ -n "$DEFAULT_USER" ] && [ -f /home/$DEFAULT_USER/.ssh/authorized_keys ]; then
+      mkdir -p /home/smelter/.ssh
+      cp /home/$DEFAULT_USER/.ssh/authorized_keys /home/smelter/.ssh/authorized_keys
+      chmod 700 /home/smelter/.ssh
+      chmod 600 /home/smelter/.ssh/authorized_keys
+      chown -R smelter:smelter /home/smelter/.ssh
+    elif [ -f /root/.ssh/authorized_keys ]; then
+      mkdir -p /home/smelter/.ssh
+      cp /root/.ssh/authorized_keys /home/smelter/.ssh/authorized_keys
+      chmod 700 /home/smelter/.ssh
+      chmod 600 /home/smelter/.ssh/authorized_keys
+      chown -R smelter:smelter /home/smelter/.ssh
+    fi
+
+  # --- Firewall (443/udp needed for HTTP/3 QUIC via Caddy) ---
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 443/udp
+  - ufw --force enable
+
+  # --- Clone and configure (fail fast — single shell so set -e applies) ---
+  - |
+    set -e
+    git clone https://github.com/Yusang-park/Smelter.git /opt/smelter
+    cp /opt/smelter/.env.example /opt/smelter/.env
+    cp /opt/smelter/Caddyfile.example /opt/smelter/Caddyfile
+    chown -R smelter:smelter /opt/smelter
+
+  # --- Pre-pull external images (as smelter, via docker group) ---
+  - sudo -u smelter docker pull postgres:17-alpine
+  - sudo -u smelter docker pull caddy:2-alpine
+
+  # --- Build the app image as smelter ---
+  - sudo -u smelter -H bash -c 'cd /opt/smelter && docker compose build'
+
+  # --- Signal completion ---
+  - |
+    cat > /opt/smelter/SETUP_COMPLETE << 'DONE'
+    ============================================
+    Smelter server setup complete!
+    ============================================
+
+    Log in as the 'smelter' user (not root):
+      ssh smelter@<server-ip>
+
+    Note: the 'smelter' user has docker access but no sudo. For system
+    maintenance (apt upgrade, reboots), log in as the default cloud user
+    or root.
+
+    Next steps:
+
+      1. Edit credentials and domain:
+         nano /opt/smelter/.env
+
+         Required:
+           CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...  (or CLAUDE_API_KEY)
+           DOMAIN=smelter.example.com
+           DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent
+
+      2. (Optional) Set up basic auth to protect the Web UI:
+         docker run caddy caddy hash-password --plaintext 'YOUR_PASSWORD'
+         # Add to .env (use $$ to escape $ in hashes):
+           CADDY_BASIC_AUTH=basicauth @protected { admin $$2a$$14$$<hash> }
+         # Skip if using IP-based firewall rules instead.
+
+      3. Start all services:
+         cd /opt/smelter
+         docker compose --profile with-db --profile cloud up -d
+
+      4. Open https://your-domain.com
+
+    Logs:     docker compose logs -f
+    Health:   curl https://your-domain.com/api/health
+    Docs:     https://github.com/Yusang-park/Smelter/tree/main/deploy
+    ============================================
+    DONE
+  - echo "[smelter] Setup complete. Edit /opt/smelter/.env and run docker compose up."
