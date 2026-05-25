@@ -1,7 +1,7 @@
 /**
  * Tests for the Codex binary resolver in binary mode.
  *
- * Must run in its own bun test invocation because it mocks @archon/paths
+ * Must run in its own bun test invocation because it mocks @smelter/paths
  * with BUNDLED_IS_BINARY=true, which conflicts with other test files.
  */
 import { describe, test, expect, mock, beforeEach, afterAll, spyOn } from 'bun:test';
@@ -9,11 +9,11 @@ import { createMockLogger } from '../test/mocks/logger';
 
 const mockLogger = createMockLogger();
 
-// Mock @archon/paths with BUNDLED_IS_BINARY = true (binary mode)
-mock.module('@archon/paths', () => ({
+// Mock @smelter/paths with BUNDLED_IS_BINARY = true (binary mode)
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
   BUNDLED_IS_BINARY: true,
-  getArchonHome: mock(() => '/tmp/test-archon-home'),
+  getSmelterHome: mock(() => '/tmp/test-smelter-home'),
 }));
 
 import * as resolver from './binary-resolver';
@@ -84,7 +84,7 @@ describe('resolveCodexBinaryPath (binary mode)', () => {
     const result = await resolver.resolveCodexBinaryPath();
     expect(typeof result).toBe('string');
     const normalized = result!.replace(/\\/g, '/');
-    expect(normalized).toContain('/tmp/test-archon-home/vendor/codex/');
+    expect(normalized).toContain('/tmp/test-smelter-home/vendor/codex/');
   });
 
   test('autodetects npm global install at ~/.npm-global/bin/codex (POSIX)', async () => {

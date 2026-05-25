@@ -25,7 +25,7 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
   parseOwnerRepo: mock(() => null),
   getRunArtifactsPath: mock(() => '/tmp/artifacts'),
@@ -36,7 +36,7 @@ mock.module('@archon/paths', () => ({
 // Mock git
 // ---------------------------------------------------------------------------
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   getDefaultBranch: mock(async () => 'main'),
   toRepoPath: mock((p: string) => p),
 }));
@@ -72,7 +72,7 @@ mock.module('./event-emitter', () => ({
 // Bootstrap provider registry (executor calls isRegisteredProvider at workflow level)
 // ---------------------------------------------------------------------------
 
-import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
+import { registerBuiltinProviders, clearRegistry } from '@smelter/providers';
 clearRegistry();
 registerBuiltinProviders();
 

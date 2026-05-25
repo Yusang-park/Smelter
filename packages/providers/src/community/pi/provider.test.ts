@@ -3,10 +3,10 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent';
 
 import { createMockLogger } from '../../test/mocks/logger';
 
-// ─── Mock @archon/paths logger so provider instantiation is quiet ───────
+// ─── Mock @smelter/paths logger so provider instantiation is quiet ───────
 
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
@@ -235,7 +235,7 @@ describe('PiProvider', () => {
   test('sendQuery installs PI_PACKAGE_DIR shim before Pi SDK loads', async () => {
     // Runtime-safety regression: Pi's config.js reads `getPackageJsonPath()` at
     // its module init, which resolves to a non-existent path inside compiled
-    // archon binaries. The shim writes a stub package.json to tmpdir and sets
+    // smelter binaries. The shim writes a stub package.json to tmpdir and sets
     // PI_PACKAGE_DIR so Pi's short-circuit kicks in. Must run BEFORE the
     // dynamic imports in sendQuery — we verify by calling the fast-fail "no
     // model" path (which returns before any Pi SDK logic executes) and
@@ -244,7 +244,7 @@ describe('PiProvider', () => {
     expect(process.env.PI_PACKAGE_DIR).toBeUndefined();
     await consume(new PiProvider().sendQuery('hi', '/tmp'));
     expect(process.env.PI_PACKAGE_DIR).toBeDefined();
-    expect(process.env.PI_PACKAGE_DIR).toContain('archon-pi-shim');
+    expect(process.env.PI_PACKAGE_DIR).toContain('smelter-pi-shim');
   });
 
   test('throws when no model is configured', async () => {
@@ -272,7 +272,7 @@ describe('PiProvider', () => {
     expect(mockLogger.info).toHaveBeenCalledWith(
       {
         piProvider: 'unknownprovider',
-        envHint: expect.stringContaining("not in the Archon adapter's env-var table"),
+        envHint: expect.stringContaining("not in the Smelter adapter's env-var table"),
         loginHint: expect.stringContaining('/login'),
       },
       'pi.auth_missing'
@@ -681,7 +681,7 @@ describe('PiProvider', () => {
     expect(systemChunks.some(c => c.content.includes('Could not resume'))).toBe(false);
   });
 
-  test('result chunk carries Pi sessionId (for Archon to store and reuse)', async () => {
+  test('result chunk carries Pi sessionId (for Smelter to store and reuse)', async () => {
     process.env.GEMINI_API_KEY = 'sk-test';
     resetScript(scriptedAgentEnd());
 

@@ -9,12 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Docker: `/home/appuser` is now persisted by default via the `archon_user_home` named volume, so user-installed Claude Code skills/commands/agents/hooks, Codex/Pi auth, `~/.gitconfig`, and shell history survive container rebuilds. Set `ARCHON_USER_HOME=/host/path` in `.env` to bind-mount a host path instead (#1517, #1518).
+- Docker: `/home/appuser` is now persisted by default via the `smelter_user_home` named volume, so user-installed Claude Code skills/commands/agents/hooks, Codex/Pi auth, `~/.gitconfig`, and shell history survive container rebuilds. Set `SMELTER_USER_HOME=/host/path` in `.env` to bind-mount a host path instead (#1517, #1518).
 
 ### Changed
 
-- Claude provider default `settingSources` changed from `['project']` to `['project', 'user']`, so skills, commands, agents, and `CLAUDE.md` from `~/.claude/` are now loaded by default in all environments — not just Docker. Without this, the new `/home/appuser` persistence would not actually surface user-installed Claude resources. Set `assistants.claude.settingSources: ['project']` in `.archon/config.yaml` to restore the previous project-only behavior (#1518).
-- `.env.example`, `docker-compose.yml`, `deploy/docker-compose.yml`, and `reference/configuration.md` now document that `ARCHON_HOME` is silently overridden inside Docker and `ARCHON_DATA` is a Compose-only host token never read by source. The Docker entrypoint emits a one-line stderr warning when either is set in the container env (#1517).
+- Claude provider default `settingSources` changed from `['project']` to `['project', 'user']`, so skills, commands, agents, and `CLAUDE.md` from `~/.claude/` are now loaded by default in all environments — not just Docker. Without this, the new `/home/appuser` persistence would not actually surface user-installed Claude resources. Set `assistants.claude.settingSources: ['project']` in `.smelter/config.yaml` to restore the previous project-only behavior (#1518).
+- `.env.example`, `docker-compose.yml`, `deploy/docker-compose.yml`, and `reference/configuration.md` now document that `SMELTER_HOME` is silently overridden inside Docker and `SMELTER_DATA` is a Compose-only host token never read by source. The Docker entrypoint emits a one-line stderr warning when either is set in the container env (#1517).
 
 ### Fixed
 
@@ -36,7 +36,7 @@ Maintainer workflow suite, loop output variables, and broad workflow engine fixe
 
 ### Changed
 
-- Model validation delegated entirely to provider SDKs; Archon no longer rejects unknown model strings at workflow load time, so new vendor models work immediately without an Archon update (#1463).
+- Model validation delegated entirely to provider SDKs; Smelter no longer rejects unknown model strings at workflow load time, so new vendor models work immediately without an Smelter update (#1463).
 - Claude Agent SDK updated to 0.2.121 and Codex SDK to 0.125.0 (#1460).
 - Default Opus model pin switched to the `opus[1m]` alias (#1395).
 
@@ -63,12 +63,12 @@ Maintainer workflow suite, loop output variables, and broad workflow engine fixe
 
 ### Changed
 
-- **Provider/model resolution: trust the SDK, drop allow-lists.** Removed `inferProviderFromModel` and `isModelCompatible` entirely. Provider is now resolved via a flat explicit chain — `node.provider ?? workflow.provider ?? config.assistant` — and never inferred from the model string. Model strings pass through to the SDK unchanged; the SDK validates them at request time. Codex's stream loop now matches Claude's contract (every terminal close emits exactly one `result` chunk; `error` events without a recovering `turn.completed` synthesize `result.isError` with subtype `codex_stream_incomplete`; `turn.failed` becomes `codex_turn_failed`). AI nodes that exit the streaming loop with empty assistant text and no structured output now fail loudly with `dag.node_empty_output` instead of completing as silent zero-output successes. Provider-id typos (workflow-level and per-node) are caught at YAML load time. **Migration**: workflows that previously relied on cross-provider model inference (e.g. `model: gpt-5.2-codex` with no `provider:`, expecting Archon to pick `codex` because Claude's allow-list rejected the string) must now set `provider:` explicitly. Workflows that already set both `provider:` and `model:` — and workflows that set only `model:` matching `config.assistant` — keep working unchanged. (#1463)
+- **Provider/model resolution: trust the SDK, drop allow-lists.** Removed `inferProviderFromModel` and `isModelCompatible` entirely. Provider is now resolved via a flat explicit chain — `node.provider ?? workflow.provider ?? config.assistant` — and never inferred from the model string. Model strings pass through to the SDK unchanged; the SDK validates them at request time. Codex's stream loop now matches Claude's contract (every terminal close emits exactly one `result` chunk; `error` events without a recovering `turn.completed` synthesize `result.isError` with subtype `codex_stream_incomplete`; `turn.failed` becomes `codex_turn_failed`). AI nodes that exit the streaming loop with empty assistant text and no structured output now fail loudly with `dag.node_empty_output` instead of completing as silent zero-output successes. Provider-id typos (workflow-level and per-node) are caught at YAML load time. **Migration**: workflows that previously relied on cross-provider model inference (e.g. `model: gpt-5.2-codex` with no `provider:`, expecting Smelter to pick `codex` because Claude's allow-list rejected the string) must now set `provider:` explicitly. Workflows that already set both `provider:` and `model:` — and workflows that set only `model:` matching `config.assistant` — keep working unchanged. (#1463)
 
 ### Fixed
 
 - **Bash and script node failures no longer leak the inline script body into user-visible errors and logs.** When a `bash:` or `script:` DAG node failed, the error string interpolated `err.message` from Node's `ExecFileException`, which begins with `Command failed: bash -c <body>` (or `bun -e <body>`) — embedding the entire substituted script body. Pino's default error serializer compounded this by writing `err.message`, `err.stack`, and `err.cmd` separately, producing three copies of the body per failure across the CLI, Web UI, and `node_failed` event payload. Diagnostic output (e.g. `Expected ")" but found "x" at [eval]:4:241`) was buried at the end. A new `formatSubprocessFailure()` helper now strips the `Command failed:` prefix line, prefers `stderr` over the message body, tail-caps at 2 KB, and exposes a controlled `{exitCode, killed, stderrTail}` log subset — never the raw error. Timeout / ENOENT / EACCES branches now also log through the sanitized helper, so the body cannot leak via the timeout path either. (#1389)
-- **Claude provider crashed in dev mode with `error: unknown option '--no-env-file'`.** The Claude Agent SDK switched from shipping `cli.js` to per-platform native binaries (via optional deps) in the 0.2.x series. Archon's `shouldPassNoEnvFile` predicate kept emitting the Bun-only `--no-env-file` flag in dev mode (when the SDK resolves its bundled binary), which the native binary rejects. Tightened the predicate to only emit the flag for explicitly-configured Bun-runnable JS entry points (`.js`/`.mjs`/`.cjs`). Target-repo `.env` isolation is unchanged — `stripCwdEnv()` at process boot remains the primary guard, and the native Claude binary does not auto-load `.env` from its cwd. (#1461)
+- **Claude provider crashed in dev mode with `error: unknown option '--no-env-file'`.** The Claude Agent SDK switched from shipping `cli.js` to per-platform native binaries (via optional deps) in the 0.2.x series. Smelter's `shouldPassNoEnvFile` predicate kept emitting the Bun-only `--no-env-file` flag in dev mode (when the SDK resolves its bundled binary), which the native binary rejects. Tightened the predicate to only emit the flag for explicitly-configured Bun-runnable JS entry points (`.js`/`.mjs`/`.cjs`). Target-repo `.env` isolation is unchanged — `stripCwdEnv()` at process boot remains the primary guard, and the native Claude binary does not auto-load `.env` from its cwd. (#1461)
 - **Pi structured-output now tolerates reasoning-model prose preamble.** `tryParseStructuredOutput` previously returned `undefined` whenever the assistant text wasn't pure JSON, even when the JSON object was clearly emitted at the end of a "Let me evaluate..." preamble. Reasoning models — observed on Minimax M2.7 — routinely "think out loud" before emitting structured output despite explicit JSON-only prompts. The parser now falls back to a forward-scan from the first `{` when the clean parse fails, recovering the structured output without changing the success path for fully compliant models. (#1440)
 - **`CLAUDE_BIN_PATH` is now honored in dev mode.** Previously the env var was silently ignored when running from source (`BUNDLED_IS_BINARY=false`) — `resolveClaudeBinaryPath()` early-returned `undefined` before reading it, leaving glibc Linux contributors with no working escape hatch when the Claude SDK's bundled-binary auto-resolution picked the musl variant first. The env-var check now runs in both modes; config-file path (`assistants.claude.claudeBinaryPath`) remains binary-mode-only since it's a per-repo, not per-machine setting. Env-loading and target-repo `.env` isolation are unchanged — same `stripCwdEnv()` boot-time guard and same `shouldPassNoEnvFile()` predicate run downstream. (#1481)
 
@@ -78,7 +78,7 @@ First release with working compiled binaries since v0.3.6. Both v0.3.7 and v0.3.
 
 ### Fixed
 
-- **Release binary smoke test no longer fails on the fresh `git init` test repo.** The Claude resolver smoke in `release.yml` ran `archon workflow run archon-assist` against a tempdir with no `origin` remote; as of #1310's worktree auto-sync logic this fails with "neither origin/HEAD nor origin/main exist" before the resolver is reached, so the CI assertion (`"Claude Code not found"` in output) never matched and the linux-x64 build aborted — taking the entire release matrix down via fail-fast. Adding `--no-worktree` to both the negative and positive resolver tests skips isolation, which is what the tests actually want: they exercise the Claude resolver path, not worktree setup. (#1357)
+- **Release binary smoke test no longer fails on the fresh `git init` test repo.** The Claude resolver smoke in `release.yml` ran `smelter workflow run smelter-assist` against a tempdir with no `origin` remote; as of #1310's worktree auto-sync logic this fails with "neither origin/HEAD nor origin/main exist" before the resolver is reached, so the CI assertion (`"Claude Code not found"` in output) never matched and the linux-x64 build aborted — taking the entire release matrix down via fail-fast. Adding `--no-worktree` to both the negative and positive resolver tests skips isolation, which is what the tests actually want: they exercise the Claude resolver path, not worktree setup. (#1357)
 
 ## [0.3.8] - 2026-04-22
 
@@ -86,7 +86,7 @@ Tagged but never released. Intended as the hotfix for v0.3.7's binary-runtime cr
 
 ### Fixed
 
-- **Compiled archon binaries no longer crash at startup when the Pi provider is bundled.** `@mariozechner/pi-coding-agent/dist/config.js` runs `readFileSync(getPackageJsonPath(), 'utf-8')` at module top-level, which inside a compiled binary resolves to `dirname(process.execPath) + '/package.json'` — a path that doesn't exist next to `/usr/local/bin/archon`, making every archon command (including `archon version`) crash with ENOENT before it ran. The Pi SDK and all Pi-dependent helper modules are now dynamically imported inside `PiProvider.sendQuery()`; registering Pi and instantiating the provider no longer touches Pi's module-init side effects. A regression test (`provider-lazy-load.test.ts`) walks the same `registerCommunityProviders()` + `getAgentProvider('pi')` path the CLI and server take and asserts neither SDK package was resolved. Claude and Codex providers keep their static import style — their SDKs have no equivalent module-init side effect. Unblocks the v0.3.7 release binaries that could not ship because of this bug. (#1355)
+- **Compiled smelter binaries no longer crash at startup when the Pi provider is bundled.** `@mariozechner/pi-coding-agent/dist/config.js` runs `readFileSync(getPackageJsonPath(), 'utf-8')` at module top-level, which inside a compiled binary resolves to `dirname(process.execPath) + '/package.json'` — a path that doesn't exist next to `/usr/local/bin/smelter`, making every smelter command (including `smelter version`) crash with ENOENT before it ran. The Pi SDK and all Pi-dependent helper modules are now dynamically imported inside `PiProvider.sendQuery()`; registering Pi and instantiating the provider no longer touches Pi's module-init side effects. A regression test (`provider-lazy-load.test.ts`) walks the same `registerCommunityProviders()` + `getAgentProvider('pi')` path the CLI and server take and asserts neither SDK package was resolved. Claude and Codex providers keep their static import style — their SDKs have no equivalent module-init side effect. Unblocks the v0.3.7 release binaries that could not ship because of this bug. (#1355)
 - **Release binary compile no longer silently produces broken bytecode.** `scripts/build-binaries.sh` dropped the `--bytecode` flag: Bun 1.3.11's bytecode step failed with `Failed to generate bytecode for ./cli.js` against the 0.3.7 module graph and fell through to producing a binary that crashed at module instantiation with "Expected CommonJS module to have a function wrapper". Windows was already excluded; this removes the flag everywhere. Release parity preserved via `--minify`. (#1354)
 
 ## [0.3.7] - 2026-04-22
@@ -97,19 +97,19 @@ Pi community provider, home-scoped workflows/commands/scripts, worktree policy, 
 
 - **Pi community provider (`@mariozechner/pi-coding-agent`).** First community provider under the Phase 2 registry (`builtIn: false`). One adapter exposes ~20 LLM backends (Anthropic, OpenAI, Google, Groq, Mistral, Cerebras, xAI, OpenRouter, Hugging Face, and more) via a `<pi-provider-id>/<model-id>` model format. Reads credentials from `~/.pi/agent/auth.json` (populated by running `pi /login` for OAuth subscriptions like Claude Pro/Max, ChatGPT Plus, GitHub Copilot) AND from env vars (env vars take priority per-request). Per-node workflow options supported: `effort`/`thinking` → Pi `thinkingLevel`; `allowed_tools`/`denied_tools` → filter Pi's 7 built-in coding tools; `skills` → resolved against `.agents/skills`, `.claude/skills` (project + user-global); `systemPrompt`; codebase env vars; session resume via `sessionId` round-trip. Unsupported fields (MCP, hooks, structured output, cost limits, fallback model, sandbox) trigger an explicit dag-executor warning rather than silently dropping. Use in workflow YAML: `provider: pi` + `model: anthropic/claude-haiku-4-5`. (#1270)
 - **Inline sub-agent definitions on DAG nodes (`agents:`).** Define Claude Agent SDK `AgentDefinition`s directly in workflow YAML, keyed by kebab-case agent ID. The main agent can spawn them in parallel via the `Task` tool — useful for map-reduce patterns where a cheap model (e.g. Haiku) briefs items and a stronger model reduces. Removes the need to author `.claude/agents/*.md` files for workflow-scoped helpers. Claude only; Codex and community providers that don't support inline agents emit a capability warning and ignore the field. Merges with the internal `dag-node-skills` wrapper set by `skills:` on the same node — user-defined agents win on ID collision (a warning is logged). (#1276)
-- **Home-scoped commands at `~/.archon/commands/`** — personal command helpers now reusable across every repo. Resolution precedence: `<repoRoot>/.archon/commands/` > `~/.archon/commands/` > bundled defaults. Surfaced in the Web UI workflow-builder node palette under a dedicated "Global (~/.archon/commands/)" section.
-- **Home-scoped scripts at `~/.archon/scripts/`** — personal Bun/uv scripts now reusable across every repo. Script nodes (`script: my-helper`) resolve via `<repoRoot>/.archon/scripts/` first, then `~/.archon/scripts/`. Repo-scoped scripts with the same name override home-scoped ones silently; within a single scope, duplicate basenames across extensions still throw (unchanged from prior behavior).
-- **1-level subfolder support for workflows, commands, and scripts.** Files can live one folder deep under their respective `.archon/` root (e.g. `.archon/workflows/triage/foo.yaml`) and resolve by name or filename regardless of subfolder. Matches the existing `defaults/` convention. Deeper nesting is ignored silently — see docs for the full convention.
-- **`'global'` variant on `WorkflowSource`** — workflows at `~/.archon/workflows/` and commands at `~/.archon/commands/` now render with a distinct source label (no longer coerced to `'project'`). Web UI badges updated.
-- **`getHomeWorkflowsPath()`, `getHomeCommandsPath()`, `getHomeScriptsPath()`, `getLegacyHomeWorkflowsPath()`** helpers in `@archon/paths`, exported for both internal discovery and external callers that want to target the home scope directly.
-- **`discoverScriptsForCwd(cwd)`** in `@archon/workflows/script-discovery` — merges home-scoped + repo-scoped scripts with repo winning on name collisions. Used by the DAG executor and validator; callers no longer need to know about the two-scope shape.
-- **Workflow-level worktree policy (`worktree.enabled` in workflow YAML).** A workflow can now pin whether its runs use isolation regardless of how they were invoked: `worktree.enabled: false` always runs in the live checkout (CLI `--branch` / `--from` hard-error; web/chat/orchestrator short-circuits `validateAndResolveIsolation`), `worktree.enabled: true` requires isolation (CLI `--no-worktree` hard-errors). Omit the block to let the caller decide (current default). First consumer: `.archon/workflows/repo-triage.yaml` pinned to `enabled: false` since it's read-only.
-- **Per-project worktree path (`worktree.path` in `.archon/config.yaml`).** Opt-in repo-relative directory (e.g. `.worktrees`) where Archon places worktrees for that repo, instead of the default `~/.archon/workspaces/<owner>/<repo>/worktrees/`. Co-locates worktrees with the project so they appear in the IDE file tree. Validated as a safe relative path (no absolute, no `..`); malformed values fail loudly at worktree creation. Users opting in are responsible for `.gitignore`ing the directory themselves — no automatic file mutation. Credits @joelsb for surfacing the need in #1117.
-- **Three-path env model with operator-visible log lines.** The CLI and server now load env vars from `~/.archon/.env` (user scope) and `<cwd>/.archon/.env` (repo scope, overrides user) at boot, both with `override: true`. A new `[archon] loaded N keys from <path>` line is emitted per source (only when N > 0). `[archon] stripped N keys from <cwd> (...)` now also prints when stripCwdEnv removes target-repo env keys, replacing the misleading `[dotenv@17.3.1] injecting env (0) from .env` preamble that always reported 0. The `quiet: true` flag suppresses dotenv's own output. (#1302)
-- **`archon setup --scope home|project` and `--force` flags.** Default is `--scope home` (writes `~/.archon/.env`). `--scope project` targets `<cwd>/.archon/.env` instead. `--force` overwrites the target wholesale rather than merging; a timestamped backup is still written. (#1303)
-- **Merge-only setup writes with timestamped backups.** `archon setup` now reads the existing target file, preserves non-empty values, carries user-added custom keys forward, and writes a `<target>.archon-backup-<ISO-ts>` before every rewrite. Fixes silent PostgreSQL→SQLite downgrade and silent token loss on re-run. (#1303)
-- **`getArchonEnvPath()` and `getRepoArchonEnvPath(cwd)`** helpers in `@archon/paths`, plus a new `@archon/paths/env-loader` subpath exporting `loadArchonEnv(cwd)` shared by the CLI and server entry points.
-- **`registerCommunityProviders()` aggregator** in `@archon/providers`. Process entrypoints (CLI, server, config-loader) now call one function to register every bundled community provider. Adding a new community provider is a single-line edit to this aggregator rather than touching each entrypoint — makes the Phase 2 "community providers are a localized addition" promise real.
+- **Home-scoped commands at `~/.smelter/commands/`** — personal command helpers now reusable across every repo. Resolution precedence: `<repoRoot>/.smelter/commands/` > `~/.smelter/commands/` > bundled defaults. Surfaced in the Web UI workflow-builder node palette under a dedicated "Global (~/.smelter/commands/)" section.
+- **Home-scoped scripts at `~/.smelter/scripts/`** — personal Bun/uv scripts now reusable across every repo. Script nodes (`script: my-helper`) resolve via `<repoRoot>/.smelter/scripts/` first, then `~/.smelter/scripts/`. Repo-scoped scripts with the same name override home-scoped ones silently; within a single scope, duplicate basenames across extensions still throw (unchanged from prior behavior).
+- **1-level subfolder support for workflows, commands, and scripts.** Files can live one folder deep under their respective `.smelter/` root (e.g. `.smelter/workflows/triage/foo.yaml`) and resolve by name or filename regardless of subfolder. Matches the existing `defaults/` convention. Deeper nesting is ignored silently — see docs for the full convention.
+- **`'global'` variant on `WorkflowSource`** — workflows at `~/.smelter/workflows/` and commands at `~/.smelter/commands/` now render with a distinct source label (no longer coerced to `'project'`). Web UI badges updated.
+- **`getHomeWorkflowsPath()`, `getHomeCommandsPath()`, `getHomeScriptsPath()`, `getLegacyHomeWorkflowsPath()`** helpers in `@smelter/paths`, exported for both internal discovery and external callers that want to target the home scope directly.
+- **`discoverScriptsForCwd(cwd)`** in `@smelter/workflows/script-discovery` — merges home-scoped + repo-scoped scripts with repo winning on name collisions. Used by the DAG executor and validator; callers no longer need to know about the two-scope shape.
+- **Workflow-level worktree policy (`worktree.enabled` in workflow YAML).** A workflow can now pin whether its runs use isolation regardless of how they were invoked: `worktree.enabled: false` always runs in the live checkout (CLI `--branch` / `--from` hard-error; web/chat/orchestrator short-circuits `validateAndResolveIsolation`), `worktree.enabled: true` requires isolation (CLI `--no-worktree` hard-errors). Omit the block to let the caller decide (current default). First consumer: `.smelter/workflows/repo-triage.yaml` pinned to `enabled: false` since it's read-only.
+- **Per-project worktree path (`worktree.path` in `.smelter/config.yaml`).** Opt-in repo-relative directory (e.g. `.worktrees`) where Smelter places worktrees for that repo, instead of the default `~/.smelter/workspaces/<owner>/<repo>/worktrees/`. Co-locates worktrees with the project so they appear in the IDE file tree. Validated as a safe relative path (no absolute, no `..`); malformed values fail loudly at worktree creation. Users opting in are responsible for `.gitignore`ing the directory themselves — no automatic file mutation. Credits @joelsb for surfacing the need in #1117.
+- **Three-path env model with operator-visible log lines.** The CLI and server now load env vars from `~/.smelter/.env` (user scope) and `<cwd>/.smelter/.env` (repo scope, overrides user) at boot, both with `override: true`. A new `[smelter] loaded N keys from <path>` line is emitted per source (only when N > 0). `[smelter] stripped N keys from <cwd> (...)` now also prints when stripCwdEnv removes target-repo env keys, replacing the misleading `[dotenv@17.3.1] injecting env (0) from .env` preamble that always reported 0. The `quiet: true` flag suppresses dotenv's own output. (#1302)
+- **`smelter setup --scope home|project` and `--force` flags.** Default is `--scope home` (writes `~/.smelter/.env`). `--scope project` targets `<cwd>/.smelter/.env` instead. `--force` overwrites the target wholesale rather than merging; a timestamped backup is still written. (#1303)
+- **Merge-only setup writes with timestamped backups.** `smelter setup` now reads the existing target file, preserves non-empty values, carries user-added custom keys forward, and writes a `<target>.smelter-backup-<ISO-ts>` before every rewrite. Fixes silent PostgreSQL→SQLite downgrade and silent token loss on re-run. (#1303)
+- **`getSmelterEnvPath()` and `getRepoSmelterEnvPath(cwd)`** helpers in `@smelter/paths`, plus a new `@smelter/paths/env-loader` subpath exporting `loadSmelterEnv(cwd)` shared by the CLI and server entry points.
+- **`registerCommunityProviders()` aggregator** in `@smelter/providers`. Process entrypoints (CLI, server, config-loader) now call one function to register every bundled community provider. Adding a new community provider is a single-line edit to this aggregator rather than touching each entrypoint — makes the Phase 2 "community providers are a localized addition" promise real.
 - **`contributing/adding-a-community-provider.md` guide** — contributor-facing walkthrough of the Phase 2 registry pattern using Pi as the reference implementation.
 - **`CLAUDE_BIN_PATH` environment variable** — highest-precedence override for the Claude Code SDK `cli.js` path (#1176)
 - **`assistants.claude.claudeBinaryPath` config option** — durable config-file alternative to the env var (#1176)
@@ -117,26 +117,26 @@ Pi community provider, home-scoped workflows/commands/scripts, worktree policy, 
 
 ### Changed
 
-- **Claude Code binary resolution** (breaking for compiled binary users): Archon no longer embeds the Claude Code SDK into compiled binaries. In compiled builds, you must install Claude Code separately (`curl -fsSL https://claude.ai/install.sh | bash` on macOS/Linux, `irm https://claude.ai/install.ps1 | iex` on Windows, or `npm install -g @anthropic-ai/claude-code`) and point Archon at the executable via `CLAUDE_BIN_PATH` env var or `assistants.claude.claudeBinaryPath` in `.archon/config.yaml`. The Claude Agent SDK accepts either the native compiled binary (from the curl/PowerShell installer at `~/.local/bin/claude`) or a JS `cli.js` (from the npm install). Dev mode (`bun run`) is unaffected — the SDK resolves via `node_modules` as before. The Docker image ships Claude Code pre-installed with `CLAUDE_BIN_PATH` pre-set, so `docker run` still works out of the box. Resolves silent "Module not found /Users/runner/..." failures on macOS (#1210) and Windows (#1087).
-- **Home-scoped workflow location moved to `~/.archon/workflows/`** (was `~/.archon/.archon/workflows/` — a double-nested path left over from reusing the repo-relative discovery helper for home scope). The new path sits next to `~/.archon/workspaces/`, `archon.db`, and `config.yaml`, matching the rest of the `~/.archon/` convention. If Archon detects workflows at the old location, it emits a one-time WARN per process with the exact migration command: `mv ~/.archon/.archon/workflows ~/.archon/workflows && rmdir ~/.archon/.archon`. The old path is no longer read — users must migrate manually (clean cut, no deprecation window). Rollback caveat: if you downgrade after migrating, move the directory back to the old location.
-- **Workflow discovery no longer takes a `globalSearchPath` option.** `discoverWorkflows()` and `discoverWorkflowsWithConfig()` now consult `~/.archon/workflows/` automatically — every caller gets home-scoped discovery for free. Previously-missed call sites in the chat command handler (`command-handler.ts`), the Web UI workflow picker (`api.ts GET /api/workflows`), and the orchestrator's single-codebase resolve path now see home-scoped workflows without needing a maintainer patch at every new call site. Closes #1136; supersedes that PR (credits @jonasvanderhaegen for surfacing the bug class).
+- **Claude Code binary resolution** (breaking for compiled binary users): Smelter no longer embeds the Claude Code SDK into compiled binaries. In compiled builds, you must install Claude Code separately (`curl -fsSL https://claude.ai/install.sh | bash` on macOS/Linux, `irm https://claude.ai/install.ps1 | iex` on Windows, or `npm install -g @anthropic-ai/claude-code`) and point Smelter at the executable via `CLAUDE_BIN_PATH` env var or `assistants.claude.claudeBinaryPath` in `.smelter/config.yaml`. The Claude Agent SDK accepts either the native compiled binary (from the curl/PowerShell installer at `~/.local/bin/claude`) or a JS `cli.js` (from the npm install). Dev mode (`bun run`) is unaffected — the SDK resolves via `node_modules` as before. The Docker image ships Claude Code pre-installed with `CLAUDE_BIN_PATH` pre-set, so `docker run` still works out of the box. Resolves silent "Module not found /Users/runner/..." failures on macOS (#1210) and Windows (#1087).
+- **Home-scoped workflow location moved to `~/.smelter/workflows/`** (was `~/.smelter/.smelter/workflows/` — a double-nested path left over from reusing the repo-relative discovery helper for home scope). The new path sits next to `~/.smelter/workspaces/`, `smelter.db`, and `config.yaml`, matching the rest of the `~/.smelter/` convention. If Smelter detects workflows at the old location, it emits a one-time WARN per process with the exact migration command: `mv ~/.smelter/.smelter/workflows ~/.smelter/workflows && rmdir ~/.smelter/.smelter`. The old path is no longer read — users must migrate manually (clean cut, no deprecation window). Rollback caveat: if you downgrade after migrating, move the directory back to the old location.
+- **Workflow discovery no longer takes a `globalSearchPath` option.** `discoverWorkflows()` and `discoverWorkflowsWithConfig()` now consult `~/.smelter/workflows/` automatically — every caller gets home-scoped discovery for free. Previously-missed call sites in the chat command handler (`command-handler.ts`), the Web UI workflow picker (`api.ts GET /api/workflows`), and the orchestrator's single-codebase resolve path now see home-scoped workflows without needing a maintainer patch at every new call site. Closes #1136; supersedes that PR (credits @jonasvanderhaegen for surfacing the bug class).
 - **Dashboard nav tab** now shows a numeric count of running workflows instead of a binary pulse dot. Reads from the existing `/api/dashboard/runs` `counts.running` field; same 10s polling interval.
 - **Workflow run destructive actions** (Abandon, Cancel, Delete, Reject) now use a proper confirmation dialog matching the codebase-delete UX, replacing the browser's native `window.confirm()` popups. Each dialog includes context-appropriate copy describing what the action does to the run record.
 
 ### Fixed
 
 - **Web UI approval gates now auto-resume.** Previously, clicking Approve or Reject on a paused workflow from the Web UI only recorded the decision — the workflow never continued, and the user had to send a follow-up chat message (or use the CLI) to resume. Three fixes: (1) orchestrator-agent now threads `parentConversationId` through `executeWorkflow` for every web dispatch, (2) the `POST /approve` and `POST /reject` API handlers dispatch `/workflow run <name> <userMessage>` back through the orchestrator when `parent_conversation_id` is set and points at a web-platform parent (mirrors `workflowApproveCommand`/`workflowRejectCommand` on the CLI; non-web parents skip the auto-resume to prevent cross-adapter misrouting), and (3) the during-streaming status check in the DAG executor tolerates the `paused` state so a concurrent AI node in the same topological layer finishes its own stream rather than being aborted when a sibling approval node pauses the run. The Web UI reject button uses the proper `ConfirmRunActionDialog` with an optional reason textarea (was `window.confirm` in the chat card, and lacked a reason input on the dashboard) — the trimmed reason propagates to `$REJECTION_REASON` in the workflow's `on_reject` prompt. Credits @jonasvanderhaegen for surfacing and diagnosing the bug in #1147 (that PR was 87 commits stale on a dev that had since refactored the reject UX; this is a fresh re-do on current `dev`). Closes #1131.
-- **Server startup no longer marks actively-running workflows as failed.** The `failOrphanedRuns()` call has been removed from `packages/server/src/index.ts` to match the CLI precedent (`packages/cli/src/cli.ts:256-258`). Per the new CLAUDE.md principle "No Autonomous Lifecycle Mutation Across Process Boundaries", a stuck `running` row is now transitioned explicitly by the user: via the per-row Cancel/Abandon buttons on the dashboard workflow card, or `archon workflow abandon <run-id>` from the CLI. (`archon workflow cleanup` is a separate command that deletes OLD terminal runs for disk hygiene — it does not handle stuck `running` rows.) Closes #1216.
+- **Server startup no longer marks actively-running workflows as failed.** The `failOrphanedRuns()` call has been removed from `packages/server/src/index.ts` to match the CLI precedent (`packages/cli/src/cli.ts:256-258`). Per the new CLAUDE.md principle "No Autonomous Lifecycle Mutation Across Process Boundaries", a stuck `running` row is now transitioned explicitly by the user: via the per-row Cancel/Abandon buttons on the dashboard workflow card, or `smelter workflow abandon <run-id>` from the CLI. (`smelter workflow cleanup` is a separate command that deletes OLD terminal runs for disk hygiene — it does not handle stuck `running` rows.) Closes #1216.
 - **`MCP server connection failed: <plugin>` noise no longer surfaces in workflow runs.** The dag-executor now loads the workflow node's `mcp:` config file once and filters the SDK's failure message to only the servers the workflow actually configured. User-level Claude plugin MCPs (e.g. `telegram` inherited from `~/.claude/`) that fail to connect in the headless subprocess are debug-logged as `dag.mcp_plugin_connection_suppressed` instead of being forwarded to the conversation. Other provider warnings (⚠️) surface unchanged. Credits @MrFadiAi for reporting the issue in #1134 (that PR was 9 days stale and conflicting; this is a fresh re-do on current `dev`).
-- **`archon setup` no longer writes to `<repo>/.env`.** Prior versions unconditionally wrote the generated config to both `~/.archon/.env` and `<repo>/.env`, destroying user-added secrets and silently downgrading PostgreSQL configs to SQLite when re-run in "Add" mode. The write side now targets exactly one archon-owned file (home or project scope via `--scope`), merges into existing content by default, and writes a timestamped backup. `<repo>/.env` is never touched — it belongs to the user's target project. (#1303)
-- **CLI and server no longer silently lose repo-local env vars.** Previously, env vars in `<repo>/.env` were parsed, deleted from `process.env` by `stripCwdEnv()`, and the only output operators saw was `[dotenv@17.3.1] injecting env (0) from .env` — which read as "file was empty." Workflows that needed `SLACK_WEBHOOK` or similar had no way to recover without knowing to use `~/.archon/.env`. The new `<cwd>/.archon/.env` path + archon-owned log lines make the load state observable and recoverable. (#1302)
-- **Bumped transitive `axios` to `^1.15.0` via root `overrides` to clear CVE-2025-62718** (NO_PROXY bypass via hostname normalization → potential SSRF). Archon pulls `axios` transitively through `@slack/bolt` and `@slack/web-api`; both semver ranges (`^1.12.0` and `^1.13.5`) accept the override cleanly, so no API surface changes. Credits @stefans71 for identifying and reporting the vulnerability in #1153. Closes #1053.
-- **Stale workspace symlink no longer reported as "not in a git repository" by the CLI.** When `archon workflow run` (or `--resume`) is invoked from a valid git repo whose `~/.archon/workspaces/<owner>/<repo>/source` symlink points somewhere else (common after moving/renaming the checkout), auto-registration fails but the repo is fine. Previously both the worktree-creation and resume paths fell through to the generic `Cannot create worktree: not in a git repository` / `Cannot resume: Not in a git repository` errors — a lie that sent users down the wrong diagnostic path. Both sites now preserve the registration error and throw `Cannot {create worktree,resume}: repository registration failed.` with the original cause and a concrete cleanup hint (`Remove the stale workspace entry at <path> and retry`) when the failure matches the `createProjectSourceSymlink()` shape. Credits @Bortlesboat for identifying the root cause and the parser approach in #1157. Closes #1146.
-- **Cross-clone worktree isolation**: prevent workflows in one local clone from silently adopting worktrees or DB state owned by another local clone of the same remote. Two clones sharing a remote previously resolved to the same `codebase_id`, causing the isolation resolver's DB-driven paths (`findReusable`, `findLinkedIssueEnv`, `tryBranchAdoption`) to return the other clone's environment. All adoption paths now verify the worktree's `.git` pointer matches the requesting clone and throw a classified error on mismatch. `archon-implement` prompt was also tightened to stop AI agents from adopting unrelated branches they see via `git branch`. Thanks to @halindrome for the three-issue root-cause mapping. (#1193, #1188, #1183, #1198, #1206)
+- **`smelter setup` no longer writes to `<repo>/.env`.** Prior versions unconditionally wrote the generated config to both `~/.smelter/.env` and `<repo>/.env`, destroying user-added secrets and silently downgrading PostgreSQL configs to SQLite when re-run in "Add" mode. The write side now targets exactly one smelter-owned file (home or project scope via `--scope`), merges into existing content by default, and writes a timestamped backup. `<repo>/.env` is never touched — it belongs to the user's target project. (#1303)
+- **CLI and server no longer silently lose repo-local env vars.** Previously, env vars in `<repo>/.env` were parsed, deleted from `process.env` by `stripCwdEnv()`, and the only output operators saw was `[dotenv@17.3.1] injecting env (0) from .env` — which read as "file was empty." Workflows that needed `SLACK_WEBHOOK` or similar had no way to recover without knowing to use `~/.smelter/.env`. The new `<cwd>/.smelter/.env` path + smelter-owned log lines make the load state observable and recoverable. (#1302)
+- **Bumped transitive `axios` to `^1.15.0` via root `overrides` to clear CVE-2025-62718** (NO_PROXY bypass via hostname normalization → potential SSRF). Smelter pulls `axios` transitively through `@slack/bolt` and `@slack/web-api`; both semver ranges (`^1.12.0` and `^1.13.5`) accept the override cleanly, so no API surface changes. Credits @stefans71 for identifying and reporting the vulnerability in #1153. Closes #1053.
+- **Stale workspace symlink no longer reported as "not in a git repository" by the CLI.** When `smelter workflow run` (or `--resume`) is invoked from a valid git repo whose `~/.smelter/workspaces/<owner>/<repo>/source` symlink points somewhere else (common after moving/renaming the checkout), auto-registration fails but the repo is fine. Previously both the worktree-creation and resume paths fell through to the generic `Cannot create worktree: not in a git repository` / `Cannot resume: Not in a git repository` errors — a lie that sent users down the wrong diagnostic path. Both sites now preserve the registration error and throw `Cannot {create worktree,resume}: repository registration failed.` with the original cause and a concrete cleanup hint (`Remove the stale workspace entry at <path> and retry`) when the failure matches the `createProjectSourceSymlink()` shape. Credits @Bortlesboat for identifying the root cause and the parser approach in #1157. Closes #1146.
+- **Cross-clone worktree isolation**: prevent workflows in one local clone from silently adopting worktrees or DB state owned by another local clone of the same remote. Two clones sharing a remote previously resolved to the same `codebase_id`, causing the isolation resolver's DB-driven paths (`findReusable`, `findLinkedIssueEnv`, `tryBranchAdoption`) to return the other clone's environment. All adoption paths now verify the worktree's `.git` pointer matches the requesting clone and throw a classified error on mismatch. `smelter-implement` prompt was also tightened to stop AI agents from adopting unrelated branches they see via `git branch`. Thanks to @halindrome for the three-issue root-cause mapping. (#1193, #1188, #1183, #1198, #1206)
 
 ### Removed
 
-- **`globalSearchPath` option** from `discoverWorkflows()` and `discoverWorkflowsWithConfig()`. Callers that previously passed `{ globalSearchPath: getArchonHome() }` should drop the argument; home-scoped discovery is now automatic.
+- **`globalSearchPath` option** from `discoverWorkflows()` and `discoverWorkflowsWithConfig()`. Callers that previously passed `{ globalSearchPath: getSmelterHome() }` should drop the argument; home-scoped discovery is now automatic.
 - **`@anthropic-ai/claude-agent-sdk/embed` import** — the Bun `with { type: 'file' }` asset-embedding path and its `$bunfs` extraction logic. The embed was a bundler-dependent optimization that failed silently when Bun couldn't produce a usable virtual FS path (#1210, #1087); it is replaced by explicit binary-path resolution.
 
 ## [0.3.6] - 2026-04-12
@@ -151,7 +151,7 @@ Web UI workflow experience improvements, CWD environment leak protection, and bu
 
 ### Changed
 
-- CWD `.env` variables are now stripped from AI subprocess environments at the `@archon/paths` layer, replacing the old `SUBPROCESS_ENV_ALLOWLIST` approach. Prevents accidental credential leaks from target repo `.env` files (#1067, #1030, #1098, #1070)
+- CWD `.env` variables are now stripped from AI subprocess environments at the `@smelter/paths` layer, replacing the old `SUBPROCESS_ENV_ALLOWLIST` approach. Prevents accidental credential leaks from target repo `.env` files (#1067, #1030, #1098, #1070)
 - Update check cache TTL reduced from 24 hours to 1 hour
 
 ### Fixed
@@ -165,11 +165,11 @@ Web UI workflow experience improvements, CWD environment leak protection, and bu
 
 ## [0.3.5] - 2026-04-10
 
-Fixes for `archon serve` process lifecycle and static file serving.
+Fixes for `smelter serve` process lifecycle and static file serving.
 
 ### Fixed
 
-- **`archon serve` process exits immediately**: the CLI called `process.exit(0)` after `startServer()` returned, killing the server. Now blocks on SIGINT/SIGTERM so the server stays running (#1047)
+- **`smelter serve` process exits immediately**: the CLI called `process.exit(0)` after `startServer()` returned, killing the server. Now blocks on SIGINT/SIGTERM so the server stays running (#1047)
 - **Web dist path existence check**: server logs a warning at startup if the web dist directory is missing, instead of silently serving 404s
 - **Favicon route**: added explicit `/favicon.png` route for the web UI
 
@@ -183,12 +183,12 @@ Binary env loading fix and release infrastructure improvements.
 
 ### Changed
 
-- **Server env loading for binary support**: removed redundant CWD `.env` stripping — `SUBPROCESS_ENV_ALLOWLIST` and the env-leak gate already prevent target repo credentials from reaching AI subprocesses. Server now loads `~/.archon/.env` with `override: true` for all keys (not just `DATABASE_URL`), skips the `import.meta.dir` `.env` path in binary mode, and defaults `CLAUDE_USE_GLOBAL_AUTH=true` when no explicit credentials are set (#1045)
+- **Server env loading for binary support**: removed redundant CWD `.env` stripping — `SUBPROCESS_ENV_ALLOWLIST` and the env-leak gate already prevent target repo credentials from reaching AI subprocesses. Server now loads `~/.smelter/.env` with `override: true` for all keys (not just `DATABASE_URL`), skips the `import.meta.dir` `.env` path in binary mode, and defaults `CLAUDE_USE_GLOBAL_AUTH=true` when no explicit credentials are set (#1045)
 - **Workspace version sync**: all `packages/*/package.json` versions now sync from the root `package.json` during releases via `scripts/sync-versions.sh`
 
 ### Fixed
 
-- **`archon serve` crash in compiled binaries**: the CWD env stripping + baked `import.meta.dir` path caused all credentials to be lost, triggering `no_ai_credentials` exit on every startup
+- **`smelter serve` crash in compiled binaries**: the CWD env stripping + baked `import.meta.dir` path caused all credentials to be lost, triggering `no_ai_credentials` exit on every startup
 - **CLI `version` command reading stale version**: dev mode now reads from the monorepo root `package.json` instead of the CLI package's own version field
 - **Release CI web build**: fixed `bun --filter` syntax and added missing `remark-gfm` transitive dependencies for Bun hoisting
 
@@ -198,14 +198,14 @@ Binary distribution improvements, new workflow node type, and a batch of bug fix
 
 ### Added
 
-- **`archon serve` command**: one-command way for compiled binary users to start the web UI server. Downloads a pre-built web UI tarball from GitHub releases on first run, verifies SHA-256 checksum, caches locally, then starts the full server (#1011)
+- **`smelter serve` command**: one-command way for compiled binary users to start the web UI server. Downloads a pre-built web UI tarball from GitHub releases on first run, verifies SHA-256 checksum, caches locally, then starts the full server (#1011)
 - **Automatic update check**: binary users see a notification when a newer version is available on GitHub. Non-blocking, cached for 24 hours (#1039)
-- **Script node type for DAG workflows**: `script:` nodes run inline TypeScript/Python or named scripts from `.archon/scripts/` via `bun` or `uv` runtimes. Supports `deps:` for dependency installation and `timeout:` in milliseconds (#999)
+- **Script node type for DAG workflows**: `script:` nodes run inline TypeScript/Python or named scripts from `.smelter/scripts/` via `bun` or `uv` runtimes. Supports `deps:` for dependency installation and `timeout:` in milliseconds (#999)
 - **Codex native binary auto-resolution**: compiled builds now locate the Codex CLI binary automatically instead of requiring a manual `CODEX_CLI_PATH` override (#995, #1012)
 
 ### Fixed
 
-- **Workflow reject ignores positional reason**: `archon workflow reject <id> <reason>` now correctly passes the reason argument to the rejection handler
+- **Workflow reject ignores positional reason**: `smelter workflow reject <id> <reason>` now correctly passes the reason argument to the rejection handler
 - **Windows script path separators**: normalize backslashes to forward slashes in script node paths for cross-platform compatibility
 - **PowerShell `Add-ToUserPath` corruption**: installer no longer corrupts `PATH` when only a single entry exists (#1000)
 - **Validator `Promise.any` race condition**: script runtime checks no longer fail intermittently due to a `Promise.any` edge case (#1007, #1010)
@@ -219,7 +219,7 @@ Critical hotfix: compiled binaries could not spawn Claude. Also fixes an env-lea
 
 ### Fixed
 
-- **Claude SDK spawn in compiled binaries**: the Claude Agent SDK was resolving its `cli.js` via `import.meta.url` of the bundled module, which `bun build --compile` freezes at build time to the build host's absolute `node_modules` path. Every binary shipped from CI carried a `/Users/runner/work/Archon/...` path that existed only on the GitHub Actions runner, and every `workflow run` hit `Module not found` after three retries. Now imports `@anthropic-ai/claude-agent-sdk/embed` so `cli.js` is embedded into the binary's `$bunfs` and extracted to a real temp path at runtime (#990).
+- **Claude SDK spawn in compiled binaries**: the Claude Agent SDK was resolving its `cli.js` via `import.meta.url` of the bundled module, which `bun build --compile` freezes at build time to the build host's absolute `node_modules` path. Every binary shipped from CI carried a `/Users/runner/work/Smelter/...` path that existed only on the GitHub Actions runner, and every `workflow run` hit `Module not found` after three retries. Now imports `@anthropic-ai/claude-agent-sdk/embed` so `cli.js` is embedded into the binary's `$bunfs` and extracted to a real temp path at runtime (#990).
 - **Env-leak gate false-positive for unregistered cwd**: pre-spawn scan now skips cwd paths that aren't registered as codebases instead of blocking the workflow (#991, #992).
 
 ## [0.3.1] - 2026-04-08
@@ -238,20 +238,20 @@ Env-leak gate hardening, SSE reliability fixes, isolation cleanup smarter merge 
 ### Added
 
 - **Env-leak gate (target repo `.env` keys)**: scan auto-loaded `.env` filenames for 7 sensitive keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) and refuse to register or spawn into a codebase whose `.env` would silently re-inject keys into Claude/Codex subprocesses. Default is fail-closed (`allow_env_keys = false`). Includes a per-codebase consent column, registration gate, pre-spawn check in both Claude and Codex clients, and a 422 API error with web UI checkbox (#1036).
-- **CLI `--allow-env-keys` flag** for `archon workflow run` — grant env-leak-gate consent during auto-registration without needing the Web UI. Audit-logged as `env_leak_consent_granted` with `actor: 'user-cli'` (#973, #983).
-- **Global `allow_target_repo_keys` flag** in `~/.archon/config.yaml` — bypass the env-leak gate for all codebases on this machine. Per-repo `.archon/config.yaml` `allow_target_repo_keys: false` re-enables the gate for that repo. The server emits `env_leak_gate_disabled` once per process per source the first time `loadConfig` resolves the bypass as active (#973, #983).
+- **CLI `--allow-env-keys` flag** for `smelter workflow run` — grant env-leak-gate consent during auto-registration without needing the Web UI. Audit-logged as `env_leak_consent_granted` with `actor: 'user-cli'` (#973, #983).
+- **Global `allow_target_repo_keys` flag** in `~/.smelter/config.yaml` — bypass the env-leak gate for all codebases on this machine. Per-repo `.smelter/config.yaml` `allow_target_repo_keys: false` re-enables the gate for that repo. The server emits `env_leak_gate_disabled` once per process per source the first time `loadConfig` resolves the bypass as active (#973, #983).
 - **`PATCH /api/codebases/:id`** endpoint to flip `allow_env_keys` on existing codebases without delete/re-add. Audit-logged at `warn` level on every grant and revoke, including a `scanStatus` field that distinguishes "scanned" from "scan failed" so audit reviewers can tell empty key lists apart (#973, #983).
 - **Settings → Projects per-row toggle** to grant or revoke env-key consent retroactively, with an "env keys allowed" badge and inline error feedback if the PATCH fails (#973, #983).
 - **Startup env-leak scan**: when `allow_target_repo_keys` is not set, the server emits one `startup_env_leak_gate_will_block` warn per registered codebase whose `.env` would block the next spawn. Skipped entirely when the global bypass is active (#973, #983).
 - **Squash-merge and PR-merge detection** for `isolation cleanup --merged`. Unions three signals (ancestry via `git branch --merged`, patch equivalence via `git cherry`, and PR state via `gh`) to safely clean up worktrees whose branches were squash-merged. Adds `--include-closed` flag to also remove worktrees whose PRs were closed without merging (#1027).
-- **Git commit hash in `archon version`** output. Read at runtime via `git rev-parse` in dev or from a build-time constant in compiled binaries; falls back to `unknown` (#1035).
+- **Git commit hash in `smelter version`** output. Read at runtime via `git rev-parse` in dev or from a build-time constant in compiled binaries; falls back to `unknown` (#1035).
 
 ### Changed
 
 - **Env-leak gate error messages** are now context-aware: separate remediation copy for Web Add-Project, CLI auto-register, and pre-spawn-of-existing-codebase paths. Previously every error pointed at the Web UI checkbox even from the CLI (#973, #983).
 - **SSE event buffer TTL** raised from 3s to 60s and capacity from 50 to 500 events, fixing dropped `tool_result` events during the 5s reconnect grace window that left tool cards perpetually spinning. Cleanup timer now resets on each new event so the buffer is held for TTL past the most recent event, not the first one. Buffer overflow and TTL expiration now log at `warn` level for observability (#1037).
-- **Binary build detection** moved from runtime env sniffing (`import.meta.dir` / `process.execPath`) to a build-time `BUNDLED_IS_BINARY` constant in `@archon/paths`. Logger uses `pino-pretty` as a destination stream on the main thread instead of a worker-thread transport, eliminating the `require.resolve('pino-pretty')` lookup that crashed inside Bun's `$bunfs` virtual filesystem in compiled binaries. Same code path runs in dev and binaries — no environment detection (#982).
-- **Cloud-init deployment script** hardened: dedicated `archon` user (docker group, no sudo) with SSH keys copied from the default cloud user, 2GB swapfile to prevent OOM during docker build on small VPSes, `ufw allow 443/tcp` and `443/udp` for HTTP/3 QUIC, fail-fast on network errors, and clearer setup-complete messaging (#981).
+- **Binary build detection** moved from runtime env sniffing (`import.meta.dir` / `process.execPath`) to a build-time `BUNDLED_IS_BINARY` constant in `@smelter/paths`. Logger uses `pino-pretty` as a destination stream on the main thread instead of a worker-thread transport, eliminating the `require.resolve('pino-pretty')` lookup that crashed inside Bun's `$bunfs` virtual filesystem in compiled binaries. Same code path runs in dev and binaries — no environment detection (#982).
+- **Cloud-init deployment script** hardened: dedicated `smelter` user (docker group, no sudo) with SSH keys copied from the default cloud user, 2GB swapfile to prevent OOM during docker build on small VPSes, `ufw allow 443/tcp` and `443/udp` for HTTP/3 QUIC, fail-fast on network errors, and clearer setup-complete messaging (#981).
 
 ### Fixed
 
@@ -261,7 +261,7 @@ Env-leak gate hardening, SSE reliability fixes, isolation cleanup smarter merge 
 
 ### Security
 
-- The default `allow_env_keys` per codebase is `false` (fail-closed). Codebases with sensitive keys in their auto-loaded `.env` files (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) are blocked at the next workflow run. **Remediation paths** (any one): (1) remove the key from `.env`, (2) rename to `.env.secrets`, (3) toggle "Allow env keys" in Settings → Projects, (4) `archon workflow run --allow-env-keys ...`, (5) set `allow_target_repo_keys: true` in `~/.archon/config.yaml`. See `docs/reference/security.md` for full details (#1036, #973, #983).
+- The default `allow_env_keys` per codebase is `false` (fail-closed). Codebases with sensitive keys in their auto-loaded `.env` files (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) are blocked at the next workflow run. **Remediation paths** (any one): (1) remove the key from `.env`, (2) rename to `.env.secrets`, (3) toggle "Allow env keys" in Settings → Projects, (4) `smelter workflow run --allow-env-keys ...`, (5) set `allow_target_repo_keys: true` in `~/.smelter/config.yaml`. See `docs/reference/security.md` for full details (#1036, #973, #983).
 
 
 ## [0.2.12] - 2026-03-20
@@ -359,9 +359,9 @@ DAG hardening, security fixes, validate-pr workflow, and worktree lifecycle mana
 
 ### Added
 
-- **`archon complete <branch>` command** for worktree lifecycle cleanup — removes worktree + local/remote branches (#601)
+- **`smelter complete <branch>` command** for worktree lifecycle cleanup — removes worktree + local/remote branches (#601)
 - **`--json` flag for `workflow list`** — machine-readable workflow output (#594)
-- **`archon-validate-pr` workflow** with per-node idle timeout support (#635)
+- **`smelter-validate-pr` workflow** with per-node idle timeout support (#635)
 - **Typed SessionMetadata** with Zod validation for safer metadata handling (#600)
 - **`persistSession: false`** in ClaudeProvider to avoid disk pollution from session transcripts (#626)
 - **DAG workflow for GitHub issue resolution** with structured node pipeline
@@ -385,7 +385,7 @@ DAG hardening, security fixes, validate-pr workflow, and worktree lifecycle mana
 - SSE gaps from ordered lock events and retract preserving tool calls (#581)
 - Sidebar delete now clears selection and guards localStorage (#582)
 - Git fetch errors classified in syncRepository (#574)
-- `DATABASE_URL` loaded from `~/.archon/.env` for CLI/server parity
+- `DATABASE_URL` loaded from `~/.smelter/.env` for CLI/server parity
 - API returns 400 when `conversationId` is provided in POST `/api/conversations` (#595)
 
 ## [0.2.8] - 2026-03-06
@@ -394,7 +394,7 @@ Skills system overhaul and workshop documentation.
 
 ### Added
 
-- **Archon-dev skill** with routing to 10 specialized cookbooks (research, plan, implement, review, debug, commit, PR, issue)
+- **Smelter-dev skill** with routing to 10 specialized cookbooks (research, plan, implement, review, debug, commit, PR, issue)
 - **Rulecheck skill** — autonomous agent that scans for CLAUDE.md rule violations, creates PRs with fixes, and notifies via Slack
 - **Triage skill** — upgraded from command to skill with custom agent for GitHub issue labeling
 - **Save-task-list skill** — upgraded from command to skill with SessionStart hook for task restoration
@@ -415,15 +415,15 @@ Monorepo deep extraction and visual workflow builder.
 - **Visual workflow builder** with React Flow for drag-and-drop workflow creation (#471)
 - **AI-generated conversation titles** + CLI-to-Web UI integration (#515)
 - **Workflow Command Center** — unified dashboard for cross-project workflow observability with pagination and filtering
-- **`@archon/paths` package** extracted from `@archon/core` — path resolution and logger with zero internal deps (#483)
-- **`@archon/git` package** extracted from `@archon/core` — git operations with branded types (#492)
-- **`@archon/isolation` package** extracted from `@archon/core` — worktree isolation with provider abstraction (#492)
-- **`@archon/adapters` package** extracted from `@archon/server` — platform adapters for Slack, Telegram, GitHub, Discord (#499)
-- **`@archon/workflows` package** extracted from `@archon/core` — workflow engine with loader, router, executor, DAG (#507)
+- **`@smelter/paths` package** extracted from `@smelter/core` — path resolution and logger with zero internal deps (#483)
+- **`@smelter/git` package** extracted from `@smelter/core` — git operations with branded types (#492)
+- **`@smelter/isolation` package** extracted from `@smelter/core` — worktree isolation with provider abstraction (#492)
+- **`@smelter/adapters` package** extracted from `@smelter/server` — platform adapters for Slack, Telegram, GitHub, Discord (#499)
+- **`@smelter/workflows` package** extracted from `@smelter/core` — workflow engine with loader, router, executor, DAG (#507)
 
 ### Changed
 
-- Backward-compat re-exports removed from `@archon/core` — use direct package imports (#512)
+- Backward-compat re-exports removed from `@smelter/core` — use direct package imports (#512)
 
 ### Fixed
 
@@ -432,7 +432,7 @@ Monorepo deep extraction and visual workflow builder.
 - Text buffer flushed before workflow_dispatch SSE events (#491, #498)
 - SQLite adapter RETURNING test fixture (#508)
 - Mock restoration in 3 test files to prevent cross-file pollution (#509, #510)
-- Windows path fixes for Archon directories
+- Windows path fixes for Smelter directories
 
 ## [0.2.6] - 2026-02-21
 
@@ -468,9 +468,9 @@ Web UI launch, structured logging, and major stabilization.
 
 ### Added
 
-- **Archon Web UI** — React frontend with SSE streaming, workflow events, and conversation management
+- **Smelter Web UI** — React frontend with SSE streaming, workflow events, and conversation management
 - **Pino structured logging** replacing console.log across all packages (#388)
-- **Project-centric `~/.archon/` layout** — workspaces organized by `owner/repo` (#382)
+- **Project-centric `~/.smelter/` layout** — workspaces organized by `owner/repo` (#382)
 - **Session deactivation reasons** stored in database for audit trail (#303, #385)
 - **Remote branch cleanup** when PR is merged
 - **Workflow log duration, tokens, and validation events** (#417)
@@ -478,7 +478,7 @@ Web UI launch, structured logging, and major stabilization.
 
 ### Changed
 
-- `~/.archon/` restructured to project-centric layout (#382)
+- `~/.smelter/` restructured to project-centric layout (#382)
 - Database command templates deprecated in favor of filesystem commands (#425)
 - SQLite-first documentation with Postgres as optional (#418)
 - `transitionSession` wrapped in database transaction for atomicity (#408)
@@ -503,7 +503,7 @@ SQLite as default database and simplified CLI setup.
 
 ### Added
 
-- **SQLite as default database** — zero-config setup with `~/.archon/archon.db`, no PostgreSQL required
+- **SQLite as default database** — zero-config setup with `~/.smelter/smelter.db`, no PostgreSQL required
 - **Simplified CLI setup** — streamlined first-run experience on macOS/Linux
 
 ### Fixed
@@ -513,14 +513,14 @@ SQLite as default database and simplified CLI setup.
 
 ## [0.2.3] - 2026-01-31
 
-Archon CLI skill, workflow routing improvements, and configuration fixes.
+Smelter CLI skill, workflow routing improvements, and configuration fixes.
 
 ### Added
 
-- **Archon CLI skill** for Claude Code — run workflows from within Claude Code sessions (#331, #332, #333)
-- **Interactive setup wizard** and config editor for the Archon skill
+- **Smelter CLI skill** for Claude Code — run workflows from within Claude Code sessions (#331, #332, #333)
+- **Interactive setup wizard** and config editor for the Smelter skill
 - **`/workflow run` command** for direct workflow invocation from CLI
-- **`archon-plan-to-merge` workflow** for end-to-end plan execution (#346)
+- **`smelter-plan-to-merge` workflow** for end-to-end plan execution (#346)
 - **Workflow error visibility** — `/workflow list` and `/workflow reload` show per-file load errors (#260, #263, #264)
 - **Case-insensitive workflow routing** — router falls back to case-insensitive match (#263)
 
@@ -586,10 +586,10 @@ Monorepo restructure introducing the CLI package for local workflow execution.
 
 ### Added
 
-- **Monorepo structure** with `@archon/core`, `@archon/server`, and `@archon/cli` packages (#311)
+- **Monorepo structure** with `@smelter/core`, `@smelter/server`, and `@smelter/cli` packages (#311)
 - **CLI entry point** with `workflow list`, `workflow run`, and `version` commands (#313)
 - **Database abstraction layer** supporting both PostgreSQL and SQLite (#314)
-- **SQLite auto-detection** - uses `~/.archon/archon.db` when `DATABASE_URL` not set (#314)
+- **SQLite auto-detection** - uses `~/.smelter/smelter.db` when `DATABASE_URL` not set (#314)
 - **Isolation commands** - `isolation list` and `isolation cleanup` for worktree management (#313)
 
 ### Fixed
@@ -636,7 +636,7 @@ Major stability release with comprehensive bug fixes and test coverage.
 
 ### Fixed
 
-- Workflows should only load from `.archon/workflows/` (#200)
+- Workflows should only load from `.smelter/workflows/` (#200)
 - PR worktrees use actual branch for same-repo PRs (#238)
 - GitHub adapter parameter bug causes clone failures (#209)
 - Auto-detect Claude auth when `CLAUDE_USE_GLOBAL_AUTH` not set (#236)
@@ -645,7 +645,7 @@ Major stability release with comprehensive bug fixes and test coverage.
 - Workflows ensure artifacts committed before completing (#203)
 - Worktree creation fails when orphan directory exists (#208)
 - Add logging to detect silent updateConversation failures (#235)
-- Auto-sync `.archon` folder to worktrees before workflow discovery (#219)
+- Auto-sync `.smelter` folder to worktrees before workflow discovery (#219)
 - Consolidate startup messages into single workflow start comment (#177)
 - Show repo identifier instead of server filesystem path (#175)
 - Check for existing PR before creating new one (#195)
@@ -667,7 +667,7 @@ Developer experience improvements and worktree stability.
 
 ### Fixed
 
-- Copy `.archon` directory to worktrees by default (#210)
+- Copy `.smelter` directory to worktrees by default (#210)
 - Stale workflow cleanup and defense-in-depth error handling (#237)
 - Cleanup service handles missing worktree directories gracefully (#207)
 - Worktree limit blocks workflow execution instead of falling back to main (#197)
@@ -735,7 +735,7 @@ Isolation architecture overhaul and Bun runtime migration.
 - **Scheduled cleanup service** for stale worktree environments (#94)
 - **Worktree limits** with user feedback (#98)
 - **Force-thread response model** for Discord (#93)
-- **Archon distribution config** and `~/.archon/` directory structure (#101)
+- **Smelter distribution config** and `~/.smelter/` directory structure (#101)
 - User feedback messages for GitHub worktree operations (#90)
 - Required SDK options for permissions and system prompt (#91)
 - Test coverage for PR worktree creation (#77)

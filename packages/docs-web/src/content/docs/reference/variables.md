@@ -1,6 +1,6 @@
 ---
 title: Variable Reference
-description: Complete reference for all variable substitutions available in Archon commands and workflows.
+description: Complete reference for all variable substitutions available in Smelter commands and workflows.
 category: reference
 area: workflows
 audience: [user]
@@ -8,7 +8,7 @@ sidebar:
   order: 5
 ---
 
-Archon substitutes variables in command files, inline prompts, bash scripts, and `script:` node bodies before execution. There are three categories of variables: workflow variables (substituted by the workflow engine), positional arguments (substituted by the command handler), and node output references (DAG workflows only).
+Smelter substitutes variables in command files, inline prompts, bash scripts, and `script:` node bodies before execution. There are three categories of variables: workflow variables (substituted by the workflow engine), positional arguments (substituted by the command handler), and node output references (DAG workflows only).
 
 ## Workflow Variables
 
@@ -19,9 +19,9 @@ These variables are substituted by the workflow executor in all node types (`com
 | `$ARGUMENTS` | The user's input message that triggered the workflow | Primary way to pass user input to commands |
 | `$USER_MESSAGE` | Same as `$ARGUMENTS` | Alias |
 | `$WORKFLOW_ID` | Unique ID for the current workflow run | Useful for artifact naming and log correlation |
-| `$ARTIFACTS_DIR` | Pre-created external artifacts directory (`~/.archon/workspaces/<owner>/<repo>/artifacts/runs/<id>/`) | Always exists before node execution; stored outside the repo to avoid polluting the working tree |
-| `$BASE_BRANCH` | Base branch for git operations | Auto-detected from the repository's default branch, or set via `worktree.baseBranch` in `.archon/config.yaml`. Throws an error if referenced in a prompt but cannot be resolved |
-| `$DOCS_DIR` | Documentation directory path | Configured via `docs.path` in `.archon/config.yaml`. Defaults to `docs/` when not set. Never throws |
+| `$ARTIFACTS_DIR` | Pre-created external artifacts directory (`~/.smelter/workspaces/<owner>/<repo>/artifacts/runs/<id>/`) | Always exists before node execution; stored outside the repo to avoid polluting the working tree |
+| `$BASE_BRANCH` | Base branch for git operations | Auto-detected from the repository's default branch, or set via `worktree.baseBranch` in `.smelter/config.yaml`. Throws an error if referenced in a prompt but cannot be resolved |
+| `$DOCS_DIR` | Documentation directory path | Configured via `docs.path` in `.smelter/config.yaml`. Defaults to `docs/` when not set. Never throws |
 | `$CONTEXT` | GitHub issue or PR context, if available | Populated when the workflow is triggered from a GitHub issue/PR. Replaced with empty string when unavailable |
 | `$EXTERNAL_CONTEXT` | Same as `$CONTEXT` | Alias |
 | `$ISSUE_CONTEXT` | Same as `$CONTEXT` | Alias |
@@ -40,7 +40,7 @@ If issue context is present but no context variable appears in the prompt, the c
 Unlike other variables, `$BASE_BRANCH` will cause the workflow to **fail immediately** if:
 - The variable is referenced in a prompt, AND
 - Auto-detection from git fails, AND
-- `worktree.baseBranch` is not set in `.archon/config.yaml`
+- `worktree.baseBranch` is not set in `.smelter/config.yaml`
 
 If the variable is not referenced, no error occurs even if the base branch cannot be determined.
 

@@ -1,6 +1,6 @@
 ---
 title: Web UI
-description: Built-in web interface for interacting with Archon -- no tokens or external services required.
+description: Built-in web interface for interacting with Smelter -- no tokens or external services required.
 category: adapters
 area: adapters
 audience: [user]
@@ -9,11 +9,11 @@ sidebar:
   order: 1
 ---
 
-The Web UI is the built-in interface for interacting with Archon. It requires no tokens, API keys, or external services -- just start the server and open your browser.
+The Web UI is the built-in interface for interacting with Smelter. It requires no tokens, API keys, or external services -- just start the server and open your browser.
 
 ## Prerequisites
 
-- Archon installed and dependencies resolved (`bun install`)
+- Smelter installed and dependencies resolved (`bun install`)
 - An Anthropic API key or Claude Code authentication (see [AI Assistants](/getting-started/ai-assistants/))
 
 ## Starting the Web UI
@@ -173,7 +173,7 @@ The Workflow Builder at `/workflows/builder` provides a visual editor for creati
 - **Validation panel** -- Real-time validation feedback as you build
 - **Undo/redo** -- Full undo/redo stack with keyboard shortcuts
 - **Delete node** -- Remove a selected node with `Delete` or `Backspace`, the Delete button in the inspector header, or the right-click context menu on any node
-- **Save** -- Saves the workflow YAML to your project's `.archon/workflows/` directory
+- **Save** -- Saves the workflow YAML to your project's `.smelter/workflows/` directory
 
 You can also browse existing workflows on the `/workflows` page and open any of them in the builder to edit.
 
@@ -216,7 +216,7 @@ Registered codebases appear in the sidebar's project selector.
 
 Click a project in the sidebar to scope your conversations and workflows to that codebase. The selected project determines:
 
-- Which `.archon/commands/` and `.archon/workflows/` are loaded
+- Which `.smelter/commands/` and `.smelter/workflows/` are loaded
 - The working directory for AI tool execution
 - Which worktrees and isolation environments are shown
 
@@ -227,6 +227,6 @@ Hover over a project in the sidebar and click the delete icon, or use the API to
 ## Further Reading
 
 - [Getting Started](/getting-started/overview/) -- Full setup guide
-- [Configuration](/getting-started/configuration/) -- Customize Archon for your project
+- [Configuration](/getting-started/configuration/) -- Customize Smelter for your project
 - [Authoring Workflows](/guides/authoring-workflows/) -- Create custom workflows
 - [API Reference](/reference/api/) -- Full REST API documentation

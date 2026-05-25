@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: Comprehensive guide to Archon's system architecture, packages, interfaces, and data flow.
+description: Comprehensive guide to Smelter's system architecture, packages, interfaces, and data flow.
 category: reference
 audience: [developer]
 status: current
@@ -8,7 +8,7 @@ sidebar:
   order: 1
 ---
 
-Comprehensive guide to understanding and extending Archon.
+Comprehensive guide to understanding and extending Smelter.
 
 **Navigation:** [Overview](#system-overview) | [Platforms](#adding-platform-adapters) | [AI Providers](#adding-ai-agent-providers) | [Isolation](#isolation-providers) | [Commands](#command-system) | [Streaming](#streaming-modes) | [Database](#database-schema)
 
@@ -16,7 +16,7 @@ Comprehensive guide to understanding and extending Archon.
 
 ## System Overview
 
-Archon is a **platform-agnostic AI coding assistant orchestrator** that connects messaging platforms (Web UI, Telegram, GitHub, Slack, Discord) to AI coding assistants (Claude Code, Codex) via a unified interface. The built-in Web UI provides a complete standalone experience with real-time streaming, tool call visualization, and workflow management.
+Smelter is a **platform-agnostic AI coding assistant orchestrator** that connects messaging platforms (Web UI, Telegram, GitHub, Slack, Discord) to AI coding assistants (Claude Code, Codex) via a unified interface. The built-in Web UI provides a complete standalone experience with real-time streaming, tool call visualization, and workflow management.
 
 ### Core Architecture
 
@@ -114,7 +114,7 @@ export interface IPlatformAdapter {
 **2. Implement the interface:**
 
 ```typescript
-import type { IPlatformAdapter } from '@archon/core';
+import type { IPlatformAdapter } from '@smelter/core';
 
 export class YourPlatformAdapter implements IPlatformAdapter {
   private streamingMode: 'stream' | 'batch';
@@ -633,16 +633,16 @@ export class WorktreeProvider implements IIsolationProvider {
 ### Storage Location
 
 ```
-PRIMARY: ~/.archon/workspaces/<owner>/<repo>/worktrees/<branch>/
-LEGACY:  ~/.archon/worktrees/<owner>/<repo>/<branch>/   (fallback for repos not registered under workspaces/)
-DOCKER:  /.archon/workspaces/<owner>/<repo>/worktrees/<branch>/
+PRIMARY: ~/.smelter/workspaces/<owner>/<repo>/worktrees/<branch>/
+LEGACY:  ~/.smelter/worktrees/<owner>/<repo>/<branch>/   (fallback for repos not registered under workspaces/)
+DOCKER:  /.smelter/workspaces/<owner>/<repo>/worktrees/<branch>/
 ```
 
 **Path resolution:**
 
-1. Project registered under `workspaces/`? -> `~/.archon/workspaces/<owner>/<repo>/worktrees/<branch>/`
-2. Legacy fallback -> `~/.archon/worktrees/<owner>/<repo>/<branch>/`
-3. Docker detected? -> `/.archon/` prefix instead of `~/.archon/`
+1. Project registered under `workspaces/`? -> `~/.smelter/workspaces/<owner>/<repo>/worktrees/<branch>/`
+2. Legacy fallback -> `~/.smelter/worktrees/<owner>/<repo>/<branch>/`
+3. Docker detected? -> `/.smelter/` prefix instead of `~/.smelter/`
 
 ### Usage Pattern
 
@@ -775,7 +775,7 @@ User: "Plan adding dark mode to project X"
            |
 Orchestrator: Route to workflow via AI router
            |
-Read command file: .archon/commands/plan.md
+Read command file: .smelter/commands/plan.md
            |
 Variable substitution: $ARGUMENTS -> "Add dark mode"
            |
@@ -791,11 +791,11 @@ Stream responses back to platform
 ```json
 {
   "prime": {
-    "path": ".archon/commands/prime.md",
+    "path": ".smelter/commands/prime.md",
     "description": "Research codebase"
   },
   "plan": {
-    "path": ".archon/commands/plan-feature.md",
+    "path": ".smelter/commands/plan-feature.md",
     "description": "Create implementation plan"
   }
 }
@@ -808,13 +808,13 @@ Stream responses back to platform
 **Manual registration** (`/command-set`):
 
 ```bash
-/command-set analyze .archon/commands/analyze.md
+/command-set analyze .smelter/commands/analyze.md
 ```
 
 **Bulk loading** (`/load-commands`):
 
 ```bash
-/load-commands .archon/commands
+/load-commands .smelter/commands
 # Loads all .md files: prime.md -> prime, plan.md -> plan
 ```
 
@@ -823,7 +823,7 @@ Stream responses back to platform
 ```typescript
 // Get command folders from config
 const searchPaths = getCommandFolderSearchPaths(config?.commands?.folder);
-// Returns: ['.archon/commands'] + configuredFolder if specified
+// Returns: ['.smelter/commands'] + configuredFolder if specified
 
 for (const folder of searchPaths) {
   if (await folderExists(join(repoPath, folder))) {
@@ -834,7 +834,7 @@ for (const folder of searchPaths) {
 
 This registers repo-specific commands. Default commands are loaded at runtime from the app's bundled defaults, not copied to repos.
 
-**Reference:** `packages/paths/src/archon-paths.ts` (`@archon/paths`)
+**Reference:** `packages/paths/src/smelter-paths.ts` (`@smelter/paths`)
 
 ### Variable Substitution
 
@@ -872,7 +872,7 @@ export function substituteVariables(
 **Example:**
 
 ```markdown
-<!-- .archon/commands/analyze.md -->
+<!-- .smelter/commands/analyze.md -->
 
 Analyze the following aspect of the codebase: $1
 
@@ -1023,7 +1023,7 @@ export function formatToolCall(toolName: string, toolInput?: Record<string, unkn
 
 ## Database Schema
 
-Archon uses a 7-table schema with `remote_agent_` prefix. SQLite is the default (zero setup); PostgreSQL is optional for cloud/advanced deployments.
+Smelter uses a 7-table schema with `remote_agent_` prefix. SQLite is the default (zero setup); PostgreSQL is optional for cloud/advanced deployments.
 
 ### Schema Overview
 
@@ -1194,9 +1194,9 @@ Command Handler: /clone
   - Execute git clone
   - Create codebase record
   - Update conversation.codebase_id
-  - Detect .archon/commands/
+  - Detect .smelter/commands/
          |
-Send response: "Repository cloned! Found: .archon/commands/"
+Send response: "Repository cloned! Found: .smelter/commands/"
 ```
 
 ```
@@ -1204,7 +1204,7 @@ User types: "Prime the codebase"
          |
 Orchestrator: Route via AI router
          |
-Load command file: .archon/commands/prime.md
+Load command file: .smelter/commands/prime.md
          |
 Variable substitution (no args in this case)
          |
@@ -1220,7 +1220,7 @@ Save session ID for next message
 ### GitHub Webhook Flow
 
 ```
-User comments: @Archon prime the codebase
+User comments: @Smelter prime the codebase
          |
 GitHub sends webhook to POST /webhooks/github
          |
@@ -1228,13 +1228,13 @@ GitHubAdapter.handleWebhook(payload, signature)
   - Verify HMAC signature
   - Parse event: issue_comment.created
   - Extract: owner/repo#42, comment text
-  - Check for @Archon mention
+  - Check for @Smelter mention
          |
 First mention on this issue?
   - Yes -> Clone repo, create codebase, detect and register commands
   - No -> Use existing codebase
          |
-Strip @Archon from comment
+Strip @Smelter from comment
          |
 Orchestrator.handleMessage(adapter, "user/repo#42", "prime the codebase")
          |
@@ -1297,7 +1297,7 @@ This checklist is for **built-in** providers only. For community providers (`bui
 - [ ] Update `substituteVariables()` for new variable types
 - [ ] Add command to Command Handler for deterministic logic
 - [ ] Update `/help` command output
-- [ ] Add example command file to `.archon/commands/`
+- [ ] Add example command file to `.smelter/commands/`
 - [ ] Test variable substitution with edge cases
 
 ---

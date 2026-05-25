@@ -15,7 +15,7 @@ export default defineConfig({
       head: [
         {
           tag: 'script',
-          content: `if(!localStorage.getItem('archon-theme-init')){localStorage.setItem('archon-theme-init','1');localStorage.setItem('starlight-theme','dark');document.documentElement.dataset.theme='dark';}`,
+          content: `if(!localStorage.getItem('smelter-theme-init')){localStorage.setItem('smelter-theme-init','1');localStorage.setItem('starlight-theme','dark');document.documentElement.dataset.theme='dark';}`,
         },
       ],
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/Yusang-park/Smelter' }],

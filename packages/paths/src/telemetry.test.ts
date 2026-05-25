@@ -12,8 +12,8 @@ import {
 } from './telemetry';
 
 const ENV_VARS = [
-  'ARCHON_HOME',
-  'ARCHON_TELEMETRY_DISABLED',
+  'SMELTER_HOME',
+  'SMELTER_TELEMETRY_DISABLED',
   'DO_NOT_TRACK',
   'POSTHOG_API_KEY',
   'POSTHOG_HOST',
@@ -49,14 +49,14 @@ describe('telemetry opt-out detection', () => {
   });
 
   test('enabled by default when no opt-out env vars set', () => {
-    delete process.env.ARCHON_TELEMETRY_DISABLED;
+    delete process.env.SMELTER_TELEMETRY_DISABLED;
     delete process.env.DO_NOT_TRACK;
     delete process.env.POSTHOG_API_KEY;
     expect(isTelemetryDisabled()).toBe(false);
   });
 
-  test('ARCHON_TELEMETRY_DISABLED=1 disables telemetry', () => {
-    process.env.ARCHON_TELEMETRY_DISABLED = '1';
+  test('SMELTER_TELEMETRY_DISABLED=1 disables telemetry', () => {
+    process.env.SMELTER_TELEMETRY_DISABLED = '1';
     expect(isTelemetryDisabled()).toBe(true);
   });
 
@@ -65,15 +65,15 @@ describe('telemetry opt-out detection', () => {
     expect(isTelemetryDisabled()).toBe(true);
   });
 
-  test('ARCHON_TELEMETRY_DISABLED=0 does not disable (strict "1" match)', () => {
-    process.env.ARCHON_TELEMETRY_DISABLED = '0';
+  test('SMELTER_TELEMETRY_DISABLED=0 does not disable (strict "1" match)', () => {
+    process.env.SMELTER_TELEMETRY_DISABLED = '0';
     delete process.env.DO_NOT_TRACK;
     expect(isTelemetryDisabled()).toBe(false);
   });
 
   test('empty POSTHOG_API_KEY override disables telemetry', () => {
     process.env.POSTHOG_API_KEY = '';
-    delete process.env.ARCHON_TELEMETRY_DISABLED;
+    delete process.env.SMELTER_TELEMETRY_DISABLED;
     delete process.env.DO_NOT_TRACK;
     expect(isTelemetryDisabled()).toBe(true);
   });
@@ -85,7 +85,7 @@ describe('captureWorkflowInvoked when disabled', () => {
   beforeEach(() => {
     saved = saveEnv();
     resetTelemetryForTests();
-    process.env.ARCHON_TELEMETRY_DISABLED = '1';
+    process.env.SMELTER_TELEMETRY_DISABLED = '1';
   });
 
   afterEach(() => {
@@ -99,7 +99,7 @@ describe('captureWorkflowInvoked when disabled', () => {
         workflowName: 'test-workflow',
         workflowDescription: 'A test',
         platform: 'cli',
-        archonVersion: 'dev',
+        smelterVersion: 'dev',
       });
     }).not.toThrow();
   });
@@ -115,10 +115,10 @@ describe('telemetry ID persistence', () => {
 
   beforeEach(() => {
     saved = saveEnv();
-    tmpHome = mkdtempSync(join(tmpdir(), 'archon-telemetry-test-'));
-    process.env.ARCHON_HOME = tmpHome;
+    tmpHome = mkdtempSync(join(tmpdir(), 'smelter-telemetry-test-'));
+    process.env.SMELTER_HOME = tmpHome;
     // Force-disable actual network capture — we only exercise the ID path.
-    process.env.ARCHON_TELEMETRY_DISABLED = '1';
+    process.env.SMELTER_TELEMETRY_DISABLED = '1';
     resetTelemetryForTests();
   });
 

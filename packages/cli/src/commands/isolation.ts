@@ -1,9 +1,9 @@
 /**
  * Isolation commands - list, cleanup, and complete worktrees
  */
-import * as isolationDb from '@archon/core/db/isolation-environments';
-import * as workflowDb from '@archon/core/db/workflows';
-import { createLogger } from '@archon/paths';
+import * as isolationDb from '@smelter/core/db/isolation-environments';
+import * as workflowDb from '@smelter/core/db/workflows';
+import { createLogger } from '@smelter/paths';
 import {
   toRepoPath,
   toBranchName,
@@ -11,16 +11,16 @@ import {
   hasUncommittedChanges,
   toWorktreePath,
   getDefaultBranch,
-} from '@archon/git';
-import { getIsolationProvider } from '@archon/isolation';
+} from '@smelter/git';
+import { getIsolationProvider } from '@smelter/isolation';
 import {
   removeEnvironment,
   type RemoveEnvironmentResult,
-} from '@archon/core/services/cleanup-service';
+} from '@smelter/core/services/cleanup-service';
 import {
   listEnvironments,
   cleanupMergedEnvironments,
-} from '@archon/core/operations/isolation-operations';
+} from '@smelter/core/operations/isolation-operations';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;

@@ -1,6 +1,6 @@
 # Architecture Deep Dive
 
-> **Purpose**: End-to-end flow traces across the entire Archon system with file:line references.
+> **Purpose**: End-to-end flow traces across the entire Smelter system with file:line references.
 > **When to use**: Understanding how data flows between packages, debugging cross-system issues, onboarding.
 > **Size**: ~500 lines — use a scout sub-agent to check relevance before loading.
 
@@ -34,7 +34,7 @@ Slack event
             → Prompt includes: registered projects, discovered workflows, /invoke-workflow format
           → sessionDb.getActiveSession() → transitionSession('first-message') if none (orchestrator-agent.ts:462)
           → getAgentProvider(conversation.ai_assistant_type) (orchestrator-agent.ts:470)
-          → cwd = getArchonWorkspacesPath() (orchestrator-agent.ts:458)
+          → cwd = getSmelterWorkspacesPath() (orchestrator-agent.ts:458)
           → handleBatchMode() or handleStreamMode() based on getStreamingMode()
 
           AI responds with natural language ± structured commands:
@@ -54,7 +54,7 @@ Slack event
 
 ---
 
-## 2. Workflow Execution: `/workflow run archon-fix-github-issue #42`
+## 2. Workflow Execution: `/workflow run smelter-fix-github-issue #42`
 
 ```
 User message starts with /workflow
@@ -134,11 +134,11 @@ Step 7: Create new — provider.create(isolationRequest) → store.create()
 **WorktreeProvider.create() internals (worktree.ts:56):**
 ```
   → generateBranchName(request) — issue-N, thread-{hash}, task-{slug}, etc.
-  → getWorktreePath() — ~/.archon/workspaces/{owner}/{repo}/worktrees/{branch}
+  → getWorktreePath() — ~/.smelter/workspaces/{owner}/{repo}/worktrees/{branch}
   → findExisting() — check path or PR branch for adoption
   → syncWorkspaceBeforeCreate() — git fetch origin {baseBranch}
   → git worktree add {path} -b {branch} origin/{baseBranch}
-  → copyConfiguredFiles() — .archon/ + config.worktree.copyFiles
+  → copyConfiguredFiles() — .smelter/ + config.worktree.copyFiles
 ```
 
 ---
@@ -190,8 +190,8 @@ Otherwise → SqliteAdapter (bun:sqlite, WAL mode, busy_timeout: 5000)
 
 **Namespaced exports pattern:**
 ```typescript
-import * as conversationDb from '@archon/core/db/conversations';
-import * as sessionDb from '@archon/core/db/sessions';
+import * as conversationDb from '@smelter/core/db/conversations';
+import * as sessionDb from '@smelter/core/db/sessions';
 
 await conversationDb.getOrCreateConversation(platformType, conversationId);
 await sessionDb.transitionSession(conversationId, trigger, options);
@@ -210,13 +210,13 @@ await sessionDb.transitionSession(conversationId, trigger, options);
 
 ```
 Layer 1: Code defaults (config-loader.ts:165)
-  → botName: 'Archon', assistant: 'claude', concurrency.maxConversations: 10
+  → botName: 'Smelter', assistant: 'claude', concurrency.maxConversations: 10
 
-Layer 2: Global config (~/.archon/config.yaml)
+Layer 2: Global config (~/.smelter/config.yaml)
   → loadGlobalConfig() — cached after first load
   → Overrides: botName, defaultAssistant, assistants.*, streaming modes
 
-Layer 3: Repo config ({repoPath}/.archon/config.yaml)
+Layer 3: Repo config ({repoPath}/.smelter/config.yaml)
   → loadRepoConfig() — read fresh each time (not cached)
   → Overrides: assistant, assistants.*, commands.folder, defaults.*, worktree.baseBranch
 

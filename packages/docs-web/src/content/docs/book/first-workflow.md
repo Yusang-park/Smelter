@@ -16,7 +16,7 @@ That's what this chapter is about. You'll build a complete workflow from scratch
 
 ## Workflow Basics
 
-A **workflow** is a YAML file in `.archon/workflows/`. When you run `archon workflow run my-workflow "do something"`, Archon finds the file, reads the nodes, and executes them in dependency order.
+A **workflow** is a YAML file in `.smelter/workflows/`. When you run `smelter workflow run my-workflow "do something"`, Smelter finds the file, reads the nodes, and executes them in dependency order.
 
 The minimum viable workflow looks like this:
 
@@ -32,9 +32,9 @@ nodes:
     depends_on: [first]
 ```
 
-That's it. Three fields at the top, a list of nodes below. Each node needs a unique `id`. Archon discovers workflow files recursively inside `.archon/workflows/`, so you can organize them in subdirectories if you want.
+That's it. Three fields at the top, a list of nodes below. Each node needs a unique `id`. Smelter discovers workflow files recursively inside `.smelter/workflows/`, so you can organize them in subdirectories if you want.
 
-> **Where to put it**: Create `.archon/workflows/my-workflow.yaml` in your repository. Run `archon workflow list` to confirm Archon found it.
+> **Where to put it**: Create `.smelter/workflows/my-workflow.yaml` in your repository. Run `smelter workflow list` to confirm Smelter found it.
 
 ---
 
@@ -42,7 +42,7 @@ That's it. Three fields at the top, a list of nodes below. Each node needs a uni
 
 Let's build something real. The scenario: you want a workflow that takes a feature request, creates an implementation plan, and then implements it.
 
-Create `.archon/workflows/my-workflow.yaml`:
+Create `.smelter/workflows/my-workflow.yaml`:
 
 ```yaml
 name: my-workflow
@@ -50,19 +50,19 @@ description: Plan a feature and implement it
 
 nodes:
   - id: plan
-    command: archon-create-plan
+    command: smelter-create-plan
   - id: implement
-    command: archon-implement-tasks
+    command: smelter-implement-tasks
     depends_on: [plan]
 ```
 
 Run it:
 
 ```bash
-archon workflow run my-workflow --branch feature/auth-tokens "Add JWT refresh token support"
+smelter workflow run my-workflow --branch feature/auth-tokens "Add JWT refresh token support"
 ```
 
-Archon runs `archon-create-plan` with your input, waits for it to finish, then runs `archon-implement-tasks`. The AI carries its full conversation context from the planning node into the implementation node — it knows what it planned and can act on it immediately.
+Smelter runs `smelter-create-plan` with your input, waits for it to finish, then runs `smelter-implement-tasks`. The AI carries its full conversation context from the planning node into the implementation node — it knows what it planned and can act on it immediately.
 
 This is the simplest useful workflow. Two nodes, no configuration, no coordination required from you.
 
@@ -78,9 +78,9 @@ description: Plan, implement, and validate a feature
 
 nodes:
   - id: plan
-    command: archon-create-plan
+    command: smelter-create-plan
   - id: implement
-    command: archon-implement-tasks
+    command: smelter-implement-tasks
     depends_on: [plan]
   - id: validate
     command: run-tests
@@ -111,9 +111,9 @@ description: Plan, implement, validate, and review a feature
 
 nodes:
   - id: plan
-    command: archon-create-plan
+    command: smelter-create-plan
   - id: implement
-    command: archon-implement-tasks
+    command: smelter-implement-tasks
     depends_on: [plan]
   - id: validate
     command: run-tests
@@ -121,20 +121,20 @@ nodes:
     context: fresh
     prompt: "Run tests for the auth module"
   - id: code-review
-    command: archon-code-review-agent
+    command: smelter-code-review-agent
     depends_on: [validate]
     context: fresh
   - id: error-handling
-    command: archon-error-handling-agent
+    command: smelter-error-handling-agent
     depends_on: [validate]
     context: fresh
   - id: test-coverage
-    command: archon-test-coverage-agent
+    command: smelter-test-coverage-agent
     depends_on: [validate]
     context: fresh
 ```
 
-Nodes `code-review`, `error-handling`, and `test-coverage` all depend on `validate` but not on each other — Archon runs them concurrently. Each agent gets its own fresh AI session. Archon waits for all three to finish before moving to the next node.
+Nodes `code-review`, `error-handling`, and `test-coverage` all depend on `validate` but not on each other — Smelter runs them concurrently. Each agent gets its own fresh AI session. Smelter waits for all three to finish before moving to the next node.
 
 The time savings add up quickly. Three review agents in parallel takes roughly the same time as one. Five agents takes the same time as two. Parallel execution is one of the most practical reasons to use a workflow.
 
@@ -150,9 +150,9 @@ description: Plan, implement, validate, review, and self-fix a feature
 
 nodes:
   - id: plan
-    command: archon-create-plan
+    command: smelter-create-plan
   - id: implement
-    command: archon-implement-tasks
+    command: smelter-implement-tasks
     depends_on: [plan]
   - id: validate
     command: run-tests
@@ -160,32 +160,32 @@ nodes:
     context: fresh
     prompt: "Run tests for the auth module"
   - id: code-review
-    command: archon-code-review-agent
+    command: smelter-code-review-agent
     depends_on: [validate]
     context: fresh
   - id: error-handling
-    command: archon-error-handling-agent
+    command: smelter-error-handling-agent
     depends_on: [validate]
     context: fresh
   - id: test-coverage
-    command: archon-test-coverage-agent
+    command: smelter-test-coverage-agent
     depends_on: [validate]
     context: fresh
   - id: self-fix
-    command: archon-implement-review-fixes
+    command: smelter-implement-review-fixes
     depends_on: [code-review, error-handling, test-coverage]
     context: fresh
 ```
 
-The `archon-implement-review-fixes` command reads the artifacts written by all three review agents, synthesizes their findings, and implements the recommended changes. `context: fresh` keeps it focused on the review findings rather than the full implementation history.
+The `smelter-implement-review-fixes` command reads the artifacts written by all three review agents, synthesizes their findings, and implements the recommended changes. `context: fresh` keeps it focused on the review findings rather than the full implementation history.
 
 Run the complete workflow:
 
 ```bash
-archon workflow run my-workflow --branch feature/auth-tokens "Add JWT refresh token support"
+smelter workflow run my-workflow --branch feature/auth-tokens "Add JWT refresh token support"
 ```
 
-You've just built a mini version of `archon-idea-to-pr` — the same structure, condensed. That bundled workflow adds a few more nodes (scope confirmation, PR creation, final summary), but the core pattern is identical to what you built here.
+You've just built a mini version of `smelter-idea-to-pr` — the same structure, condensed. That bundled workflow adds a few more nodes (scope confirmation, PR creation, final summary), but the core pattern is identical to what you built here.
 
 ---
 
@@ -193,7 +193,7 @@ You've just built a mini version of `archon-idea-to-pr` — the same structure, 
 
 | Option | What it does | When to use |
 |--------|-------------|-------------|
-| `name` | Identifies the workflow in `archon workflow list` | Required |
+| `name` | Identifies the workflow in `smelter workflow list` | Required |
 | `description` | Shown in listings and used by the router | Required |
 | `provider` | Sets the AI provider (any registered provider, e.g. `claude`, `codex`) | When you need a specific provider |
 | `model` | Sets the model for all nodes (`sonnet`, `opus`, `haiku`) | When you want to override the config default |
@@ -207,7 +207,7 @@ These options apply at the node level (inside `nodes:`). `provider` and `model` 
 ```yaml
 nodes:
   - id: plan
-    command: archon-create-plan
+    command: smelter-create-plan
     model: opus        # use the more capable model for planning
 
   - id: validate

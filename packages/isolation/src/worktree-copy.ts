@@ -2,12 +2,12 @@
  * Worktree file copy utility
  *
  * Copies git-ignored files from the canonical repo to a new worktree
- * based on configuration in .archon/config.yaml
+ * based on configuration in .smelter/config.yaml
  */
 
 import { copyFile, cp, stat, mkdir } from 'fs/promises';
 import { join, dirname, relative, isAbsolute, normalize } from 'path';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;

@@ -1,17 +1,17 @@
 ---
 title: Core Concepts
-description: Key concepts in Archon — workflows, nodes, commands, and isolation.
+description: Key concepts in Smelter — workflows, nodes, commands, and isolation.
 category: getting-started
 audience: [user]
 sidebar:
   order: 1
 ---
 
-Archon orchestrates AI coding agents through four core concepts. Understanding these will make everything else click.
+Smelter orchestrates AI coding agents through four core concepts. Understanding these will make everything else click.
 
 ## Workflows
 
-A **workflow** is a YAML file that defines a multi-step AI coding task as a directed acyclic graph (DAG). Each workflow lives in `.archon/workflows/` and has a name, description, and a set of nodes with declared dependencies.
+A **workflow** is a YAML file that defines a multi-step AI coding task as a directed acyclic graph (DAG). Each workflow lives in `.smelter/workflows/` and has a name, description, and a set of nodes with declared dependencies.
 
 ```yaml
 name: fix-issue
@@ -29,7 +29,7 @@ nodes:
 
 Nodes without dependencies run immediately. Nodes in the same dependency layer run in parallel. This means a workflow with three independent review nodes will fan out and run all three concurrently, then converge at a downstream node that depends on all of them.
 
-Archon ships with bundled default workflows. Run `archon workflow list` to see what's available, or browse `.archon/workflows/defaults/` for real examples.
+Smelter ships with bundled default workflows. Run `smelter workflow list` to see what's available, or browse `.smelter/workflows/defaults/` for real examples.
 
 ## Nodes
 
@@ -37,7 +37,7 @@ Nodes are the building blocks of workflows. Each node does exactly one thing, an
 
 | Type | What it does |
 |------|-------------|
-| `command:` | Loads a command file from `.archon/commands/` and sends it to an AI agent |
+| `command:` | Loads a command file from `.smelter/commands/` and sends it to an AI agent |
 | `prompt:` | Sends an inline prompt string to an AI agent |
 | `bash:` | Runs a shell script (no AI). Stdout is captured as `$nodeId.output` |
 | `loop:` | Runs an AI prompt repeatedly until a completion signal is detected |
@@ -69,7 +69,7 @@ nodes:
 
 ## Commands
 
-A **command** is a markdown file in `.archon/commands/` that serves as an AI prompt template. When a workflow node references `command: investigate-issue`, Archon loads `.archon/commands/investigate-issue.md`, substitutes variables, and sends the result to the AI.
+A **command** is a markdown file in `.smelter/commands/` that serves as an AI prompt template. When a workflow node references `command: investigate-issue`, Smelter loads `.smelter/commands/investigate-issue.md`, substitutes variables, and sends the result to the AI.
 
 Commands support variable substitution. The most commonly used variables:
 
@@ -83,7 +83,7 @@ Commands support variable substitution. The most commonly used variables:
 
 See the [Variable Reference](/reference/variables/) for the complete list.
 
-Archon ships with bundled default commands for common operations like investigation, implementation, and code review. Repo-level commands in `.archon/commands/` override bundled defaults with the same name.
+Smelter ships with bundled default commands for common operations like investigation, implementation, and code review. Repo-level commands in `.smelter/commands/` override bundled defaults with the same name.
 
 ## Isolation (Worktrees)
 
@@ -91,20 +91,20 @@ Every workflow run gets its own **git worktree** by default -- an isolated copy 
 
 1. **Your working branch stays clean.** Workflow changes happen in a separate directory.
 2. **Multiple workflows run in parallel** without conflicting with each other.
-3. **Failed runs don't leave a mess.** Clean up with `archon isolation cleanup`.
+3. **Failed runs don't leave a mess.** Clean up with `smelter isolation cleanup`.
 
-Worktrees live at `~/.archon/workspaces/<owner>/<repo>/worktrees/`. Each worktree gets its own branch, so you can inspect the work, create a PR from it, or discard it.
+Worktrees live at `~/.smelter/workspaces/<owner>/<repo>/worktrees/`. Each worktree gets its own branch, so you can inspect the work, create a PR from it, or discard it.
 
 To opt out of isolation (run directly in your checkout), pass `--no-worktree`:
 
 ```bash
-archon workflow run quick-fix --no-worktree "Fix the typo in README"
+smelter workflow run quick-fix --no-worktree "Fix the typo in README"
 ```
 
 When you're done with a worktree's branch, clean up everything (worktree + local and remote branches) with:
 
 ```bash
-archon complete <branch-name>
+smelter complete <branch-name>
 ```
 
 ---

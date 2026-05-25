@@ -1,6 +1,6 @@
 ---
 title: AI Assistants
-description: Configure Claude Code, Codex, and Pi as AI assistants for Archon.
+description: Configure Claude Code, Codex, and Pi as AI assistants for Smelter.
 category: getting-started
 area: clients
 audience: [user]
@@ -15,7 +15,7 @@ You must configure **at least one** AI assistant. All three can be configured an
 
 **Recommended for Claude Pro/Max subscribers.**
 
-Archon does not bundle Claude Code. Install it separately, then in compiled Archon binaries, point Archon at the executable. In dev (`bun run`), Archon finds it automatically via `node_modules`.
+Smelter does not bundle Claude Code. Install it separately, then in compiled Smelter binaries, point Smelter at the executable. In dev (`bun run`), Smelter finds it automatically via `node_modules`.
 
 ### Install Claude Code
 
@@ -43,20 +43,20 @@ See [Anthropic's setup guide](https://code.claude.com/docs/en/setup) for the ful
 
 ### Binary path configuration (compiled binaries only)
 
-Compiled Archon binaries cannot auto-discover Claude Code at runtime. Supply the path via either:
+Compiled Smelter binaries cannot auto-discover Claude Code at runtime. Supply the path via either:
 
 1. **Environment variable** (highest precedence):
    ```ini
    CLAUDE_BIN_PATH=/absolute/path/to/claude
    ```
-2. **Config file** (`~/.archon/config.yaml` or a repo-local `.archon/config.yaml`):
+2. **Config file** (`~/.smelter/config.yaml` or a repo-local `.smelter/config.yaml`):
    ```yaml
    assistants:
      claude:
        claudeBinaryPath: /absolute/path/to/claude
    ```
 
-If neither is set in a compiled binary, Archon throws with install instructions on first Claude query.
+If neither is set in a compiled binary, Smelter throws with install instructions on first Claude query.
 
 The Claude Agent SDK accepts either the native compiled binary or a JS `cli.js`.
 
@@ -71,7 +71,7 @@ The Claude Agent SDK accepts either the native compiled binary or a JS `cli.js`.
 | Homebrew cask | `$(brew --prefix)/bin/claude` (symlink) |
 | npm global install | `$(npm root -g)/@anthropic-ai/claude-code/cli.js` |
 | Windows winget | Resolvable via `where claude` |
-| Docker (`ghcr.io/coleam00/archon`) | Pre-set via `ENV CLAUDE_BIN_PATH` in the image — no action required |
+| Docker (`ghcr.io/coleam00/smelter`) | Pre-set via `ENV CLAUDE_BIN_PATH` in the image — no action required |
 
 If in doubt, `which claude` (macOS/Linux) or `where claude` (Windows) will resolve the executable on your PATH after any of the installers above.
 
@@ -113,7 +113,7 @@ CLAUDE_API_KEY=sk-ant-xxxxx
 
 ### Claude Configuration Options
 
-You can configure Claude's behavior in `.archon/config.yaml`:
+You can configure Claude's behavior in `.smelter/config.yaml`:
 
 ```yaml
 assistants:
@@ -123,7 +123,7 @@ assistants:
       - project      # Default: only project-level CLAUDE.md
       - user         # Optional: also load ~/.claude/CLAUDE.md
     # Optional: absolute path to the Claude Code executable.
-    # Required in compiled Archon binaries if CLAUDE_BIN_PATH is not set.
+    # Required in compiled Smelter binaries if CLAUDE_BIN_PATH is not set.
     # claudeBinaryPath: /absolute/path/to/claude
 ```
 
@@ -139,7 +139,7 @@ DEFAULT_AI_ASSISTANT=claude
 
 ## Codex
 
-Archon does not bundle the Codex CLI. Install it, then authenticate.
+Smelter does not bundle the Codex CLI. Install it, then authenticate.
 
 ### Install the Codex CLI
 
@@ -154,25 +154,25 @@ brew install codex
 # OpenAI recommends WSL2 for the best experience.
 ```
 
-Native prebuilt binaries (`.dmg`, `.tar.gz`, `.exe`) are also published on the [Codex releases page](https://github.com/openai/codex/releases) for users who prefer a direct binary — drop one in `~/.archon/vendor/codex/codex` (or `codex.exe` on Windows) and Archon will find it automatically in compiled binary mode.
+Native prebuilt binaries (`.dmg`, `.tar.gz`, `.exe`) are also published on the [Codex releases page](https://github.com/openai/codex/releases) for users who prefer a direct binary — drop one in `~/.smelter/vendor/codex/codex` (or `codex.exe` on Windows) and Smelter will find it automatically in compiled binary mode.
 
 See [OpenAI's Codex CLI docs](https://developers.openai.com/codex/cli) for the full install matrix.
 
 ### Binary path configuration (compiled binaries only)
 
-In compiled Archon binaries, if `codex` is not on the default PATH Archon expects, supply the path via either:
+In compiled Smelter binaries, if `codex` is not on the default PATH Smelter expects, supply the path via either:
 
 1. **Environment variable** (highest precedence):
    ```ini
    CODEX_BIN_PATH=/absolute/path/to/codex
    ```
-2. **Config file** (`~/.archon/config.yaml`):
+2. **Config file** (`~/.smelter/config.yaml`):
    ```yaml
    assistants:
      codex:
        codexBinaryPath: /absolute/path/to/codex
    ```
-3. **Vendor directory** (zero-config fallback): drop the native binary at `~/.archon/vendor/codex/codex` (or `codex.exe` on Windows).
+3. **Vendor directory** (zero-config fallback): drop the native binary at `~/.smelter/vendor/codex/codex` (or `codex.exe` on Windows).
 
 Dev mode (`bun run`) does not require any of the above — the SDK resolves `codex` via `node_modules`.
 
@@ -209,7 +209,7 @@ CODEX_ACCOUNT_ID=6a6a7ba6-...
 
 ### Codex Configuration Options
 
-You can configure Codex's behavior in `.archon/config.yaml`:
+You can configure Codex's behavior in `.smelter/config.yaml`:
 
 ```yaml
 assistants:
@@ -231,17 +231,17 @@ DEFAULT_AI_ASSISTANT=codex
 
 ## Pi (Community Provider)
 
-**One adapter, ~20 LLM backends.** Pi (`@mariozechner/pi-coding-agent`) is a community-maintained coding-agent harness that Archon integrates as the first community provider. It unlocks Anthropic, OpenAI, Google (Gemini + Vertex), Groq, Mistral, Cerebras, xAI, OpenRouter, Hugging Face, and local inference (LM Studio, ollama, llamacpp, custom OpenAI-compatible endpoints registered in `~/.pi/agent/models.json`) under a single `provider: pi` entry.
+**One adapter, ~20 LLM backends.** Pi (`@mariozechner/pi-coding-agent`) is a community-maintained coding-agent harness that Smelter integrates as the first community provider. It unlocks Anthropic, OpenAI, Google (Gemini + Vertex), Groq, Mistral, Cerebras, xAI, OpenRouter, Hugging Face, and local inference (LM Studio, ollama, llamacpp, custom OpenAI-compatible endpoints registered in `~/.pi/agent/models.json`) under a single `provider: pi` entry.
 
 Pi is registered as `builtIn: false` — it validates the community-provider seam rather than being a core-team-maintained option. If it proves stable and valuable it may be promoted to `builtIn: true` later.
 
 ### Install
 
-Pi is included as a dependency of `@archon/providers` — no separate install needed. It's available immediately.
+Pi is included as a dependency of `@smelter/providers` — no separate install needed. It's available immediately.
 
 ### Authenticate
 
-Pi supports both OAuth subscriptions and API keys. Archon's adapter reads your existing Pi credentials from `~/.pi/agent/auth.json` (written by running `pi` → `/login`) AND from env vars — env vars take priority per-request so codebase-scoped overrides work.
+Pi supports both OAuth subscriptions and API keys. Smelter's adapter reads your existing Pi credentials from `~/.pi/agent/auth.json` (written by running `pi` → `/login`) AND from env vars — env vars take priority per-request so codebase-scoped overrides work.
 
 **OAuth subscriptions (run `pi /login` locally):**
 - Anthropic Claude Pro/Max
@@ -268,35 +268,35 @@ Additional cloud backends exist (Azure, Bedrock, Vertex, etc.) — file an issue
 
 **Local / custom providers (no credentials needed):**
 
-Providers that aren't in the env-var table above (LM Studio, ollama, llamacpp, custom OpenAI-compatible endpoints) work without any Archon-side configuration. Register them in `~/.pi/agent/models.json` per Pi's own docs and reference them as `<pi-provider-id>/<model-id>`:
+Providers that aren't in the env-var table above (LM Studio, ollama, llamacpp, custom OpenAI-compatible endpoints) work without any Smelter-side configuration. Register them in `~/.pi/agent/models.json` per Pi's own docs and reference them as `<pi-provider-id>/<model-id>`:
 
 ```yaml
-# .archon/config.yaml
+# .smelter/config.yaml
 assistants:
   pi:
     model: lm-studio/qwen2.5-coder-14b   # whatever ID you registered with Pi
 ```
 
-Archon logs an info-level `pi.auth_missing` event when no credentials are found and continues — Pi's SDK then connects directly to the local endpoint defined in `models.json`. If the provider does require auth (a less-common cloud backend not in the env-var table) the SDK call fails downstream; the `pi.auth_missing` breadcrumb in the log lets you trace it back to a missing env-var mapping.
+Smelter logs an info-level `pi.auth_missing` event when no credentials are found and continues — Pi's SDK then connects directly to the local endpoint defined in `models.json`. If the provider does require auth (a less-common cloud backend not in the env-var table) the SDK call fails downstream; the `pi.auth_missing` breadcrumb in the log lets you trace it back to a missing env-var mapping.
 
 ### Pi settings (baseline behavior)
 
-Archon reads your Pi settings files as the starting point for every session:
+Smelter reads your Pi settings files as the starting point for every session:
 
 - **`~/.pi/agent/settings.json`** — global Pi preferences (retry counts, transport, compaction strategy, thinking budgets, default model, etc.)
 - **`<repo>/.pi/settings.json`** — project-level overrides on top of global
 
-All settings flow in automatically. You do not need to re-state them in Archon's `config.yaml`. To configure baseline Pi settings, edit `~/.pi/agent/settings.json` directly.
+All settings flow in automatically. You do not need to re-state them in Smelter's `config.yaml`. To configure baseline Pi settings, edit `~/.pi/agent/settings.json` directly.
 
-Archon never writes back to these files — `~/.pi/agent/settings.json` is read-only from Archon's perspective. Session-level changes (model switches, thinking-level adjustments) are held in memory only and discarded when the session ends, matching Claude and Codex behavior.
+Smelter never writes back to these files — `~/.pi/agent/settings.json` is read-only from Smelter's perspective. Session-level changes (model switches, thinking-level adjustments) are held in memory only and discarded when the session ends, matching Claude and Codex behavior.
 
-If Pi settings files do not exist (Docker, first-time setup, compiled binary with no Pi home directory), Archon falls back to Pi SDK defaults. Parse errors in the settings files are logged as warnings (`pi.settings_load_error`) and never prevent the session from starting.
+If Pi settings files do not exist (Docker, first-time setup, compiled binary with no Pi home directory), Smelter falls back to Pi SDK defaults. Parse errors in the settings files are logged as warnings (`pi.settings_load_error`) and never prevent the session from starting.
 
 ### Extensions (on by default)
 
 A major reason to pick Pi is its **extension ecosystem**: community packages (installed via `pi install npm:<package>`) and your own local ones that hook into the agent's lifecycle. Extensions can intercept tool calls, gate execution on human review, post to external systems, render UIs — anything the Pi extension API exposes.
 
-Archon turns extensions **on by default**. To opt out in `.archon/config.yaml`:
+Smelter turns extensions **on by default**. To opt out in `.smelter/config.yaml`:
 
 ```yaml
 assistants:
@@ -310,7 +310,7 @@ Most extensions need three config surfaces:
 | Surface | Purpose |
 |---|---|
 | `extensionFlags` | Per-extension feature flags (maps 1:1 to Pi's `--flag` CLI switches) |
-| `env` | Env vars the extension reads at runtime (managed via `.archon/config.yaml` or the Web UI codebase env panel) |
+| `env` | Env vars the extension reads at runtime (managed via `.smelter/config.yaml` or the Web UI codebase env panel) |
 | Workflow-level `interactive: true` | Required for **approval-gate extensions** on the web UI — forces foreground execution so the user can respond |
 
 **Example — [plannotator](https://github.com/dmcglinn/plannotator) (human-in-the-loop plan review):**
@@ -321,7 +321,7 @@ pi install npm:@plannotator/pi-extension
 ```
 
 ```yaml
-# .archon/config.yaml
+# .smelter/config.yaml
 assistants:
   pi:
     model: anthropic/claude-haiku-4-5
@@ -332,13 +332,13 @@ assistants:
 ```
 
 ```yaml
-# .archon/workflows/my-piv.yaml
+# .smelter/workflows/my-piv.yaml
 name: my-piv
 provider: pi
 interactive: true             # plannotator gates the node on human approval — required on web UI
 ```
 
-When the node runs, plannotator prints a review URL and blocks until you click approve/deny in the browser. Archon's CLI/SSE batch buffer flushes that URL to you immediately so you never get stuck waiting on a node that silently wants input.
+When the node runs, plannotator prints a review URL and blocks until you click approve/deny in the browser. Smelter's CLI/SSE batch buffer flushes that URL to you immediately so you never get stuck waiting on a node that silently wants input.
 
 ### Model reference format
 
@@ -373,7 +373,7 @@ nodes:
     model: anthropic/claude-opus-4-5
     prompt: "..."
     effort: high
-    skills: [archon-dev]                   # Archon name refs work — see Pi capabilities below
+    skills: [smelter-dev]                   # Smelter name refs work — see Pi capabilities below
 ```
 
 ### Pi capabilities
@@ -381,13 +381,13 @@ nodes:
 | Feature | Support | YAML field |
 |---|---|---|
 | Extensions (community + local) | ✅ (default on) | `enableExtensions: false` to disable; `interactive: false` to load without UI bridge; `extensionFlags: { <name>: true }` per extension |
-| Session resume | ✅ | automatic (Archon persists `sessionId`) |
+| Session resume | ✅ | automatic (Smelter persists `sessionId`) |
 | Tool restrictions | ✅ | `allowed_tools` / `denied_tools` (read, bash, edit, write, grep, find, ls) |
 | Thinking level | ✅ | `effort: low\|medium\|high\|max` (max → xhigh) |
 | Skills | ✅ | `skills: [name]` (searches `.agents/skills`, `.claude/skills`, user-global) |
 | Inline sub-agents | ❌ | `agents:` is Claude-only; ignored with a warning on Pi |
 | System prompt override | ✅ | `systemPrompt:` |
-| Codebase env vars (`envInjection`) | ✅ | `.archon/config.yaml` `env:` section |
+| Codebase env vars (`envInjection`) | ✅ | `.smelter/config.yaml` `env:` section |
 | MCP servers | ❌ | Pi rejects MCP by design |
 | Claude-SDK hooks | ❌ | Claude-specific format |
 | Structured output | ✅ (best-effort) | `output_format:` — schema is appended to the prompt and JSON is parsed out of the assistant text. Handles bare JSON, ```json```-fenced, and reasoning-model prose preambles like `Let me evaluate... {...}` (Minimax M2.x pattern). Trailing-text-interleaved cases still degrade cleanly to the missing-structured-output warning. Not SDK-enforced like Claude/Codex. |
@@ -399,12 +399,12 @@ Unsupported YAML fields trigger a visible warning from the dag-executor when the
 
 ### See also
 
-- [Adding a Community Provider](../contributing/adding-a-community-provider/) — the contributor-facing guide for extending Archon with your own provider.
+- [Adding a Community Provider](../contributing/adding-a-community-provider/) — the contributor-facing guide for extending Smelter with your own provider.
 - [Pi on GitHub](https://github.com/badlogic/pi-mono) — upstream project.
 
 ## How Assistant Selection Works
 
-- Assistant type is set per codebase via the `assistant` field in `.archon/config.yaml` or the `DEFAULT_AI_ASSISTANT` env var
+- Assistant type is set per codebase via the `assistant` field in `.smelter/config.yaml` or the `DEFAULT_AI_ASSISTANT` env var
 - Once a conversation starts, the assistant type is locked for that conversation
 - `DEFAULT_AI_ASSISTANT` (optional) is used only for new conversations without codebase context
 - Workflows can override the assistant on a per-node basis with `provider` and `model` fields

@@ -3,14 +3,14 @@
  *
  * Strategy:
  * - If DATABASE_URL is set: Use PostgreSQL (shared with server)
- * - Otherwise: Use SQLite at ~/.archon/archon.db (standalone CLI)
+ * - Otherwise: Use SQLite at ~/.smelter/smelter.db (standalone CLI)
  */
 import { join } from 'path';
-import { getArchonHome } from '@archon/paths';
+import { getSmelterHome } from '@smelter/paths';
 import type { IDatabase, SqlDialect, QueryResult } from './adapters/types';
 import { PostgresAdapter, postgresDialect } from './adapters/postgres';
 import { SqliteAdapter, sqliteDialect } from './adapters/sqlite';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -37,14 +37,14 @@ export function getDatabase(): IDatabase {
     database = new PostgresAdapter(process.env.DATABASE_URL);
     dialect = postgresDialect;
   } else {
-    const dbPath = join(getArchonHome(), 'archon.db');
+    const dbPath = join(getSmelterHome(), 'smelter.db');
     getLog().info({ dbPath }, 'db.connection_sqlite_selected');
     database = new SqliteAdapter(dbPath);
     dialect = sqliteDialect;
 
     // Warn if running in Docker without DATABASE_URL — the postgres container
     // from --profile with-db is running but the app is silently using SQLite
-    if (process.env.ARCHON_DOCKER === 'true') {
+    if (process.env.SMELTER_DOCKER === 'true') {
       getLog().warn(
         {
           hint: 'Add DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent to .env to use PostgreSQL',

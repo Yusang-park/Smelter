@@ -131,7 +131,7 @@ Skills are discovered from these locations (via the default
 | `.claude/skills/` (in cwd) | Project-level |
 | `~/.claude/skills/` | User-level (all projects) |
 
-Set `assistants.claude.settingSources: ['project']` in `.archon/config.yaml`
+Set `assistants.claude.settingSources: ['project']` in `.smelter/config.yaml`
 to scope a workflow to project-level skills only.
 
 Skills installed via `npx skills add` land in `.claude/skills/` by default.
@@ -169,7 +169,7 @@ smaller box with a tastefully curated set of tools."
 
 | Skill | Install | What It Teaches |
 |-------|---------|----------------|
-| `archon` (bundled) | `archon skill install` | Archon workflows, commands, and project conventions |
+| `smelter` (bundled) | `smelter skill install` | Smelter workflows, commands, and project conventions |
 | `remotion-best-practices` | `npx skills add remotion-dev/skills` | Remotion animation patterns, API usage, gotchas (35 rules) |
 | `skill-creator` | `npx skills add anthropics/skills` | How to create new SKILL.md files |
 | Community skills | Browse [skills.sh](https://skills.sh) | Search 500K+ skills for any domain |
@@ -200,7 +200,7 @@ Skills and MCP compose naturally on the same node:
     prompt: "Create a PR with the changes"
     skills:
       - pr-conventions      # Teaches HOW to write good PRs
-    mcp: .archon/mcp/github.json  # Provides the GitHub tools
+    mcp: .smelter/mcp/github.json  # Provides the GitHub tools
 ```
 
 Skills teach the **process**. MCP provides the **capability**. Together they

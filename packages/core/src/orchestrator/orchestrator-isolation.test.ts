@@ -2,16 +2,16 @@ import { mock, describe, test, expect, beforeEach } from 'bun:test';
 import { createMockLogger } from '../test/mocks/logger';
 import { MockPlatformAdapter } from '../test/mocks/platform';
 import type { Conversation, Codebase } from '../types';
-import type { IsolationEnvironmentRow } from '@archon/isolation';
+import type { IsolationEnvironmentRow } from '@smelter/isolation';
 
 // ─── Mock setup (BEFORE importing module under test) ─────────────────────────
 
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
-  ensureArchonWorkspacesPath: mock(() => Promise.resolve('/home/test/.archon/workspaces')),
-  getArchonHome: mock(() => '/home/test/.archon'),
+  getSmelterWorkspacesPath: mock(() => '/home/test/.smelter/workspaces'),
+  ensureSmelterWorkspacesPath: mock(() => Promise.resolve('/home/test/.smelter/workspaces')),
+  getSmelterHome: mock(() => '/home/test/.smelter'),
 }));
 
 // DB mocks
@@ -51,7 +51,7 @@ mock.module('../handlers/command-handler', () => ({
   })),
 }));
 
-mock.module('@archon/providers', () => ({
+mock.module('@smelter/providers', () => ({
   getAgentProvider: mock(() => null),
 }));
 
@@ -69,7 +69,7 @@ mock.module('../config/config-loader', () => ({
 }));
 
 mock.module('../utils/worktree-sync', () => ({
-  syncArchonToWorktree: mock(() => Promise.resolve(false)),
+  syncSmelterToWorktree: mock(() => Promise.resolve(false)),
 }));
 
 mock.module('../services/cleanup-service', () => ({
@@ -78,7 +78,7 @@ mock.module('../services/cleanup-service', () => ({
   STALE_THRESHOLD_DAYS: 7,
 }));
 
-// Mock @archon/isolation — shared resolve mock so tests can control return values
+// Mock @smelter/isolation — shared resolve mock so tests can control return values
 const mockResolve = mock(() => Promise.resolve({ status: 'none' as const, cwd: '/workspace' }));
 
 class MockIsolationResolver {
@@ -86,7 +86,7 @@ class MockIsolationResolver {
   constructor(_deps: unknown) {}
 }
 
-mock.module('@archon/isolation', () => ({
+mock.module('@smelter/isolation', () => ({
   IsolationResolver: MockIsolationResolver,
   IsolationBlockedError: class IsolationBlockedError extends Error {
     constructor(
@@ -110,16 +110,16 @@ mock.module('../utils/error-formatter', () => ({
   classifyAndFormatError: mock((err: Error) => `⚠️ Error: ${err.message}`),
 }));
 
-mock.module('@archon/workflows/workflow-discovery', () => ({
+mock.module('@smelter/workflows/workflow-discovery', () => ({
   discoverWorkflowsWithConfig: mock(() => Promise.resolve({ workflows: [], errors: [] })),
 }));
-mock.module('@archon/workflows/executor', () => ({
+mock.module('@smelter/workflows/executor', () => ({
   executeWorkflow: mock(() => Promise.resolve()),
 }));
-mock.module('@archon/workflows/router', () => ({
+mock.module('@smelter/workflows/router', () => ({
   findWorkflow: mock(() => undefined),
 }));
-mock.module('@archon/workflows/utils/tool-formatter', () => ({
+mock.module('@smelter/workflows/utils/tool-formatter', () => ({
   formatToolCall: mock(() => ''),
 }));
 

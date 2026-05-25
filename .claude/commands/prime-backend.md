@@ -1,5 +1,5 @@
 ---
-description: Prime agent with Archon backend (core + server) context
+description: Prime agent with Smelter backend (core + server) context
 ---
 
 # Prime Backend: Core and Server Orientation

@@ -1,21 +1,21 @@
 /**
- * Archon-owned env loader — runs at every entry point AFTER stripCwdEnv().
+ * Smelter-owned env loader — runs at every entry point AFTER stripCwdEnv().
  *
- * Loads env vars from two archon-owned locations and emits operator-facing log
+ * Loads env vars from two smelter-owned locations and emits operator-facing log
  * lines naming the exact paths and key counts. Replaces the misleading
  * `[dotenv@17.3.1] injecting env (N) from .env` preamble (see #1302).
  *
  * Load order (later sources win because `override: true`):
- *   1. ~/.archon/.env         — user-scope defaults, apply everywhere
- *   2. <cwd>/.archon/.env     — repo-scope overrides for this project
+ *   1. ~/.smelter/.env         — user-scope defaults, apply everywhere
+ *   2. <cwd>/.smelter/.env     — repo-scope overrides for this project
  *
  * `<cwd>/.env` is intentionally NOT loaded — it belongs to the user's target
  * repo and is stripped by stripCwdEnv() (see #1302 / #1303 three-path model).
- * Directory ownership (`.archon/`) is the security boundary, not the filename.
+ * Directory ownership (`.smelter/`) is the security boundary, not the filename.
  *
  * Logging rules:
- *   - Each `[archon] loaded N keys from …` line prints only when N > 0.
- *   - Silent in the common case (no archon-owned env files present).
+ *   - Each `[smelter] loaded N keys from …` line prints only when N > 0.
+ *   - Silent in the common case (no smelter-owned env files present).
  *   - Emits to stderr (operator signal) — Pino logger is not yet initialized
  *     at this point in boot.
  *   - Passes `{ quiet: true }` to suppress dotenv's own `[dotenv@17.3.1] …`
@@ -24,7 +24,7 @@
 import { config } from 'dotenv';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
-import { getArchonEnvPath, getRepoArchonEnvPath } from './archon-paths';
+import { getSmelterEnvPath, getRepoSmelterEnvPath } from './smelter-paths';
 
 /**
  * Shorten a path with `~` when it lives under the current user's home directory.
@@ -40,18 +40,18 @@ function displayPath(p: string): string {
 }
 
 /**
- * Load archon-owned env files. Call once, immediately after
- * `@archon/paths/strip-cwd-env-boot` at each entry point.
+ * Load smelter-owned env files. Call once, immediately after
+ * `@smelter/paths/strip-cwd-env-boot` at each entry point.
  *
  * Both loads use `override: true` so:
- *   - `~/.archon/.env` wins over shell-inherited vars (archon intent wins).
- *   - `<cwd>/.archon/.env` wins over `~/.archon/.env` (repo scope wins).
+ *   - `~/.smelter/.env` wins over shell-inherited vars (smelter intent wins).
+ *   - `<cwd>/.smelter/.env` wins over `~/.smelter/.env` (repo scope wins).
  *
  * A malformed env file is fatal — matches the pre-existing CLI behavior at
  * packages/cli/src/cli.ts:24-30.
  */
-export function loadArchonEnv(cwd: string = process.cwd()): void {
-  const homePath = getArchonEnvPath();
+export function loadSmelterEnv(cwd: string = process.cwd()): void {
+  const homePath = getSmelterEnvPath();
   if (existsSync(homePath)) {
     const result = config({ path: homePath, override: true, quiet: true });
     if (result.error) {
@@ -61,11 +61,11 @@ export function loadArchonEnv(cwd: string = process.cwd()): void {
     }
     const count = Object.keys(result.parsed ?? {}).length;
     if (count > 0) {
-      process.stderr.write(`[archon] loaded ${count} keys from ${displayPath(homePath)}\n`);
+      process.stderr.write(`[smelter] loaded ${count} keys from ${displayPath(homePath)}\n`);
     }
   }
 
-  const repoPath = getRepoArchonEnvPath(cwd);
+  const repoPath = getRepoSmelterEnvPath(cwd);
   if (existsSync(repoPath)) {
     const result = config({ path: repoPath, override: true, quiet: true });
     if (result.error) {
@@ -76,7 +76,7 @@ export function loadArchonEnv(cwd: string = process.cwd()): void {
     const count = Object.keys(result.parsed ?? {}).length;
     if (count > 0) {
       process.stderr.write(
-        `[archon] loaded ${count} keys from ${displayPath(repoPath)} (repo scope, overrides user scope)\n`
+        `[smelter] loaded ${count} keys from ${displayPath(repoPath)} (repo scope, overrides user scope)\n`
       );
     }
   }

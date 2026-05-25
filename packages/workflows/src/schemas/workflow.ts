@@ -32,7 +32,7 @@ export type WebSearchMode = z.infer<typeof webSearchModeSchema>;
  * caller's default applies — worktree for task/issue/pr, etc.
  *
  * Currently one field (`enabled`). Other worktree-shaped settings (copyFiles,
- * initSubmodules, path, baseBranch) live in repo-level `.archon/config.yaml`
+ * initSubmodules, path, baseBranch) live in repo-level `.smelter/config.yaml`
  * because they are repo-wide, not per-workflow. This block is deliberately
  * narrow to avoid re-expressing the repo-level knobs here.
  */
@@ -130,9 +130,9 @@ export type WorkflowExecutionResult =
 
 /**
  * Workflow origin:
- * - `bundled` — embedded in the Archon binary / bundled defaults
- * - `global`  — user-level, discovered at `~/.archon/workflows/` (applies to every repo)
- * - `project` — repo-local, discovered at `<repoRoot>/.archon/workflows/`
+ * - `bundled` — embedded in the Smelter binary / bundled defaults
+ * - `global`  — user-level, discovered at `~/.smelter/workflows/` (applies to every repo)
+ * - `project` — repo-local, discovered at `<repoRoot>/.smelter/workflows/`
  *
  * Precedence for same-named files: `bundled` < `global` < `project`.
  */

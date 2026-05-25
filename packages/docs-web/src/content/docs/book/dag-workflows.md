@@ -10,7 +10,7 @@ sidebar:
 
 In [Chapter 7](/book/first-workflow/) you built a workflow that runs commands in sequence, one after another. That covers a lot of ground — plan, implement, validate, review. But there's a class of problems sequential steps can't solve cleanly: "run this node only if the previous result was a bug, not a feature request" or "wait for three independent reviewers to finish, then merge their findings."
 
-That's what **DAG workflows** (Directed Acyclic Graphs) are for. Instead of a straight line, you're describing a graph: which nodes exist, which depend on which, and under what conditions each node should run. Archon's `nodes:` format gives you that graph.
+That's what **DAG workflows** (Directed Acyclic Graphs) are for. Instead of a straight line, you're describing a graph: which nodes exist, which depend on which, and under what conditions each node should run. Smelter's `nodes:` format gives you that graph.
 
 ---
 
@@ -45,11 +45,11 @@ nodes:
     depends_on: [investigate]
 ```
 
-Archon won't start `implement` until `investigate` completes successfully. If `investigate` fails, `implement` is skipped.
+Smelter won't start `implement` until `investigate` completes successfully. If `investigate` fails, `implement` is skipped.
 
 ### Parallel Execution
 
-Nodes with no shared dependencies run **concurrently**. Archon groups nodes into topological layers and runs each layer in parallel:
+Nodes with no shared dependencies run **concurrently**. Smelter groups nodes into topological layers and runs each layer in parallel:
 
 ```yaml
 nodes:
@@ -73,7 +73,7 @@ Here, `code-review` and `security-review` both depend on `scope` but not on each
 
 ### Layers
 
-Archon computes topological layers automatically. You describe the *what* (which nodes, which dependencies); Archon figures out the *when*. The workflow above has three layers:
+Smelter computes topological layers automatically. You describe the *what* (which nodes, which dependencies); Smelter figures out the *when*. The workflow above has three layers:
 
 ```
 Layer 1: scope
@@ -95,7 +95,7 @@ The challenge: you can't know at workflow-authoring time which branch you'll nee
 
 ### Step-by-Step YAML
 
-Create `.archon/workflows/classify-and-route.yaml`:
+Create `.smelter/workflows/classify-and-route.yaml`:
 
 ```yaml
 name: classify-and-route
@@ -140,7 +140,7 @@ nodes:
 ### Run and Observe
 
 ```bash
-archon workflow run classify-and-route --branch fix/auth-issue "Users can't log in after password reset"
+smelter workflow run classify-and-route --branch fix/auth-issue "Users can't log in after password reset"
 ```
 
 Watch what happens:
@@ -153,7 +153,7 @@ Watch what happens:
 Run it again with a feature request:
 
 ```bash
-archon workflow run classify-and-route --branch feature/dark-mode "Add dark mode support"
+smelter workflow run classify-and-route --branch feature/dark-mode "Add dark mode support"
 ```
 
 This time `plan` runs; `investigate` is skipped. The same workflow, two paths.
@@ -172,7 +172,7 @@ when: "$nodeId.output != 'VALUE'"
 when: "$nodeId.output.field == 'VALUE'"   # JSON field access
 ```
 
-If the expression is invalid or can't be evaluated, Archon fails open — the node runs rather than silently skipping.
+If the expression is invalid or can't be evaluated, Smelter fails open — the node runs rather than silently skipping.
 
 ### Accessing Node Output
 
@@ -192,7 +192,7 @@ You can also use `$nodeId.output` directly inside `prompt:` text to pass context
 
 ### Structured Output with `output_format`
 
-`output_format` tells Archon to enforce JSON output from an AI node. Pass a JSON Schema and Archon will ensure the node returns data in that shape:
+`output_format` tells Smelter to enforce JSON output from an AI node. Pass a JSON Schema and Smelter will ensure the node returns data in that shape:
 
 ```yaml
 - id: classify
@@ -230,14 +230,14 @@ The classify-and-route example uses `none_failed_min_one_success` on `implement`
 
 ## Node Types
 
-Archon supports seven node types. Exactly one mode field is required per node:
+Smelter supports seven node types. Exactly one mode field is required per node:
 
 | Type | Syntax | When to use |
 |------|--------|-------------|
-| **Command** | `command: my-command` | Load a command from `.archon/commands/my-command.md`. The standard choice. |
+| **Command** | `command: my-command` | Load a command from `.smelter/commands/my-command.md`. The standard choice. |
 | **Prompt** | `prompt: "inline instructions..."` | Quick, one-off instructions that don't need a reusable command file. |
 | **Bash** | `bash: "shell command"` | Run a shell script without AI. Stdout is captured as `$nodeId.output`. Deterministic operations only. |
-| **Script** | `script: "..." ` + `runtime: bun \| uv` | Run TypeScript/JavaScript (bun) or Python (uv) without AI. Inline code or named reference to `.archon/scripts/`. Stdout captured as `$nodeId.output`. See [Script Nodes](/guides/script-nodes/). |
+| **Script** | `script: "..." ` + `runtime: bun \| uv` | Run TypeScript/JavaScript (bun) or Python (uv) without AI. Inline code or named reference to `.smelter/scripts/`. Stdout captured as `$nodeId.output`. See [Script Nodes](/guides/script-nodes/). |
 | **Loop** | `loop: { prompt: "...", until: SIGNAL }` | Repeat an AI prompt until a completion signal appears in the output. See [Loop Nodes](/guides/loop-nodes/). |
 | **Approval** | `approval: { message: "..." }` | Pause the workflow for a human approve/reject decision. See [Approval Nodes](/guides/approval-nodes/). |
 | **Cancel** | `cancel: "reason string"` | Terminate the workflow run (status: cancelled, not failed). Usually gated with `when:`. |
@@ -269,7 +269,7 @@ Archon supports seven node types. Exactly one mode field is required per node:
   runtime: bun
 
 - id: analyze
-  script: analyze-metrics        # Named script: .archon/scripts/analyze-metrics.py
+  script: analyze-metrics        # Named script: .smelter/scripts/analyze-metrics.py
   runtime: uv
   deps: ["pandas>=2.0"]          # uv-only; bun auto-installs imports
 ```
@@ -280,7 +280,7 @@ Archon supports seven node types. Exactly one mode field is required per node:
 - id: implement-stories
   loop:
     prompt: |
-      Read progress from .archon/progress.json.
+      Read progress from .smelter/progress.json.
       Implement the next incomplete story with tests.
       Update progress. If all stories done: <promise>COMPLETE</promise>
     until: COMPLETE
@@ -326,7 +326,7 @@ nodes:
 
 **Test with simple inputs first.** Before running your full workflow on real data, verify that each branch of a conditional routes correctly. Create a simple test input that's clearly a bug, confirm the BUG path runs. Then test with a clear feature request.
 
-**Let DAG resume handle failures.** If a long workflow fails partway through, run it again. Archon automatically skips nodes that already completed and resumes from where it left off. No `--resume` flag required.
+**Let DAG resume handle failures.** If a long workflow fails partway through, run it again. Smelter automatically skips nodes that already completed and resumes from where it left off. No `--resume` flag required.
 
 ---
 

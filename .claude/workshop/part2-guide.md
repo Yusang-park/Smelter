@@ -2,7 +2,7 @@
 
 **Host**: Rasmus
 **Duration**: ~35 min
-**Codebase**: `coleam00/Archon` (this repo)
+**Codebase**: `coleam00/Smelter` (this repo)
 **Required**: Claude Code v2.1.63+, GitHub CLI (`gh`)
 
 ---
@@ -141,7 +141,7 @@ Wait for Claude to create the task list.
 
 ```bash
 # The session mapping log
-cat .claude/archon/sessions/task-lists.jsonl
+cat .claude/smelter/sessions/task-lists.jsonl
 ```
 
 ```bash

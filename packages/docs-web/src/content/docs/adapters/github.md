@@ -1,6 +1,6 @@
 ---
 title: GitHub
-description: Connect Archon to GitHub via webhooks to interact from issues and pull requests.
+description: Connect Smelter to GitHub via webhooks to interact from issues and pull requests.
 category: adapters
 area: adapters
 audience: [user, operator]
@@ -9,11 +9,11 @@ sidebar:
   order: 4
 ---
 
-Connect Archon to GitHub so you can interact with your AI coding assistant from issues and pull requests.
+Connect Smelter to GitHub so you can interact with your AI coding assistant from issues and pull requests.
 
 ## Prerequisites
 
-- Archon server running (see [Getting Started](/getting-started/))
+- Smelter server running (see [Getting Started](/getting-started/))
 - GitHub repository with issues enabled
 - `GITHUB_TOKEN` set in your environment (see [Getting Started](/getting-started/))
 - Public endpoint for webhooks (see ngrok setup below for local development)
@@ -99,14 +99,14 @@ The GitHub adapter always uses `batch` mode (hardcoded) since GitHub issues and 
 Interact by @mentioning your bot in issue or PR **comments**:
 
 ```
-@archon can you analyze this bug?
-@archon prime the codebase
-@archon review this implementation
+@smelter can you analyze this bug?
+@smelter prime the codebase
+@smelter review this implementation
 ```
 
 **First mention behavior:**
-- Automatically clones the repository to `~/.archon/workspaces/`
-- Detects and loads commands from `.archon/commands/` if present
+- Automatically clones the repository to `~/.smelter/workspaces/`
+- Detects and loads commands from `.smelter/commands/` if present
 - Injects full issue/PR context for the AI assistant
 
 **Subsequent mentions:**

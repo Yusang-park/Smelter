@@ -1,6 +1,6 @@
 ---
 title: Creating Your First Command
-description: Write your first Archon command file — a focused markdown prompt that the AI executes as a single task.
+description: Write your first Smelter command file — a focused markdown prompt that the AI executes as a single task.
 category: book
 part: customization
 audience: [user]
@@ -8,7 +8,7 @@ sidebar:
   order: 6
 ---
 
-You've seen commands do real work — investigating issues, writing code, posting reviews. In [Chapter 3](/book/how-it-works/), we traced how `archon-fix-github-issue` stitched seven of them together. Now you're going to write one yourself.
+You've seen commands do real work — investigating issues, writing code, posting reviews. In [Chapter 3](/book/how-it-works/), we traced how `smelter-fix-github-issue` stitched seven of them together. Now you're going to write one yourself.
 
 Commands are simpler than they look. They're plain markdown files. The AI reads them as instructions.
 
@@ -16,13 +16,13 @@ Commands are simpler than they look. They're plain markdown files. The AI reads 
 
 ## What Is a Command?
 
-A **command** is a markdown file that tells the AI exactly what to do in one focused task. It's the atomic unit of Archon — the smallest thing that can run independently or be wired into a workflow.
+A **command** is a markdown file that tells the AI exactly what to do in one focused task. It's the atomic unit of Smelter — the smallest thing that can run independently or be wired into a workflow.
 
-Commands live in your repository at `.archon/commands/`. When Archon runs a step like `command: run-tests`, it finds `.archon/commands/run-tests.md`, substitutes any variables, and sends the whole document to the AI as its task instructions.
+Commands live in your repository at `.smelter/commands/`. When Smelter runs a step like `command: run-tests`, it finds `.smelter/commands/run-tests.md`, substitutes any variables, and sends the whole document to the AI as its task instructions.
 
 That's it. Commands are prompts, not code. You write what you want the AI to do, and it does it.
 
-> **Where to put them**: Create a `.archon/commands/` directory in any git repository you're working with. Archon finds commands there automatically alongside any bundled defaults.
+> **Where to put them**: Create a `.smelter/commands/` directory in any git repository you're working with. Smelter finds commands there automatically alongside any bundled defaults.
 
 ---
 
@@ -49,7 +49,7 @@ Run the tests for the `$ARGUMENTS` module and report what you find.
 [... AI instructions ...]
 ```
 
-**The frontmatter** (the `---` block at the top) is optional but recommended. The `description` field is what appears when someone runs `archon workflow list` or asks the AI which commands are available. The `argument-hint` tells users what they're expected to provide.
+**The frontmatter** (the `---` block at the top) is optional but recommended. The `description` field is what appears when someone runs `smelter workflow list` or asks the AI which commands are available. The `argument-hint` tells users what they're expected to provide.
 
 **The body** is the actual instructions for the AI. Write it like you're explaining a task to a capable engineer who has never seen this codebase before. Be specific about what success looks like.
 
@@ -64,8 +64,8 @@ Let's build a real command. The goal: run tests for a specific module and report
 ### Step 1: Create the File
 
 ```bash
-mkdir -p .archon/commands
-touch .archon/commands/run-tests.md
+mkdir -p .smelter/commands
+touch .smelter/commands/run-tests.md
 ```
 
 ### Step 2: Write the Frontmatter
@@ -121,13 +121,13 @@ If you can't find test files for `$ARGUMENTS`, say so clearly and list the files
 
 ### Step 4: Test It
 
-You can invoke a command directly through `archon-assist`:
+You can invoke a command directly through `smelter-assist`:
 
 ```bash
-archon workflow run archon-assist "/command-invoke run-tests auth"
+smelter workflow run smelter-assist "/command-invoke run-tests auth"
 ```
 
-Archon routes the `/command-invoke run-tests` instruction to the AI, which finds your `.archon/commands/run-tests.md`, substitutes `$ARGUMENTS` with `auth`, and runs the task.
+Smelter routes the `/command-invoke run-tests` instruction to the AI, which finds your `.smelter/commands/run-tests.md`, substitutes `$ARGUMENTS` with `auth`, and runs the task.
 
 You should see the AI find your auth module tests, run them, and produce a structured report.
 
@@ -141,7 +141,7 @@ You should see the AI find your auth module tests, run them, and produce a struc
 | `$1` | First space-separated argument | `auth` (from `auth module`) |
 | `$2` | Second space-separated argument | `module` (from `auth module`) |
 | `$3` | Third space-separated argument | — |
-| `$ARTIFACTS_DIR` | Absolute path to this run's artifact directory | `/home/user/.archon/workspaces/owner/repo/artifacts/runs/abc123/` |
+| `$ARTIFACTS_DIR` | Absolute path to this run's artifact directory | `/home/user/.smelter/workspaces/owner/repo/artifacts/runs/abc123/` |
 | `$WORKFLOW_ID` | Unique ID for the current workflow run | `abc123def456` |
 | `$BASE_BRANCH` | The base branch for the current worktree | `main` |
 | `$DOCS_DIR` | Documentation directory path | `docs/` |
@@ -164,9 +164,9 @@ Use `$ARTIFACTS_DIR` whenever your command writes output files that a later step
 
 ## Invoking Commands
 
-**From `archon-assist`** (interactive):
+**From `smelter-assist`** (interactive):
 ```bash
-archon workflow run archon-assist "/command-invoke run-tests auth"
+smelter workflow run smelter-assist "/command-invoke run-tests auth"
 ```
 
 **From a workflow** (automated):
@@ -179,10 +179,10 @@ nodes:
 
 **Browse what's available**:
 ```bash
-archon workflow run archon-assist "/commands"
+smelter workflow run smelter-assist "/commands"
 ```
 
-This lists every command available — your custom ones from `.archon/commands/` alongside Archon's bundled defaults. The bundled commands (like `archon-investigate-issue` and `archon-fix-issue`) are good reference material when you're deciding how to structure your own.
+This lists every command available — your custom ones from `.smelter/commands/` alongside Smelter's bundled defaults. The bundled commands (like `smelter-investigate-issue` and `smelter-fix-issue`) are good reference material when you're deciding how to structure your own.
 
 ---
 

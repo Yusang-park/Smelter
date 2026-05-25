@@ -42,7 +42,7 @@ function setupAuth(): void {
         '    Codex will attempt to use those credentials. If they are stale or revoked,'
       );
       console.warn(
-        '    delete the file inside the container or wipe the archon_user_home volume to reset.'
+        '    delete the file inside the container or wipe the smelter_user_home volume to reset.'
       );
       return;
     }

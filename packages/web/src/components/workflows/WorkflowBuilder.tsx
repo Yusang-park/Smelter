@@ -30,7 +30,7 @@ import { StatusBar } from './StatusBar';
 import { YamlCodeView } from './YamlCodeView';
 import type { DagNodeData, DagFlowNode } from './DagNodeComponent';
 
-const NODE_LIBRARY_WIDTH_KEY = 'archon:nodeLibraryWidth';
+const NODE_LIBRARY_WIDTH_KEY = 'smelter:nodeLibraryWidth';
 const NODE_LIBRARY_MIN_WIDTH = 160;
 const NODE_LIBRARY_MAX_WIDTH = 400;
 const NODE_LIBRARY_DEFAULT_WIDTH = 208; // w-52

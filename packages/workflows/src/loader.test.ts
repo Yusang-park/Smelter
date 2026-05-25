@@ -21,15 +21,15 @@ const mockLogger = {
   level: 'info',
 };
 
-// Mock @archon/paths: suppress logger + pass through real path utilities
-const realArchonPaths = await import('@archon/paths');
-mock.module('@archon/paths', () => ({
-  ...realArchonPaths,
+// Mock @smelter/paths: suppress logger + pass through real path utilities
+const realSmelterPaths = await import('@smelter/paths');
+mock.module('@smelter/paths', () => ({
+  ...realSmelterPaths,
   createLogger: mock(() => mockLogger),
 }));
 
 // Bootstrap provider registry (needed by isRegisteredProvider checks at load time)
-import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
+import { registerBuiltinProviders, clearRegistry } from '@smelter/providers';
 clearRegistry();
 registerBuiltinProviders();
 
@@ -57,7 +57,7 @@ describe('Workflow Loader', () => {
 
   describe('parseWorkflow (via discoverWorkflows)', () => {
     it('should parse interactive: true when present', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: test\ninteractive: true\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -66,7 +66,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should omit interactive field when not present', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: test\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -75,7 +75,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should preserve interactive: false when explicitly set', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: test\ninteractive: false\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -84,7 +84,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should treat non-boolean interactive value as undefined', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       // YAML string "yes" is not a boolean — should be dropped
       const yaml = `name: test\ndescription: test\ninteractive: "yes"\nnodes:\n  - id: n\n    prompt: p\n`;
@@ -94,7 +94,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should parse worktree.enabled: false', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: triage\ndescription: read-only\nworktree:\n  enabled: false\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'triage.yaml'), yaml);
@@ -103,7 +103,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should parse worktree.enabled: true', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: build\ndescription: needs worktree\nworktree:\n  enabled: true\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'build.yaml'), yaml);
@@ -112,7 +112,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should omit worktree block when not present (policy is caller-decides)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: normal\ndescription: no policy\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'normal.yaml'), yaml);
@@ -121,7 +121,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should parse explicit tags array', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: review-mr\ndescription: GitLab MR review\ntags: [GitLab, Review]\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'review-mr.yaml'), yaml);
@@ -130,7 +130,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should omit tags when not present', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: no tags\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -139,7 +139,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should preserve explicit empty tags array (suppresses inference)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: no tags wanted\ntags: []\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -148,7 +148,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should trim and dedupe tags', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: messy tags\ntags: ["GitLab", "GitLab ", "  GitLab  ", "Review"]\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -157,7 +157,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should filter non-string tag entries', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       // YAML coerces unquoted scalars: 123 → number, null → null
       const yaml = `name: test\ndescription: mixed\ntags:\n  - GitLab\n  - 123\n  - null\n  - Review\nnodes:\n  - id: n\n    prompt: p\n`;
@@ -167,7 +167,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should reduce all-blank tags to empty array (still suppresses inference)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: blanks\ntags: ["", "  "]\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -176,7 +176,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should ignore tags when not an array', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       // Authoring mistake: scalar instead of list — discarded, workflow still loads
       const yaml = `name: test\ndescription: scalar tags\ntags: GitLab\nnodes:\n  - id: n\n    prompt: p\n`;
@@ -187,7 +187,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should parse mutates_checkout: false correctly', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: read-only workflow\nmutates_checkout: false\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -196,7 +196,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should parse mutates_checkout: true correctly', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: explicit true\nmutates_checkout: true\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -205,7 +205,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should omit mutates_checkout when not set', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       const yaml = `name: test\ndescription: no field\nnodes:\n  - id: n\n    prompt: p\n`;
       await writeFile(join(workflowDir, 'test.yaml'), yaml);
@@ -214,7 +214,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should warn and omit mutates_checkout for invalid value', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       // YAML string "yes" is not a boolean — should be dropped and field omitted
       const yaml = `name: test\ndescription: typo\nmutates_checkout: "yes"\nnodes:\n  - id: n\n    prompt: p\n`;
@@ -225,7 +225,7 @@ describe('Workflow Loader', () => {
     });
 
     it('should parse valid DAG workflow YAML', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const validYaml = `name: test-workflow
@@ -253,7 +253,7 @@ nodes:
     });
 
     it('should return empty array for YAML missing name', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const invalidYaml = `description: Missing name
@@ -270,7 +270,7 @@ nodes:
     });
 
     it('should return empty array for YAML missing description', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const invalidYaml = `name: no-description
@@ -287,7 +287,7 @@ nodes:
     });
 
     it('should reject workflow with steps: and provide clear error message', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const stepsYaml = `name: legacy-workflow
@@ -308,7 +308,7 @@ steps:
     });
 
     it('should leave provider undefined when not specified (executor handles fallback)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const yamlNoProvider = `name: default-provider
@@ -327,7 +327,7 @@ nodes:
     });
 
     it('should reject unknown provider at load time', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const yamlInvalidProvider = `name: invalid-provider
@@ -351,7 +351,7 @@ nodes:
       // Whatever the user wrote in `model:` passes through to the SDK; the
       // SDK is the source of truth for what model strings exist. Errors
       // surface at run time, not load time.
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const yaml = `name: any-model
@@ -374,7 +374,7 @@ nodes:
     });
 
     it('should parse codex options fields', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const yaml = `name: codex-options
@@ -403,8 +403,8 @@ nodes:
   });
 
   describe('discoverWorkflows', () => {
-    it('should discover workflows from .archon/workflows/', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+    it('should discover workflows from .smelter/workflows/', async () => {
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const validYaml = `name: discovered
@@ -429,7 +429,7 @@ nodes:
     });
 
     it('should load both .yaml and .yml files', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const yaml1 = `name: workflow-one
@@ -454,7 +454,7 @@ nodes:
     });
 
     it('should recursively load workflows from subdirectories (like defaults/)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       const defaultsDir = join(workflowDir, 'defaults');
       await mkdir(defaultsDir, { recursive: true });
 
@@ -486,7 +486,7 @@ nodes:
 
   describe('command name validation (Issue #129)', () => {
     it('should reject DAG workflow with path traversal command name', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const pathTraversalYaml = `name: path-traversal
@@ -504,7 +504,7 @@ nodes:
     });
 
     it('should reject DAG workflow with dotfile command name', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const dotfileYaml = `name: dotfile-workflow
@@ -522,7 +522,7 @@ nodes:
     });
 
     it('should accept valid command names in DAG nodes', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const validYaml = `name: valid-commands
@@ -549,7 +549,7 @@ nodes:
 
   describe('edge cases', () => {
     it('should ignore non-yaml files in workflows directory', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       // Create a valid yaml and some non-yaml files
@@ -572,7 +572,7 @@ nodes:
     });
 
     it('should handle malformed YAML gracefully', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const malformedYaml = `name: test
@@ -592,7 +592,7 @@ nodes:
     });
 
     it('should handle workflow with all optional fields', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const fullWorkflow = `name: full-workflow
@@ -617,7 +617,7 @@ nodes:
     });
 
     it('should handle empty workflow directory', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
       // Directory exists but is empty
 
@@ -628,7 +628,7 @@ nodes:
     });
 
     it('should handle workflow with missing nodes field', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const noNodes = `name: no-nodes
@@ -643,7 +643,7 @@ description: Missing nodes
     });
 
     it('should handle workflow with null values', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       const nullValues = `name: null-test
@@ -664,55 +664,55 @@ nodes:
 
   describe('multi-source loading', () => {
     it('should load real app defaults when enabled', async () => {
-      // Test dir has no .archon/workflows/
+      // Test dir has no .smelter/workflows/
       const result = await discoverWorkflows(testDir, { loadDefaults: true });
       const workflows = result.workflows.map(ws => ws.workflow);
 
-      // Should load the real archon-* prefixed app defaults
+      // Should load the real smelter-* prefixed app defaults
       expect(workflows.length).toBeGreaterThanOrEqual(1);
       // Check for at least one of the known app defaults
-      const archonAssist = workflows.find(w => w.name === 'archon-assist');
-      expect(archonAssist).toBeDefined();
+      const smelterAssist = workflows.find(w => w.name === 'smelter-assist');
+      expect(smelterAssist).toBeDefined();
     });
 
     it('should override app defaults with repo workflows of same filename', async () => {
       // Create repo workflow with same filename as an app default
-      const repoWorkflowDir = join(testDir, '.archon', 'workflows');
+      const repoWorkflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(repoWorkflowDir, { recursive: true });
       const repoWorkflowYaml = `name: my-custom-assist
-description: My custom assist (overrides archon-assist)
+description: My custom assist (overrides smelter-assist)
 nodes:
   - id: custom
     command: custom-command
 `;
       // Use exact same filename as app default to override
-      await writeFile(join(repoWorkflowDir, 'archon-assist.yaml'), repoWorkflowYaml);
+      await writeFile(join(repoWorkflowDir, 'smelter-assist.yaml'), repoWorkflowYaml);
 
       const result = await discoverWorkflows(testDir, { loadDefaults: true });
       const workflows = result.workflows.map(ws => ws.workflow);
 
       // Should have the repo version, not the app default
       const assistWorkflow = workflows.find(
-        w => w.name === 'my-custom-assist' || w.name === 'archon-assist'
+        w => w.name === 'my-custom-assist' || w.name === 'smelter-assist'
       );
       expect(assistWorkflow).toBeDefined();
       // Repo version should win (has custom name)
       expect(assistWorkflow?.name).toBe('my-custom-assist');
-      expect(assistWorkflow?.description).toBe('My custom assist (overrides archon-assist)');
+      expect(assistWorkflow?.description).toBe('My custom assist (overrides smelter-assist)');
     });
 
     it('should skip app defaults when loadDefaults is false', async () => {
       const result = await discoverWorkflows(testDir, { loadDefaults: false });
       const workflows = result.workflows.map(ws => ws.workflow);
 
-      // Should NOT find any archon-* workflows since app defaults are disabled
-      const archonWorkflow = workflows.find(w => w.name.startsWith('archon-'));
-      expect(archonWorkflow).toBeUndefined();
+      // Should NOT find any smelter-* workflows since app defaults are disabled
+      const smelterWorkflow = workflows.find(w => w.name.startsWith('smelter-'));
+      expect(smelterWorkflow).toBeUndefined();
     });
 
     it('should combine app defaults with repo workflows', async () => {
       // Create repo workflow with unique name (no collision)
-      const repoWorkflowDir = join(testDir, '.archon', 'workflows');
+      const repoWorkflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(repoWorkflowDir, { recursive: true });
       const repoWorkflowYaml = `name: my-custom-workflow
 description: My custom workflow
@@ -726,26 +726,26 @@ nodes:
       const workflows = result.workflows.map(ws => ws.workflow);
 
       // Should have both app defaults and repo workflows
-      const archonAssist = workflows.find(w => w.name === 'archon-assist');
+      const smelterAssist = workflows.find(w => w.name === 'smelter-assist');
       const customWorkflow = workflows.find(w => w.name === 'my-custom-workflow');
-      expect(archonAssist).toBeDefined();
+      expect(smelterAssist).toBeDefined();
       expect(customWorkflow).toBeDefined();
     });
   });
 
-  describe('home-scoped workflows (~/.archon/workflows/)', () => {
+  describe('home-scoped workflows (~/.smelter/workflows/)', () => {
     // Home-scope is read unconditionally by discovery — no caller option. Tests
-    // redirect `getArchonHome()` to a temp dir via the `ARCHON_HOME` env var so
-    // they don't touch the user's real `~/.archon/`.
+    // redirect `getSmelterHome()` to a temp dir via the `SMELTER_HOME` env var so
+    // they don't touch the user's real `~/.smelter/`.
     let homeDir: string;
-    const originalArchonHome = process.env.ARCHON_HOME;
-    const originalArchonDocker = process.env.ARCHON_DOCKER;
+    const originalSmelterHome = process.env.SMELTER_HOME;
+    const originalSmelterDocker = process.env.SMELTER_DOCKER;
 
     beforeEach(async () => {
       homeDir = join(tmpdir(), `home-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       await mkdir(homeDir, { recursive: true });
-      process.env.ARCHON_HOME = homeDir;
-      delete process.env.ARCHON_DOCKER;
+      process.env.SMELTER_HOME = homeDir;
+      delete process.env.SMELTER_DOCKER;
       // The deprecation warning uses a module-scoped flag; reset between tests
       // so each case is independent.
       const { resetLegacyHomeWarningForTests } = await import('./workflow-discovery');
@@ -759,21 +759,21 @@ nodes:
       } catch {
         // ignore
       }
-      if (originalArchonHome === undefined) {
-        delete process.env.ARCHON_HOME;
+      if (originalSmelterHome === undefined) {
+        delete process.env.SMELTER_HOME;
       } else {
-        process.env.ARCHON_HOME = originalArchonHome;
+        process.env.SMELTER_HOME = originalSmelterHome;
       }
-      if (originalArchonDocker === undefined) {
-        delete process.env.ARCHON_DOCKER;
+      if (originalSmelterDocker === undefined) {
+        delete process.env.SMELTER_DOCKER;
       } else {
-        process.env.ARCHON_DOCKER = originalArchonDocker;
+        process.env.SMELTER_DOCKER = originalSmelterDocker;
       }
     });
 
-    it('loads home-scoped workflows from ~/.archon/workflows/ and merges with repo', async () => {
+    it('loads home-scoped workflows from ~/.smelter/workflows/ and merges with repo', async () => {
       const homeWorkflowDir = join(homeDir, 'workflows');
-      const repoWorkflowDir = join(testDir, '.archon', 'workflows');
+      const repoWorkflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(homeWorkflowDir, { recursive: true });
       await mkdir(repoWorkflowDir, { recursive: true });
 
@@ -807,7 +807,7 @@ nodes:
 
     it('repo workflow overrides home workflow with the same filename', async () => {
       const homeWorkflowDir = join(homeDir, 'workflows');
-      const repoWorkflowDir = join(testDir, '.archon', 'workflows');
+      const repoWorkflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(homeWorkflowDir, { recursive: true });
       await mkdir(repoWorkflowDir, { recursive: true });
 
@@ -828,13 +828,13 @@ nodes:
       expect(shared?.source).toBe('project');
     });
 
-    it('silently skips when ~/.archon/workflows/ does not exist', async () => {
+    it('silently skips when ~/.smelter/workflows/ does not exist', async () => {
       // homeDir exists but no workflows/ subdirectory — should not error.
       const result = await discoverWorkflows(testDir, { loadDefaults: false });
       expect(result.errors).toEqual([]);
     });
 
-    it('supports 1-level subfolders under ~/.archon/workflows/ (e.g. triage/foo.yaml)', async () => {
+    it('supports 1-level subfolders under ~/.smelter/workflows/ (e.g. triage/foo.yaml)', async () => {
       const homeWorkflowDir = join(homeDir, 'workflows', 'triage');
       await mkdir(homeWorkflowDir, { recursive: true });
       await writeFile(
@@ -862,16 +862,16 @@ nodes:
     });
   });
 
-  describe('legacy ~/.archon/.archon/workflows/ deprecation warning', () => {
+  describe('legacy ~/.smelter/.smelter/workflows/ deprecation warning', () => {
     let homeDir: string;
-    const originalArchonHome = process.env.ARCHON_HOME;
-    const originalArchonDocker = process.env.ARCHON_DOCKER;
+    const originalSmelterHome = process.env.SMELTER_HOME;
+    const originalSmelterDocker = process.env.SMELTER_DOCKER;
 
     beforeEach(async () => {
       homeDir = join(tmpdir(), `legacy-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       await mkdir(homeDir, { recursive: true });
-      process.env.ARCHON_HOME = homeDir;
-      delete process.env.ARCHON_DOCKER;
+      process.env.SMELTER_HOME = homeDir;
+      delete process.env.SMELTER_DOCKER;
       const { resetLegacyHomeWarningForTests } = await import('./workflow-discovery');
       resetLegacyHomeWarningForTests();
       mockLogger.warn.mockClear();
@@ -883,20 +883,20 @@ nodes:
       } catch {
         // ignore
       }
-      if (originalArchonHome === undefined) {
-        delete process.env.ARCHON_HOME;
+      if (originalSmelterHome === undefined) {
+        delete process.env.SMELTER_HOME;
       } else {
-        process.env.ARCHON_HOME = originalArchonHome;
+        process.env.SMELTER_HOME = originalSmelterHome;
       }
-      if (originalArchonDocker === undefined) {
-        delete process.env.ARCHON_DOCKER;
+      if (originalSmelterDocker === undefined) {
+        delete process.env.SMELTER_DOCKER;
       } else {
-        process.env.ARCHON_DOCKER = originalArchonDocker;
+        process.env.SMELTER_DOCKER = originalSmelterDocker;
       }
     });
 
     it('emits a WARN with the migration command when the legacy path exists', async () => {
-      const legacyDir = join(homeDir, '.archon', 'workflows');
+      const legacyDir = join(homeDir, '.smelter', 'workflows');
       await mkdir(legacyDir, { recursive: true });
       await writeFile(
         join(legacyDir, 'stranded.yaml'),
@@ -916,7 +916,7 @@ nodes:
     });
 
     it('does NOT load workflows from the legacy path (clean cut)', async () => {
-      const legacyDir = join(homeDir, '.archon', 'workflows');
+      const legacyDir = join(homeDir, '.smelter', 'workflows');
       await mkdir(legacyDir, { recursive: true });
       await writeFile(
         join(legacyDir, 'stranded.yaml'),
@@ -929,7 +929,7 @@ nodes:
     });
 
     it('warns exactly once per process, even across multiple discovery calls', async () => {
-      const legacyDir = join(homeDir, '.archon', 'workflows');
+      const legacyDir = join(homeDir, '.smelter', 'workflows');
       await mkdir(legacyDir, { recursive: true });
 
       await discoverWorkflows(testDir, { loadDefaults: false });
@@ -962,9 +962,9 @@ nodes:
 
       const result = await discoverWorkflowsWithConfig(testDir, mockLoadConfig);
 
-      // With loadDefaults: false, no archon-* defaults should appear
-      const archonWorkflow = result.workflows.find(w => w.workflow.name.startsWith('archon-'));
-      expect(archonWorkflow).toBeUndefined();
+      // With loadDefaults: false, no smelter-* defaults should appear
+      const smelterWorkflow = result.workflows.find(w => w.workflow.name.startsWith('smelter-'));
+      expect(smelterWorkflow).toBeUndefined();
       expect(mockLoadConfig).toHaveBeenCalledWith(testDir);
     });
 
@@ -976,12 +976,12 @@ nodes:
 
       const result = await discoverWorkflowsWithConfig(testDir, mockLoadConfig);
 
-      // With config failure, defaults to true, so archon-* should appear
-      const archonWorkflow = result.workflows.find(w => w.workflow.name === 'archon-assist');
-      expect(archonWorkflow).toBeDefined();
+      // With config failure, defaults to true, so smelter-* should appear
+      const smelterWorkflow = result.workflows.find(w => w.workflow.name === 'smelter-assist');
+      expect(smelterWorkflow).toBeDefined();
     });
 
-    it('surfaces home-scoped workflows without any option — discovery reads ~/.archon/workflows/ internally', async () => {
+    it('surfaces home-scoped workflows without any option — discovery reads ~/.smelter/workflows/ internally', async () => {
       const { discoverWorkflowsWithConfig, resetLegacyHomeWarningForTests } =
         await import('./workflow-discovery');
       resetLegacyHomeWarningForTests();
@@ -997,10 +997,10 @@ nodes:
         'name: home-only\ndescription: From home\nnodes:\n  - id: foo\n    command: foo\n'
       );
 
-      const originalArchonHome = process.env.ARCHON_HOME;
-      const originalArchonDocker = process.env.ARCHON_DOCKER;
-      process.env.ARCHON_HOME = homeDir;
-      delete process.env.ARCHON_DOCKER;
+      const originalSmelterHome = process.env.SMELTER_HOME;
+      const originalSmelterDocker = process.env.SMELTER_DOCKER;
+      process.env.SMELTER_HOME = homeDir;
+      delete process.env.SMELTER_DOCKER;
       try {
         const mockLoadConfig = mock(async () => ({
           defaults: { loadDefaultWorkflows: false },
@@ -1011,15 +1011,15 @@ nodes:
         expect(entry).toBeDefined();
         expect(entry?.source).toBe('global');
       } finally {
-        if (originalArchonHome === undefined) {
-          delete process.env.ARCHON_HOME;
+        if (originalSmelterHome === undefined) {
+          delete process.env.SMELTER_HOME;
         } else {
-          process.env.ARCHON_HOME = originalArchonHome;
+          process.env.SMELTER_HOME = originalSmelterHome;
         }
-        if (originalArchonDocker === undefined) {
-          delete process.env.ARCHON_DOCKER;
+        if (originalSmelterDocker === undefined) {
+          delete process.env.SMELTER_DOCKER;
         } else {
-          process.env.ARCHON_DOCKER = originalArchonDocker;
+          process.env.SMELTER_DOCKER = originalSmelterDocker;
         }
         await rm(homeDir, { recursive: true, force: true });
       }
@@ -1047,8 +1047,8 @@ nodes:
       // Should load bundled workflows
       expect(workflows.length).toBeGreaterThanOrEqual(1);
       // Check that known bundled workflows are loaded
-      const archonAssist = workflows.find(w => w.name === 'archon-assist');
-      expect(archonAssist).toBeDefined();
+      const smelterAssist = workflows.find(w => w.name === 'smelter-assist');
+      expect(smelterAssist).toBeDefined();
     });
 
     it('should skip bundled workflows when loadDefaults is false', async () => {
@@ -1059,8 +1059,8 @@ nodes:
       const workflows = result.workflows.map(ws => ws.workflow);
 
       // Should not have any bundled defaults
-      const archonWorkflow = workflows.find(w => w.name.startsWith('archon-'));
-      expect(archonWorkflow).toBeUndefined();
+      const smelterWorkflow = workflows.find(w => w.name.startsWith('smelter-'));
+      expect(smelterWorkflow).toBeUndefined();
     });
 
     it('should allow repo workflows to override bundled defaults', async () => {
@@ -1068,22 +1068,22 @@ nodes:
       isBinaryBuildSpy.mockReturnValue(true);
 
       // Create repo workflow with same filename as bundled default
-      const repoWorkflowDir = join(testDir, '.archon', 'workflows');
+      const repoWorkflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(repoWorkflowDir, { recursive: true });
       const repoWorkflowYaml = `name: custom-assist-override
-description: Custom override of archon-assist
+description: Custom override of smelter-assist
 nodes:
   - id: custom
     command: custom
 `;
-      await writeFile(join(repoWorkflowDir, 'archon-assist.yaml'), repoWorkflowYaml);
+      await writeFile(join(repoWorkflowDir, 'smelter-assist.yaml'), repoWorkflowYaml);
 
       const result = await discoverWorkflows(testDir, { loadDefaults: true });
       const workflows = result.workflows.map(ws => ws.workflow);
 
       // Repo workflow should override bundled default
       const assistWorkflow = workflows.find(
-        w => w.name === 'custom-assist-override' || w.name === 'archon-assist'
+        w => w.name === 'custom-assist-override' || w.name === 'smelter-assist'
       );
       expect(assistWorkflow).toBeDefined();
       expect(assistWorkflow?.name).toBe('custom-assist-override');
@@ -1094,7 +1094,7 @@ nodes:
       isBinaryBuildSpy.mockReturnValue(true);
 
       // Create repo workflow with unique name
-      const repoWorkflowDir = join(testDir, '.archon', 'workflows');
+      const repoWorkflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(repoWorkflowDir, { recursive: true });
       const repoWorkflowYaml = `name: my-repo-workflow
 description: A repo-specific workflow
@@ -1108,16 +1108,16 @@ nodes:
       const workflows = result.workflows.map(ws => ws.workflow);
 
       // Should have both bundled and repo workflows
-      const archonAssist = workflows.find(w => w.name === 'archon-assist');
+      const smelterAssist = workflows.find(w => w.name === 'smelter-assist');
       const repoWorkflow = workflows.find(w => w.name === 'my-repo-workflow');
-      expect(archonAssist).toBeDefined();
+      expect(smelterAssist).toBeDefined();
       expect(repoWorkflow).toBeDefined();
     });
   });
 
   describe('error accumulation', () => {
     it('should return errors for YAML missing name', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1135,7 +1135,7 @@ nodes:
     });
 
     it('should load valid workflows and report errors for invalid ones', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1156,7 +1156,7 @@ nodes:
     });
 
     it('should return empty errors array when all workflows are valid', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1178,7 +1178,7 @@ nodes:
     });
 
     it('should report YAML parse errors', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(join(workflowDir, 'broken.yaml'), 'name: test\ninvalid: [');
@@ -1193,7 +1193,7 @@ nodes:
     });
 
     it('should accumulate errors from subdirectories', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       const subDir = join(workflowDir, 'sub');
       await mkdir(subDir, { recursive: true });
 
@@ -1217,7 +1217,7 @@ nodes:
     });
 
     it('should report validation error for empty YAML content', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(join(workflowDir, 'empty.yaml'), '');
@@ -1232,7 +1232,7 @@ nodes:
     });
 
     it('should report validation error for YAML that parses to non-object', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(join(workflowDir, 'scalar.yaml'), 'just a string');
@@ -1248,7 +1248,7 @@ nodes:
     it.skipIf(isWindows)(
       'should report directory read errors for non-ENOENT failures',
       async () => {
-        const workflowDir = join(testDir, '.archon', 'workflows');
+        const workflowDir = join(testDir, '.smelter', 'workflows');
         await mkdir(workflowDir, { recursive: true });
 
         // Create a file where a directory is expected (causes ENOTDIR on readdir)
@@ -1272,7 +1272,7 @@ nodes:
 
   describe('bash node parsing', () => {
     it('should parse a valid bash node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1304,7 +1304,7 @@ nodes:
     });
 
     it('should parse bash node with timeout', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1329,7 +1329,7 @@ nodes:
     });
 
     it('should reject bash + command combination', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1350,7 +1350,7 @@ nodes:
     });
 
     it('should reject bash + prompt combination', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1371,7 +1371,7 @@ nodes:
     });
 
     it('should reject invalid timeout (negative)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1392,7 +1392,7 @@ nodes:
     });
 
     it('should reject invalid timeout (string)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1413,7 +1413,7 @@ nodes:
     });
 
     it('should parse idle_timeout on command node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1436,7 +1436,7 @@ nodes:
     });
 
     it('should parse idle_timeout on prompt node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1459,7 +1459,7 @@ nodes:
     });
 
     it('should parse idle_timeout on bash node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1484,7 +1484,7 @@ nodes:
     });
 
     it('should reject invalid idle_timeout (negative)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1505,7 +1505,7 @@ nodes:
     });
 
     it('should reject invalid idle_timeout (string)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1526,7 +1526,7 @@ nodes:
     });
 
     it('should reject invalid idle_timeout (Infinity)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1547,7 +1547,7 @@ nodes:
     });
 
     it('should ignore AI-specific fields on bash nodes (parses successfully, fields stripped)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1578,7 +1578,7 @@ nodes:
     });
 
     it('should NOT warn about model/provider on loop nodes (they are supported)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1614,7 +1614,7 @@ nodes:
     });
 
     it('should warn about unsupported AI fields on loop nodes (not model/provider)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1656,7 +1656,7 @@ nodes:
 
   describe('DAG output ref validation', () => {
     it('should reject a workflow where when: references an unknown node output', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1681,7 +1681,7 @@ nodes:
     });
 
     it('should reject a workflow where prompt: references an unknown node output', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1705,7 +1705,7 @@ nodes:
     });
 
     it('should accept a workflow where output refs use valid existing node IDs', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1730,7 +1730,7 @@ nodes:
 
     it('should accept a workflow where a node has both when: and prompt: with valid refs', async () => {
       // Exercises the lastIndex = 0 reset across multiple sources per node
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1755,7 +1755,7 @@ nodes:
 
     it('should not validate bash: script $nodeId.output refs at load time', async () => {
       // bash: nodes are intentionally excluded from load-time validation
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1782,7 +1782,7 @@ nodes:
       // Prompt bodies often embed fenced documentation examples for the LLM
       // (e.g. workflow-builder shows how to author a script node). The literal
       // $other-node.output in such a fence is documentation, not a real ref.
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1810,7 +1810,7 @@ nodes:
 
     it('should ignore $nodeId.output inside inline backtick code in prompt: bodies', async () => {
       // Inline `code` mentions like \`$nodeId.output\` are also documentation.
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1834,7 +1834,7 @@ nodes:
     it('should still reject unknown $nodeId.output refs outside code', async () => {
       // Stripping fenced/inline code must not weaken validation of real refs
       // that appear in prose outside any code marker.
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1862,7 +1862,7 @@ nodes:
 
     it('should ignore $nodeId.output inside fenced code in loop.prompt', async () => {
       // Loop prompts get the same documentation-stripping treatment as node prompts.
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1892,7 +1892,7 @@ nodes:
 
   describe('retry config parsing', () => {
     it('should parse retry config on DAG command node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1915,7 +1915,7 @@ nodes:
     });
 
     it('should parse retry config on DAG bash node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1946,7 +1946,7 @@ nodes:
     });
 
     it('should parse retry config on DAG prompt node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1975,7 +1975,7 @@ nodes:
     });
 
     it('should reject retry with missing max_attempts', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -1997,7 +1997,7 @@ nodes:
     });
 
     it('should reject retry with max_attempts out of range', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2019,7 +2019,7 @@ nodes:
     });
 
     it('should reject retry with invalid on_error value', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2042,7 +2042,7 @@ nodes:
     });
 
     it('should reject retry with delay_ms out of range', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2065,7 +2065,7 @@ nodes:
     });
 
     it('should use defaults when retry fields are omitted', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2092,7 +2092,7 @@ nodes:
 
   describe('loop node parsing', () => {
     it('should parse a valid loop node with all fields', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2132,7 +2132,7 @@ nodes:
     });
 
     it('should parse minimal loop node (only required fields)', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2161,7 +2161,7 @@ nodes:
     });
 
     it('should reject loop node missing loop.prompt', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2183,7 +2183,7 @@ nodes:
     });
 
     it('should reject loop node missing loop.until', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2205,7 +2205,7 @@ nodes:
     });
 
     it('should reject loop node with invalid max_iterations', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2228,7 +2228,7 @@ nodes:
     });
 
     it('should reject node with both loop and command', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2252,7 +2252,7 @@ nodes:
     });
 
     it('should reject node with both loop and bash', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2276,7 +2276,7 @@ nodes:
     });
 
     it('should validate $nodeId.output refs in loop.prompt', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2299,7 +2299,7 @@ nodes:
     });
 
     it('should parse loop node with depends_on', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2331,7 +2331,7 @@ nodes:
     });
 
     it('should accept interactive loop with gate_message', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2361,7 +2361,7 @@ nodes:
     });
 
     it('should reject interactive loop without gate_message', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2386,7 +2386,7 @@ nodes:
     });
 
     it('should warn when interactive loop node is in a non-interactive workflow', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2422,7 +2422,7 @@ nodes:
   // -------------------------------------------------------------------------
   describe('cancel nodes', () => {
     it('should parse a valid cancel node', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2450,7 +2450,7 @@ nodes:
     });
 
     it('should reject cancel node with empty reason', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2469,7 +2469,7 @@ nodes:
     });
 
     it('should reject node with both cancel and prompt', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(
@@ -2490,7 +2490,7 @@ nodes:
     });
 
     it('should warn about AI-specific fields on cancel nodes', async () => {
-      const workflowDir = join(testDir, '.archon', 'workflows');
+      const workflowDir = join(testDir, '.smelter', 'workflows');
       await mkdir(workflowDir, { recursive: true });
 
       await writeFile(

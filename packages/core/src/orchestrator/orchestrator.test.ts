@@ -1,19 +1,19 @@
 import { mock, describe, test, expect, beforeEach } from 'bun:test';
 import { MockPlatformAdapter } from '../test/mocks/platform';
 import { createMockLogger } from '../test/mocks/logger';
-import { makeTestWorkflow, makeTestWorkflowList } from '@archon/workflows/test-utils';
+import { makeTestWorkflow, makeTestWorkflowList } from '@smelter/workflows/test-utils';
 import type { Conversation, Codebase, Session } from '../types';
 import { ConversationNotFoundError } from '../types';
-import type { WorkflowDefinition } from '@archon/workflows/schemas/workflow';
+import type { WorkflowDefinition } from '@smelter/workflows/schemas/workflow';
 
 // ─── Mock setup (BEFORE importing module under test) ─────────────────────────
 
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
-  ensureArchonWorkspacesPath: mock(() => Promise.resolve('/home/test/.archon/workspaces')),
-  getArchonHome: mock(() => '/home/test/.archon'),
+  getSmelterWorkspacesPath: mock(() => '/home/test/.smelter/workspaces'),
+  ensureSmelterWorkspacesPath: mock(() => Promise.resolve('/home/test/.smelter/workspaces')),
+  getSmelterHome: mock(() => '/home/test/.smelter'),
 }));
 
 // DB mocks
@@ -83,7 +83,7 @@ mock.module('../handlers/command-handler', () => ({
 // AI provider mock
 const mockGetAgentProvider = mock(() => null);
 
-mock.module('@archon/providers', () => ({
+mock.module('@smelter/providers', () => ({
   getAgentProvider: mockGetAgentProvider,
 }));
 
@@ -121,10 +121,10 @@ mock.module('../config/config-loader', () => ({
 }));
 
 // Worktree sync mock
-const mockSyncArchonToWorktree = mock(() => Promise.resolve(false));
+const mockSyncSmelterToWorktree = mock(() => Promise.resolve(false));
 
 mock.module('../utils/worktree-sync', () => ({
-  syncArchonToWorktree: mockSyncArchonToWorktree,
+  syncSmelterToWorktree: mockSyncSmelterToWorktree,
 }));
 
 // Orchestrator (isolation & dispatch) mocks
@@ -158,16 +158,16 @@ mock.module('../utils/error-formatter', () => ({
   classifyAndFormatError: mock((err: Error) => `⚠️ Error: ${err.message}`),
 }));
 
-mock.module('@archon/workflows/workflow-discovery', () => ({
+mock.module('@smelter/workflows/workflow-discovery', () => ({
   discoverWorkflowsWithConfig: mockDiscoverWorkflows,
 }));
-mock.module('@archon/workflows/executor', () => ({
+mock.module('@smelter/workflows/executor', () => ({
   executeWorkflow: mockExecuteWorkflow,
 }));
-mock.module('@archon/workflows/router', () => ({
+mock.module('@smelter/workflows/router', () => ({
   findWorkflow: mockFindWorkflow,
 }));
-mock.module('@archon/workflows/utils/tool-formatter', () => ({
+mock.module('@smelter/workflows/utils/tool-formatter', () => ({
   formatToolCall: mock((toolName: string, _toolInput: unknown) => `🔧 ${toolName.toUpperCase()}`),
 }));
 
@@ -237,7 +237,7 @@ const mockSession: Session = {
   ended_reason: null,
 };
 
-const testWorkflowDefs = makeTestWorkflowList(['fix-bug', 'add-feature', 'archon-assist']);
+const testWorkflowDefs = makeTestWorkflowList(['fix-bug', 'add-feature', 'smelter-assist']);
 const testWorkflows = testWorkflowDefs.map(w => ({
   workflow: w,
   source: 'bundled' as const,
@@ -278,7 +278,7 @@ function clearAllMocks(): void {
   mockDiscoverWorkflows.mockClear();
   mockExecuteWorkflow.mockClear();
   mockFindWorkflow.mockClear();
-  mockSyncArchonToWorktree.mockClear();
+  mockSyncSmelterToWorktree.mockClear();
   mockValidateAndResolveIsolation.mockClear();
   mockDispatchBackgroundWorkflow.mockClear();
   mockBuildOrchestratorPrompt.mockClear();
@@ -363,11 +363,11 @@ describe('parseOrchestratorCommands', () => {
 
   test('parses --prompt with double quotes', () => {
     const response =
-      'I will analyze this.\n/invoke-workflow archon-assist --project test-project --prompt "Analyze the orchestrator module architecture"';
+      'I will analyze this.\n/invoke-workflow smelter-assist --project test-project --prompt "Analyze the orchestrator module architecture"';
     const result = parseOrchestratorCommands(response, codebases, workflows);
 
     expect(result.workflowInvocation).not.toBeNull();
-    expect(result.workflowInvocation?.workflowName).toBe('archon-assist');
+    expect(result.workflowInvocation?.workflowName).toBe('smelter-assist');
     expect(result.workflowInvocation?.projectName).toBe('test-project');
     expect(result.workflowInvocation?.synthesizedPrompt).toBe(
       'Analyze the orchestrator module architecture'
@@ -395,7 +395,7 @@ describe('parseOrchestratorCommands', () => {
 
   test('parses --prompt with spaces in the quoted value', () => {
     const response =
-      '/invoke-workflow archon-assist --project test-project --prompt "Analyze the database schema and migration patterns in the project, focusing on table structure and relationships"';
+      '/invoke-workflow smelter-assist --project test-project --prompt "Analyze the database schema and migration patterns in the project, focusing on table structure and relationships"';
     const result = parseOrchestratorCommands(response, codebases, workflows);
 
     expect(result.workflowInvocation?.synthesizedPrompt).toBe(
@@ -416,7 +416,7 @@ describe('parseOrchestratorCommands', () => {
 
   test('parses --prompt with --project= equals syntax', () => {
     const response =
-      '/invoke-workflow archon-assist --project=test-project --prompt "Summarize the README"';
+      '/invoke-workflow smelter-assist --project=test-project --prompt "Summarize the README"';
     const result = parseOrchestratorCommands(response, codebases, workflows);
 
     expect(result.workflowInvocation?.projectName).toBe('test-project');
@@ -1067,7 +1067,7 @@ describe('orchestrator-agent handleMessage', () => {
       mockClient.sendQuery.mockImplementation(async function* () {
         yield {
           type: 'assistant',
-          content: `Running analysis.\n/invoke-workflow archon-assist --project test-project --prompt "${synthesized}"`,
+          content: `Running analysis.\n/invoke-workflow smelter-assist --project test-project --prompt "${synthesized}"`,
         };
         yield { type: 'result', sessionId: 'session-id' };
       });
@@ -1134,7 +1134,7 @@ describe('orchestrator-agent handleMessage', () => {
       mockClient.sendQuery.mockImplementation(async function* () {
         yield {
           type: 'assistant',
-          content: '/invoke-workflow archon-assist --project test-project',
+          content: '/invoke-workflow smelter-assist --project test-project',
         };
         yield { type: 'result', sessionId: 'session-id' };
       });
@@ -1144,7 +1144,7 @@ describe('orchestrator-agent handleMessage', () => {
       expect(mockValidateAndResolveIsolation).not.toHaveBeenCalled();
       expect(platform.sendMessage).toHaveBeenCalledWith(
         'chat-456',
-        expect.stringContaining('archon-assist')
+        expect.stringContaining('smelter-assist')
       );
     });
   });
@@ -1161,9 +1161,9 @@ describe('orchestrator-agent handleMessage', () => {
       await handleMessage(platform, 'chat-456', 'help');
 
       // Discovery is called positionally with (cwd, loadConfig) — no options arg.
-      // Home-scoped workflows (~/.archon/workflows/) are discovered internally.
+      // Home-scoped workflows (~/.smelter/workflows/) are discovered internally.
       expect(mockDiscoverWorkflows).toHaveBeenCalledWith(
-        '/home/test/.archon/workspaces',
+        '/home/test/.smelter/workspaces',
         expect.any(Function)
       );
     });
@@ -1186,7 +1186,7 @@ describe('orchestrator-agent handleMessage', () => {
       );
     });
 
-    test('syncs .archon to worktree before repo workflow discovery', async () => {
+    test('syncs .smelter to worktree before repo workflow discovery', async () => {
       mockGetOrCreateConversation.mockResolvedValue(mockConversationWithProject);
       mockGetCodebase.mockResolvedValue(mockCodebase);
       mockClient.sendQuery.mockImplementation(async function* () {
@@ -1195,7 +1195,7 @@ describe('orchestrator-agent handleMessage', () => {
       });
 
       const callOrder: string[] = [];
-      mockSyncArchonToWorktree.mockImplementation(async () => {
+      mockSyncSmelterToWorktree.mockImplementation(async () => {
         callOrder.push('sync');
         return false;
       });
@@ -1207,12 +1207,12 @@ describe('orchestrator-agent handleMessage', () => {
 
       await handleMessage(platform, 'chat-456', 'help');
 
-      expect(mockSyncArchonToWorktree).toHaveBeenCalledWith('/workspace/project');
+      expect(mockSyncSmelterToWorktree).toHaveBeenCalledWith('/workspace/project');
       expect(callOrder).toEqual(['sync', 'discover-repo']);
     });
 
     test('handles workflow discovery failure gracefully', async () => {
-      mockDiscoverWorkflows.mockRejectedValue(new Error('No .archon/workflows directory'));
+      mockDiscoverWorkflows.mockRejectedValue(new Error('No .smelter/workflows directory'));
       mockClient.sendQuery.mockImplementation(async function* () {
         yield { type: 'assistant', content: 'I can still help!' };
         yield { type: 'result', sessionId: 'session-id' };
@@ -1472,7 +1472,7 @@ describe('orchestrator-agent handleMessage', () => {
         'conv-123',
         'Hello world',
         'claude',
-        '/home/test/.archon/workspaces'
+        '/home/test/.smelter/workspaces'
       );
     });
 

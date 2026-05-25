@@ -1,6 +1,6 @@
 ---
 title: Guides
-description: How-to guides for authoring workflows, commands, and configuring node features in Archon.
+description: How-to guides for authoring workflows, commands, and configuring node features in Smelter.
 category: guides
 area: workflows
 audience: [user]
@@ -9,7 +9,7 @@ sidebar:
   order: 0
 ---
 
-How-to guides for building and running AI coding workflows with Archon.
+How-to guides for building and running AI coding workflows with Smelter.
 
 ## Workflow Authoring
 
@@ -30,26 +30,26 @@ How-to guides for building and running AI coding workflows with Archon.
 
 ## Bundled Workflows
 
-Archon ships with ready-to-use workflows that cover common coding tasks. You do not need to write any YAML to use these -- just describe what you want and the router picks the right one.
+Smelter ships with ready-to-use workflows that cover common coding tasks. You do not need to write any YAML to use these -- just describe what you want and the router picks the right one.
 
 | Workflow | What It Does |
 |----------|-------------|
-| `archon-assist` | General Q&A, debugging, exploration -- the catch-all |
-| `archon-fix-github-issue` | Investigate, root cause, implement fix, validate, PR |
-| `archon-smart-pr-review` | Complexity-adaptive PR review |
-| `archon-comprehensive-pr-review` | Multi-agent PR review (5 parallel reviewers) |
-| `archon-feature-development` | Implement feature from plan, validate, create PR |
-| `archon-create-issue` | Investigate a problem and create a GitHub issue |
-| `archon-validate-pr` | Thorough PR validation testing |
-| `archon-resolve-conflicts` | Detect and resolve merge conflicts in PRs |
-| `archon-remotion-generate` | Generate or modify Remotion video compositions with AI |
-| `archon-interactive-prd` | Create a PRD through guided conversation |
-| `archon-piv-loop` | Guided Plan-Implement-Validate with human-in-the-loop |
-| `archon-adversarial-dev` | Build a complete application from scratch using adversarial development |
+| `smelter-assist` | General Q&A, debugging, exploration -- the catch-all |
+| `smelter-fix-github-issue` | Investigate, root cause, implement fix, validate, PR |
+| `smelter-smart-pr-review` | Complexity-adaptive PR review |
+| `smelter-comprehensive-pr-review` | Multi-agent PR review (5 parallel reviewers) |
+| `smelter-feature-development` | Implement feature from plan, validate, create PR |
+| `smelter-create-issue` | Investigate a problem and create a GitHub issue |
+| `smelter-validate-pr` | Thorough PR validation testing |
+| `smelter-resolve-conflicts` | Detect and resolve merge conflicts in PRs |
+| `smelter-remotion-generate` | Generate or modify Remotion video compositions with AI |
+| `smelter-interactive-prd` | Create a PRD through guided conversation |
+| `smelter-piv-loop` | Guided Plan-Implement-Validate with human-in-the-loop |
+| `smelter-adversarial-dev` | Build a complete application from scratch using adversarial development |
 
 For the full list with descriptions, see the [Available Workflows table](/getting-started/overview/#available-workflows) in the Overview.
 
-To customize any bundled workflow, copy it from `.archon/workflows/defaults/` into your project's `.archon/workflows/` and modify it -- same-named files override the defaults.
+To customize any bundled workflow, copy it from `.smelter/workflows/defaults/` into your project's `.smelter/workflows/` and modify it -- same-named files override the defaults.
 
 ## Advanced
 

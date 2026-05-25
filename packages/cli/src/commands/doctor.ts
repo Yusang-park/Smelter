@@ -1,14 +1,14 @@
 /**
- * Doctor command - Verifies the local Archon setup.
+ * Doctor command - Verifies the local Smelter setup.
  *
- * Also invoked from the end of `archon setup`; the setup wizard discards the
+ * Also invoked from the end of `smelter setup`; the setup wizard discards the
  * return value so a doctor failure does not abort setup (the env file was
  * already written successfully).
  */
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
-import { execFileAsync } from '@archon/git';
-import { BUNDLED_IS_BINARY, getArchonHome, createLogger } from '@archon/paths';
+import { execFileAsync } from '@smelter/git';
+import { BUNDLED_IS_BINARY, getSmelterHome, createLogger } from '@smelter/paths';
 
 let cachedLog: ReturnType<typeof createLogger> | undefined;
 function getLog(): ReturnType<typeof createLogger> {
@@ -37,7 +37,7 @@ export async function checkClaudeBinary(
     return {
       label,
       status: 'fail',
-      message: 'CLAUDE_BIN_PATH is not set. Run `archon setup` to configure.',
+      message: 'CLAUDE_BIN_PATH is not set. Run `smelter setup` to configure.',
     };
   }
   try {
@@ -78,7 +78,7 @@ export interface DatabaseDeps {
 
 export async function checkDatabase(
   // Injected so tests can drive both code paths without mocking the dynamic
-  // import. Falls back to the lazy `@archon/core` import in production.
+  // import. Falls back to the lazy `@smelter/core` import in production.
   loadDeps: () => Promise<DatabaseDeps> = defaultLoadDatabaseDeps
 ): Promise<CheckResult> {
   const label = 'Database';
@@ -88,7 +88,7 @@ export async function checkDatabase(
   } catch (err) {
     // Distinguish module-load failure from query failure — surfacing
     // "not reachable" for an import error misleads the user into running
-    // `archon setup` when the real fix is a binary rebuild.
+    // `smelter setup` when the real fix is a binary rebuild.
     getLog().error({ err }, 'doctor.db_module_load_failed');
     return {
       label,
@@ -107,15 +107,15 @@ export async function checkDatabase(
 }
 
 async function defaultLoadDatabaseDeps(): Promise<DatabaseDeps> {
-  // Lazy import so doctor doesn't pull in the full @archon/core graph just to
+  // Lazy import so doctor doesn't pull in the full @smelter/core graph just to
   // print --help or run a different check.
-  const { pool, getDatabaseType } = await import('@archon/core');
+  const { pool, getDatabaseType } = await import('@smelter/core');
   return { pool, getDatabaseType };
 }
 
 export async function checkWorkspaceWritable(): Promise<CheckResult> {
   const label = 'Workspace';
-  const home = getArchonHome();
+  const home = getSmelterHome();
   const probe = join(home, `.doctor-probe-${process.pid}-${Date.now()}`);
   try {
     mkdirSync(home, { recursive: true });
@@ -128,7 +128,7 @@ export async function checkWorkspaceWritable(): Promise<CheckResult> {
   } catch (err) {
     // Deletion failure is cosmetic — the write succeeded, so the dir is
     // writable. Log so repeated failures leave a diagnostic trace instead of
-    // silently accumulating .doctor-probe-* files in ARCHON_HOME.
+    // silently accumulating .doctor-probe-* files in SMELTER_HOME.
     getLog().warn({ probe, err }, 'doctor.workspace_probe_delete_failed');
   }
   return { label, status: 'pass', message: `${home} is writable` };
@@ -137,7 +137,7 @@ export async function checkWorkspaceWritable(): Promise<CheckResult> {
 export async function checkBundledDefaults(): Promise<CheckResult> {
   const label = 'Bundled defaults';
   try {
-    const { BUNDLED_COMMANDS, BUNDLED_WORKFLOWS } = await import('@archon/workflows/defaults');
+    const { BUNDLED_COMMANDS, BUNDLED_WORKFLOWS } = await import('@smelter/workflows/defaults');
     const commands = Object.keys(BUNDLED_COMMANDS).length;
     const workflows = Object.keys(BUNDLED_WORKFLOWS).length;
     return {
@@ -215,7 +215,7 @@ export async function doctorCommand(
   // Promise.allSettled rejection branch with synthetic checks.
   checks?: (() => Promise<CheckResult>)[]
 ): Promise<number> {
-  console.log('archon doctor — verifying your setup\n');
+  console.log('smelter doctor — verifying your setup\n');
   getLog().info('doctor.run_started');
   const env = process.env;
 
@@ -253,7 +253,7 @@ export async function doctorCommand(
     getLog().info('doctor.run_completed');
     return 0;
   }
-  console.log(`${failures} check(s) failed. Run \`archon setup\` to reconfigure.`);
+  console.log(`${failures} check(s) failed. Run \`smelter setup\` to reconfigure.`);
   getLog().warn({ failures }, 'doctor.run_failed');
   return 1;
 }

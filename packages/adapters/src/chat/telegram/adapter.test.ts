@@ -23,7 +23,7 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 

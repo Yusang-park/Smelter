@@ -1,7 +1,7 @@
 ---
 name: test-release
 description: |
-  Verify a released archon binary works end-to-end via a specific install path.
+  Verify a released smelter binary works end-to-end via a specific install path.
   Use when: cutting a new release, reproducing a user bug report on the released
   version, or validating that a hotfix binary actually works after a re-tag.
   Triggers: "test the release", "test 0.3.1 via brew", "verify the curl install",
@@ -15,13 +15,13 @@ argument-hint: "[brew|curl-mac|curl-vps] [optional: version to verify] [optional
 
 # Test Release
 
-Automated smoke test for a released archon binary. Covers three install paths:
+Automated smoke test for a released smelter binary. Covers three install paths:
 
 - `brew` — Homebrew tap on macOS (tests the formula and checksums)
 - `curl-mac` — `curl install.sh` on macOS (tests the install script, sandboxed to a temp dir)
 - `curl-vps` — `curl install.sh` on a remote Linux VPS (tests the Linux binary and full install path)
 
-Every path installs the binary, runs a fixed smoke test suite, and cleans up. The dev `bun link` binary is never touched and remains the default `archon` on PATH throughout.
+Every path installs the binary, runs a fixed smoke test suite, and cleans up. The dev `bun link` binary is never touched and remains the default `smelter` on PATH throughout.
 
 **When NOT to use this skill:**
 
@@ -42,14 +42,14 @@ VERSION=0.3.1 GIT_COMMIT=abc12345 bash scripts/build-binaries.sh
 VERSION=0.3.1 \
 GIT_COMMIT=abc12345 \
 TARGET=bun-darwin-arm64 \
-OUTFILE=dist/test-archon-darwin-arm64 \
+OUTFILE=dist/test-smelter-darwin-arm64 \
 bash scripts/build-binaries.sh
 
 # Verify the binary — use the path from the mode you built:
-#   multi-target → ./dist/binaries/archon-darwin-arm64
+#   multi-target → ./dist/binaries/smelter-darwin-arm64
 #   single-target → the OUTFILE you passed above
-./dist/test-archon-darwin-arm64 version
-# Expected: Archon CLI v0.3.1, Build: binary, Git commit: abc12345
+./dist/test-smelter-darwin-arm64 version
+# Expected: Smelter CLI v0.3.1, Build: binary, Git commit: abc12345
 ```
 
 Run this **before tagging a release** to catch build-time-constant issues
@@ -65,7 +65,7 @@ Parse the arguments. The skill takes up to three:
 2. **Expected version** (optional): the version tag the release should report, e.g. `0.3.1`. If not provided, fetch it:
 
 ```bash
-gh release list --repo coleam00/Archon --limit 1 --json tagName --jq '.[0].tagName'
+gh release list --repo coleam00/Smelter --limit 1 --json tagName --jq '.[0].tagName'
 ```
 
 3. **VPS target** (only for `curl-vps`): SSH target in the form `user@host` or `host` (uses default SSH config)
@@ -79,7 +79,7 @@ About to test:
   Path:     brew (Homebrew tap on macOS)
   Version:  0.3.1 (expected)
   Cleanup:  will uninstall after tests (brew uninstall + untap)
-            If `archon-stable` symlink is detected in Phase 2, it will be
+            If `smelter-stable` symlink is detected in Phase 2, it will be
             restored at the end of Phase 5 by reinstalling the tap formula.
 
 Proceed? (y/N)
@@ -94,8 +94,8 @@ Before touching anything:
 1. Capture the current dev binary state for reference:
 
 ```bash
-which -a archon
-archon version 2>&1 | head -5
+which -a smelter
+smelter version 2>&1 | head -5
 ```
 
 Record the path and version of the dev binary so the final report can show "dev binary was untouched".
@@ -109,31 +109,31 @@ Record the path and version of the dev binary so the final report can show "dev 
 3. Confirm the release exists on GitHub:
 
 ```bash
-gh release view v<version> --repo coleam00/Archon --json tagName,assets --jq '{tag: .tagName, assetCount: (.assets | length)}'
+gh release view v<version> --repo coleam00/Smelter --json tagName,assets --jq '{tag: .tagName, assetCount: (.assets | length)}'
 ```
 
 If the release does not exist or has no assets, abort with a clear message. Do not proceed to install a non-existent release.
 
-4. **Detect persistent `archon-stable` install (brew path only).** If the user has renamed a prior brew install to `archon-stable` (the dual-homebrew pattern — see `~/.config/fish/functions/brew-upgrade-archon.fish`), Phase 5's `brew uninstall` will wipe it. Capture the state so Phase 5b can restore it:
+4. **Detect persistent `smelter-stable` install (brew path only).** If the user has renamed a prior brew install to `smelter-stable` (the dual-homebrew pattern — see `~/.config/fish/functions/brew-upgrade-smelter.fish`), Phase 5's `brew uninstall` will wipe it. Capture the state so Phase 5b can restore it:
 
 ```bash
-ARCHON_STABLE_WAS_INSTALLED=""
-if [ -L /opt/homebrew/bin/archon-stable ] || [ -L /usr/local/bin/archon-stable ]; then
-  ARCHON_STABLE_WAS_INSTALLED="yes"
-  echo "Detected persistent archon-stable — will restore after Phase 5 uninstall."
+SMELTER_STABLE_WAS_INSTALLED=""
+if [ -L /opt/homebrew/bin/smelter-stable ] || [ -L /usr/local/bin/smelter-stable ]; then
+  SMELTER_STABLE_WAS_INSTALLED="yes"
+  echo "Detected persistent smelter-stable — will restore after Phase 5 uninstall."
 fi
 ```
 
-Export `ARCHON_STABLE_WAS_INSTALLED` into the environment used by Phase 5b. Only applies to the `brew` path — `curl-mac` and `curl-vps` don't go through brew and don't disturb `archon-stable`.
+Export `SMELTER_STABLE_WAS_INSTALLED` into the environment used by Phase 5b. Only applies to the `brew` path — `curl-mac` and `curl-vps` don't go through brew and don't disturb `smelter-stable`.
 
 ## Phase 3 — Install
 
 ### Path: brew
 
 ```bash
-brew tap coleam00/archon
-brew install coleam00/archon/archon
-BINARY="$(brew --prefix coleam00/archon/archon)/bin/archon"
+brew tap coleam00/smelter
+brew install coleam00/smelter/smelter
+BINARY="$(brew --prefix coleam00/smelter/smelter)/bin/smelter"
 ```
 
 Capture `$BINARY` for Phase 4. Verify the file exists and is executable.
@@ -143,10 +143,10 @@ Capture `$BINARY` for Phase 4. Verify the file exists and is executable.
 Install to a dedicated tmp directory so the dev `bun link` binary stays on PATH unchanged:
 
 ```bash
-INSTALL_DIR=/tmp/archon-test-release-$(date +%s)
+INSTALL_DIR=/tmp/smelter-test-release-$(date +%s)
 mkdir -p "$INSTALL_DIR"
-INSTALL_DIR="$INSTALL_DIR" curl -fsSL https://raw.githubusercontent.com/coleam00/Archon/main/scripts/install.sh | bash
-BINARY="$INSTALL_DIR/archon"
+INSTALL_DIR="$INSTALL_DIR" curl -fsSL https://raw.githubusercontent.com/coleam00/Smelter/main/scripts/install.sh | bash
+BINARY="$INSTALL_DIR/smelter"
 ```
 
 Verify `$BINARY` exists and is executable. Capture the install directory for cleanup.
@@ -156,13 +156,13 @@ Verify `$BINARY` exists and is executable. Capture the install directory for cle
 Run the install script on the VPS:
 
 ```bash
-ssh <target> 'curl -fsSL https://raw.githubusercontent.com/coleam00/Archon/main/scripts/install.sh | bash'
+ssh <target> 'curl -fsSL https://raw.githubusercontent.com/coleam00/Smelter/main/scripts/install.sh | bash'
 ```
 
-Determine where the binary landed — `install.sh` uses `/usr/local/bin/archon` by default, or falls back to `$HOME/.local/bin/archon` if `/usr/local/bin` is not writable:
+Determine where the binary landed — `install.sh` uses `/usr/local/bin/smelter` by default, or falls back to `$HOME/.local/bin/smelter` if `/usr/local/bin` is not writable:
 
 ```bash
-ssh <target> 'command -v archon'
+ssh <target> 'command -v smelter'
 ```
 
 Capture the remote path as `$REMOTE_BINARY`. For the rest of Phase 4, wrap every command as `ssh <target> '<cmd>'`.
@@ -185,7 +185,7 @@ Record both for the report. The SHA256 lets us confirm later that a user reporti
 
 ## Phase 4 — Smoke tests
 
-Run these in order against `$BINARY` (or `ssh <target> $REMOTE_BINARY` for curl-vps). **Always use the full binary path, never the `archon` on PATH**, so there is no ambiguity about which binary is under test.
+Run these in order against `$BINARY` (or `ssh <target> $REMOTE_BINARY` for curl-vps). **Always use the full binary path, never the `smelter` on PATH**, so there is no ambiguity about which binary is under test.
 
 Each test should capture the full command output for the final report. If a test fails, continue to the next test (so the report is complete) but mark the overall result as FAIL.
 
@@ -198,7 +198,7 @@ Each test should capture the full command output for the final report. If a test
 **Pass criteria:**
 
 - Exit code 0
-- Output contains `Archon CLI v<expected-version>`
+- Output contains `Smelter CLI v<expected-version>`
 - Output contains `Build: binary` (not `Build: source (bun)`)
 - Output contains a non-`unknown` git commit (i.e., `Git commit: <sha>`)
 
@@ -214,7 +214,7 @@ Each test should capture the full command output for the final report. If a test
 Create a temporary git repository so the CLI has something to operate on:
 
 ```bash
-TESTREPO=/tmp/archon-test-repo-$(date +%s)
+TESTREPO=/tmp/smelter-test-repo-$(date +%s)
 mkdir -p "$TESTREPO"
 cd "$TESTREPO"
 git init -q
@@ -225,7 +225,7 @@ git commit -q --allow-empty -m init
 **Pass criteria:**
 
 - Exit code 0
-- Output lists at least 20 bundled workflows (archon-assist, archon-fix-github-issue, archon-comprehensive-pr-review, etc.)
+- Output lists at least 20 bundled workflows (smelter-assist, smelter-fix-github-issue, smelter-comprehensive-pr-review, etc.)
 - No errors about missing workflow files or JSON parse failures
 
 **Common failures:**
@@ -246,7 +246,7 @@ export CLAUDE_BIN_PATH="$HOME/.local/bin/claude"
 export CLAUDE_BIN_PATH="$(npm root -g)/@anthropic-ai/claude-code/cli.js"
 
 # Option B — config file (persistent)
-#   Add to ~/.archon/config.yaml:
+#   Add to ~/.smelter/config.yaml:
 #   assistants:
 #     claude:
 #       claudeBinaryPath: /absolute/path/to/claude
@@ -255,7 +255,7 @@ export CLAUDE_BIN_PATH="$(npm root -g)/@anthropic-ai/claude-code/cli.js"
 Then in the same `$TESTREPO`:
 
 ```bash
-"$BINARY" workflow run assist "say hello and nothing else" 2>&1 | tee /tmp/archon-test-assist.log
+"$BINARY" workflow run assist "say hello and nothing else" 2>&1 | tee /tmp/smelter-test-assist.log
 ```
 
 **Pass criteria:**
@@ -269,7 +269,7 @@ Then in the same `$TESTREPO`:
 
 - `Claude Code not found` → `CLAUDE_BIN_PATH` / `claudeBinaryPath` is unset or points at a non-existent file. Fix the path and re-run.
 - `Module not found "/Users/runner/..."` → regression of #1210: the resolver was bypassed and the SDK's `import.meta.url` fallback leaked a build-host path. Investigate `packages/providers/src/claude/provider.ts` and the resolver.
-- `Credit balance is too low` → auth is pointing at an exhausted API key (check `CLAUDE_USE_GLOBAL_AUTH` and `~/.archon/.env`)
+- `Credit balance is too low` → auth is pointing at an exhausted API key (check `CLAUDE_USE_GLOBAL_AUTH` and `~/.smelter/.env`)
 - `unable to determine transport target for "pino-pretty"` → #960 regression, binary crashes on TTY
 - `package.json not found (bad installation?)` → #961 regression, `isBinaryBuild` detection broken
 - Process exits before producing output → generic spawn failure, capture stderr
@@ -279,29 +279,29 @@ Then in the same `$TESTREPO`:
 Quickly verify the resolver fails loud when nothing is configured:
 
 ```bash
-(unset CLAUDE_BIN_PATH; "$BINARY" workflow run assist "hello" 2>&1 | tee /tmp/archon-test-no-path.log)
+(unset CLAUDE_BIN_PATH; "$BINARY" workflow run assist "hello" 2>&1 | tee /tmp/smelter-test-no-path.log)
 ```
 
-**Pass criteria (when no `~/.archon/config.yaml` configures `claudeBinaryPath`):**
+**Pass criteria (when no `~/.smelter/config.yaml` configures `claudeBinaryPath`):**
 
 - Error message contains `Claude Code not found`
 - Error message mentions both `CLAUDE_BIN_PATH` and `claudeBinaryPath` as remediation options
 - No `Module not found` stack traces referencing the CI filesystem
 
-If you *do* have `claudeBinaryPath` set globally, skip this test or temporarily rename `~/.archon/config.yaml`.
+If you *do* have `claudeBinaryPath` set globally, skip this test or temporarily rename `~/.smelter/config.yaml`.
 
 ### Test 4 — Env-leak gate refuses a leaky .env (optional, for releases including #1036/#1038/#983)
 
 Create a second throwaway repo with a fake sensitive key:
 
 ```bash
-LEAKREPO=/tmp/archon-test-leak-$(date +%s)
+LEAKREPO=/tmp/smelter-test-leak-$(date +%s)
 mkdir -p "$LEAKREPO"
 cd "$LEAKREPO"
 git init -q
 git commit -q --allow-empty -m init
 printf 'ANTHROPIC_API_KEY=sk-ant-test-fake\n' > .env
-"$BINARY" workflow run assist "hello" 2>&1 | tee /tmp/archon-test-leak.log
+"$BINARY" workflow run assist "hello" 2>&1 | tee /tmp/smelter-test-leak.log
 ```
 
 **Pass criteria:**
@@ -352,38 +352,38 @@ For `curl-vps` path, also clean up any remote test repos created via SSH.
 ### Path: brew
 
 ```bash
-brew uninstall coleam00/archon/archon
-brew untap coleam00/archon
+brew uninstall coleam00/smelter/smelter
+brew untap coleam00/smelter
 ```
 
 Verify the dev binary is still the default:
 
 ```bash
-which -a archon
-# should show only the ~/.bun/bin/archon path, not a brew path
+which -a smelter
+# should show only the ~/.bun/bin/smelter path, not a brew path
 
-archon version | head -1
+smelter version | head -1
 # should match the dev version captured in Phase 2
 ```
 
-**Restore `archon-stable` if it existed before the test** (dual-homebrew pattern — see Phase 2 item 4):
+**Restore `smelter-stable` if it existed before the test** (dual-homebrew pattern — see Phase 2 item 4):
 
 ```bash
-if [ -n "$ARCHON_STABLE_WAS_INSTALLED" ]; then
-  echo "Restoring archon-stable (detected before test)..."
-  brew tap coleam00/archon
-  brew install coleam00/archon/archon
+if [ -n "$SMELTER_STABLE_WAS_INSTALLED" ]; then
+  echo "Restoring smelter-stable (detected before test)..."
+  brew tap coleam00/smelter
+  brew install coleam00/smelter/smelter
   BREW_BIN="$(brew --prefix)/bin"
-  if [ -e "$BREW_BIN/archon" ]; then
-    mv "$BREW_BIN/archon" "$BREW_BIN/archon-stable"
-    echo "archon-stable restored: $(archon-stable version 2>/dev/null | head -1)"
+  if [ -e "$BREW_BIN/smelter" ]; then
+    mv "$BREW_BIN/smelter" "$BREW_BIN/smelter-stable"
+    echo "smelter-stable restored: $(smelter-stable version 2>/dev/null | head -1)"
   else
-    echo "WARNING: brew install succeeded but $BREW_BIN/archon missing — check formula"
+    echo "WARNING: brew install succeeded but $BREW_BIN/smelter missing — check formula"
   fi
 fi
 ```
 
-> **Note on the restored version**: this reinstalls from whatever the tap currently ships, which is typically the release you just tested (so `archon-stable` ends up at the newly-tested version). That's usually what the operator wants — you just verified the new release works, and you want `archon-stable` pointed at it. If you were testing an older version for back-version QA, the restored `archon-stable` will be the *current* tap formula, not the pre-test version. For that rare case, the operator should re-run `brew-upgrade-archon` manually after the test.
+> **Note on the restored version**: this reinstalls from whatever the tap currently ships, which is typically the release you just tested (so `smelter-stable` ends up at the newly-tested version). That's usually what the operator wants — you just verified the new release works, and you want `smelter-stable` pointed at it. If you were testing an older version for back-version QA, the restored `smelter-stable` will be the *current* tap formula, not the pre-test version. For that rare case, the operator should re-run `brew-upgrade-smelter` manually after the test.
 
 ### Path: curl-mac
 
@@ -394,7 +394,7 @@ rm -rf "$INSTALL_DIR"
 ### Path: curl-vps
 
 ```bash
-ssh <target> "sudo rm -f /usr/local/bin/archon || rm -f \$HOME/.local/bin/archon"
+ssh <target> "sudo rm -f /usr/local/bin/smelter || rm -f \$HOME/.local/bin/smelter"
 ```
 
 Optional: the user may want to LEAVE the VPS binary installed for ongoing QA. Ask before removing.
@@ -413,12 +413,12 @@ Produce a structured report with:
 Example PASS report:
 
 ```
-Test Release Report — archon v0.3.1 via brew
+Test Release Report — smelter v0.3.1 via brew
 ────────────────────────────────────────────
 Tested at:    2026-04-08 15:42 UTC
 Binary SHA:   e62eb73547b3740d56f242859b434a91d3830360a0d18f14de383da0fd7a0be6
-Binary path:  /opt/homebrew/Cellar/archon/0.3.1/bin/archon
-Dev binary:   /Users/rasmus/.bun/bin/archon → ../install/.../cli.ts (unchanged)
+Binary path:  /opt/homebrew/Cellar/smelter/0.3.1/bin/smelter
+Dev binary:   /Users/rasmus/.bun/bin/smelter → ../install/.../cli.ts (unchanged)
 
   [PASS]  Test 1  version reports 0.3.1, Build: binary, commit abc1234
   [PASS]  Test 2  workflow list returned 21 bundled workflows
@@ -437,20 +437,20 @@ This release is safe to announce. Next steps:
 Example FAIL report:
 
 ```
-Test Release Report — archon v0.3.1 via curl-vps
+Test Release Report — smelter v0.3.1 via curl-vps
 ────────────────────────────────────────────────
 Tested at:    2026-04-08 15:42 UTC
 Binary SHA:   0cf83e15e6af228e3c3473467ca30fa7525b6d7069818d85f97a115ea703d708
-Binary path:  user@vps:/usr/local/bin/archon
-Dev binary:   /Users/rasmus/.bun/bin/archon (unchanged)
+Binary path:  user@vps:/usr/local/bin/smelter
+Dev binary:   /Users/rasmus/.bun/bin/smelter (unchanged)
 
   [PASS]  Test 1  version reports 0.3.1, Build: binary
   [FAIL]  Test 2  workflow list returned 0 workflows
 
-    Command:  archon workflow list
+    Command:  smelter workflow list
     Exit:     0
     Output:
-      Discovering workflows in: /tmp/archon-test-repo-1712590923
+      Discovering workflows in: /tmp/smelter-test-repo-1712590923
       Found 0 workflow(s):
 
   [SKIP]  Test 3  SDK test skipped because Test 2 failed
@@ -484,7 +484,7 @@ Next steps:
 
 - `scripts/build-binaries.sh` — builds the binary artifacts that end up in releases
 - `.github/workflows/release.yml` — builds and publishes the binary on tag push
-- `homebrew/archon.rb` — Homebrew tap formula (updated per release)
+- `homebrew/smelter.rb` — Homebrew tap formula (updated per release)
 - `scripts/install.sh` — the curl install script
 - `scripts/install-local.sh` / `install-local.ps1` — local-file install harnesses (for pre-release QA of binaries built from a branch, not from GitHub releases)
 - `/release` skill — the release procedure itself (opposite side of the flow)

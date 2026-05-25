@@ -14,52 +14,52 @@ This chapter collects every CLI command, variable, and YAML option in one place.
 
 ## CLI Commands
 
-### `archon workflow`
+### `smelter workflow`
 
 | Command | Description |
 |---------|-------------|
-| `archon workflow list` | List all available workflows |
-| `archon workflow list --json` | Machine-readable JSON output |
-| `archon workflow run <name> "<prompt>"` | Run a workflow |
-| `archon workflow run <name> --branch <name> "<prompt>"` | Run with an explicit branch |
-| `archon workflow run <name> --no-worktree "<prompt>"` | Run in the live checkout (no isolation) |
-| `archon workflow run <name> --cwd /path "<prompt>"` | Run against a specific directory |
-| `archon workflow status` | Show status of active workflow runs |
-| `archon workflow resume <run-id>` | Resume a failed workflow run |
-| `archon workflow abandon <run-id>` | Abandon a non-terminal workflow run |
-| `archon workflow cleanup [days]` | Delete old workflow run records (default: 7 days) |
+| `smelter workflow list` | List all available workflows |
+| `smelter workflow list --json` | Machine-readable JSON output |
+| `smelter workflow run <name> "<prompt>"` | Run a workflow |
+| `smelter workflow run <name> --branch <name> "<prompt>"` | Run with an explicit branch |
+| `smelter workflow run <name> --no-worktree "<prompt>"` | Run in the live checkout (no isolation) |
+| `smelter workflow run <name> --cwd /path "<prompt>"` | Run against a specific directory |
+| `smelter workflow status` | Show status of active workflow runs |
+| `smelter workflow resume <run-id>` | Resume a failed workflow run |
+| `smelter workflow abandon <run-id>` | Abandon a non-terminal workflow run |
+| `smelter workflow cleanup [days]` | Delete old workflow run records (default: 7 days) |
 
-### `archon isolation`
-
-| Command | Description |
-|---------|-------------|
-| `archon isolation list` | List all active worktrees |
-| `archon isolation cleanup` | Remove stale worktrees (older than 7 days) |
-| `archon isolation cleanup <days>` | Remove stale worktrees older than N days |
-| `archon isolation cleanup --merged` | Remove worktrees whose branches merged into main |
-| `archon isolation cleanup --merged --include-closed` | Also remove worktrees with closed (abandoned) PRs |
-
-### `archon complete`
+### `smelter isolation`
 
 | Command | Description |
 |---------|-------------|
-| `archon complete <branch>` | Remove worktree, local branch, and remote branch |
-| `archon complete <branch> --force` | Skip uncommitted-changes check |
+| `smelter isolation list` | List all active worktrees |
+| `smelter isolation cleanup` | Remove stale worktrees (older than 7 days) |
+| `smelter isolation cleanup <days>` | Remove stale worktrees older than N days |
+| `smelter isolation cleanup --merged` | Remove worktrees whose branches merged into main |
+| `smelter isolation cleanup --merged --include-closed` | Also remove worktrees with closed (abandoned) PRs |
 
-### `archon validate`
+### `smelter complete`
 
 | Command | Description |
 |---------|-------------|
-| `archon validate workflows` | Validate all workflow definitions |
-| `archon validate workflows <name>` | Validate a single workflow |
-| `archon validate workflows <name> --json` | Machine-readable validation output |
-| `archon validate commands` | Validate all command files |
-| `archon validate commands <name>` | Validate a single command |
+| `smelter complete <branch>` | Remove worktree, local branch, and remote branch |
+| `smelter complete <branch> --force` | Skip uncommitted-changes check |
 
-### `archon version`
+### `smelter validate`
+
+| Command | Description |
+|---------|-------------|
+| `smelter validate workflows` | Validate all workflow definitions |
+| `smelter validate workflows <name>` | Validate a single workflow |
+| `smelter validate workflows <name> --json` | Machine-readable validation output |
+| `smelter validate commands` | Validate all command files |
+| `smelter validate commands <name>` | Validate a single command |
+
+### `smelter version`
 
 ```bash
-archon version
+smelter version
 ```
 
 ---
@@ -82,11 +82,11 @@ Variables are substituted at runtime in command bodies and workflow `prompt:` fi
 
 ```bash
 # Pass a module name to a command
-archon workflow run my-workflow "auth"
+smelter workflow run my-workflow "auth"
 # $ARGUMENTS = "auth", $1 = "auth"
 
 # Multi-argument
-archon workflow run my-workflow "auth refresh-tokens"
+smelter workflow run my-workflow "auth refresh-tokens"
 # $ARGUMENTS = "auth refresh-tokens", $1 = "auth", $2 = "refresh-tokens"
 ```
 
@@ -105,7 +105,7 @@ archon workflow run my-workflow "auth refresh-tokens"
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `name` | Yes | string | Identifies the workflow in `archon workflow list` |
+| `name` | Yes | string | Identifies the workflow in `smelter workflow list` |
 | `description` | Yes | string | Shown in listings and used by the router |
 | `nodes` | Yes | array | DAG nodes (see Node Options below) |
 | `provider` | No | string | Registered provider identifier (e.g. `claude`, `codex`). Default: `claude` |
@@ -121,10 +121,10 @@ All nodes share these base fields:
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
 | `id` | Yes | string | Unique node identifier; used in `depends_on` and `$nodeId.output` |
-| `command` | One of | string | Name of a command file in `.archon/commands/` |
+| `command` | One of | string | Name of a command file in `.smelter/commands/` |
 | `prompt` | One of | string | Inline AI instructions |
 | `bash` | One of | string | Shell script (runs without AI; stdout captured as `$nodeId.output`) |
-| `script` | One of | string | TypeScript/JavaScript (bun) or Python (uv) — inline or named ref to `.archon/scripts/`. Requires `runtime`. See [Script Nodes](/guides/script-nodes/) |
+| `script` | One of | string | TypeScript/JavaScript (bun) or Python (uv) — inline or named ref to `.smelter/scripts/`. Requires `runtime`. See [Script Nodes](/guides/script-nodes/) |
 | `loop` | One of | object | Loop configuration (see Loop Options below) |
 | `approval` | One of | object | Pause for human review; see [Approval Nodes](/guides/approval-nodes/) |
 | `cancel` | One of | string | Reason string; terminates the run with `cancelled` status (not `failed`). Usually gated with `when:` |
@@ -245,12 +245,12 @@ hooks:
 
 ## Directory Structure
 
-### `~/.archon/` (user-level)
+### `~/.smelter/` (user-level)
 
 ```
-~/.archon/
+~/.smelter/
 ├── config.yaml                        # Global configuration (non-secrets)
-├── archon.db                          # SQLite database (default; no DATABASE_URL needed)
+├── smelter.db                          # SQLite database (default; no DATABASE_URL needed)
 └── workspaces/
     └── <owner>/
         └── <repo>/
@@ -260,10 +260,10 @@ hooks:
             └── logs/                  # Workflow execution logs (JSONL)
 ```
 
-### `.archon/` (repo-level)
+### `.smelter/` (repo-level)
 
 ```
-.archon/
+.smelter/
 ├── config.yaml                        # Repo-specific configuration
 ├── commands/                          # Custom command files (*.md)
 │   └── my-command.md
@@ -271,10 +271,10 @@ hooks:
     └── my-workflow.yaml
 ```
 
-**Bundled defaults** — built-in commands and workflows ship with Archon and load automatically. Repo-level files with the same name override the bundled version. To disable defaults entirely:
+**Bundled defaults** — built-in commands and workflows ship with Smelter and load automatically. Repo-level files with the same name override the bundled version. To disable defaults entirely:
 
 ```yaml
-# .archon/config.yaml
+# .smelter/config.yaml
 defaults:
   loadDefaultCommands: false
   loadDefaultWorkflows: false
@@ -288,48 +288,48 @@ defaults:
 
 | Error | Likely Cause | Fix |
 |-------|-------------|-----|
-| `Workflow "X" not found` | YAML file not discovered | Check file is in `.archon/workflows/` and `archon workflow list` shows it |
-| `Command "X" not found` | Command file missing | Check `.archon/commands/X.md` exists and `archon validate commands X` passes |
-| `Routing unclear — falling back to archon-assist` | No workflow matched the input | Use an explicit workflow name: `archon workflow run my-workflow "..."` |
-| `Worktree already exists for branch X` | Prior run left a worktree | Run `archon complete X` or `archon isolation cleanup` |
+| `Workflow "X" not found` | YAML file not discovered | Check file is in `.smelter/workflows/` and `smelter workflow list` shows it |
+| `Command "X" not found` | Command file missing | Check `.smelter/commands/X.md` exists and `smelter validate commands X` passes |
+| `Routing unclear — falling back to smelter-assist` | No workflow matched the input | Use an explicit workflow name: `smelter workflow run my-workflow "..."` |
+| `Worktree already exists for branch X` | Prior run left a worktree | Run `smelter complete X` or `smelter isolation cleanup` |
 | `Not a git repository` | Running outside a repo | `cd` into a git repo first — workflow and isolation commands require one |
 | `Unknown provider 'X'. Registered: claude, codex, pi` | Typo in `provider:` (workflow root or node-level) | Set `provider:` to one of the registered ids. Model strings themselves are not validated at load time — the SDK rejects unknown models at request time. |
-| `$BASE_BRANCH referenced but could not be detected` | No base branch set and auto-detection failed | Set `worktree.baseBranch` in `.archon/config.yaml` or ensure `main`/`master` exists |
+| `$BASE_BRANCH referenced but could not be detected` | No base branch set and auto-detection failed | Set `worktree.baseBranch` in `.smelter/config.yaml` or ensure `main`/`master` exists |
 | Workflow hangs with no output | Node idle timeout hit | Increase `idle_timeout` on the node (milliseconds) |
 
 ### Debug Techniques
 
-**See what Archon found:**
+**See what Smelter found:**
 ```bash
-archon workflow list          # Are your workflows loaded?
-archon validate workflows     # Any YAML errors?
-archon isolation list         # Any stale worktrees?
+smelter workflow list          # Are your workflows loaded?
+smelter validate workflows     # Any YAML errors?
+smelter isolation list         # Any stale worktrees?
 ```
 
 **Enable verbose logging:**
 ```bash
-archon --verbose workflow run my-workflow "..."
+smelter --verbose workflow run my-workflow "..."
 ```
 
 **Check execution logs** — each run writes a JSONL log:
 ```
-~/.archon/workspaces/<owner>/<repo>/logs/
+~/.smelter/workspaces/<owner>/<repo>/logs/
 ```
 
 **Run without isolation** to simplify debugging:
 ```bash
-archon workflow run my-workflow --no-worktree "..."
+smelter workflow run my-workflow --no-worktree "..."
 ```
 
 **Test a command directly** before embedding it in a workflow:
 ```bash
-archon workflow run archon-assist "/command-invoke my-command some-arg"
+smelter workflow run smelter-assist "/command-invoke my-command some-arg"
 ```
 
 ### Getting Help
 
-- **Validate your YAML**: `archon validate workflows my-workflow`
-- **Check the logs**: `~/.archon/workspaces/<owner>/<repo>/logs/`
+- **Validate your YAML**: `smelter validate workflows my-workflow`
+- **Check the logs**: `~/.smelter/workspaces/<owner>/<repo>/logs/`
 - **Report issues**: [github.com/anthropics/claude-code/issues](https://github.com/anthropics/claude-code/issues)
 
 ---

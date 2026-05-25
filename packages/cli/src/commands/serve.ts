@@ -1,6 +1,6 @@
 import { dirname } from 'path';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'fs';
-import { createLogger, getWebDistDir, BUNDLED_IS_BINARY, BUNDLED_VERSION } from '@archon/paths';
+import { createLogger, getWebDistDir, BUNDLED_IS_BINARY, BUNDLED_VERSION } from '@smelter/paths';
 
 const log = createLogger('cli.serve');
 
@@ -56,7 +56,7 @@ export async function serveCommand(opts: ServeOptions): Promise<number> {
 
   // Import server and start (dynamic import keeps CLI startup fast for other commands)
   try {
-    const { startServer } = await import('@archon/server');
+    const { startServer } = await import('@smelter/server');
     await startServer({
       webDistPath: webDistDir,
       port: opts.port,

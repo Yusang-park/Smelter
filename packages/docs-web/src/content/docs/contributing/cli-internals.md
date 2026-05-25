@@ -1,6 +1,6 @@
 ---
 title: CLI Internals
-description: Technical reference for the Archon CLI package — entry point flow, command routing, worktree logic, and adapter details.
+description: Technical reference for the Smelter CLI package — entry point flow, command routing, worktree logic, and adapter details.
 category: contributing
 area: cli
 audience: [developer]
@@ -18,22 +18,22 @@ packages/cli/
 ├── src/
 │   ├── cli.ts              # Entry point, argument parsing, routing
 │   ├── commands/
-│   │   ├── workflow.ts     # workflow list/run (approve/reject/status/resume/abandon delegate to @archon/core/operations)
-│   │   ├── isolation.ts    # isolation list/cleanup (list/merged-cleanup delegate to @archon/core/operations)
+│   │   ├── workflow.ts     # workflow list/run (approve/reject/status/resume/abandon delegate to @smelter/core/operations)
+│   │   ├── isolation.ts    # isolation list/cleanup (list/merged-cleanup delegate to @smelter/core/operations)
 │   │   ├── setup.ts        # setup command implementation
 │   │   ├── chat.ts         # chat command implementation
 │   │   ├── validate.ts     # validate command implementation
 │   │   └── version.ts      # version command
 │   └── adapters/
 │       └── cli-adapter.ts  # IPlatformAdapter for stdout
-└── package.json            # Defines "archon" binary
+└── package.json            # Defines "smelter" binary
 ```
 
 ## Entry Point Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ archon <command> [subcommand] [options] [arguments]             │
+│ smelter <command> [subcommand] [options] [arguments]             │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -41,15 +41,15 @@ packages/cli/
 │ strip-cwd-env-boot  (first import, side-effect)                 │
 │   stripCwdEnv(): deletes Bun-auto-loaded <cwd>/.env* keys from  │
 │   process.env + CLAUDE_CODE_* session markers. Emits            │
-│   [archon] stripped N keys from <cwd> (...) when N > 0.         │
+│   [smelter] stripped N keys from <cwd> (...) when N > 0.         │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ loadArchonEnv(cwd)  — both loads use override: true             │
-│   1. ~/.archon/.env        (home scope)                         │
-│   2. <cwd>/.archon/.env    (repo scope, wins over home)         │
-│   Emits one [archon] loaded N keys from <path> line per file    │
+│ loadSmelterEnv(cwd)  — both loads use override: true             │
+│   1. ~/.smelter/.env        (home scope)                         │
+│   2. <cwd>/.smelter/.env    (repo scope, wins over home)         │
+│   Emits one [smelter] loaded N keys from <path> line per file    │
 │   when N > 0.                                                   │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
@@ -92,7 +92,7 @@ packages/cli/
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ archon workflow list [--json]                                    │
+│ smelter workflow list [--json]                                    │
 └──────────────────────────────┬───────────────────────────────────┘
                                │
                                ▼
@@ -102,10 +102,10 @@ packages/cli/
                                │
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ @archon/workflows/workflow-discovery                              │
+│ @smelter/workflows/workflow-discovery                              │
 │ discoverWorkflowsWithConfig(cwd, config)                          │
 │ - Loads bundled defaults                                         │
-│ - Searches .archon/workflows/ recursively                        │
+│ - Searches .smelter/workflows/ recursively                        │
 │ - Merges (repo overrides defaults by name)                       │
 └──────────────────────────────┬───────────────────────────────────┘
                                │
@@ -126,7 +126,7 @@ packages/cli/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ archon workflow run <name> [message] [--branch X] [--from X] [--no-worktree]│
+│ smelter workflow run <name> [message] [--branch X] [--from X] [--no-worktree]│
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -193,7 +193,7 @@ packages/cli/
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ archon workflow event emit --run-id <uuid> --type <type> [...]   │
+│ smelter workflow event emit --run-id <uuid> --type <type> [...]   │
 └──────────────────────────────┬───────────────────────────────────┘
                                │
                                ▼
@@ -221,7 +221,7 @@ packages/cli/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ archon isolation list                                           │
+│ smelter isolation list                                           │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -231,7 +231,7 @@ packages/cli/
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ @archon/core isolationDb.listAllActiveWithCodebase()            │
+│ @smelter/core isolationDb.listAllActiveWithCodebase()            │
 │ - Joins isolation_environments with codebases                   │
 │ - Returns: path, branch, workflow_type, codebase_name,          │
 │            platform, days_since_activity                        │
@@ -251,7 +251,7 @@ packages/cli/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ archon isolation cleanup [days]                                 │
+│ smelter isolation cleanup [days]                                 │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -262,7 +262,7 @@ packages/cli/
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ @archon/core isolationDb.findStaleEnvironments(days)            │
+│ @smelter/core isolationDb.findStaleEnvironments(days)            │
 │ - WHERE last_activity_at < now - days                           │
 │ - Excludes telegram platform                                    │
 └─────────────────────────────────┬───────────────────────────────┘
@@ -284,7 +284,7 @@ packages/cli/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ archon isolation cleanup --merged [--include-closed]            │
+│ smelter isolation cleanup --merged [--include-closed]            │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -348,14 +348,14 @@ Implements `IPlatformAdapter` for terminal output.
 
 | Function | Package | Location | Purpose |
 |----------|---------|----------|---------|
-| `discoverWorkflowsWithConfig(cwd, config)` | `@archon/workflows/workflow-discovery` | `workflows/src/workflow-discovery.ts` | Find and parse workflow YAML |
-| `executeWorkflow(...)` | `@archon/workflows/executor` | `workflows/src/executor.ts` | Run workflow steps |
-| `getIsolationProvider()` | `@archon/isolation` | `isolation/src/factory.ts` | Get WorktreeProvider singleton |
-| `conversationDb.*` | `@archon/core` | `core/src/db/conversations.ts` | Conversation CRUD |
-| `codebaseDb.*` | `@archon/core` | `core/src/db/codebases.ts` | Codebase CRUD |
-| `isolationDb.*` | `@archon/core` | `core/src/db/isolation-environments.ts` | Worktree tracking |
-| `git.*` | `@archon/git` | `packages/git/src/` | Git operations |
-| `closeDatabase()` | `@archon/core` | `core/src/db/connection.ts` | Clean shutdown |
+| `discoverWorkflowsWithConfig(cwd, config)` | `@smelter/workflows/workflow-discovery` | `workflows/src/workflow-discovery.ts` | Find and parse workflow YAML |
+| `executeWorkflow(...)` | `@smelter/workflows/executor` | `workflows/src/executor.ts` | Run workflow steps |
+| `getIsolationProvider()` | `@smelter/isolation` | `isolation/src/factory.ts` | Get WorktreeProvider singleton |
+| `conversationDb.*` | `@smelter/core` | `core/src/db/conversations.ts` | Conversation CRUD |
+| `codebaseDb.*` | `@smelter/core` | `core/src/db/codebases.ts` | Codebase CRUD |
+| `isolationDb.*` | `@smelter/core` | `core/src/db/isolation-environments.ts` | Worktree tracking |
+| `git.*` | `@smelter/git` | `packages/git/src/` | Git operations |
+| `closeDatabase()` | `@smelter/core` | `core/src/db/connection.ts` | Clean shutdown |
 
 ---
 
@@ -378,7 +378,7 @@ When `--branch` is provided:
 3. **Reuse:** If found and healthy (warns if `--from` was specified but not applied)
 4. **Create:** If not found or unhealthy -- passes `fromBranch` to provider if specified via `--from`
 
-Worktrees stored at: `~/.archon/workspaces/<owner>/<repo>/worktrees/<branch-slug>/`
+Worktrees stored at: `~/.smelter/workspaces/<owner>/<repo>/worktrees/<branch-slug>/`
 
 **Code:** `packages/cli/src/commands/workflow.ts:177-219`
 
@@ -397,7 +397,7 @@ Worktrees stored at: `~/.archon/workspaces/<owner>/<repo>/worktrees/<branch-slug
 
 - Connection opened on first database call
 - Always closed in `finally` block after command completes
-- **Default: SQLite** at `~/.archon/archon.db` (zero setup, auto-initialized)
+- **Default: SQLite** at `~/.smelter/smelter.db` (zero setup, auto-initialized)
 - **Optional: PostgreSQL** when `DATABASE_URL` is set (for cloud/advanced deployments)
 
 **Code:** `packages/cli/src/cli.ts`

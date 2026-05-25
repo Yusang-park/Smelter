@@ -1,5 +1,5 @@
 {
-  "name": "@archon/web",
+  "name": "@smelter/web",
   "version": "0.3.10",
   "private": true,
   "type": "module",

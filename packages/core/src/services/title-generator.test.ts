@@ -5,7 +5,7 @@ import type { MessageChunk } from '../types';
 // ─── Mock setup (BEFORE importing module under test) ─────────────────────────
 
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
@@ -36,7 +36,7 @@ const mockGetAgentProvider = mock(() => ({
   getType: () => 'claude',
 }));
 
-mock.module('@archon/providers', () => ({
+mock.module('@smelter/providers', () => ({
   getAgentProvider: mockGetAgentProvider,
 }));
 
@@ -120,11 +120,11 @@ describe('title-generator', () => {
   });
 
   test('includes workflow name in prompt when provided', async () => {
-    await generateAndSetTitle('conv-6', 'Add dark mode', 'claude', '/tmp', 'archon-plan');
+    await generateAndSetTitle('conv-6', 'Add dark mode', 'claude', '/tmp', 'smelter-plan');
 
     // Verify the prompt passed to sendQuery includes the workflow name
     const promptArg = mockSendQuery.mock.calls[0][0] as string;
-    expect(promptArg).toContain('Workflow: archon-plan');
+    expect(promptArg).toContain('Workflow: smelter-plan');
   });
 
   test('does not include workflow context when workflowName not provided', async () => {

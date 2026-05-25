@@ -112,7 +112,7 @@ export function QuickAddPicker({
               setInputValue(e.target.value);
             }}
             onKeyDown={handleInputKeyDown}
-            placeholder={isSkill ? 'remotion-best-practices' : '.archon/mcp/ntfy.json'}
+            placeholder={isSkill ? 'remotion-best-practices' : '.smelter/mcp/ntfy.json'}
             className="w-full bg-surface border border-border rounded px-2 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary font-mono focus:outline-none focus:border-primary"
           />
           <button

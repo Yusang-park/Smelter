@@ -13,27 +13,27 @@ import { homedir } from 'os';
 async function importFresh() {
   // Clear the module from cache by deleting it from Loader registry
   const modulePath = require.resolve('./path-validation');
-  const archonPathsModulePath = require.resolve('@archon/paths');
+  const smelterPathsModulePath = require.resolve('@smelter/paths');
   delete require.cache[modulePath];
-  delete require.cache[archonPathsModulePath];
+  delete require.cache[smelterPathsModulePath];
   return import('./path-validation');
 }
 
-// Default archon workspaces path
+// Default smelter workspaces path
 function getDefaultWorkspacesPath(): string {
-  return join(homedir(), '.archon', 'workspaces');
+  return join(homedir(), '.smelter', 'workspaces');
 }
 
 describe('path-validation', () => {
   const originalWorkspacePath = process.env.WORKSPACE_PATH;
-  const originalArchonHome = process.env.ARCHON_HOME;
-  const originalArchonDocker = process.env.ARCHON_DOCKER;
+  const originalSmelterHome = process.env.SMELTER_HOME;
+  const originalSmelterDocker = process.env.SMELTER_DOCKER;
 
   beforeEach(() => {
     // Reset to default for consistent test behavior (clear Docker detection too)
     delete process.env.WORKSPACE_PATH;
-    delete process.env.ARCHON_HOME;
-    delete process.env.ARCHON_DOCKER;
+    delete process.env.SMELTER_HOME;
+    delete process.env.SMELTER_DOCKER;
   });
 
   afterAll(() => {
@@ -43,20 +43,20 @@ describe('path-validation', () => {
     } else {
       delete process.env.WORKSPACE_PATH;
     }
-    if (originalArchonHome !== undefined) {
-      process.env.ARCHON_HOME = originalArchonHome;
+    if (originalSmelterHome !== undefined) {
+      process.env.SMELTER_HOME = originalSmelterHome;
     } else {
-      delete process.env.ARCHON_HOME;
+      delete process.env.SMELTER_HOME;
     }
-    if (originalArchonDocker !== undefined) {
-      process.env.ARCHON_DOCKER = originalArchonDocker;
+    if (originalSmelterDocker !== undefined) {
+      process.env.SMELTER_DOCKER = originalSmelterDocker;
     } else {
-      delete process.env.ARCHON_DOCKER;
+      delete process.env.SMELTER_DOCKER;
     }
   });
 
   describe('isPathWithinWorkspace', () => {
-    test('should allow paths within default archon workspaces', async () => {
+    test('should allow paths within default smelter workspaces', async () => {
       const { isPathWithinWorkspace } = await importFresh();
       const defaultPath = getDefaultWorkspacesPath();
       expect(isPathWithinWorkspace(`${defaultPath}/repo`)).toBe(true);
@@ -94,10 +94,10 @@ describe('path-validation', () => {
       expect(isPathWithinWorkspace(`${defaultPath}-other`)).toBe(false);
     });
 
-    test('should use ARCHON_HOME env var when set', async () => {
-      process.env.ARCHON_HOME = '/custom/archon';
+    test('should use SMELTER_HOME env var when set', async () => {
+      process.env.SMELTER_HOME = '/custom/smelter';
       const { isPathWithinWorkspace } = await importFresh();
-      expect(isPathWithinWorkspace('/custom/archon/workspaces/repo')).toBe(true);
+      expect(isPathWithinWorkspace('/custom/smelter/workspaces/repo')).toBe(true);
       const defaultPath = getDefaultWorkspacesPath();
       expect(isPathWithinWorkspace(`${defaultPath}/repo`)).toBe(false); // Default path now rejected
     });
@@ -136,13 +136,13 @@ describe('path-validation', () => {
       );
     });
 
-    test('should use custom ARCHON_HOME for validation and error message', async () => {
-      process.env.ARCHON_HOME = '/my/custom/archon';
+    test('should use custom SMELTER_HOME for validation and error message', async () => {
+      process.env.SMELTER_HOME = '/my/custom/smelter';
       const { validateAndResolvePath } = await importFresh();
-      const customWorkspace = resolve('/my/custom/archon/workspaces');
+      const customWorkspace = resolve('/my/custom/smelter/workspaces');
       // Valid path under custom workspace
-      expect(validateAndResolvePath('/my/custom/archon/workspaces/repo')).toBe(
-        resolve('/my/custom/archon/workspaces/repo')
+      expect(validateAndResolvePath('/my/custom/smelter/workspaces/repo')).toBe(
+        resolve('/my/custom/smelter/workspaces/repo')
       );
       // Path under default workspace should now throw with custom workspace in message
       const defaultPath = getDefaultWorkspacesPath();

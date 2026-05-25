@@ -117,8 +117,8 @@ RUN useradd -m -u 1001 -s /bin/bash appuser \
     && chown -R appuser:appuser /app
 
 # Create compatibility data directories
-RUN mkdir -p /.archon/workspaces /.archon/worktrees \
-    && chown -R appuser:appuser /.archon
+RUN mkdir -p /.smelter/workspaces /.smelter/worktrees \
+    && chown -R appuser:appuser /.smelter
 
 # Copy root package files and lockfile
 COPY package.json bun.lock ./
@@ -157,7 +157,7 @@ COPY packages/workflows/ ./packages/workflows/
 COPY --from=web-build /app/packages/web/dist/ ./packages/web/dist/
 
 # Copy config, migrations, and bundled defaults
-COPY .archon/ ./.archon/
+COPY .smelter/ ./.smelter/
 COPY migrations/ ./migrations/
 COPY tsconfig*.json ./
 
@@ -168,10 +168,10 @@ RUN chown -R appuser:appuser /app
 RUN mkdir -p /home/appuser/.codex && chown appuser:appuser /home/appuser/.codex
 
 # Configure git to trust Smelter-managed directories (as appuser)
-RUN gosu appuser git config --global --add safe.directory '/.archon/workspaces' && \
-    gosu appuser git config --global --add safe.directory '/.archon/workspaces/*' && \
-    gosu appuser git config --global --add safe.directory '/.archon/worktrees' && \
-    gosu appuser git config --global --add safe.directory '/.archon/worktrees/*'
+RUN gosu appuser git config --global --add safe.directory '/.smelter/workspaces' && \
+    gosu appuser git config --global --add safe.directory '/.smelter/workspaces/*' && \
+    gosu appuser git config --global --add safe.directory '/.smelter/worktrees' && \
+    gosu appuser git config --global --add safe.directory '/.smelter/worktrees/*'
 
 # Copy entrypoint script (fixes volume permissions, drops to appuser)
 # sed strips Windows CRLF in case .gitattributes eol=lf was bypassed

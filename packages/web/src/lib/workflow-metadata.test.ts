@@ -44,7 +44,7 @@ NOT for: Feature requests, enhancements, or non-bug work. Only for bugs/problems
     expect(result.constraints).toContain('Feature requests');
   });
 
-  test('handles "Handles:" and "Capability:" fallbacks (archon-assist style)', () => {
+  test('handles "Handles:" and "Capability:" fallbacks (smelter-assist style)', () => {
     const description = `Use when: No other workflow matches the request.
 Handles: Questions, debugging, exploration, one-off tasks, explanations, CI failures, general help.
 Capability: Full Claude Code agent with all tools available.
@@ -115,51 +115,53 @@ NOT for: Creating plans (plans should be created separately), bug fixes, code re
 });
 
 describe('getWorkflowDisplayName', () => {
-  test('strips archon- prefix and converts to title case', () => {
-    expect(getWorkflowDisplayName('archon-create-issue')).toBe('Create Issue');
-    expect(getWorkflowDisplayName('archon-feature-development')).toBe('Feature Development');
+  test('strips smelter- prefix and converts to title case', () => {
+    expect(getWorkflowDisplayName('smelter-create-issue')).toBe('Create Issue');
+    expect(getWorkflowDisplayName('smelter-feature-development')).toBe('Feature Development');
   });
 
   test('preserves known acronyms (PR, CI, DAG)', () => {
-    expect(getWorkflowDisplayName('archon-comprehensive-pr-review')).toBe(
+    expect(getWorkflowDisplayName('smelter-comprehensive-pr-review')).toBe(
       'Comprehensive PR Review'
     );
-    expect(getWorkflowDisplayName('archon-ralph-dag')).toBe('Ralph DAG');
-    expect(getWorkflowDisplayName('archon-interactive-prd')).toBe('Interactive PRD');
+    expect(getWorkflowDisplayName('smelter-ralph-dag')).toBe('Ralph DAG');
+    expect(getWorkflowDisplayName('smelter-interactive-prd')).toBe('Interactive PRD');
   });
 
-  test('handles names without archon- prefix', () => {
+  test('handles names without smelter- prefix', () => {
     expect(getWorkflowDisplayName('my-custom-workflow')).toBe('My Custom Workflow');
   });
 
   test('handles single-word names', () => {
-    expect(getWorkflowDisplayName('archon-assist')).toBe('Assist');
+    expect(getWorkflowDisplayName('smelter-assist')).toBe('Assist');
   });
 });
 
 describe('getWorkflowCategory', () => {
   test('categorizes review workflows', () => {
-    expect(getWorkflowCategory('archon-comprehensive-pr-review', 'Review a PR')).toBe(
+    expect(getWorkflowCategory('smelter-comprehensive-pr-review', 'Review a PR')).toBe(
       'Code Review'
     );
-    expect(getWorkflowCategory('archon-smart-pr-review', 'Smart PR review')).toBe('Code Review');
+    expect(getWorkflowCategory('smelter-smart-pr-review', 'Smart PR review')).toBe('Code Review');
   });
 
   test('categorizes automation workflows', () => {
-    expect(getWorkflowCategory('archon-create-issue', 'Create GitHub issue')).toBe('Automation');
-    expect(getWorkflowCategory('archon-ralph-dag', 'Ralph implementation loop')).toBe('Automation');
-    expect(getWorkflowCategory('archon-refactor-safely', 'Refactor code safely')).toBe(
+    expect(getWorkflowCategory('smelter-create-issue', 'Create GitHub issue')).toBe('Automation');
+    expect(getWorkflowCategory('smelter-ralph-dag', 'Ralph implementation loop')).toBe(
+      'Automation'
+    );
+    expect(getWorkflowCategory('smelter-refactor-safely', 'Refactor code safely')).toBe(
       'Automation'
     );
   });
 
   test('categorizes CI/CD workflows', () => {
-    expect(getWorkflowCategory('archon-validate-pr', 'Validate PR checks')).toBe('CI/CD');
-    expect(getWorkflowCategory('archon-test-loop-dag', 'Run test loop')).toBe('CI/CD');
+    expect(getWorkflowCategory('smelter-validate-pr', 'Validate PR checks')).toBe('CI/CD');
+    expect(getWorkflowCategory('smelter-test-loop-dag', 'Run test loop')).toBe('CI/CD');
   });
 
   test('does not miscategorize workflows with "ci" as substring', () => {
-    expect(getWorkflowCategory('archon-decision-tree', 'Routes decisions')).toBe('Development');
+    expect(getWorkflowCategory('smelter-decision-tree', 'Routes decisions')).toBe('Development');
     expect(getWorkflowCategory('special-analyzer', 'Classifies problem area')).toBe('Development');
   });
 
@@ -168,11 +170,11 @@ describe('getWorkflowCategory', () => {
   });
 
   test('categorizes development workflows', () => {
-    expect(getWorkflowCategory('archon-feature-development', 'Implement a feature')).toBe(
+    expect(getWorkflowCategory('smelter-feature-development', 'Implement a feature')).toBe(
       'Development'
     );
-    expect(getWorkflowCategory('archon-assist', 'General help')).toBe('Development');
-    expect(getWorkflowCategory('archon-idea-to-pr', 'From idea to PR')).toBe('Development');
+    expect(getWorkflowCategory('smelter-assist', 'General help')).toBe('Development');
+    expect(getWorkflowCategory('smelter-idea-to-pr', 'From idea to PR')).toBe('Development');
   });
 });
 
@@ -181,7 +183,7 @@ describe('getWorkflowTags', () => {
     const parsed = parseWorkflowDescription(
       'Use when: Reviewing a GitHub PR.\nDoes: Runs parallel agents to review.'
     );
-    const tags = getWorkflowTags('archon-comprehensive-pr-review', parsed);
+    const tags = getWorkflowTags('smelter-comprehensive-pr-review', parsed);
 
     expect(tags).toContain('GitHub');
     expect(tags).toContain('Review');
@@ -196,7 +198,7 @@ describe('getWorkflowTags', () => {
 
   test('deduplicates tags', () => {
     const parsed = parseWorkflowDescription('Does: review PR on GitHub for GitHub issues');
-    const tags = getWorkflowTags('archon-pr-review', parsed);
+    const tags = getWorkflowTags('smelter-pr-review', parsed);
     const githubCount = tags.filter(t => t === 'GitHub').length;
     expect(githubCount).toBeLessThanOrEqual(1);
   });
@@ -209,7 +211,7 @@ describe('getWorkflowTags', () => {
 
   test('falls back to inference when no explicit tags', () => {
     const parsed = parseWorkflowDescription('Does: review PR on GitHub');
-    const tags = getWorkflowTags('archon-pr-review', parsed, undefined);
+    const tags = getWorkflowTags('smelter-pr-review', parsed, undefined);
     expect(tags).toContain('GitHub');
     expect(tags).toContain('Review');
   });
@@ -222,31 +224,31 @@ describe('getWorkflowTags', () => {
 
   test('explicit empty array suppresses inference', () => {
     const parsed = parseWorkflowDescription('Does: review PR on GitHub');
-    const tags = getWorkflowTags('archon-pr-review', parsed, []);
+    const tags = getWorkflowTags('smelter-pr-review', parsed, []);
     expect(tags).toEqual([]);
   });
 });
 
 describe('getWorkflowIconName', () => {
   test('maps issue/bug workflows to Bug icon', () => {
-    expect(getWorkflowIconName('archon-create-issue', 'Automation')).toBe('Bug');
-    expect(getWorkflowIconName('archon-fix-github-issue', 'Automation')).toBe('Bug');
+    expect(getWorkflowIconName('smelter-create-issue', 'Automation')).toBe('Bug');
+    expect(getWorkflowIconName('smelter-fix-github-issue', 'Automation')).toBe('Bug');
   });
 
   test('maps review workflows to Eye icon', () => {
-    expect(getWorkflowIconName('archon-comprehensive-pr-review', 'Code Review')).toBe('Eye');
+    expect(getWorkflowIconName('smelter-comprehensive-pr-review', 'Code Review')).toBe('Eye');
   });
 
   test('maps conflict workflows to GitMerge icon', () => {
-    expect(getWorkflowIconName('archon-resolve-conflicts', 'Automation')).toBe('GitMerge');
+    expect(getWorkflowIconName('smelter-resolve-conflicts', 'Automation')).toBe('GitMerge');
   });
 
   test('maps feature workflows to Rocket icon', () => {
-    expect(getWorkflowIconName('archon-feature-development', 'Development')).toBe('Rocket');
+    expect(getWorkflowIconName('smelter-feature-development', 'Development')).toBe('Rocket');
   });
 
   test('maps ralph to Bot icon', () => {
-    expect(getWorkflowIconName('archon-ralph-dag', 'Automation')).toBe('Bot');
+    expect(getWorkflowIconName('smelter-ralph-dag', 'Automation')).toBe('Bot');
   });
 
   test('falls back to category-based icon', () => {

@@ -62,7 +62,7 @@ Look for:
 - Does it cross package boundaries?
 - Are there related issues or symptoms?
 
-**Archon-specific considerations:**
+**Smelter-specific considerations:**
 - Session state machine transitions — is a transition trigger missing?
 - Mock.module() test isolation — could test pollution mask the issue?
 - SSE streaming — could event ordering or connection drops cause this?
@@ -98,7 +98,7 @@ Save analysis as: `.agents/rca/issue-$ARGUMENTS.md`
 - **GitHub Issue ID**: #$ARGUMENTS
 - **Title**: [Issue title]
 - **Severity**: [P0/P1/P2/P3]
-- **Affected Packages**: [list of @archon/* packages]
+- **Affected Packages**: [list of @smelter/* packages]
 
 ## Problem Description
 [Clear description]
@@ -111,7 +111,7 @@ Save analysis as: `.agents/rca/issue-$ARGUMENTS.md`
 ### Affected Components
 - **Files**: [list with full paths]
 - **Functions**: [specific code locations with file:line]
-- **Packages**: [which @archon/* packages are involved]
+- **Packages**: [which @smelter/* packages are involved]
 
 ### Analysis
 [Detailed explanation with code references]

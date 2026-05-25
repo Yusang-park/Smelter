@@ -9,7 +9,7 @@ import {
   copyWorktreeFiles,
   isPathWithinRoot,
   type CopyFileEntry,
-} from '@archon/isolation';
+} from '@smelter/isolation';
 
 describe('worktree-copy', () => {
   describe('parseCopyFileEntry', () => {
@@ -306,7 +306,7 @@ describe('worktree-copy', () => {
         .mockResolvedValueOnce({ isDirectory: () => false } as Stats)
         .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
-      const result = await copyWorktreeFiles('/repo', '/worktree', ['.env', '.archon']);
+      const result = await copyWorktreeFiles('/repo', '/worktree', ['.env', '.smelter']);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ source: '.env', destination: '.env' });

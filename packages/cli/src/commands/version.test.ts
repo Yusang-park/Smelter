@@ -2,7 +2,7 @@
  * Tests for version command
  */
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
-import * as git from '@archon/git';
+import * as git from '@smelter/git';
 import { versionCommand } from './version';
 
 describe('versionCommand', () => {

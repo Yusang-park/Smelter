@@ -5,7 +5,7 @@
 #
 # Options (via environment variables):
 #   $env:VERSION       - Specific version to install (default: latest)
-#   $env:INSTALL_DIR   - Installation directory (default: $env:USERPROFILE\.archon\bin)
+#   $env:INSTALL_DIR   - Installation directory (default: $env:USERPROFILE\.smelter\bin)
 #   $env:SKIP_CHECKSUM - Set to "true" to skip checksum verification (not recommended)
 #
 # Examples:
@@ -28,7 +28,7 @@ $ErrorActionPreference = 'Stop'
 $REPO         = "Yusang-park/Smelter"
 $BINARY_NAME  = "smelter"
 $VERSION      = if ($env:VERSION)     { $env:VERSION }     else { "latest" }
-$INSTALL_DIR  = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:USERPROFILE\.archon\bin" }
+$INSTALL_DIR  = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:USERPROFILE\.smelter\bin" }
 $SKIP_CHECKSUM = ($env:SKIP_CHECKSUM -eq "true")
 
 # ---------------------------------------------------------------------------

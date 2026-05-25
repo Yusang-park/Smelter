@@ -1,6 +1,6 @@
 ---
 title: Telegram
-description: Connect Archon to Telegram using the Bot API for mobile and desktop access.
+description: Connect Smelter to Telegram using the Bot API for mobile and desktop access.
 category: adapters
 area: adapters
 audience: [user, operator]
@@ -9,11 +9,11 @@ sidebar:
   order: 3
 ---
 
-Connect Archon to Telegram so you can interact with your AI coding assistant from any Telegram client.
+Connect Smelter to Telegram so you can interact with your AI coding assistant from any Telegram client.
 
 ## Prerequisites
 
-- Archon server running (see [Getting Started](/getting-started/))
+- Smelter server running (see [Getting Started](/getting-started/))
 - A Telegram account
 
 ## Create Telegram Bot

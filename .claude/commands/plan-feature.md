@@ -1,15 +1,15 @@
 ---
-description: Create a comprehensive implementation plan for an Archon feature
+description: Create a comprehensive implementation plan for an Smelter feature
 argument-hint: <feature-name-or-description>
 ---
 
-# Plan Feature: Comprehensive Archon Implementation Planning
+# Plan Feature: Comprehensive Smelter Implementation Planning
 
 ## Objective
 
 Produce a detailed, actionable implementation plan for: **$ARGUMENTS**
 
-The plan will be saved to `.claude/archon/plans/{kebab-case-name}.md` and is designed to be
+The plan will be saved to `.claude/smelter/plans/{kebab-case-name}.md` and is designed to be
 consumed by the `/execute` command.
 
 ---
@@ -105,7 +105,7 @@ Before writing tasks, reason through:
 
 ## Phase 5: Plan Generation
 
-Generate the implementation plan at `.claude/archon/plans/{kebab-case-feature-name}.md`:
+Generate the implementation plan at `.claude/smelter/plans/{kebab-case-feature-name}.md`:
 
 ```markdown
 # Plan: {Feature Name}
@@ -119,7 +119,7 @@ Generate the implementation plan at `.claude/archon/plans/{kebab-case-feature-na
 - [ ] Passes `bun run validate` (type-check + lint + format + tests)
 
 ## Affected Packages
-- `@archon/{package}` — {what changes}
+- `@smelter/{package}` — {what changes}
 
 ## Architecture Notes
 {Key decisions, tradeoffs, interface changes.}
@@ -154,7 +154,7 @@ Generate the implementation plan at `.claude/archon/plans/{kebab-case-feature-na
 - Frontend after backend API is stable.
 
 ### Prohibited Patterns (flag in plan if you see a risk)
-- `import * as core from '@archon/core'` — use named imports
+- `import * as core from '@smelter/core'` — use named imports
 - `any` type without justification comment
 - Circular package dependencies
 - `git clean -fd` in any script or test
@@ -164,7 +164,7 @@ Generate the implementation plan at `.claude/archon/plans/{kebab-case-feature-na
 
 ## Output
 
-1. Save the plan file to `.claude/archon/plans/{kebab-case-name}.md`
+1. Save the plan file to `.claude/smelter/plans/{kebab-case-name}.md`
 2. Print the plan to the conversation
 3. Summarize: number of tasks, affected packages, estimated complexity (low/medium/high),
    and any risks or open questions that need resolution before execution.

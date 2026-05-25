@@ -1,18 +1,18 @@
 ---
 title: Reference
-description: Technical reference for Archon's architecture, CLI, commands, database, configuration, and troubleshooting.
+description: Technical reference for Smelter's architecture, CLI, commands, database, configuration, and troubleshooting.
 category: reference
 audience: [developer]
 sidebar:
   order: 0
 ---
 
-Technical reference documentation for Archon internals.
+Technical reference documentation for Smelter internals.
 
 ## Reference Docs
 
 - **[Architecture](/reference/architecture/)** -- System overview, interfaces, data flow, extension guides
-- **[Archon Directories](/reference/archon-directories/)** -- Directory structure, path resolution, configuration system
+- **[Smelter Directories](/reference/smelter-directories/)** -- Directory structure, path resolution, configuration system
 - **[CLI Reference](/reference/cli/)** -- All CLI commands, flags, and usage examples
 - **[Commands Reference](/reference/commands/)** -- Slash commands available in all platform adapters
 - **[Variables Reference](/reference/variables/)** -- Variable substitution in commands and workflows ($ARGUMENTS, $BASE_BRANCH, etc.)

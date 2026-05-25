@@ -193,7 +193,7 @@ meta-judge prompt to tag feedback with the session that produced it.
 
 ### 15. Summary File Pattern — Inter-Hook Communication
 
-**What is it?** The agent writes `.claude/archon/rulecheck-last-run.json` as a
+**What is it?** The agent writes `.claude/smelter/rulecheck-last-run.json` as a
 structured summary. The Slack hook reads this file to format its notification.
 
 This is a practical pattern for passing data between the agent and its hooks

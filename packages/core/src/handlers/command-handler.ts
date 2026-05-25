@@ -8,23 +8,23 @@ import { type Conversation, type CommandResult, ConversationNotFoundError } from
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
-import { listWorktrees, execFileAsync, toRepoPath } from '@archon/git';
-import { getIsolationProvider } from '@archon/isolation';
+import { listWorktrees, execFileAsync, toRepoPath } from '@smelter/git';
+import { getIsolationProvider } from '@smelter/isolation';
 import * as isolationEnvDb from '../db/isolation-environments';
 import {
   cleanupMergedWorktrees,
   cleanupStaleWorktrees,
   getWorktreeStatusBreakdown,
 } from '../services/cleanup-service';
-import { getArchonWorkspacesPath } from '@archon/paths';
+import { getSmelterWorkspacesPath } from '@smelter/paths';
 import { loadConfig } from '../config/config-loader';
-import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
-import { resolveWorkflowName } from '@archon/workflows/router';
+import { discoverWorkflowsWithConfig } from '@smelter/workflows/workflow-discovery';
+import { resolveWorkflowName } from '@smelter/workflows/router';
 import type {
   WorkflowWithSource,
   WorkflowLoadError,
   WorkflowDefinition,
-} from '@archon/workflows/schemas/workflow';
+} from '@smelter/workflows/schemas/workflow';
 import * as workflowDb from '../db/workflows';
 import {
   approveWorkflow,
@@ -35,7 +35,7 @@ import {
 } from '../operations/workflow-operations';
 import { getTriggerForCommand, type DeactivatingCommand } from '../state/session-transitions';
 import { SessionNotFoundError } from '../db/sessions';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -105,7 +105,7 @@ function shortenPath(absolutePath: string, repoRoot?: string): string {
   }
 
   // Fallback: show relative to workspace
-  const workspacePath = getArchonWorkspacesPath();
+  const workspacePath = getSmelterWorkspacesPath();
   const relPath = relative(workspacePath, absolutePath);
   if (!relPath.startsWith('..')) {
     return relPath;
@@ -555,7 +555,7 @@ async function handleWorkflowCommand(
 
   const workflowCwd = codebase
     ? (conversation.cwd ?? codebase.default_cwd)
-    : getArchonWorkspacesPath();
+    : getSmelterWorkspacesPath();
 
   switch (subcommand) {
     case 'list':
@@ -571,14 +571,15 @@ async function handleWorkflowCommand(
         getLog().error({ err, cwd: workflowCwd }, 'cmd.workflow_list_failed');
         return {
           success: false,
-          message: `Failed to load workflows: ${err.message}\n\nCheck .archon/workflows/ for YAML syntax issues.`,
+          message: `Failed to load workflows: ${err.message}\n\nCheck .smelter/workflows/ for YAML syntax issues.`,
         };
       }
 
       if (workflowEntries.length === 0 && errors.length === 0) {
         return {
           success: true,
-          message: 'No workflows found.\n\nCreate workflows in `.archon/workflows/` as YAML files.',
+          message:
+            'No workflows found.\n\nCreate workflows in `.smelter/workflows/` as YAML files.',
         };
       }
 
@@ -623,7 +624,7 @@ async function handleWorkflowCommand(
         getLog().error({ err, cwd: workflowCwd }, 'cmd.workflow_reload_failed');
         return {
           success: false,
-          message: `Failed to reload workflows: ${err.message}\n\nCheck .archon/workflows/ for YAML syntax issues.`,
+          message: `Failed to reload workflows: ${err.message}\n\nCheck .smelter/workflows/ for YAML syntax issues.`,
         };
       }
     }
@@ -812,7 +813,7 @@ async function handleWorkflowCommand(
         getLog().error({ err, cwd: workflowCwd }, 'cmd.workflow_discovery_failed');
         return {
           success: false,
-          message: `Failed to load workflows: ${err.message}\n\nCheck .archon/workflows/ for YAML syntax issues.`,
+          message: `Failed to load workflows: ${err.message}\n\nCheck .smelter/workflows/ for YAML syntax issues.`,
         };
       }
 
@@ -897,7 +898,7 @@ export async function handleCommand(
     case 'help':
       return {
         success: true,
-        message: `## Archon Orchestrator
+        message: `## Smelter Orchestrator
 
 Talk naturally — the orchestrator routes your requests to the right workflow and project automatically.
 
@@ -1032,7 +1033,8 @@ Talk naturally — the orchestrator routes your requests to the right workflow a
       if (!Object.keys(commands).length) {
         return {
           success: true,
-          message: 'No commands registered.\n\nAdd .md files to .archon/commands/ in your project.',
+          message:
+            'No commands registered.\n\nAdd .md files to .smelter/commands/ in your project.',
         };
       }
 
@@ -1066,7 +1068,7 @@ Talk naturally — the orchestrator routes your requests to the right workflow a
       return handleWorkflowCommand(conversation, args);
 
     case 'init': {
-      // Create .archon structure in current repo
+      // Create .smelter structure in current repo
       if (!conversation.cwd) {
         return {
           success: false,
@@ -1074,17 +1076,17 @@ Talk naturally — the orchestrator routes your requests to the right workflow a
         };
       }
 
-      const archonDir = join(conversation.cwd, '.archon');
-      const commandsDir = join(archonDir, 'commands');
-      const configPath = join(archonDir, 'config.yaml');
+      const smelterDir = join(conversation.cwd, '.smelter');
+      const commandsDir = join(smelterDir, 'commands');
+      const configPath = join(smelterDir, 'config.yaml');
 
       try {
-        // Check if .archon already exists
+        // Check if .smelter already exists
         try {
-          await access(archonDir);
+          await access(smelterDir);
           return {
             success: false,
-            message: '.archon directory already exists. Nothing to do.',
+            message: '.smelter directory already exists. Nothing to do.',
           };
         } catch {
           // Directory doesn't exist, we can create it
@@ -1094,15 +1096,15 @@ Talk naturally — the orchestrator routes your requests to the right workflow a
         await import('fs/promises').then(fs => fs.mkdir(commandsDir, { recursive: true }));
 
         // Create default config.yaml
-        const defaultConfig = `# Archon repository configuration
-# See: https://github.com/coleam00/Archon
+        const defaultConfig = `# Smelter repository configuration
+# See: https://github.com/coleam00/Smelter
 
 # AI assistant preference (optional - overrides global default)
 # assistant: claude
 
 # Commands configuration (optional)
 # commands:
-#   folder: .archon/commands
+#   folder: .smelter/commands
 #   autoLoad: true
 `;
         await writeFile(configPath, defaultConfig);
@@ -1126,13 +1128,13 @@ Task: $ARGUMENTS
 
         return {
           success: true,
-          message: `Created .archon structure:
-  .archon/
+          message: `Created .smelter structure:
+  .smelter/
   ├── config.yaml
   └── commands/
       └── example.md
 
-Commands are auto-discovered from .archon/commands/ — no registration needed.`,
+Commands are auto-discovered from .smelter/commands/ — no registration needed.`,
         };
       } catch (error) {
         const err = error as Error;

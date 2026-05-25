@@ -1,7 +1,7 @@
 /**
  * Tests for the Claude binary resolver in binary mode.
  *
- * Must run in its own bun test invocation because it mocks @archon/paths
+ * Must run in its own bun test invocation because it mocks @smelter/paths
  * with BUNDLED_IS_BINARY=true, which conflicts with other test files.
  */
 import { describe, test, expect, mock, beforeEach, afterAll, spyOn } from 'bun:test';
@@ -11,8 +11,8 @@ import { createMockLogger } from '../test/mocks/logger';
 
 const mockLogger = createMockLogger();
 
-// Mock @archon/paths with BUNDLED_IS_BINARY = true (binary mode)
-mock.module('@archon/paths', () => ({
+// Mock @smelter/paths with BUNDLED_IS_BINARY = true (binary mode)
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
   BUNDLED_IS_BINARY: true,
 }));

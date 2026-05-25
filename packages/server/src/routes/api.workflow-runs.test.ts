@@ -1,6 +1,6 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import type { ConversationLockManager } from '@archon/core';
+import type { ConversationLockManager } from '@smelter/core';
 import type { WebAdapter } from '../adapters/web';
 import { validationErrorHook } from './openapi-defaults';
 import { mockAllWorkflowModules } from '../test/workflow-mock-factories';
@@ -76,7 +76,7 @@ type MockWorkflowEvent = {
   created_at: string;
 };
 
-mock.module('@archon/core', () => ({
+mock.module('@smelter/core', () => ({
   handleMessage: mockHandleMessage,
   getDatabaseType: () => 'sqlite',
   loadConfig: mock(async () => ({})),
@@ -88,7 +88,7 @@ mock.module('@archon/core', () => ({
       this.name = 'ConversationNotFoundError';
     }
   },
-  getArchonWorkspacesPath: () => '/tmp/.archon/workspaces',
+  getSmelterWorkspacesPath: () => '/tmp/.smelter/workspaces',
   generateAndSetTitle: mockGenerateAndSetTitle,
   createLogger: () => ({
     fatal: mock(() => undefined),
@@ -106,7 +106,7 @@ mock.module('@archon/core', () => ({
   }),
 }));
 
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: () => ({
     fatal: mock(() => undefined),
     error: mock(() => undefined),
@@ -121,22 +121,22 @@ mock.module('@archon/paths', () => ({
     isLevelEnabled: mock(() => true),
     level: 'info',
   }),
-  getWorkflowFolderSearchPaths: mock(() => ['.archon/workflows']),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands']),
-  getDefaultCommandsPath: mock(() => '/tmp/.archon-test-nonexistent/commands/defaults'),
-  getDefaultWorkflowsPath: mock(() => '/tmp/.archon-test-nonexistent/workflows/defaults'),
-  getArchonWorkspacesPath: () => '/tmp/.archon/workspaces',
+  getWorkflowFolderSearchPaths: mock(() => ['.smelter/workflows']),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands']),
+  getDefaultCommandsPath: mock(() => '/tmp/.smelter-test-nonexistent/commands/defaults'),
+  getDefaultWorkflowsPath: mock(() => '/tmp/.smelter-test-nonexistent/workflows/defaults'),
+  getSmelterWorkspacesPath: () => '/tmp/.smelter/workspaces',
 }));
 
 mockAllWorkflowModules();
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   removeWorktree: mock(async () => {}),
   toRepoPath: (p: string) => p,
   toWorktreePath: (p: string) => p,
 }));
 
-mock.module('@archon/core/db/conversations', () => ({
+mock.module('@smelter/core/db/conversations', () => ({
   findConversationByPlatformId: mockFindConversationByPlatformId,
   listConversations: mock(async () => []),
   getOrCreateConversation: mock(async () => ({
@@ -155,13 +155,13 @@ mock.module('@archon/core/db/conversations', () => ({
   getConversationById: mockGetConversationById,
 }));
 
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   listCodebases: mock(async () => [{ default_cwd: '/tmp/project' }]),
   getCodebase: mock(async () => null),
   deleteCodebase: mock(async () => {}),
 }));
 
-mock.module('@archon/core/db/isolation-environments', () => ({
+mock.module('@smelter/core/db/isolation-environments', () => ({
   listByCodebase: mock(async () => []),
   updateStatus: mock(async () => {}),
 }));
@@ -169,7 +169,7 @@ mock.module('@archon/core/db/isolation-environments', () => ({
 const mockDeleteWorkflowRun = mock(async (_id: string) => {});
 const mockUpdateWorkflowRun = mock(async (_id: string, _update: unknown) => {});
 
-mock.module('@archon/core/db/workflows', () => ({
+mock.module('@smelter/core/db/workflows', () => ({
   listWorkflowRuns: mockListWorkflowRuns,
   listDashboardRuns: mockListDashboardRuns,
   getWorkflowRun: mockGetWorkflowRun,
@@ -181,17 +181,17 @@ mock.module('@archon/core/db/workflows', () => ({
 
 const mockCreateWorkflowEvent = mock(async (_event: unknown) => {});
 
-mock.module('@archon/core/db/workflow-events', () => ({
+mock.module('@smelter/core/db/workflow-events', () => ({
   listWorkflowEvents: mockListWorkflowEvents,
   createWorkflowEvent: mockCreateWorkflowEvent,
 }));
 
-mock.module('@archon/core/db/messages', () => ({
+mock.module('@smelter/core/db/messages', () => ({
   addMessage: mockAddMessage,
   listMessages: mock(async () => []),
 }));
 
-mock.module('@archon/core/utils/commands', () => ({
+mock.module('@smelter/core/utils/commands', () => ({
   findMarkdownFilesRecursive: mock(async () => []),
 }));
 
@@ -453,7 +453,7 @@ describe('POST /api/workflows/:name/run', () => {
   });
 
   test('returns 400 when isValidCommandName rejects the name', async () => {
-    const { isValidCommandName } = await import('@archon/workflows/command-validation');
+    const { isValidCommandName } = await import('@smelter/workflows/command-validation');
     (isValidCommandName as ReturnType<typeof mock>).mockReturnValueOnce(false);
 
     const { app } = makeApp();

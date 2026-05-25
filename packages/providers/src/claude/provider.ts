@@ -39,7 +39,7 @@ import type {
 import { parseClaudeConfig } from './config';
 import { CLAUDE_CAPABILITIES } from './capabilities';
 import { resolveClaudeBinaryPath } from './binary-resolver';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import { readFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 
@@ -83,7 +83,7 @@ function normalizeClaudeUsage(usage?: {
  *
  * process.env is already clean at this point:
  * - stripCwdEnv() at entry point removed CWD .env keys + CLAUDECODE markers
- * - ~/.archon/.env loaded with override:true as the trusted source
+ * - ~/.smelter/.env loaded with override:true as the trusted source
  */
 function buildSubprocessEnv(): NodeJS.ProcessEnv {
   // Using || intentionally: empty string should be treated as missing credential
@@ -125,7 +125,7 @@ function classifySubprocessError(
 }
 
 function getFirstEventTimeoutMs(): number {
-  const raw = process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
+  const raw = process.env.SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
   if (raw) {
     const parsed = Number(raw);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
@@ -183,7 +183,7 @@ export async function* withFirstMessageTimeout<T>(
           timeoutMs +
           'ms. ' +
           'See logs for claude.first_event_timeout diagnostic dump. ' +
-          'Details: https://github.com/coleam00/Archon/issues/1067'
+          'Details: https://github.com/coleam00/Smelter/issues/1067'
       );
     }
     throw err;
@@ -295,7 +295,7 @@ export async function loadMcpConfig(
 
 // ─── SDK Hooks Building (absorbed from dag-executor) ───────────────────────
 
-/** YAML hook matcher shape (matches @archon/workflows/schemas/dag-node WorkflowNodeHooks) */
+/** YAML hook matcher shape (matches @smelter/workflows/schemas/dag-node WorkflowNodeHooks) */
 interface YAMLHookMatcher {
   matcher?: string;
   response: unknown;
@@ -560,12 +560,12 @@ const BUN_JS_EXTENSIONS = ['.js', '.mjs', '.cjs'] as const;
  * so dev mode now resolves to a native executable and the historical
  * `undefined → true` heuristic is unsafe. Only return `true` when we have
  * an explicit Bun-runnable JS path (`.js`/`.mjs`/`.cjs`) — i.e. when the
- * operator pointed Archon at a legacy Bun/Node-runnable cli script.
+ * operator pointed Smelter at a legacy Bun/Node-runnable cli script.
  * Otherwise return `false`.
  *
  * Safety: target-repo `.env` leaks are prevented by `stripCwdEnv()` in
- * `@archon/paths` (#1067), which deletes CWD `.env` keys from
- * `process.env` at every Archon entry point before any subprocess is
+ * `@smelter/paths` (#1067), which deletes CWD `.env` keys from
+ * `process.env` at every Smelter entry point before any subprocess is
  * spawned. The native Claude binary does not auto-load `.env` from its
  * cwd either (verified end-to-end with sentinel keys). `--no-env-file`
  * was belt-and-suspenders for the JS-via-Bun case only.
@@ -716,7 +716,7 @@ function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hoo
 // ─── Stream Normalizer ───────────────────────────────────────────────────
 
 /**
- * Normalize raw Claude SDK events into Archon MessageChunks.
+ * Normalize raw Claude SDK events into Smelter MessageChunks.
  * Drains the tool result queue between events (populated by SDK hooks).
  */
 async function* streamClaudeMessages(

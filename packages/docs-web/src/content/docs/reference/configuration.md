@@ -1,6 +1,6 @@
 ---
 title: Configuration Reference
-description: Full reference for Archon's layered configuration system including YAML config, environment variables, and streaming modes.
+description: Full reference for Smelter's layered configuration system including YAML config, environment variables, and streaming modes.
 category: reference
 area: config
 audience: [user, operator]
@@ -9,14 +9,14 @@ sidebar:
   order: 6
 ---
 
-Archon supports a layered configuration system with sensible defaults, optional YAML config files, and environment variable overrides. For a quick introduction, see [Getting Started: Configuration](/getting-started/).
+Smelter supports a layered configuration system with sensible defaults, optional YAML config files, and environment variable overrides. For a quick introduction, see [Getting Started: Configuration](/getting-started/).
 
 ## Directory Structure
 
-### User-Level (~/.archon/)
+### User-Level (~/.smelter/)
 
 ```
-~/.archon/
+~/.smelter/
 ├── workspaces/owner/repo/  # Project-centric layout
 │   ├── source/             # Clone or symlink -> local path
 │   ├── worktrees/          # Git worktrees for this project
@@ -25,16 +25,16 @@ Archon supports a layered configuration system with sensible defaults, optional 
 ├── workflows/              # Home-scoped workflows (source: 'global')
 ├── commands/               # Home-scoped commands (source: 'global')
 ├── scripts/                # Home-scoped scripts (runtime: bun | uv)
-├── archon.db               # SQLite database (when DATABASE_URL not set)
+├── smelter.db               # SQLite database (when DATABASE_URL not set)
 └── config.yaml             # Global configuration (optional)
 ```
 
-Home-scoped `workflows/`, `commands/`, and `scripts/` apply to every project on the machine. Repo-local files at `<repoRoot>/.archon/{workflows,commands,scripts}/` override them by filename (or script name). Each directory supports one level of subfolders for grouping; deeper nesting is ignored. See [Global Workflows](/guides/global-workflows/) for details and dotfiles-sync examples.
+Home-scoped `workflows/`, `commands/`, and `scripts/` apply to every project on the machine. Repo-local files at `<repoRoot>/.smelter/{workflows,commands,scripts}/` override them by filename (or script name). Each directory supports one level of subfolders for grouping; deeper nesting is ignored. See [Global Workflows](/guides/global-workflows/) for details and dotfiles-sync examples.
 
-### Repository-Level (.archon/)
+### Repository-Level (.smelter/)
 
 ```
-.archon/
+.smelter/
 ├── commands/       # Custom commands
 │   └── plan.md
 ├── workflows/      # Workflow definitions (YAML files)
@@ -46,13 +46,13 @@ Home-scoped `workflows/`, `commands/`, and `scripts/` apply to every project on 
 Settings are loaded in this order (later overrides earlier):
 
 1. **Defaults** - Sensible built-in defaults
-2. **Global Config** - `~/.archon/config.yaml`
-3. **Repo Config** - `.archon/config.yaml` in repository
+2. **Global Config** - `~/.smelter/config.yaml`
+3. **Repo Config** - `.smelter/config.yaml` in repository
 4. **Environment Variables** - Always highest priority
 
 ## Global Configuration
 
-Create `~/.archon/config.yaml` for user-wide preferences:
+Create `~/.smelter/config.yaml` for user-wide preferences:
 
 ```yaml
 # Default AI assistant
@@ -66,7 +66,7 @@ assistants:
       - project       # Project-level <cwd>/.claude/ (CLAUDE.md, skills, commands, agents)
       - user          # User-level ~/.claude/ (CLAUDE.md, skills, commands, agents)
     # Optional: absolute path to the Claude Code executable.
-    # Required in compiled Archon binaries when CLAUDE_BIN_PATH is not set.
+    # Required in compiled Smelter binaries when CLAUDE_BIN_PATH is not set.
     # Accepts the native binary (~/.local/bin/claude from the curl installer)
     # or the npm-installed cli.js. Source/dev mode auto-resolves.
     # claudeBinaryPath: /absolute/path/to/claude
@@ -87,8 +87,8 @@ streaming:
 
 # Custom paths (usually not needed)
 paths:
-  workspaces: ~/.archon/workspaces
-  worktrees: ~/.archon/worktrees
+  workspaces: ~/.smelter/workspaces
+  worktrees: ~/.smelter/worktrees
 
 # Concurrency limits
 concurrency:
@@ -98,7 +98,7 @@ concurrency:
 
 ## Repository Configuration
 
-Create `.archon/config.yaml` in any repository for project-specific settings:
+Create `.smelter/config.yaml` in any repository for project-specific settings:
 
 ```yaml
 # AI assistant for this project (used as default provider for workflows)
@@ -116,14 +116,14 @@ assistants:
 
 # Commands configuration
 commands:
-  folder: .archon/commands
+  folder: .smelter/commands
   autoLoad: true
 
 # Worktree settings
 worktree:
   baseBranch: main  # Optional: auto-detected from git when not set
   copyFiles:  # Optional: Gitignored files/dirs to copy into new worktrees.
-              # `.archon/` is always copied automatically — don't list it.
+              # `.smelter/` is always copied automatically — don't list it.
     - .env
     - .vscode               # Copy entire directory
     - plans/                # Local plans not committed to the team repo
@@ -131,7 +131,7 @@ worktree:
                         # `git submodule update --init --recursive`. Set false to opt out.
   path: .worktrees      # Optional: co-locate worktrees with the repo at
                         # <repoRoot>/.worktrees/<branch> instead of under
-                        # ~/.archon/workspaces/<owner>/<repo>/worktrees/.
+                        # ~/.smelter/workspaces/<owner>/<repo>/worktrees/.
                         # Must be relative; no absolute, no `..` segments.
 
 # Documentation directory
@@ -171,13 +171,13 @@ assistants:
       - project
 ```
 
-Set in `~/.archon/config.yaml` (global) or `.archon/config.yaml` (repo-specific).
+Set in `~/.smelter/config.yaml` (global) or `.smelter/config.yaml` (repo-specific).
 
 ### Worktree file copying (`worktree.copyFiles`)
 
-`git worktree add` only copies **tracked** files into a new worktree. Anything gitignored — secrets, local planning docs, agent reports, IDE settings, data fixtures — is absent by default. Archon's `worktree.copyFiles` closes that gap: after the worktree is created, each listed path is copied from the canonical repo into the worktree via raw filesystem copy (not git), so gitignored content comes along for the ride.
+`git worktree add` only copies **tracked** files into a new worktree. Anything gitignored — secrets, local planning docs, agent reports, IDE settings, data fixtures — is absent by default. Smelter's `worktree.copyFiles` closes that gap: after the worktree is created, each listed path is copied from the canonical repo into the worktree via raw filesystem copy (not git), so gitignored content comes along for the ride.
 
-**Defaults — no config needed for the common case.** `.archon/` is always copied automatically. If you gitignore `.archon/` (or it's just not committed), your custom commands, workflows, and scripts still reach every worktree. You do not need to list `.archon/` in `copyFiles` — it's merged in for you.
+**Defaults — no config needed for the common case.** `.smelter/` is always copied automatically. If you gitignore `.smelter/` (or it's just not committed), your custom commands, workflows, and scripts still reach every worktree. You do not need to list `.smelter/` in `copyFiles` — it's merged in for you.
 
 **Common entries:**
 
@@ -200,7 +200,7 @@ worktree:
 - Per-entry failures are isolated — one bad entry won't abort the rest. Non-ENOENT failures (permissions, disk full) are surfaced as warnings on the environment.
 - Path-traversal attempts (entries resolving outside the repo root, or absolute paths on a different drive) are rejected — the entry is logged and skipped.
 
-**Interaction with `worktree.path`:** The copy step runs identically whether worktrees live under `~/.archon/workspaces/<owner>/<repo>/worktrees/` (default) or inside the repo at `<repoRoot>/<worktree.path>/` (repo-local). Both layouts get the same gitignored-file treatment.
+**Interaction with `worktree.path`:** The copy step runs identically whether worktrees live under `~/.smelter/workspaces/<owner>/<repo>/worktrees/` (default) or inside the repo at `<repoRoot>/<worktree.path>/` (repo-local). Both layouts get the same gitignored-file treatment.
 
 **Defaults behavior:** The app's bundled default commands and workflows are loaded at runtime and merged with repo-specific ones. Repo commands/workflows override app defaults by name. Set `defaults.loadDefaultCommands: false` or `defaults.loadDefaultWorkflows: false` to disable runtime loading.
 
@@ -213,7 +213,7 @@ worktree:
 
 **Docs path behavior:** The `docs.path` setting controls where the `$DOCS_DIR` variable points. When not configured, `$DOCS_DIR` defaults to `docs/`. Unlike `$BASE_BRANCH`, this variable always has a safe default and never throws an error. Configure it when your documentation lives outside the standard `docs/` directory (e.g., `packages/docs-web/src/content/docs`).
 
-**Worktree path behavior:** By default, every repo's worktrees live under `~/.archon/workspaces/<owner>/<repo>/worktrees/<branch>` — outside the repo, invisible to the IDE. Set `worktree.path` to opt in to a **repo-local** layout instead: worktrees are created at `<repoRoot>/<worktree.path>/<branch>` so they show up in the file tree and editor workspace. A common choice is `.worktrees`. Because worktrees now live inside the repository tree, you should add the directory to your `.gitignore` (Archon does not modify user-owned files). The configured path must be relative to the repo root; absolute paths and paths containing `..` segments fail loudly at worktree creation rather than silently falling back.
+**Worktree path behavior:** By default, every repo's worktrees live under `~/.smelter/workspaces/<owner>/<repo>/worktrees/<branch>` — outside the repo, invisible to the IDE. Set `worktree.path` to opt in to a **repo-local** layout instead: worktrees are created at `<repoRoot>/<worktree.path>/<branch>` so they show up in the file tree and editor workspace. A common choice is `.worktrees`. Because worktrees now live inside the repository tree, you should add the directory to your `.gitignore` (Smelter does not modify user-owned files). The configured path must be relative to the repo root; absolute paths and paths containing `..` segments fail loudly at worktree creation rather than silently falling back.
 
 ## Environment Variables
 
@@ -223,14 +223,14 @@ Environment variables override all other configuration. They are organized by ca
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `ARCHON_HOME` | Base directory for all Archon-managed files. **Ignored in Docker** — the container always uses `/.archon`. | `~/.archon` |
+| `SMELTER_HOME` | Base directory for all Smelter-managed files. **Ignored in Docker** — the container always uses `/.smelter`. | `~/.smelter` |
 | `PORT` | HTTP server listen port | `3090` (auto-allocated in worktrees) |
 | `LOG_LEVEL` | Logging verbosity (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) | `info` |
-| `BOT_DISPLAY_NAME` | Bot name shown in batch-mode "starting" messages | `Archon` |
+| `BOT_DISPLAY_NAME` | Bot name shown in batch-mode "starting" messages | `Smelter` |
 | `DEFAULT_AI_ASSISTANT` | Default AI assistant (must match a registered provider) | `claude` |
 | `MAX_CONCURRENT_CONVERSATIONS` | Maximum concurrent AI conversations | `10` |
 | `SESSION_RETENTION_DAYS` | Delete inactive sessions older than N days | `30` |
-| `ARCHON_SUPPRESS_NESTED_CLAUDE_WARNING` | When set to `1`, suppresses the stderr warning emitted when `archon` is run inside a Claude Code session | -- |
+| `SMELTER_SUPPRESS_NESTED_CLAUDE_WARNING` | When set to `1`, suppresses the stderr warning emitted when `smelter` is run inside a Claude Code session | -- |
 
 ### AI Providers -- Claude
 
@@ -240,9 +240,9 @@ Environment variables override all other configuration. They are organized by ca
 | `CLAUDE_CODE_OAUTH_TOKEN` | Explicit OAuth token (alternative to global auth) | -- |
 | `CLAUDE_API_KEY` | Explicit API key (alternative to global auth) | -- |
 | `TITLE_GENERATION_MODEL` | Lightweight model for generating conversation titles | SDK default |
-| `ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS` | Timeout (ms) before Claude subprocess is considered hung (throws with diagnostic log) | `60000` |
+| `SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS` | Timeout (ms) before Claude subprocess is considered hung (throws with diagnostic log) | `60000` |
 
-When `CLAUDE_USE_GLOBAL_AUTH` is unset, Archon auto-detects: it uses explicit tokens if present, otherwise falls back to global auth.
+When `CLAUDE_USE_GLOBAL_AUTH` is unset, Smelter auto-detects: it uses explicit tokens if present, otherwise falls back to global auth.
 
 ### AI Providers -- Codex
 
@@ -302,7 +302,7 @@ When `CLAUDE_USE_GLOBAL_AUTH` is unset, Archon auto-detects: it uses explicit to
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string (omit to use SQLite) | SQLite at `~/.archon/archon.db` |
+| `DATABASE_URL` | PostgreSQL connection string (omit to use SQLite) | SQLite at `~/.smelter/smelter.db` |
 
 ### Web UI
 
@@ -323,8 +323,8 @@ When `CLAUDE_USE_GLOBAL_AUTH` is unset, Archon auto-detects: it uses explicit to
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `ARCHON_DATA` | Host path for Archon data (workspaces, worktrees, artifacts). Compose-only — read by `docker-compose.yml` to choose the bind-mount source for `/.archon`; not read by Archon source code. | Docker-managed volume |
-| `ARCHON_USER_HOME` | Host path for `/home/appuser` (Claude/Codex/Pi config, `~/.gitconfig`, shell history). Compose-only — read by `docker-compose.yml` to choose the bind-mount source for `/home/appuser`; not read by Archon source code. Persisted by default to a Docker-managed volume so user state survives rebuilds. | Docker-managed volume |
+| `SMELTER_DATA` | Host path for Smelter data (workspaces, worktrees, artifacts). Compose-only — read by `docker-compose.yml` to choose the bind-mount source for `/.smelter`; not read by Smelter source code. | Docker-managed volume |
+| `SMELTER_USER_HOME` | Host path for `/home/appuser` (Claude/Codex/Pi config, `~/.gitconfig`, shell history). Compose-only — read by `docker-compose.yml` to choose the bind-mount source for `/home/appuser`; not read by Smelter source code. Persisted by default to a Docker-managed volume so user state survives rebuilds. | Docker-managed volume |
 | `DOMAIN` | Public domain for Caddy reverse proxy (TLS auto-provisioned) | -- |
 | `CADDY_BASIC_AUTH` | Caddy basicauth directive to protect Web UI and API | Disabled |
 | `AUTH_USERNAME` | Username for form-based auth (Caddy forward_auth) | -- |
@@ -335,42 +335,42 @@ When `CLAUDE_USE_GLOBAL_AUTH` is unset, Archon auto-detects: it uses explicit to
 
 ### `.env` File Locations
 
-Archon keys env loading on **directory ownership, not filename**. `.archon/` (at `~/` or `<cwd>/`) is archon-owned. Anything else is yours.
+Smelter keys env loading on **directory ownership, not filename**. `.smelter/` (at `~/` or `<cwd>/`) is smelter-owned. Anything else is yours.
 
-| Path | Stripped at boot? | Archon loads? | `archon setup` writes? |
+| Path | Stripped at boot? | Smelter loads? | `smelter setup` writes? |
 | --- | --- | --- | --- |
 | `<cwd>/.env` | **yes** (safety guard) | never | never |
-| `<cwd>/.archon/.env` | no | yes (repo scope, overrides user scope) | yes iff `--scope project` |
-| `~/.archon/.env` | no | yes (user scope) | yes iff `--scope home` (default) |
+| `<cwd>/.smelter/.env` | no | yes (repo scope, overrides user scope) | yes iff `--scope project` |
+| `~/.smelter/.env` | no | yes (user scope) | yes iff `--scope home` (default) |
 
 **Load order at boot** (every entry point — CLI and server):
 
-1. Strip keys Bun auto-loaded from `<cwd>/.env`, `.env.local`, `.env.development`, `.env.production` (prevents target-repo env from leaking into Archon).
-2. Load `~/.archon/.env` with `override: true` (archon config wins over shell-inherited vars).
-3. Load `<cwd>/.archon/.env` with `override: true` (repo scope wins over user scope).
+1. Strip keys Bun auto-loaded from `<cwd>/.env`, `.env.local`, `.env.development`, `.env.production` (prevents target-repo env from leaking into Smelter).
+2. Load `~/.smelter/.env` with `override: true` (smelter config wins over shell-inherited vars).
+3. Load `<cwd>/.smelter/.env` with `override: true` (repo scope wins over user scope).
 
 **Operator log lines** (stderr, emitted only when there is something to report):
 
 ```
-[archon] stripped 2 keys from /path/to/target-repo (.env, .env.local) to prevent target repo env from leaking into Archon processes
-[archon] loaded 3 keys from ~/.archon/.env
-[archon] loaded 2 keys from /path/to/target-repo/.archon/.env (repo scope, overrides user scope)
+[smelter] stripped 2 keys from /path/to/target-repo (.env, .env.local) to prevent target repo env from leaking into Smelter processes
+[smelter] loaded 3 keys from ~/.smelter/.env
+[smelter] loaded 2 keys from /path/to/target-repo/.smelter/.env (repo scope, overrides user scope)
 ```
 
 **Which file should I use?**
 
-- **`~/.archon/.env`** — user-wide defaults (your personal `SLACK_WEBHOOK`, `DATABASE_URL`, etc.). Applies to every project.
-- **`<cwd>/.archon/.env`** — per-project overrides. Different webhook per repo, different DB per environment, etc.
-- **`<cwd>/.env`** — **your app's** env file. Archon does not read this file; it strips the keys at boot so they do not leak into Archon's process.
+- **`~/.smelter/.env`** — user-wide defaults (your personal `SLACK_WEBHOOK`, `DATABASE_URL`, etc.). Applies to every project.
+- **`<cwd>/.smelter/.env`** — per-project overrides. Different webhook per repo, different DB per environment, etc.
+- **`<cwd>/.env`** — **your app's** env file. Smelter does not read this file; it strips the keys at boot so they do not leak into Smelter's process.
 
 ```bash
 # User-wide
-mkdir -p ~/.archon
-cp .env.example ~/.archon/.env
+mkdir -p ~/.smelter
+cp .env.example ~/.smelter/.env
 
 # Per-project override (e.g. a different Slack webhook for this repo)
-mkdir -p /path/to/repo/.archon
-printf 'SLACK_WEBHOOK=https://hooks.slack.com/...\n' > /path/to/repo/.archon/.env
+mkdir -p /path/to/repo/.smelter
+printf 'SLACK_WEBHOOK=https://hooks.slack.com/...\n' > /path/to/repo/.smelter/.env
 ```
 
 ## Docker Configuration
@@ -378,28 +378,28 @@ printf 'SLACK_WEBHOOK=https://hooks.slack.com/...\n' > /path/to/repo/.archon/.en
 In Docker containers, paths are automatically set:
 
 ```
-/.archon/
+/.smelter/
 ├── workspaces/owner/repo/
 │   ├── source/
 │   ├── worktrees/
 │   ├── artifacts/
 │   └── logs/
-└── archon.db
+└── smelter.db
 ```
 
 Environment variables still work and override defaults.
 
 ## Command Folder Detection
 
-When cloning or switching repositories, Archon looks for commands in this priority order:
+When cloning or switching repositories, Smelter looks for commands in this priority order:
 
-1. `.archon/commands/` - Always searched first
-2. Configured folder from `commands.folder` in `.archon/config.yaml` (if specified)
+1. `.smelter/commands/` - Always searched first
+2. Configured folder from `commands.folder` in `.smelter/config.yaml` (if specified)
 
-Example `.archon/config.yaml`:
+Example `.smelter/config.yaml`:
 ```yaml
 commands:
-  folder: .claude/commands/archon  # Additional folder to search
+  folder: .claude/commands/smelter  # Additional folder to search
   autoLoad: true
 ```
 
@@ -407,23 +407,23 @@ commands:
 
 ### Minimal Setup (Using Defaults)
 
-No configuration needed. Archon works out of the box with:
+No configuration needed. Smelter works out of the box with:
 
-- `~/.archon/` for all managed files
+- `~/.smelter/` for all managed files
 - Claude as default AI assistant
 - Platform-appropriate streaming modes
 
 ### Custom AI Preference
 
 ```yaml
-# ~/.archon/config.yaml
+# ~/.smelter/config.yaml
 defaultAssistant: codex
 ```
 
 ### Project-Specific Settings
 
 ```yaml
-# .archon/config.yaml in your repo
+# .smelter/config.yaml in your repo
 assistant: claude  # Workflows inherit this provider unless they specify their own
 commands:
   autoLoad: true
@@ -432,12 +432,12 @@ commands:
 ### Docker with Custom Volume
 
 ```bash
-docker run -v /my/data:/.archon ghcr.io/coleam00/archon
+docker run -v /my/data:/.smelter ghcr.io/coleam00/smelter
 ```
 
 ## Streaming Modes
 
-Each platform adapter supports two streaming modes, configured via environment variable or `~/.archon/config.yaml`.
+Each platform adapter supports two streaming modes, configured via environment variable or `~/.smelter/config.yaml`.
 
 ### Stream Mode
 
@@ -556,7 +556,7 @@ Returns: `{"status":"ok","active":0,"queued":0,"maxConcurrent":10}`
 If your config file has invalid YAML syntax, you'll see error messages like:
 
 ```
-[Config] Failed to parse global config at ~/.archon/config.yaml: <error details>
+[Config] Failed to parse global config at ~/.smelter/config.yaml: <error details>
 [Config] Using default configuration. Please fix the YAML syntax in your config file.
 ```
 

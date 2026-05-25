@@ -15,7 +15,7 @@ export interface NoopResourceLoaderOptions {
    * `noSkills: true` — Pi's loader merges additional paths regardless, per
    * its internal logic in `DefaultResourceLoader.updateSkillsFromPaths`.
    *
-   * Used by the Pi provider to thread Archon's name-based `skills:` node
+   * Used by the Pi provider to thread Smelter's name-based `skills:` node
    * config through to Pi after resolution — see `resolvePiSkills`.
    */
   additionalSkillPaths?: string[];
@@ -36,7 +36,7 @@ export interface NoopResourceLoaderOptions {
    * gate on `ctx.hasUI` additionally need `interactive: true` — see
    * `PiProviderDefaults.interactive`.
    *
-   * Trust boundary: enabling this loads arbitrary JS code with the Archon
+   * Trust boundary: enabling this loads arbitrary JS code with the Smelter
    * server's OS permissions. Only flip this on when the operator trusts both
    * globally-installed extensions AND whatever `.pi/` the workflow's target
    * repo happens to contain.
@@ -48,13 +48,13 @@ export interface NoopResourceLoaderOptions {
 
 /**
  * Build a Pi ResourceLoader. By default performs no filesystem discovery —
- * Archon is the source of truth for skills, prompts, themes, and context
+ * Smelter is the source of truth for skills, prompts, themes, and context
  * files, and Pi should not walk cwd or read `~/.pi/agent/` during server-side
  * workflow execution. When `enableExtensions: true`, the `noExtensions` gate
  * is lifted so Pi discovers and loads tools + hooks from the community
  * ecosystem (see `NoopResourceLoaderOptions.enableExtensions`). Skills and
  * prompts/themes remain suppressed even when extensions are enabled — skills
- * are still driven by Archon's explicit `additionalSkillPaths` plumbing.
+ * are still driven by Smelter's explicit `additionalSkillPaths` plumbing.
  *
  * Implementation note: we delegate to `DefaultResourceLoader` with the
  * relevant `no*` flags set, rather than implementing `ResourceLoader`

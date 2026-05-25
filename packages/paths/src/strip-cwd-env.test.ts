@@ -106,12 +106,12 @@ describe('stripCwdEnv — operator logging (#1302)', () => {
     delete process.env.TEST_STRIP_LOG_C;
   });
 
-  it('emits [archon] stripped line with count and filename when keys are stripped', () => {
+  it('emits [smelter] stripped line with count and filename when keys are stripped', () => {
     writeFileSync(join(tmpDir, '.env'), 'TEST_STRIP_LOG_A=leaked\nTEST_STRIP_LOG_B=leaked\n');
     process.env.TEST_STRIP_LOG_A = 'leaked';
     process.env.TEST_STRIP_LOG_B = 'leaked';
     stripCwdEnv(tmpDir);
-    const line = stderrWrites.find(s => s.startsWith('[archon] stripped'));
+    const line = stderrWrites.find(s => s.startsWith('[smelter] stripped'));
     expect(line).toBeDefined();
     expect(line).toContain('stripped 2 keys');
     expect(line).toContain(tmpDir);
@@ -124,21 +124,21 @@ describe('stripCwdEnv — operator logging (#1302)', () => {
     process.env.TEST_STRIP_LOG_A = 'leaked';
     process.env.TEST_STRIP_LOG_B = 'leaked';
     stripCwdEnv(tmpDir);
-    const line = stderrWrites.find(s => s.startsWith('[archon] stripped'));
+    const line = stderrWrites.find(s => s.startsWith('[smelter] stripped'));
     expect(line).toBeDefined();
     expect(line).toContain('(.env, .env.local)');
   });
 
-  it('emits no [archon] stripped line when no CWD .env files exist', () => {
+  it('emits no [smelter] stripped line when no CWD .env files exist', () => {
     stripCwdEnv(tmpDir);
-    const line = stderrWrites.find(s => s.startsWith('[archon] stripped'));
+    const line = stderrWrites.find(s => s.startsWith('[smelter] stripped'));
     expect(line).toBeUndefined();
   });
 
-  it('emits no [archon] stripped line when .env file is empty', () => {
+  it('emits no [smelter] stripped line when .env file is empty', () => {
     writeFileSync(join(tmpDir, '.env'), '');
     stripCwdEnv(tmpDir);
-    const line = stderrWrites.find(s => s.startsWith('[archon] stripped'));
+    const line = stderrWrites.find(s => s.startsWith('[smelter] stripped'));
     expect(line).toBeUndefined();
   });
 });

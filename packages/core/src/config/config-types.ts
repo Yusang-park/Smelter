@@ -1,24 +1,24 @@
 /**
- * Configuration types for Archon YAML config files
+ * Configuration types for Smelter YAML config files
  *
  * Two levels:
- * - Global: ~/.archon/config.yaml (user preferences)
- * - Repository: .archon/config.yaml (project settings)
+ * - Global: ~/.smelter/config.yaml (user preferences)
+ * - Repository: .smelter/config.yaml (project settings)
  */
 
 /**
  * Global configuration (non-secret user preferences)
- * Located at ~/.archon/config.yaml
+ * Located at ~/.smelter/config.yaml
  */
 
-// Provider config defaults — canonical definitions live in @archon/providers/types.
+// Provider config defaults — canonical definitions live in @smelter/providers/types.
 // Imported and re-exported here so existing consumers don't break.
 import type {
   ClaudeProviderDefaults,
   CodexProviderDefaults,
   PiProviderDefaults,
   ProviderDefaultsMap,
-} from '@archon/providers/types';
+} from '@smelter/providers/types';
 
 export type {
   ClaudeProviderDefaults,
@@ -62,7 +62,7 @@ export type AssistantDefaults = ProviderDefaultsMap & {
 export interface GlobalConfig {
   /**
    * Bot display name (shown in messages)
-   * @default 'Archon'
+   * @default 'Smelter'
    */
   botName?: string;
 
@@ -92,13 +92,13 @@ export interface GlobalConfig {
   paths?: {
     /**
      * Override workspaces directory
-     * @default '~/.archon/workspaces'
+     * @default '~/.smelter/workspaces'
      */
     workspaces?: string;
 
     /**
      * Override worktrees directory
-     * @default '~/.archon/worktrees'
+     * @default '~/.smelter/worktrees'
      */
     worktrees?: string;
   };
@@ -117,7 +117,7 @@ export interface GlobalConfig {
 
 /**
  * Repository configuration (project-specific settings)
- * Located at .archon/config.yaml in any repository
+ * Located at .smelter/config.yaml in any repository
  */
 export interface RepoConfig {
   /**
@@ -137,7 +137,7 @@ export interface RepoConfig {
   commands?: {
     /**
      * Custom command folder path (relative to repo root)
-     * @default '.archon/commands'
+     * @default '.smelter/commands'
      */
     folder?: string;
 
@@ -161,7 +161,7 @@ export interface RepoConfig {
     /**
      * Git-ignored files/directories to copy from main repo to new worktrees.
      * Tracked files are already in worktrees — only use this for git-ignored files.
-     * @example [".env", ".archon", "data/fixtures/"]
+     * @example [".env", ".smelter", "data/fixtures/"]
      */
     copyFiles?: string[];
 
@@ -180,7 +180,7 @@ export interface RepoConfig {
     /**
      * Per-project worktree directory (relative to repo root). When set,
      * worktrees are created at `<repoRoot>/<path>/<branch>` instead of under
-     * `~/.archon/worktrees/` or the workspaces layout.
+     * `~/.smelter/worktrees/` or the workspaces layout.
      *
      * Opt-in — co-locates worktrees with the repo so they appear in the IDE
      * file tree. The user is responsible for adding the directory to their
@@ -188,9 +188,9 @@ export interface RepoConfig {
      *
      * Path resolution precedence (highest to lowest):
      *   1. this `worktree.path` (repo-local)
-     *   2. global `paths.worktrees` (absolute override in `~/.archon/config.yaml`)
-     *   3. auto-detected project-scoped (`~/.archon/workspaces/owner/repo/...`)
-     *   4. default global (`~/.archon/worktrees/`)
+     *   2. global `paths.worktrees` (absolute override in `~/.smelter/config.yaml`)
+     *   3. auto-detected project-scoped (`~/.smelter/workspaces/owner/repo/...`)
+     *   4. default global (`~/.smelter/worktrees/`)
      *
      * Must be a safe relative path: no leading `/`, no `..` segments. Absolute
      * or escaping values fail loudly at worktree creation (Fail Fast — no silent
@@ -270,7 +270,7 @@ export interface MergedConfig {
   commands: {
     /**
      * Additional command folder to search (relative to repo root)
-     * Searched after .archon/commands/ but before .claude/commands/
+     * Searched after .smelter/commands/ but before .claude/commands/
      */
     folder?: string;
     autoLoad: boolean;
@@ -293,7 +293,7 @@ export interface MergedConfig {
    */
   docsPath?: string;
   /**
-   * Merged per-project env vars from .archon/config.yaml env: section.
+   * Merged per-project env vars from .smelter/config.yaml env: section.
    * DB env vars (from Web UI) are merged on top by executeWorkflow.
    * Undefined when no env vars are configured.
    */

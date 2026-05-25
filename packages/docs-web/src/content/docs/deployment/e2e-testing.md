@@ -1,6 +1,6 @@
 ---
 title: E2E Testing
-description: Set up agent-browser for end-to-end browser testing in Archon workflows.
+description: Set up agent-browser for end-to-end browser testing in Smelter workflows.
 category: deployment
 area: infra
 audience: [developer, operator]
@@ -9,7 +9,7 @@ sidebar:
   order: 5
 ---
 
-Archon uses [agent-browser](https://github.com/vercel-labs/agent-browser) (by Vercel Labs) for end-to-end browser testing in workflows like `archon-validate-pr`. It is an **optional** external dependency — core Archon functionality works without it.
+Smelter uses [agent-browser](https://github.com/vercel-labs/agent-browser) (by Vercel Labs) for end-to-end browser testing in workflows like `smelter-validate-pr`. It is an **optional** external dependency — core Smelter functionality works without it.
 
 ## Installation
 
@@ -38,17 +38,17 @@ The following workflows and commands depend on agent-browser:
 
 | Resource | Type | Purpose |
 |----------|------|---------|
-| `archon-validate-pr` | Workflow | E2E testing phase of PR validation |
+| `smelter-validate-pr` | Workflow | E2E testing phase of PR validation |
 | `validate-ui` | Skill | Comprehensive UI testing |
 | `replicate-issue` | Skill | Issue reproduction via browser |
-| `archon-validate-pr-e2e-main.md` | Command | E2E tests against the main branch |
-| `archon-validate-pr-e2e-feature.md` | Command | E2E tests against the feature branch |
+| `smelter-validate-pr-e2e-main.md` | Command | E2E tests against the main branch |
+| `smelter-validate-pr-e2e-feature.md` | Command | E2E tests against the feature branch |
 
 ## Platform-Specific Notes
 
 ### Docker
 
-agent-browser is **pre-installed** in the Archon Docker image. No action needed.
+agent-browser is **pre-installed** in the Smelter Docker image. No action needed.
 
 ### macOS / Linux
 

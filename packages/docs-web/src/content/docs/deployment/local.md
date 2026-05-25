@@ -1,6 +1,6 @@
 ---
 title: Local Development
-description: Run Archon locally with SQLite or PostgreSQL for development and personal use.
+description: Run Smelter locally with SQLite or PostgreSQL for development and personal use.
 category: deployment
 area: infra
 audience: [operator]
@@ -9,7 +9,7 @@ sidebar:
   order: 1
 ---
 
-This guide covers how to run the Archon server locally, with Docker, and in production. For VPS deployment with automatic HTTPS, see the [Cloud Deployment Guide](/deployment/cloud/).
+This guide covers how to run the Smelter server locally, with Docker, and in production. For VPS deployment with automatic HTTPS, see the [Cloud Deployment Guide](/deployment/cloud/).
 
 **Quick links:** [Local Development](#local-development) | [Docker with Remote DB](#docker-with-remote-postgresql) | [Docker with Local PostgreSQL](#docker-with-local-postgresql) | [Production](#production-deployment)
 
@@ -22,17 +22,17 @@ Local development with SQLite is the recommended default. No database setup is n
 ### Prerequisites
 
 - [Bun](https://bun.sh) 1.0+
-- At least one AI assistant installed and configured (Claude Code or Codex — Archon orchestrates them, it does not bundle them)
+- At least one AI assistant installed and configured (Claude Code or Codex — Smelter orchestrates them, it does not bundle them)
 - A GitHub token for repository cloning (`GH_TOKEN` / `GITHUB_TOKEN`)
 
-> Source installs (`bun run`) auto-resolve Claude Code's `cli.js` via `node_modules`. Compiled Archon binaries require `CLAUDE_BIN_PATH` or `assistants.claude.claudeBinaryPath` — see [AI Assistants → Binary path configuration](/getting-started/ai-assistants/#binary-path-configuration-compiled-binaries-only).
+> Source installs (`bun run`) auto-resolve Claude Code's `cli.js` via `node_modules`. Compiled Smelter binaries require `CLAUDE_BIN_PATH` or `assistants.claude.claudeBinaryPath` — see [AI Assistants → Binary path configuration](/getting-started/ai-assistants/#binary-path-configuration-compiled-binaries-only).
 
 ### Setup
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/coleam00/Archon
-cd Archon
+git clone https://github.com/coleam00/Smelter
+cd Smelter
 bun install
 
 # 2. Configure environment
@@ -96,9 +96,9 @@ The app container runs without any profile when using an external database. Ther
 
 ```bash
 # 1. Get the deployment files
-mkdir archon && cd archon
-curl -fsSL https://raw.githubusercontent.com/coleam00/Archon/main/deploy/docker-compose.yml -o docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/coleam00/Archon/main/deploy/.env.example -o .env
+mkdir smelter && cd smelter
+curl -fsSL https://raw.githubusercontent.com/coleam00/Smelter/main/deploy/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/coleam00/Smelter/main/deploy/.env.example -o .env
 
 # 2. Configure (edit .env with your tokens and DATABASE_URL)
 nano .env
@@ -193,7 +193,7 @@ For deploying to a VPS (DigitalOcean, Linode, AWS EC2, etc.) with automatic HTTP
 | **Remote PostgreSQL** | Set `DATABASE_URL` to hosted DB | Cloud deployments, shared access |
 | **Local PostgreSQL** | Docker `--profile with-db` | Self-hosted, Docker-based setups |
 
-SQLite stores data at `~/.archon/archon.db` (or `/.archon/archon.db` in Docker). It is auto-initialized on first run.
+SQLite stores data at `~/.smelter/smelter.db` (or `/.smelter/smelter.db` in Docker). It is auto-initialized on first run.
 
 ---
 

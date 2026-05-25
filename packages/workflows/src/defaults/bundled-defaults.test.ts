@@ -5,16 +5,16 @@ import { isBinaryBuild, BUNDLED_COMMANDS, BUNDLED_WORKFLOWS } from './bundled-de
 
 // Resolve the on-disk defaults directories relative to this test file so the
 // tests work regardless of cwd. From packages/workflows/src/defaults go up
-// four levels to the repo root, then into .archon/.
+// four levels to the repo root, then into .smelter/.
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
-const COMMANDS_DIR = join(REPO_ROOT, '.archon/commands/defaults');
-const WORKFLOWS_DIR = join(REPO_ROOT, '.archon/workflows/defaults');
+const COMMANDS_DIR = join(REPO_ROOT, '.smelter/commands/defaults');
+const WORKFLOWS_DIR = join(REPO_ROOT, '.smelter/workflows/defaults');
 
 describe('bundled-defaults', () => {
   describe('isBinaryBuild', () => {
     it('should return false in dev/test mode', () => {
       // `isBinaryBuild()` reads the build-time constant `BUNDLED_IS_BINARY` from
-      // `@archon/paths`. In dev/test mode it is `false`. It is only rewritten to
+      // `@smelter/paths`. In dev/test mode it is `false`. It is only rewritten to
       // `true` by `scripts/build-binaries.sh` before `bun build --compile`.
       // Coverage of the `true` branch is via local binary smoke testing (see #979).
       expect(isBinaryBuild()).toBe(false);
@@ -28,7 +28,7 @@ describe('bundled-defaults', () => {
     // generator is `scripts/generate-bundled-defaults.ts`, and
     // `bun run check:bundled` verifies the generated file is up to date.
 
-    it('BUNDLED_COMMANDS contains every .md file in .archon/commands/defaults/', () => {
+    it('BUNDLED_COMMANDS contains every .md file in .smelter/commands/defaults/', () => {
       const onDisk = readdirSync(COMMANDS_DIR)
         .filter(f => f.endsWith('.md'))
         .map(f => f.slice(0, -'.md'.length))
@@ -36,7 +36,7 @@ describe('bundled-defaults', () => {
       expect(Object.keys(BUNDLED_COMMANDS).sort()).toEqual(onDisk);
     });
 
-    it('BUNDLED_WORKFLOWS contains every .yaml/.yml file in .archon/workflows/defaults/', () => {
+    it('BUNDLED_WORKFLOWS contains every .yaml/.yml file in .smelter/workflows/defaults/', () => {
       const onDisk = readdirSync(WORKFLOWS_DIR)
         .filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
         .map(f => f.replace(/\.ya?ml$/, ''))
@@ -73,14 +73,14 @@ describe('bundled-defaults', () => {
       }
     });
 
-    it('archon-pr-review-scope should read .pr-number before other discovery', () => {
-      const content = BUNDLED_COMMANDS['archon-pr-review-scope'];
+    it('smelter-pr-review-scope should read .pr-number before other discovery', () => {
+      const content = BUNDLED_COMMANDS['smelter-pr-review-scope'];
       expect(content).toContain('$ARTIFACTS_DIR/.pr-number');
       expect(content).toContain('PR_NUMBER=$(cat $ARTIFACTS_DIR/.pr-number');
     });
 
-    it('archon-create-pr should write .pr-number to artifacts', () => {
-      const content = BUNDLED_COMMANDS['archon-create-pr'];
+    it('smelter-create-pr should write .pr-number to artifacts', () => {
+      const content = BUNDLED_COMMANDS['smelter-create-pr'];
       expect(content).toContain('echo "$PR_NUMBER" > "$ARTIFACTS_DIR/.pr-number"');
     });
   });
@@ -92,8 +92,8 @@ describe('bundled-defaults', () => {
       }
     });
 
-    it('archon-workflow-builder should have validate-before-save node ordering and key constraints', () => {
-      const content = BUNDLED_WORKFLOWS['archon-workflow-builder'];
+    it('smelter-workflow-builder should have validate-before-save node ordering and key constraints', () => {
+      const content = BUNDLED_WORKFLOWS['smelter-workflow-builder'];
       expect(content).toContain('id: validate-yaml');
       expect(content).toContain('depends_on: [validate-yaml]');
       expect(content).toContain('denied_tools: [Edit, Bash]');
@@ -101,8 +101,8 @@ describe('bundled-defaults', () => {
       expect(content).toContain('workflow_name');
     });
 
-    it('archon-adversarial-dev init-workspace should avoid non-portable sed -i', () => {
-      const content = BUNDLED_WORKFLOWS['archon-adversarial-dev'];
+    it('smelter-adversarial-dev init-workspace should avoid non-portable sed -i', () => {
+      const content = BUNDLED_WORKFLOWS['smelter-adversarial-dev'];
       expect(content).toContain('STATE_TMP="$ARTIFACTS/state.json.tmp"');
       expect(content).toContain(
         'sed "s/SPRINT_COUNT_PLACEHOLDER/$SPRINT_COUNT/" "$ARTIFACTS/state.json" > "$STATE_TMP"'

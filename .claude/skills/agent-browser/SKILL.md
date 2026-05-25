@@ -7,9 +7,9 @@ description: Automates browser interactions for web testing, form filling, scree
 
 ## Installation
 
-`agent-browser` is an external tool by [Vercel Labs](https://github.com/vercel-labs/agent-browser). It is **not** bundled with Archon and must be installed separately.
+`agent-browser` is an external tool by [Vercel Labs](https://github.com/vercel-labs/agent-browser). It is **not** bundled with Smelter and must be installed separately.
 
-> **Optional dependency** — Only needed for E2E/UI testing workflows (`archon-validate-pr`, `validate-ui` skill, `replicate-issue` skill). Core Archon functionality works without it.
+> **Optional dependency** — Only needed for E2E/UI testing workflows (`smelter-validate-pr`, `validate-ui` skill, `replicate-issue` skill). Core Smelter functionality works without it.
 
 ```bash
 # Install globally
@@ -20,7 +20,7 @@ agent-browser install
 ```
 
 **Platform notes:**
-- **Docker**: Already included in the Archon Docker image — no action needed
+- **Docker**: Already included in the Smelter Docker image — no action needed
 - **Windows**: Has a [known bug](https://github.com/vercel-labs/agent-browser/issues/56) with Unix domain sockets. Use WSL as a workaround — see [E2E Testing on WSL](../../docs/e2e-testing-wsl.md)
 - **macOS/Linux**: Works natively after install
 

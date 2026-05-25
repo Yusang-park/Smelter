@@ -8,7 +8,7 @@ import { createHash } from 'crypto';
 import { access, rm } from 'fs/promises';
 import { isAbsolute, join, normalize as normalizePath, resolve, sep } from 'path';
 
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import {
   execFileAsync,
   findWorktreeByBranch,
@@ -23,10 +23,10 @@ import {
   toRepoPath,
   toWorktreePath,
   toBranchName,
-} from '@archon/git';
-import type { WorktreeBaseOverride } from '@archon/git';
-import { getArchonWorkspacesPath } from '@archon/paths';
-import type { RepoPath, WorktreeInfo } from '@archon/git';
+} from '@smelter/git';
+import type { WorktreeBaseOverride } from '@smelter/git';
+import { getSmelterWorkspacesPath } from '@smelter/paths';
+import type { RepoPath, WorktreeInfo } from '@smelter/git';
 import { copyWorktreeFiles } from '../worktree-copy';
 import type {
   DestroyResult,
@@ -56,7 +56,7 @@ function getLog(): ReturnType<typeof createLogger> {
 const GIT_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
- * Validate a user-supplied `worktree.path` from `.archon/config.yaml` and return
+ * Validate a user-supplied `worktree.path` from `.smelter/config.yaml` and return
  * it as a safe relative path for `getWorktreeBase()`, or `undefined` to fall
  * through to default path resolution.
  *
@@ -78,8 +78,8 @@ function resolveRepoLocalOverride(
 
   if (isAbsolute(trimmed)) {
     throw new Error(
-      `.archon/config.yaml worktree.path must be relative to the repo root (got absolute: ${trimmed}). ` +
-        'For an absolute location, set ~/.archon/config.yaml paths.worktrees instead.'
+      `.smelter/config.yaml worktree.path must be relative to the repo root (got absolute: ${trimmed}). ` +
+        'For an absolute location, set ~/.smelter/config.yaml paths.worktrees instead.'
     );
   }
 
@@ -93,7 +93,7 @@ function resolveRepoLocalOverride(
     normalized.includes('\\..\\')
   ) {
     throw new Error(
-      `.archon/config.yaml worktree.path must stay within the repo (got: ${trimmed}). ` +
+      `.smelter/config.yaml worktree.path must stay within the repo (got: ${trimmed}). ` +
         'Remove any `..` segments.'
     );
   }
@@ -105,7 +105,7 @@ function resolveRepoLocalOverride(
   const repoRootResolved = resolve(repoRoot);
   if (resolved !== repoRootResolved && !resolved.startsWith(repoRootResolved + sep)) {
     throw new Error(
-      `.archon/config.yaml worktree.path resolves outside the repo root (got: ${trimmed} → ${resolved}).`
+      `.smelter/config.yaml worktree.path resolves outside the repo root (got: ${trimmed} → ${resolved}).`
     );
   }
 
@@ -121,7 +121,7 @@ export class WorktreeProvider implements IIsolationProvider {
    * Create an isolated environment using git worktrees.
    *
    * Config is loaded exactly once here and threaded through the rest of the
-   * `create()` call. A malformed `.archon/config.yaml` fails loudly at this
+   * `create()` call. A malformed `.smelter/config.yaml` fails loudly at this
    * boundary rather than being swallowed — see CLAUDE.md "Fail Fast + Explicit
    * Errors". Downstream helpers assume they receive either a valid config
    * object or `null`, never a second chance to reload.
@@ -243,7 +243,7 @@ export class WorktreeProvider implements IIsolationProvider {
         // Continue to branch deletion below - branch may still exist
       }
 
-      // Ensure directory is fully removed (git may leave untracked files like .archon/)
+      // Ensure directory is fully removed (git may leave untracked files like .smelter/)
       const dirExists = await this.directoryExists(worktreePath);
       if (dirExists) {
         getLog().debug({ worktreePath }, 'cleaning_remaining_directory');
@@ -555,29 +555,29 @@ export class WorktreeProvider implements IIsolationProvider {
   generateBranchName(request: IsolationRequest): string {
     switch (request.workflowType) {
       case 'issue':
-        return `archon/issue-${request.identifier}`;
+        return `smelter/issue-${request.identifier}`;
       case 'pr':
         // Same-repo PRs use actual branch (already exists on remote), fork PRs use synthetic
         if (!request.isForkPR) {
           return request.prBranch;
         }
-        return `archon/pr-${request.identifier}-review`;
+        return `smelter/pr-${request.identifier}-review`;
       case 'review':
-        return `archon/review-${request.identifier}`;
+        return `smelter/review-${request.identifier}`;
       case 'thread':
         // Use short hash for arbitrary thread IDs (Slack, Discord)
-        return `archon/thread-${this.shortHash(request.identifier)}`;
+        return `smelter/thread-${this.shortHash(request.identifier)}`;
       case 'task':
-        return `archon/task-${this.slugify(request.identifier)}`;
+        return `smelter/task-${this.slugify(request.identifier)}`;
     }
   }
 
   /**
    * Get worktree path for a request, honoring the per-repo override if set.
    *
-   * Layouts (see `getWorktreeBase()` in `@archon/git` for resolution):
+   * Layouts (see `getWorktreeBase()` in `@smelter/git` for resolution):
    *   - `repo-local`       → `<repoRoot>/<config.path>/{branch}`              (opt-in)
-   *   - `workspace-scoped` → `~/.archon/workspaces/{owner}/{repo}/worktrees/{branch}`  (default)
+   *   - `workspace-scoped` → `~/.smelter/workspaces/{owner}/{repo}/worktrees/{branch}`  (default)
    *
    * In both layouts the resolved base already carries full repo context, so the
    * caller simply appends the branch name — no owner/repo namespacing here.
@@ -742,7 +742,7 @@ export class WorktreeProvider implements IIsolationProvider {
     const warnings: string[] = [];
     if (configLoadFailed) {
       warnings.push(
-        'Config file could not be loaded — copyFiles configuration was not applied. Check your .archon/config.yaml for syntax errors.'
+        'Config file could not be loaded — copyFiles configuration was not applied. Check your .smelter/config.yaml for syntax errors.'
       );
     }
     return { warnings };
@@ -775,11 +775,11 @@ export class WorktreeProvider implements IIsolationProvider {
         { repoPath, branch: configuredBaseBranch ?? 'auto-detect' },
         'workspace_sync_starting'
       );
-      // Only hard-reset for Archon-managed clones (under ~/.archon/workspaces/).
+      // Only hard-reset for Smelter-managed clones (under ~/.smelter/workspaces/).
       // Locally-registered repos get fetch-only to avoid destroying uncommitted work.
       const isManagedClone = repoPath
         .replace(/\\/g, '/')
-        .startsWith(getArchonWorkspacesPath().replace(/\\/g, '/'));
+        .startsWith(getSmelterWorkspacesPath().replace(/\\/g, '/'));
       const { branch } = await syncWorkspace(
         repoPath,
         configuredBaseBranch ? toBranchName(configuredBaseBranch) : undefined,
@@ -827,7 +827,7 @@ export class WorktreeProvider implements IIsolationProvider {
     worktreeConfig?: { baseBranch?: string; copyFiles?: string[] } | null
   ): Promise<{ configLoadFailed: boolean }> {
     // Default files to always copy
-    const defaultCopyFiles = ['.archon'];
+    const defaultCopyFiles = ['.smelter'];
 
     // Load user config - log errors and set configLoadFailed, but don't fail worktree creation
     let userCopyFiles: string[] = [];
@@ -1160,7 +1160,7 @@ export class WorktreeProvider implements IIsolationProvider {
   /**
    * Clean up an orphan directory if it exists but is not a valid worktree.
    * An orphan directory can occur when git worktree remove succeeds but leaves
-   * untracked files (like .archon/) behind.
+   * untracked files (like .smelter/) behind.
    */
   private async cleanOrphanDirectoryIfExists(worktreePath: string): Promise<void> {
     const dirExists = await this.directoryExists(worktreePath);

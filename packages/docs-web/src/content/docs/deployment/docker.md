@@ -1,6 +1,6 @@
 ---
 title: Docker Guide
-description: Deploy Archon with Docker, including automatic HTTPS, PostgreSQL, and the Web UI.
+description: Deploy Smelter with Docker, including automatic HTTPS, PostgreSQL, and the Web UI.
 category: deployment
 area: infra
 audience: [operator]
@@ -9,9 +9,9 @@ sidebar:
   order: 2
 ---
 
-Deploy Archon on a server with Docker. Includes automatic HTTPS, PostgreSQL, and the Web UI.
+Deploy Smelter on a server with Docker. Includes automatic HTTPS, PostgreSQL, and the Web UI.
 
-> **Claude Code is pre-installed in the image.** The official `ghcr.io/coleam00/archon` image
+> **Claude Code is pre-installed in the image.** The official `ghcr.io/coleam00/smelter` image
 > ships with Claude Code installed via npm and `CLAUDE_BIN_PATH` pre-set — no extra configuration
 > required. If you build a custom image that omits the npm install, set `CLAUDE_BIN_PATH` yourself
 > to point at a mounted `cli.js` (see [AI Assistants → Binary path configuration](/getting-started/ai-assistants/#binary-path-configuration-compiled-binaries-only)).
@@ -35,10 +35,10 @@ The fastest way to deploy. Paste the cloud-init config into your VPS provider's 
 
 - Docker + Docker Compose
 - UFW firewall (ports 22, 80, 443)
-- Clones the repo to `/opt/archon`
+- Clones the repo to `/opt/smelter`
 - Copies `.env.example` -> `.env` and `Caddyfile.example` -> `Caddyfile`
 - Pre-pulls PostgreSQL and Caddy images
-- Builds the Archon Docker image
+- Builds the Smelter Docker image
 
 ### After boot
 
@@ -46,14 +46,14 @@ SSH into the server and finish configuration:
 
 ```bash
 # Check setup completed
-cat /opt/archon/SETUP_COMPLETE
+cat /opt/smelter/SETUP_COMPLETE
 
 # Edit credentials and domain
-nano /opt/archon/.env
+nano /opt/smelter/.env
 
 # Set at minimum:
 #   CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-#   DOMAIN=archon.example.com
+#   DOMAIN=smelter.example.com
 #   DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent
 
 # (Optional) Set up basic auth to protect Web UI:
@@ -61,7 +61,7 @@ nano /opt/archon/.env
 # Add to .env: CADDY_BASIC_AUTH=basicauth @protected { admin $$2a$$14$$<hash> }
 
 # Start
-cd /opt/archon
+cd /opt/smelter
 docker compose --profile with-db --profile cloud up -d
 ```
 
@@ -81,13 +81,13 @@ docker compose --profile with-db --profile cloud up -d
 
 ## Local Docker Desktop (Windows / macOS)
 
-Run Archon locally with Docker Desktop — no domain, no VPS required. Uses SQLite and the Web UI only.
+Run Smelter locally with Docker Desktop — no domain, no VPS required. Uses SQLite and the Web UI only.
 
 ### Quick start
 
 ```bash
-git clone https://github.com/coleam00/Archon.git
-cd Archon
+git clone https://github.com/coleam00/Smelter.git
+cd Smelter
 cp .env.example .env
 # Edit .env: set CLAUDE_CODE_OAUTH_TOKEN or CLAUDE_API_KEY
 docker compose up -d
@@ -100,7 +100,7 @@ Access the Web UI at **http://localhost:3000**.
 **Build from WSL, not PowerShell.** Docker Desktop on Windows cannot follow Bun workspace symlinks during the build context transfer. If you see `The file cannot be accessed by the system`, open a WSL terminal:
 
 ```bash
-cd /mnt/c/Users/YourName/path/to/Archon
+cd /mnt/c/Users/YourName/path/to/Smelter
 docker compose up -d
 ```
 
@@ -157,8 +157,8 @@ docker compose version
 ### 2. Clone the repo
 
 ```bash
-git clone https://github.com/coleam00/Archon.git
-cd Archon
+git clone https://github.com/coleam00/Smelter.git
+cd Smelter
 ```
 
 ### 3. Configure environment
@@ -179,7 +179,7 @@ CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxxxx
 # CLAUDE_API_KEY=sk-ant-xxxxx
 
 # Domain — your domain or subdomain pointing to this server
-DOMAIN=archon.example.com
+DOMAIN=smelter.example.com
 
 # Database — connect to the Docker PostgreSQL container
 # Without this, the app uses SQLite (fine for getting started, but PostgreSQL recommended)
@@ -208,9 +208,9 @@ Create a DNS **A record** at your domain registrar:
 
 | Type | Name | Value |
 |------|------|-------|
-| A | `archon` (or `@` for root domain) | Your server's public IP |
+| A | `smelter` (or `@` for root domain) | Your server's public IP |
 
-Wait for DNS propagation (usually 5-60 minutes). Verify with `dig archon.example.com`.
+Wait for DNS propagation (usually 5-60 minutes). Verify with `dig smelter.example.com`.
 
 ### 5. Open firewall ports
 
@@ -228,7 +228,7 @@ docker compose --profile with-db --profile cloud up -d
 ```
 
 This starts three containers:
-- **app** — Archon server + Web UI
+- **app** — Smelter server + Web UI
 - **postgres** — PostgreSQL 17 database (auto-initialized)
 - **caddy** — Reverse proxy with automatic HTTPS (Let's Encrypt)
 
@@ -243,16 +243,16 @@ docker compose logs -f app
 docker compose logs -f caddy
 
 # Test HTTPS (from your local machine)
-curl https://archon.example.com/api/health
+curl https://smelter.example.com/api/health
 ```
 
-Open **https://archon.example.com** in your browser — you should see the Archon Web UI.
+Open **https://smelter.example.com** in your browser — you should see the Smelter Web UI.
 
 ---
 
 ## Profiles
 
-Archon uses Docker Compose profiles to optionally add PostgreSQL and/or HTTPS. Mix and match:
+Smelter uses Docker Compose profiles to optionally add PostgreSQL and/or HTTPS. Mix and match:
 
 | Command | What runs |
 |---------|-----------|
@@ -267,7 +267,7 @@ There is no `external-db` profile. When using an external PostgreSQL database (S
 
 ### No profile (SQLite)
 
-Zero-config default. No database container needed — SQLite file is stored in the `archon_data` volume.
+Zero-config default. No database container needed — SQLite file is stored in the `smelter_data` volume.
 
 ### `--profile with-db` (PostgreSQL)
 
@@ -312,7 +312,7 @@ Caddy can enforce HTTP Basic Auth on all routes except webhooks (`/webhooks/*`) 
 
 3. Restart: `docker compose --profile cloud restart caddy`
 
-Your browser will prompt for username/password when accessing the Archon URL. Webhook endpoints bypass auth since they use HMAC signature verification.
+Your browser will prompt for username/password when accessing the Smelter URL. Webhook endpoints bypass auth since they use HMAC signature verification.
 
 To disable, leave `CADDY_BASIC_AUTH` empty or unset — the Caddyfile expands it to nothing.
 
@@ -434,7 +434,7 @@ WEBHOOK_SECRET=...
 
 ```ini
 PORT=3000                          # Default: 3000
-DOMAIN=archon.example.com          # Required for --profile cloud
+DOMAIN=smelter.example.com          # Required for --profile cloud
 LOG_LEVEL=info                     # fatal|error|warn|info|debug|trace
 MAX_CONCURRENT_CONVERSATIONS=10
 ```
@@ -443,69 +443,69 @@ See `.env.example` for the full list with documentation.
 
 ### Data Directory
 
-The container stores all data at `/.archon/` (workspaces, worktrees, artifacts, logs, SQLite DB).
+The container stores all data at `/.smelter/` (workspaces, worktrees, artifacts, logs, SQLite DB).
 
-By default this is a Docker-managed volume. To store data at a specific location on the host, set `ARCHON_DATA` in `.env`:
+By default this is a Docker-managed volume. To store data at a specific location on the host, set `SMELTER_DATA` in `.env`:
 
 ```ini
-# Store Archon data at a specific host path
-ARCHON_DATA=/opt/archon-data
+# Store Smelter data at a specific host path
+SMELTER_DATA=/opt/smelter-data
 ```
 
 :::note
-`ARCHON_HOME` from `.env.example` is **ignored inside Docker** — the container always uses `/.archon`. Use `ARCHON_DATA` (host-side bind-mount source) to control *where on the host* `/.archon` lives. Both `ARCHON_HOME` and `ARCHON_DATA` leak into the container env via `env_file: .env`, which is harmless but expected.
+`SMELTER_HOME` from `.env.example` is **ignored inside Docker** — the container always uses `/.smelter`. Use `SMELTER_DATA` (host-side bind-mount source) to control *where on the host* `/.smelter` lives. Both `SMELTER_HOME` and `SMELTER_DATA` leak into the container env via `env_file: .env`, which is harmless but expected.
 :::
 
 The directory is created automatically. Make sure the path is writable by UID 1001 (the container user):
 
 ```bash
-mkdir -p /opt/archon-data
-sudo chown -R 1001:1001 /opt/archon-data
+mkdir -p /opt/smelter-data
+sudo chown -R 1001:1001 /opt/smelter-data
 ```
 
-If `ARCHON_DATA` is not set, Docker manages the volume automatically (`archon_data`) — data persists across restarts and rebuilds but lives inside Docker's storage.
+If `SMELTER_DATA` is not set, Docker manages the volume automatically (`smelter_data`) — data persists across restarts and rebuilds but lives inside Docker's storage.
 
 ### User Home Directory (Persisted)
 
-The container runs as `appuser` with `$HOME=/home/appuser`. The base compose mounts `/home/appuser` as a named volume (`archon_user_home`) by default, so user-specific state survives container rebuilds without any operator action:
+The container runs as `appuser` with `$HOME=/home/appuser`. The base compose mounts `/home/appuser` as a named volume (`smelter_user_home`) by default, so user-specific state survives container rebuilds without any operator action:
 
 | Path | What it persists |
 |------|------------------|
 | `~/.claude/` | Claude Code skills, commands, agents, hooks, MCP config, projects (conversation history), memory, OAuth state, keybindings, file-history |
 | `~/.codex/` | Codex auth (`auth.json` from interactive `codex login`; the env-var path via `setup-auth` overwrites this on every container start) |
-| `~/.pi/agent/` | Pi `auth.json` from interactive `pi /login`, plus `models.json`, global settings (`~/.pi/agent/settings.json`), and sessions (Archon's Pi adapter reads `auth.json` and `settings.json` on every request) |
+| `~/.pi/agent/` | Pi `auth.json` from interactive `pi /login`, plus `models.json`, global settings (`~/.pi/agent/settings.json`), and sessions (Smelter's Pi adapter reads `auth.json` and `settings.json` on every request) |
 | `~/.gitconfig` | Author identity, signing config, custom aliases, plus the `safe.directory` entries baked into the image |
 | `~/.bash_history` | Shell history when you `docker compose exec app bash` |
 | `~/.config/gh/` | GitHub CLI auth from interactive `gh auth login` (the `GH_TOKEN` env-var path works without it) |
 
-To bind-mount a host path instead of the default named volume, set `ARCHON_USER_HOME` in `.env`:
+To bind-mount a host path instead of the default named volume, set `SMELTER_USER_HOME` in `.env`:
 
 ```ini
-ARCHON_USER_HOME=/opt/archon-user-home
+SMELTER_USER_HOME=/opt/smelter-user-home
 ```
 
 The host path must be writable by UID 1001 — chown it once before first start:
 
 ```bash
-mkdir -p /opt/archon-user-home
-sudo chown -R 1001:1001 /opt/archon-user-home
+mkdir -p /opt/smelter-user-home
+sudo chown -R 1001:1001 /opt/smelter-user-home
 ```
 
 The entrypoint re-applies ownership on every container start, so subsequent rebuilds work without re-running `chown`.
 
 :::caution
-Bind-mount paths do **not** inherit the image's baked `~/.gitconfig` (Docker only copies image content into named volumes on first creation, never into bind mounts). The entrypoint still registers git `safe.directory` entries for `/.archon/workspaces` and `/.archon/worktrees` repos at runtime, so functionality is preserved — but a bind-mounted `~/.gitconfig` starts empty and any author identity / signing config you want must be set explicitly with `git config --global` inside the container.
+Bind-mount paths do **not** inherit the image's baked `~/.gitconfig` (Docker only copies image content into named volumes on first creation, never into bind mounts). The entrypoint still registers git `safe.directory` entries for `/.smelter/workspaces` and `/.smelter/worktrees` repos at runtime, so functionality is preserved — but a bind-mounted `~/.gitconfig` starts empty and any author identity / signing config you want must be set explicitly with `git config --global` inside the container.
 :::
 
-If `ARCHON_USER_HOME` is not set, Docker manages the volume automatically (`archon_user_home`) — config persists across restarts and rebuilds but lives inside Docker's storage. To wipe it: `docker compose down && docker volume rm archon_archon_user_home`.
+If `SMELTER_USER_HOME` is not set, Docker manages the volume automatically (`smelter_user_home`) — config persists across restarts and rebuilds but lives inside Docker's storage. To wipe it: `docker compose down && docker volume rm smelter_smelter_user_home`.
 
-#### Relocating Pi data to the ARCHON_DATA volume (optional)
+#### Relocating Pi data to the SMELTER_DATA volume (optional)
 
-By default Pi's data directory (`~/.pi/agent/`) is persisted via the `archon_user_home` volume above. If you'd rather keep Pi data alongside the rest of `/.archon/` (e.g. to back it up with the same volume), set `PI_CODING_AGENT_DIR` in `.env` to redirect it:
+By default Pi's data directory (`~/.pi/agent/`) is persisted via the `smelter_user_home` volume above. If you'd rather keep Pi data alongside the rest of `/.smelter/` (e.g. to back it up with the same volume), set `PI_CODING_AGENT_DIR` in `.env` to redirect it:
 
 ```ini
-# Optional — only needed if you want Pi data on the ARCHON_DATA volume instead
-PI_CODING_AGENT_DIR=/.archon/pi
+# Optional — only needed if you want Pi data on the SMELTER_DATA volume instead
+PI_CODING_AGENT_DIR=/.smelter/pi
 ```
 
 This must be set before the container starts; the Pi SDK reads the variable on each file path lookup.
@@ -526,7 +526,7 @@ After the server is reachable via HTTPS:
 
 1. Go to `https://github.com/<owner>/<repo>/settings/hooks`
 2. Add webhook:
-   - **Payload URL**: `https://archon.example.com/webhooks/github`
+   - **Payload URL**: `https://smelter.example.com/webhooks/github`
    - **Content type**: `application/json`
    - **Secret**: Your `WEBHOOK_SECRET` from `.env`
    - **Events**: Issues, Issue comments, Pull requests
@@ -538,9 +538,9 @@ After the server is reachable via HTTPS:
 For users who don't need to build from source:
 
 ```bash
-mkdir archon && cd archon
-curl -O https://raw.githubusercontent.com/coleam00/Archon/main/deploy/docker-compose.yml
-curl -O https://raw.githubusercontent.com/coleam00/Archon/main/.env.example
+mkdir smelter && cd smelter
+curl -O https://raw.githubusercontent.com/coleam00/Smelter/main/deploy/docker-compose.yml
+curl -O https://raw.githubusercontent.com/coleam00/Smelter/main/.env.example
 
 cp .env.example .env
 # Edit .env — set AI credentials, DOMAIN, etc.
@@ -548,7 +548,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Uses `ghcr.io/coleam00/archon:latest`. To add PostgreSQL, uncomment the `postgres` service in the compose file and set `DATABASE_URL` in `.env`.
+Uses `ghcr.io/coleam00/smelter:latest`. To add PostgreSQL, uncomment the `postgres` service in the compose file and set `DATABASE_URL` in `.env`.
 
 To layer custom tools on top of the pre-built image, see [Customizing the Image](#customizing-the-image).
 
@@ -563,8 +563,8 @@ The Dockerfile uses three stages:
 3. **production** — Production image with only production dependencies + pre-built web assets
 
 ```bash
-docker build -t archon .
-docker run --env-file .env -p 3000:3000 archon
+docker build -t smelter .
+docker run --env-file .env -p 3000:3000 smelter
 ```
 
 **What's in the image:**
@@ -574,7 +574,7 @@ docker run --env-file .env -p 3000:3000 archon
 - **Browser tooling**: [agent-browser](https://github.com/vercel-labs/agent-browser) (Vercel Labs) — enables E2E testing workflows via CDP. Uses system Chromium (`AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium`)
 - **App**: All 10 workspace packages (source), pre-built web UI
 - **User**: Non-root `appuser` (UID 1001) — required by Claude Code SDK
-- **Archon dirs**: `/.archon/workspaces`, `/.archon/worktrees`
+- **Smelter dirs**: `/.smelter/workspaces`, `/.smelter/worktrees`
 
 The multi-stage build keeps the image lean — no devDependencies, test files, docs, or `.git/`.
 
@@ -674,7 +674,7 @@ docker compose --profile cloud up -d
 
 ```bash
 # Check DNS propagation
-dig archon.example.com
+dig smelter.example.com
 # Should return your server IP
 
 # Check Caddy logs
@@ -706,12 +706,12 @@ When using `--profile with-db`, ensure:
 2. The postgres container is healthy: `docker compose ps postgres`
 3. Migrations ran: check `docker compose logs postgres` for init script output
 
-### Permission errors in `/.archon/`
+### Permission errors in `/.smelter/`
 
 The container runs as `appuser` (UID 1001). If using bind mounts instead of Docker volumes:
 
 ```bash
-sudo chown -R 1001:1001 /path/to/archon-data
+sudo chown -R 1001:1001 /path/to/smelter-data
 ```
 
 ### Port conflicts

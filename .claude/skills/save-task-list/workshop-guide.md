@@ -135,7 +135,7 @@ installs its own infrastructure for future sessions.
 4. **Point out to the audience**:
    - The `statusMessage` spinner text appearing during hook execution
    - The startup command output (`CLAUDE_CODE_TASK_LIST_ID=<id> claude`)
-   - The JSONL log written to `.claude/archon/sessions/task-lists.jsonl`
+   - The JSONL log written to `.claude/smelter/sessions/task-lists.jsonl`
    - The SessionStart hook installed in `.claude/settings.local.json`
 5. **Show the Stop hook in action** — if Claude tried to finish without showing
    the task list ID, the prompt hook would catch it and force Claude to complete

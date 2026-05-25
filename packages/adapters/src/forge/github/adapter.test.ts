@@ -21,7 +21,7 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
@@ -53,7 +53,7 @@ const mockGetOrCreateConversation = mock(async () => ({
 }));
 const mockUpdateConversation = mock(async () => {});
 
-mock.module('@archon/core/db/conversations', () => ({
+mock.module('@smelter/core/db/conversations', () => ({
   getOrCreateConversation: mockGetOrCreateConversation,
   updateConversation: mockUpdateConversation,
 }));
@@ -65,7 +65,7 @@ const mockCreateCodebase = mock(async () => ({
   default_cwd: '/tmp/test',
 }));
 
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   findCodebaseByRepoUrl: mockFindCodebaseByRepoUrl,
   createCodebase: mockCreateCodebase,
   updateCodebase: mock(async () => {}),
@@ -73,13 +73,13 @@ mock.module('@archon/core/db/codebases', () => ({
   updateCodebaseCommands: mock(async () => {}),
 }));
 
-// Mock @archon/git for ensureRepoReady integration tests
+// Mock @smelter/git for ensureRepoReady integration tests
 const mockCloneRepository = mock(async () => ({ ok: true, value: undefined }));
 const mockSyncRepository = mock(async () => ({ ok: true, value: undefined }));
 const mockAddSafeDirectory = mock(async () => undefined);
 const mockIsWorktreePath = mock(async () => false);
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   cloneRepository: mockCloneRepository,
   syncRepository: mockSyncRepository,
   addSafeDirectory: mockAddSafeDirectory,
@@ -90,7 +90,7 @@ mock.module('@archon/git', () => ({
 }));
 
 import { GitHubAdapter } from './adapter';
-import { ConversationLockManager } from '@archon/core';
+import { ConversationLockManager } from '@smelter/core';
 
 // Create a mock lock manager that immediately executes handlers
 const mockLockManager = {
@@ -180,14 +180,14 @@ describe('GitHubAdapter', () => {
     });
 
     test('should detect mention when it is the entire message', () => {
-      const adapterWithMention = new GitHubAdapter('token', 'secret', mockLockManager, 'Archon');
+      const adapterWithMention = new GitHubAdapter('token', 'secret', mockLockManager, 'Smelter');
       const hasMention = (
         adapterWithMention as unknown as { hasMention: (text: string) => boolean }
       ).hasMention;
 
-      expect(hasMention.call(adapterWithMention, '@Archon')).toBe(true);
-      expect(hasMention.call(adapterWithMention, '@ARCHON')).toBe(true);
-      expect(hasMention.call(adapterWithMention, '@archon')).toBe(true);
+      expect(hasMention.call(adapterWithMention, '@Smelter')).toBe(true);
+      expect(hasMention.call(adapterWithMention, '@SMELTER')).toBe(true);
+      expect(hasMention.call(adapterWithMention, '@smelter')).toBe(true);
     });
 
     test('should strip mention case-insensitively', () => {
@@ -209,7 +209,7 @@ describe('GitHubAdapter', () => {
     /**
      * Creates an adapter with mocked signature verification for self-filtering tests.
      */
-    function createSelfFilterAdapter(botMention = 'archon'): GitHubAdapter {
+    function createSelfFilterAdapter(botMention = 'smelter'): GitHubAdapter {
       const adapter = new GitHubAdapter(
         'fake-token-for-testing',
         'fake-webhook-secret',
@@ -268,7 +268,7 @@ describe('GitHubAdapter', () => {
 
     test('should ignore comments from the bot itself', async () => {
       const adapter = createSelfFilterAdapter();
-      const payload = createCommentPayload('@archon fix this', 'archon');
+      const payload = createCommentPayload('@smelter fix this', 'smelter');
 
       await adapter.handleWebhook(payload, 'mock-signature');
 
@@ -277,8 +277,8 @@ describe('GitHubAdapter', () => {
     });
 
     test('should handle case-insensitive username matching', async () => {
-      const adapter = createSelfFilterAdapter('Archon'); // Mixed case config
-      const payload = createCommentPayload('@archon test', 'archon'); // Lowercase author
+      const adapter = createSelfFilterAdapter('Smelter'); // Mixed case config
+      const payload = createCommentPayload('@smelter test', 'smelter'); // Lowercase author
 
       await adapter.handleWebhook(payload, 'mock-signature');
 
@@ -288,7 +288,7 @@ describe('GitHubAdapter', () => {
 
     test('should NOT filter comments from real users', async () => {
       const adapter = createSelfFilterAdapter();
-      const payload = createCommentPayload('@archon please help', 'user123');
+      const payload = createCommentPayload('@smelter please help', 'user123');
 
       // handleWebhook progresses past self-filtering into DB/Octokit operations
       try {
@@ -305,7 +305,7 @@ describe('GitHubAdapter', () => {
       const adapter = createSelfFilterAdapter();
       // Comment has the marker but author is a real user (using PAT)
       const payload = createCommentPayload(
-        '@archon fix this\n\n<!-- archon-bot-response -->',
+        '@smelter fix this\n\n<!-- smelter-bot-response -->',
         'Wirasm'
       );
 
@@ -318,7 +318,7 @@ describe('GitHubAdapter', () => {
     test('should process comments without bot marker from same user', async () => {
       const adapter = createSelfFilterAdapter();
       // Comment from same user but WITHOUT marker - should be processed
-      const payload = createCommentPayload('@archon fix this', 'Wirasm');
+      const payload = createCommentPayload('@smelter fix this', 'Wirasm');
 
       // handleWebhook progresses past self-filtering into DB/Octokit operations
       try {
@@ -333,7 +333,7 @@ describe('GitHubAdapter', () => {
 
     test('should handle missing comment.user gracefully', async () => {
       const adapter = createSelfFilterAdapter();
-      const payload = createCommentPayload('@archon help', undefined); // No user field
+      const payload = createCommentPayload('@smelter help', undefined); // No user field
 
       // Should not crash on undefined user
       try {
@@ -358,7 +358,7 @@ describe('GitHubAdapter', () => {
         owner: 'owner',
         repo: 'repo',
         issue_number: 123,
-        body: 'test\n\n<!-- archon-bot-response -->',
+        body: 'test\n\n<!-- smelter-bot-response -->',
       });
     });
 
@@ -370,8 +370,8 @@ describe('GitHubAdapter', () => {
 
       const body = mockCreateComment.mock.calls[0][0].body as string;
       expect(body).toContain('Hello world');
-      expect(body).toContain('<!-- archon-bot-response -->');
-      expect(body).toBe('Hello world\n\n<!-- archon-bot-response -->');
+      expect(body).toContain('<!-- smelter-bot-response -->');
+      expect(body).toBe('Hello world\n\n<!-- smelter-bot-response -->');
     });
 
     test('should reject invalid conversationId format', async () => {

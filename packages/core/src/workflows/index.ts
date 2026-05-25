@@ -1,5 +1,5 @@
 /**
- * Workflow Store Adapter - bridges @archon/core DB to @archon/workflows IWorkflowStore
+ * Workflow Store Adapter - bridges @smelter/core DB to @smelter/workflows IWorkflowStore
  */
 
 export { createWorkflowStore, createWorkflowDeps } from './store-adapter';

@@ -170,7 +170,7 @@ The agent starts with real context instead of instructions to go fetch it.
 
 | | Old Command | New Skill + Agent |
 |---|---|---|
-| Format | `.claude/commands/archon/triage.md` | Skill + `.claude/agents/triage-agent.md` |
+| Format | `.claude/commands/smelter/triage.md` | Skill + `.claude/agents/triage-agent.md` |
 | Execution | Inline (pollutes main context) | Forked (isolated context window) |
 | Validation | None | Prompt hook validates every label application |
 | Tool access | All Bash commands | `Bash(gh *)` only — no arbitrary shell |

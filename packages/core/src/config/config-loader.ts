@@ -1,20 +1,20 @@
 /**
- * Configuration loader for Archon YAML config files
+ * Configuration loader for Smelter YAML config files
  *
  * Loading order (later overrides earlier):
  * 1. Defaults
- * 2. Global config (~/.archon/config.yaml)
- * 3. Repository config (.archon/config.yaml)
+ * 2. Global config (~/.smelter/config.yaml)
+ * 3. Repository config (.smelter/config.yaml)
  * 4. Environment variables
  */
 
 import { readFile as fsReadFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import {
-  getArchonConfigPath,
-  getArchonWorkspacesPath,
-  getArchonWorktreesPath,
-} from '@archon/paths';
+  getSmelterConfigPath,
+  getSmelterWorkspacesPath,
+  getSmelterWorktreesPath,
+} from '@smelter/paths';
 
 // Wrapper functions for file I/O - allows mocking without polluting fs/promises globally
 export async function readConfigFile(path: string): Promise<string> {
@@ -36,13 +36,13 @@ import type {
   AssistantDefaults,
   AssistantDefaultsConfig,
 } from './config-types';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import {
   isRegisteredProvider,
   getRegisteredProviders,
   registerBuiltinProviders,
   registerCommunityProviders,
-} from '@archon/providers';
+} from '@smelter/providers';
 
 /**
  * Pure read of registered provider IDs. Registration is guaranteed by
@@ -207,7 +207,7 @@ async function createDefaultConfig(configPath: string): Promise<void> {
 }
 
 /**
- * Load global config from ~/.archon/config.yaml
+ * Load global config from ~/.smelter/config.yaml
  * Creates default config if file doesn't exist
  */
 export async function loadGlobalConfig(forceReload = false): Promise<GlobalConfig> {
@@ -215,7 +215,7 @@ export async function loadGlobalConfig(forceReload = false): Promise<GlobalConfi
     return cachedGlobalConfig;
   }
 
-  const configPath = getArchonConfigPath();
+  const configPath = getSmelterConfigPath();
 
   try {
     const content = await readConfigFile(configPath);
@@ -236,11 +236,11 @@ export async function loadGlobalConfig(forceReload = false): Promise<GlobalConfi
 }
 
 /**
- * Load repository config from .archon/config.yaml
+ * Load repository config from .smelter/config.yaml
  * Returns empty object if no config found
  */
 export async function loadRepoConfig(repoPath: string): Promise<RepoConfig> {
-  const configPath = join(repoPath, '.archon', 'config.yaml');
+  const configPath = join(repoPath, '.smelter', 'config.yaml');
 
   try {
     const content = await readConfigFile(configPath);
@@ -285,8 +285,8 @@ function getDefaults(): MergedConfig {
       slack: 'batch',
     },
     paths: {
-      workspaces: getArchonWorkspacesPath(),
-      worktrees: getArchonWorktreesPath(),
+      workspaces: getSmelterWorkspacesPath(),
+      worktrees: getSmelterWorktreesPath(),
     },
     concurrency: {
       maxConversations: 10,
@@ -343,7 +343,7 @@ function applyEnvOverrides(config: MergedConfig): MergedConfig {
     config.streaming.slack = slackMode as 'stream' | 'batch';
   }
 
-  // Path overrides (these come from archon-paths.ts which already checks env vars)
+  // Path overrides (these come from smelter-paths.ts which already checks env vars)
   // No need to re-apply here since getDefaults() uses those functions
 
   // Concurrency override
@@ -378,7 +378,7 @@ function mergeGlobalConfig(defaults: MergedConfig, global: GlobalConfig): Merged
       result.assistant = global.defaultAssistant;
     } else {
       throw new Error(
-        `defaultAssistant: '${global.defaultAssistant}' in global config (~/.archon/config.yaml) ` +
+        `defaultAssistant: '${global.defaultAssistant}' in global config (~/.smelter/config.yaml) ` +
           `is not a registered provider. Available: ${getRegisteredProviderNames().join(', ')}`
       );
     }
@@ -422,7 +422,7 @@ function mergeRepoConfig(merged: MergedConfig, repo: RepoConfig): MergedConfig {
       result.assistant = repo.assistant;
     } else {
       throw new Error(
-        `assistant: '${repo.assistant}' in repo config (.archon/config.yaml) ` +
+        `assistant: '${repo.assistant}' in repo config (.smelter/config.yaml) ` +
           `is not a registered provider. Available: ${getRegisteredProviderNames().join(', ')}`
       );
     }
@@ -523,12 +523,12 @@ export function logConfig(config: MergedConfig): void {
 }
 
 /**
- * Update global config (~/.archon/config.yaml) with partial updates.
+ * Update global config (~/.smelter/config.yaml) with partial updates.
  * Reads current config, deep-merges updates, and writes back to YAML.
  * Invalidates the cached config so next loadConfig() picks up changes.
  */
 export async function updateGlobalConfig(updates: Partial<GlobalConfig>): Promise<void> {
-  const configPath = getArchonConfigPath();
+  const configPath = getSmelterConfigPath();
 
   try {
     // Force reload to get fresh state

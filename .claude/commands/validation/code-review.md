@@ -6,7 +6,7 @@ description: Technical code review for quality, bugs, and CLAUDE.md compliance
 
 ## Objective
 
-Perform a thorough technical code review on recently changed files, checking for bugs, security issues, and adherence to Archon's documented conventions.
+Perform a thorough technical code review on recently changed files, checking for bugs, security issues, and adherence to Smelter's documented conventions.
 
 ## Process
 
@@ -59,7 +59,7 @@ For each changed or new file, analyze for:
 - Incorrect type assertions (`as` casts)
 - Overly broad types where narrow types exist
 
-**Archon-Specific Conventions**
+**Smelter-Specific Conventions**
 - Import patterns: `import type` for type-only imports, no `import * as core`
 - Use `execFileAsync` not `exec` for git operations
 - Never `git clean -fd`
@@ -70,8 +70,8 @@ For each changed or new file, analyze for:
 
 **Package Boundary Compliance**
 - No circular dependencies between packages
-- `@archon/git` and `@archon/paths` must not import from `@archon/core`
-- `@archon/workflows` injects deps via narrow interfaces, not direct core imports
+- `@smelter/git` and `@smelter/paths` must not import from `@smelter/core`
+- `@smelter/workflows` injects deps via narrow interfaces, not direct core imports
 
 ### 4. Verify Issues Are Real
 

@@ -66,6 +66,15 @@ No mocks for the interface under test. No dry-run. No handler-only calls when th
 - Hook: stdout JSON parses and matches expected shape.
 - Local UI toggle: absence/presence is the effect; declare it explicitly.
 
+## UI Fidelity Rules
+
+- Exercise the real affected route with real backend data. Do not replace it with debug routes, synthetic SVG/images, or mock fixtures unless the task is explicitly about that harness.
+- Prefer the project's documented E2E command and `.env.e2e` setup when they exist; do not skip them for an ad-hoc Playwright script.
+- Match the user's visual conditions for artifacts: viewport, browser, theme, zoom, and DPR/device scale factor. A 2x screenshot does not prove a 1x rendering issue is fixed.
+- Validate custom measurement code against known positive and negative cases before using it as evidence. If the measurement transform erases the target defect, the result is invalid.
+- Open and inspect screenshots/videos directly. Artifact existence, non-zero file size, and passing test output are not visual confirmation.
+- Do not claim a subjective visual issue is fixed until the user confirms in their environment; report local evidence as "changed and locally observed" instead.
+
 ## Credentials
 
 If auth/API secrets are required, ask the user to populate `.env.e2e` with only needed `E2E_*` keys. Never read `.env`, echo secrets, fabricate credentials, or stub auth to pass.

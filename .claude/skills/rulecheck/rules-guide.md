@@ -44,10 +44,10 @@ Read this file thoroughly. Every section contains enforceable rules.
 
 | Rule | Violation |
 |------|-----------|
-| No generic `import *` from `@archon/core` | `import * as core from '@archon/core'` |
+| No generic `import *` from `@smelter/core` | `import * as core from '@smelter/core'` |
 | Use `import type` for type-only | `import { MyType } from '...'` when MyType is only used as a type |
-| Namespace imports for submodules only | `import * as conversationDb from '@archon/core/db/conversations'` is fine |
-| Specific named imports for values | `import { handleMessage, pool } from '@archon/core'` |
+| Namespace imports for submodules only | `import * as conversationDb from '@smelter/core/db/conversations'` is fine |
+| Specific named imports for values | `import { handleMessage, pool } from '@smelter/core'` |
 
 ### Git Safety Rules
 
@@ -55,7 +55,7 @@ Read this file thoroughly. Every section contains enforceable rules.
 |------|-----------|
 | Never `git clean -fd` | Any use of `git clean` (use `git checkout .` instead) |
 | Use `execFileAsync` not `exec` | `exec("git ...")` instead of `execFileAsync("git", [...])` |
-| Use `@archon/git` functions | Direct git shell calls when an `@archon/git` function exists |
+| Use `@smelter/git` functions | Direct git shell calls when an `@smelter/git` function exists |
 
 ## Violation Categories by Impact
 
@@ -71,7 +71,7 @@ Read this file thoroughly. Every section contains enforceable rules.
 - **Wrong logger** — `console.log`/`console.error` in production code instead of Pino
 - **Bad log event names** — events not following `{domain}.{action}_{state}` convention
 - **Missing error classification** — git catch blocks without `classifyIsolationError()`
-- **Generic `import *`** — from `@archon/core` instead of specific named imports
+- **Generic `import *`** — from `@smelter/core` instead of specific named imports
 
 ### Tier 3 — Medium (fix if time permits)
 

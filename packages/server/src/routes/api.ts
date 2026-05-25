@@ -16,7 +16,7 @@ import type {
   AttachedFile,
   HandleMessageContext,
   GlobalConfig,
-} from '@archon/core';
+} from '@smelter/core';
 import {
   handleMessage,
   getDatabaseType,
@@ -27,33 +27,33 @@ import {
   registerRepository,
   ConversationNotFoundError,
   generateAndSetTitle,
-} from '@archon/core';
-import { removeWorktree, toRepoPath, toWorktreePath } from '@archon/git';
+} from '@smelter/core';
+import { removeWorktree, toRepoPath, toWorktreePath } from '@smelter/git';
 import {
   createLogger,
   getWorkflowFolderSearchPaths,
   getCommandFolderSearchPaths,
   getDefaultCommandsPath,
   getDefaultWorkflowsPath,
-  getArchonWorkspacesPath,
+  getSmelterWorkspacesPath,
   getHomeCommandsPath,
   getRunArtifactsPath,
-  getArchonHome,
+  getSmelterHome,
   isDocker,
   checkForUpdate,
   BUNDLED_IS_BINARY,
   BUNDLED_VERSION,
-} from '@archon/paths';
-import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
-import { parseWorkflow } from '@archon/workflows/loader';
-import { isValidCommandName } from '@archon/workflows/command-validation';
-import { BUNDLED_WORKFLOWS, BUNDLED_COMMANDS, isBinaryBuild } from '@archon/workflows/defaults';
+} from '@smelter/paths';
+import { discoverWorkflowsWithConfig } from '@smelter/workflows/workflow-discovery';
+import { parseWorkflow } from '@smelter/workflows/loader';
+import { isValidCommandName } from '@smelter/workflows/command-validation';
+import { BUNDLED_WORKFLOWS, BUNDLED_COMMANDS, isBinaryBuild } from '@smelter/workflows/defaults';
 import {
   RESUMABLE_WORKFLOW_STATUSES,
   TERMINAL_WORKFLOW_STATUSES,
-} from '@archon/workflows/schemas/workflow-run';
-import type { ApprovalContext, WorkflowRun } from '@archon/workflows/schemas/workflow-run';
-import { findMarkdownFilesRecursive } from '@archon/core/utils/commands';
+} from '@smelter/workflows/schemas/workflow-run';
+import type { ApprovalContext, WorkflowRun } from '@smelter/workflows/schemas/workflow-run';
+import { findMarkdownFilesRecursive } from '@smelter/core/utils/commands';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -61,13 +61,13 @@ function getLog(): ReturnType<typeof createLogger> {
   if (!cachedLog) cachedLog = createLogger('api');
   return cachedLog;
 }
-import * as conversationDb from '@archon/core/db/conversations';
-import * as codebaseDb from '@archon/core/db/codebases';
-import * as envVarDb from '@archon/core/db/env-vars';
-import * as isolationEnvDb from '@archon/core/db/isolation-environments';
-import * as workflowDb from '@archon/core/db/workflows';
-import * as workflowEventDb from '@archon/core/db/workflow-events';
-import * as messageDb from '@archon/core/db/messages';
+import * as conversationDb from '@smelter/core/db/conversations';
+import * as codebaseDb from '@smelter/core/db/codebases';
+import * as envVarDb from '@smelter/core/db/env-vars';
+import * as isolationEnvDb from '@smelter/core/db/isolation-environments';
+import * as workflowDb from '@smelter/core/db/workflows';
+import * as workflowEventDb from '@smelter/core/db/workflow-events';
+import * as messageDb from '@smelter/core/db/messages';
 import { errorSchema } from './schemas/common.schemas';
 import { updateCheckResponseSchema } from './schemas/system.schemas';
 import {
@@ -121,7 +121,7 @@ import {
   codebaseEnvironmentsResponseSchema,
 } from './schemas/config.schemas';
 import { providerListResponseSchema } from './schemas/provider.schemas';
-import { getProviderInfoList, isRegisteredProvider } from '@archon/providers';
+import { getProviderInfoList, isRegisteredProvider } from '@smelter/providers';
 
 // Read app version: use build-time constant in binary, package.json in dev
 let appVersion = 'unknown';
@@ -1200,7 +1200,7 @@ export function registerApiRoutes(
             conversation.id,
             message,
             conversation.ai_assistant_type,
-            getArchonWorkspacesPath()
+            getSmelterWorkspacesPath()
           );
         }
 
@@ -1334,11 +1334,11 @@ export function registerApiRoutes(
         return c.json({ error: `Maximum ${String(MAX_FILES_PER_MESSAGE)} files per message` }, 400);
       }
 
-      const archonHome = getArchonHome();
-      uploadDir = join(archonHome, 'artifacts', 'uploads', conversationId);
+      const smelterHome = getSmelterHome();
+      uploadDir = join(smelterHome, 'artifacts', 'uploads', conversationId);
 
       // Guard against path traversal in conversationId (belt-and-suspenders after regex above)
-      if (!uploadDir.startsWith(archonHome + sep)) {
+      if (!uploadDir.startsWith(smelterHome + sep)) {
         return c.json({ error: 'Invalid conversation ID' }, 400);
       }
 
@@ -1658,8 +1658,8 @@ export function registerApiRoutes(
       // Delete from database (unlinks conversations and sessions)
       await codebaseDb.deleteCodebase(id);
 
-      // Remove workspace directory from disk — only for Archon-managed repos
-      const workspacesRoot = normalize(getArchonWorkspacesPath());
+      // Remove workspace directory from disk — only for Smelter-managed repos
+      const workspacesRoot = normalize(getSmelterWorkspacesPath());
       const normalizedCwd = normalize(codebase.default_cwd);
       if (
         normalizedCwd.startsWith(workspacesRoot + '/') ||
@@ -1819,7 +1819,7 @@ export function registerApiRoutes(
             conv.id,
             message,
             conv.ai_assistant_type,
-            getArchonWorkspacesPath(),
+            getSmelterWorkspacesPath(),
             workflowName
           );
         }
@@ -2317,7 +2317,7 @@ export function registerApiRoutes(
       if (codebases.length > 0) workingDir = codebases[0].default_cwd;
     }
     if (!workingDir) {
-      workingDir = getArchonHome();
+      workingDir = getSmelterHome();
     }
 
     const { definition } = getValidatedBody(c, saveWorkflowBodySchema);
@@ -2378,7 +2378,7 @@ export function registerApiRoutes(
       if (codebases.length > 0) workingDir = codebases[0].default_cwd;
     }
     if (!workingDir) {
-      workingDir = getArchonHome();
+      workingDir = getSmelterHome();
     }
 
     const [workflowFolder] = getWorkflowFolderSearchPaths();
@@ -2440,7 +2440,7 @@ export function registerApiRoutes(
         }
       }
 
-      // 3. Home-scoped commands (~/.archon/commands/) override bundled
+      // 3. Home-scoped commands (~/.smelter/commands/) override bundled
       try {
         const homeCommandsPath = getHomeCommandsPath();
         const files = await findMarkdownFilesRecursive(homeCommandsPath, '', COMMAND_LIST_DEPTH);

@@ -1,6 +1,6 @@
 ---
 title: Windows Setup
-description: Run Archon on Windows natively with Bun or with full WSL2 compatibility.
+description: Run Smelter on Windows natively with Bun or with full WSL2 compatibility.
 category: deployment
 area: infra
 audience: [operator]
@@ -9,7 +9,7 @@ sidebar:
   order: 4
 ---
 
-Archon runs on Windows in two ways:
+Smelter runs on Windows in two ways:
 
 - **Native Windows with Bun**: Works for basic usage (server, Web UI, simple workflows). No WSL2 required. Install [Bun for Windows](https://bun.sh), clone the repo, and run `bun install && bun run dev`.
 - **WSL2 (recommended)**: Required for full compatibility, especially git worktree isolation, shell-based workflow steps, and CLI features that depend on Unix tooling.
@@ -18,7 +18,7 @@ The rest of this guide covers the WSL2 setup for full compatibility.
 
 ## Why WSL2?
 
-The Archon CLI relies on Unix-specific features and tools:
+The Smelter CLI relies on Unix-specific features and tools:
 - Git worktree operations with symlinks
 - Shell scripting for AI agent execution
 - File system operations that differ between Windows and Unix
@@ -42,10 +42,10 @@ WSL2 provides a full Linux environment that runs seamlessly on Windows.
    source ~/.bashrc
    ```
 
-4. **Clone and install Archon**:
+4. **Clone and install Smelter**:
    ```bash
-   git clone https://github.com/coleam00/Archon
-   cd Archon
+   git clone https://github.com/coleam00/Smelter
+   cd Smelter
    bun install
    ```
 
@@ -57,14 +57,14 @@ WSL2 provides a full Linux environment that runs seamlessly on Windows.
 
 6. **Verify installation**:
    ```bash
-   archon version
+   smelter version
    ```
 
 ## Working with Windows Files
 
 WSL2 can access your Windows files at `/mnt/c/` (for C: drive):
 ```bash
-archon workflow run assist --cwd /mnt/c/Users/YourName/Projects/my-repo "What does this code do?"
+smelter workflow run assist --cwd /mnt/c/Users/YourName/Projects/my-repo "What does this code do?"
 ```
 
 For best performance, keep projects inside the WSL2 file system (`~/projects/`) rather than `/mnt/c/`.
@@ -116,4 +116,4 @@ See also: [Port Conflicts](/reference/troubleshooting/#port-conflicts) in the tr
 
 - **VS Code Integration**: Install the "Remote - WSL" extension to edit WSL2 files from VS Code
 - **Terminal**: Windows Terminal provides excellent WSL2 support
-- **Git**: Use Git inside WSL2 for consistent behavior with Archon
+- **Git**: Use Git inside WSL2 for consistent behavior with Smelter

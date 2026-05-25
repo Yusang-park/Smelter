@@ -1,15 +1,15 @@
 ---
 name: replicate-issue
 description: |
-  Replicate and validate a GitHub issue by spinning up Archon, analyzing the issue,
+  Replicate and validate a GitHub issue by spinning up Smelter, analyzing the issue,
   and systematically testing all described symptoms using browser automation.
   Use when: User wants to reproduce a bug, validate a GitHub issue, confirm a reported problem,
   or investigate whether an issue is real before working on a fix.
   Triggers: "replicate issue", "reproduce issue", "validate issue", "confirm bug",
             "test issue", "can you reproduce", "try to replicate", "verify the bug".
-  Capability: Checks out main, pulls latest, starts Archon, reads the GitHub issue,
+  Capability: Checks out main, pulls latest, starts Smelter, reads the GitHub issue,
   then uses agent-browser to systematically test every symptom and produce a findings report.
-  NOT for: Fixing issues (use /archon or /exp-piv-loop:fix-issue), general UI testing (use /validate-ui).
+  NOT for: Fixing issues (use /smelter or /exp-piv-loop:fix-issue), general UI testing (use /validate-ui).
 argument-hint: "[issue-number]"
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, WebFetch, Agent
@@ -17,7 +17,7 @@ allowed-tools: Bash, Read, Grep, Glob, WebFetch, Agent
 
 # Replicate GitHub Issue
 
-Systematically reproduce and validate a GitHub issue against the live Archon application.
+Systematically reproduce and validate a GitHub issue against the live Smelter application.
 The goal: determine whether the reported behavior is real, identify exact reproduction steps,
 discover any related issues, and provide actionable fix recommendations.
 
@@ -34,7 +34,7 @@ If `$ARGUMENTS` is empty, ask the user for the issue number before proceeding.
 Ensure you are testing against the latest code on `main` so results are accurate.
 
 ```bash
-cd /path/to/archon
+cd /path/to/smelter
 
 # Stash any local changes to avoid conflicts
 git stash 2>/dev/null || true
@@ -47,9 +47,9 @@ echo "On branch: $(git branch --show-current)"
 echo "Latest commit: $(git log --oneline -1)"
 ```
 
-### 0.2 Kill Existing Archon Processes
+### 0.2 Kill Existing Smelter Processes
 
-Free up ports 3090 (backend) and 5173 (frontend) so Archon starts cleanly.
+Free up ports 3090 (backend) and 5173 (frontend) so Smelter starts cleanly.
 
 ```bash
 pkill -f "bun.*dev:server" 2>/dev/null || true
@@ -64,10 +64,10 @@ sleep 2
 ! fuser 3090/tcp 2>/dev/null && ! fuser 5173/tcp 2>/dev/null && echo "Ports 3090 and 5173 are free" || echo "WARNING: Ports still in use"
 ```
 
-### 0.3 Start Archon Backend + Frontend
+### 0.3 Start Smelter Backend + Frontend
 
 ```bash
-cd /path/to/archon
+cd /path/to/smelter
 
 # Start both backend and frontend together
 bun run dev &
@@ -158,8 +158,8 @@ If the issue involves workflow execution, use the REST API to trigger background
 CONV_ID=$(curl -s -X POST http://localhost:3090/api/conversations \
   -H "Content-Type: application/json" -d '{}' | jq -r '.conversationId')
 
-# Trigger a workflow (archon-assist is a good general-purpose one)
-curl -s -X POST http://localhost:3090/api/workflows/archon-assist/run \
+# Trigger a workflow (smelter-assist is a good general-purpose one)
+curl -s -X POST http://localhost:3090/api/workflows/smelter-assist/run \
   -H "Content-Type: application/json" \
   -d "{\"conversationId\":\"$CONV_ID\",\"message\":\"Your test message here\"}"
 ```
@@ -240,7 +240,7 @@ Provide at least 2-3 options ranging from quick fix to comprehensive solution.
 # Close the browser
 agent-browser close
 
-# Stop Archon (optional — leave running if user wants to continue testing)
+# Stop Smelter (optional — leave running if user wants to continue testing)
 # fuser -k 3090/tcp 2>/dev/null
 # fuser -k 5173/tcp 2>/dev/null
 ```

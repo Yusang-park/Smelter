@@ -1,6 +1,6 @@
 ---
 title: Discord
-description: Connect Archon to Discord for AI coding assistance in servers and DMs.
+description: Connect Smelter to Discord for AI coding assistance in servers and DMs.
 category: adapters
 area: adapters
 audience: [user, operator]
@@ -13,11 +13,11 @@ sidebar:
 Discord is a **community adapter** — contributed and maintained by the community.
 :::
 
-Connect Archon to Discord so you can interact with your AI coding assistant from any Discord server or DM.
+Connect Smelter to Discord so you can interact with your AI coding assistant from any Discord server or DM.
 
 ## Prerequisites
 
-- Archon server running (see [Getting Started](/getting-started/))
+- Smelter server running (see [Getting Started](/getting-started/))
 - A Discord account
 - "Manage Server" permission on the Discord server you want to add the bot to
 
@@ -42,7 +42,7 @@ Connect Archon to Discord so you can interact with your AI coding assistant from
 
 :::caution
 Skipping this step causes Discord to reject the bot's connection with
-`Used disallowed intents`. Archon will log
+`Used disallowed intents`. Smelter will log
 `discord.start_failed_continuing_without_adapter` and keep the rest of
 the server running, but the Discord adapter will be unavailable until
 the intent is enabled and the server is restarted.

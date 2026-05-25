@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
+import { registerBuiltinProviders, clearRegistry } from '@smelter/providers';
 
 // Bootstrap provider registry (needed by capability-driven warnings in validator)
 clearRegistry();
@@ -41,7 +41,7 @@ function makeWorkflow(name: string, nodes: DagNode[], provider?: string): Workfl
 }
 
 async function createCommandFile(name: string, content = '# Do something'): Promise<void> {
-  const dir = join(tmpDir, '.archon', 'commands');
+  const dir = join(tmpDir, '.smelter', 'commands');
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${name}.md`), content);
 }
@@ -265,7 +265,7 @@ describe('validateCommand', () => {
 // =============================================================================
 
 describe('discoverAvailableCommands', () => {
-  test('finds commands in .archon/commands/', async () => {
+  test('finds commands in .smelter/commands/', async () => {
     await createCommandFile('my-command');
     await createCommandFile('other-command');
     const commands = await discoverAvailableCommands(tmpDir, { loadDefaultCommands: false });
@@ -291,29 +291,29 @@ describe('discoverAvailableCommands', () => {
     expect(withDefaults.length).toBeGreaterThanOrEqual(without.length);
   });
 
-  // --- Home-scoped commands (~/.archon/commands/) — new capability
+  // --- Home-scoped commands (~/.smelter/commands/) — new capability
   describe('home-scoped commands', () => {
     let homeDir: string;
-    const originalArchonHome = process.env.ARCHON_HOME;
-    const originalArchonDocker = process.env.ARCHON_DOCKER;
+    const originalSmelterHome = process.env.SMELTER_HOME;
+    const originalSmelterDocker = process.env.SMELTER_DOCKER;
 
     beforeEach(async () => {
       homeDir = await mkdtemp(join(tmpdir(), 'validator-home-'));
-      process.env.ARCHON_HOME = homeDir;
-      delete process.env.ARCHON_DOCKER;
+      process.env.SMELTER_HOME = homeDir;
+      delete process.env.SMELTER_DOCKER;
     });
 
     afterEach(async () => {
       await rm(homeDir, { recursive: true, force: true });
-      if (originalArchonHome === undefined) {
-        delete process.env.ARCHON_HOME;
+      if (originalSmelterHome === undefined) {
+        delete process.env.SMELTER_HOME;
       } else {
-        process.env.ARCHON_HOME = originalArchonHome;
+        process.env.SMELTER_HOME = originalSmelterHome;
       }
-      if (originalArchonDocker === undefined) {
-        delete process.env.ARCHON_DOCKER;
+      if (originalSmelterDocker === undefined) {
+        delete process.env.SMELTER_DOCKER;
       } else {
-        process.env.ARCHON_DOCKER = originalArchonDocker;
+        process.env.SMELTER_DOCKER = originalSmelterDocker;
       }
     });
 
@@ -323,7 +323,7 @@ describe('discoverAvailableCommands', () => {
       await writeFile(join(dir, `${name}.md`), content);
     }
 
-    test('discovers commands placed at ~/.archon/commands/', async () => {
+    test('discovers commands placed at ~/.smelter/commands/', async () => {
       await createHomeCommand('my-personal-helper');
       const commands = await discoverAvailableCommands(tmpDir, { loadDefaultCommands: false });
       expect(commands).toContain('my-personal-helper');
@@ -375,7 +375,7 @@ describe('validateWorkflowResources — script nodes', () => {
   });
 
   test('no error when named bun script file exists', async () => {
-    const scriptsDir = join(tmpDir, '.archon', 'scripts');
+    const scriptsDir = join(tmpDir, '.smelter', 'scripts');
     await mkdir(scriptsDir, { recursive: true });
     await writeFile(join(scriptsDir, 'my-script.ts'), 'console.log("hi")');
     const workflow = makeWorkflow('test', [

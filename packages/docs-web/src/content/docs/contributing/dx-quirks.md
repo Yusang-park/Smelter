@@ -1,6 +1,6 @@
 ---
 title: DX Quirks
-description: Known development experience quirks and workarounds when working on the Archon codebase.
+description: Known development experience quirks and workarounds when working on the Smelter codebase.
 category: contributing
 audience: [developer]
 status: current
@@ -15,7 +15,7 @@ Development experience notes and workarounds.
 When running `bun dev` from the repo root, Bun's `--filter` truncates logs:
 
 ```
-@archon/server dev $ bun --watch src/index.ts
+@smelter/server dev $ bun --watch src/index.ts
 │ [129 lines elided]
 │ [Hono] Server listening on port 3090
 └─ Running...

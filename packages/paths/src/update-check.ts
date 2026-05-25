@@ -1,6 +1,6 @@
 import { join } from 'path';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { getArchonHome } from './archon-paths';
+import { getSmelterHome } from './smelter-paths';
 import { createLogger } from './logger';
 
 const log = createLogger('update-check');
@@ -21,10 +21,10 @@ export interface UpdateCheckResult {
 const CACHE_FILE = 'update-check.json';
 const STALENESS_MS = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT_MS = 3000; // 3 seconds
-const GITHUB_API_URL = 'https://api.github.com/repos/coleam00/Archon/releases/latest';
+const GITHUB_API_URL = 'https://api.github.com/repos/coleam00/Smelter/releases/latest';
 
 function getCachePath(): string {
-  return join(getArchonHome(), CACHE_FILE);
+  return join(getSmelterHome(), CACHE_FILE);
 }
 
 function readCache(): UpdateCheckCache | null {
@@ -47,7 +47,7 @@ function readCache(): UpdateCheckCache | null {
 
 function writeCache(cache: UpdateCheckCache): void {
   try {
-    const home = getArchonHome();
+    const home = getSmelterHome();
     mkdirSync(home, { recursive: true });
     writeFileSync(getCachePath(), JSON.stringify(cache), 'utf-8');
   } catch (err) {
@@ -112,7 +112,7 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateChec
     try {
       const res = await fetch(GITHUB_API_URL, {
         signal: controller.signal,
-        headers: { 'User-Agent': 'archon-update-check' },
+        headers: { 'User-Agent': 'smelter-update-check' },
       });
       if (!res.ok) return null;
       const json: unknown = await res.json();

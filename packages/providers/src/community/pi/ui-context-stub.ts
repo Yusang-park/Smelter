@@ -8,13 +8,13 @@ import type {
 
 import type { MessageChunk } from '../../types';
 
-/** Pushes UI notifications into Archon's event stream. Set/cleared by bridgeSession. */
-export interface ArchonUIBridge {
+/** Pushes UI notifications into Smelter's event stream. Set/cleared by bridgeSession. */
+export interface SmelterUIBridge {
   emit(chunk: MessageChunk): void;
   setEmitter(fn: ((chunk: MessageChunk) => void) | undefined): void;
 }
 
-export function createArchonUIBridge(): ArchonUIBridge {
+export function createSmelterUIBridge(): SmelterUIBridge {
   let emitter: ((chunk: MessageChunk) => void) | undefined;
   return {
     emit(chunk: MessageChunk): void {
@@ -31,7 +31,7 @@ const noop = (): void => {
 };
 
 /**
- * Minimal ExtensionUIContext for Archon's headless Pi sessions. Binding this
+ * Minimal ExtensionUIContext for Smelter's headless Pi sessions. Binding this
  * (vs Pi's internal `noOpUIContext`) flips `ctx.hasUI` to true so extensions
  * like plannotator surface UI flows. `notify()` forwards to the event stream;
  * interactive prompts resolve to undefined/false; TUI setters no-op; `theme`
@@ -39,7 +39,7 @@ const noop = (): void => {
  * setStatus/setWidget sinks anyway, so stripping ANSI styling is safe and
  * keeps extensions like plannotator from crashing mid-tool-call.
  */
-export function createArchonUIContext(bridge: ArchonUIBridge): ExtensionUIContext {
+export function createSmelterUIContext(bridge: SmelterUIBridge): ExtensionUIContext {
   // Pick the last string argument — handles `fg(color, text)`, `bold(text)`,
   // `strikethrough(text)`, etc. in a single handler.
   const lastStringArg = (...args: unknown[]): string => {
@@ -148,7 +148,7 @@ export function createArchonUIContext(bridge: ArchonUIBridge): ExtensionUIContex
       return undefined;
     },
     setTheme(_theme: string | Theme): { success: boolean; error?: string } {
-      return { success: false, error: 'Theme switching not supported in Archon remote UI stub' };
+      return { success: false, error: 'Theme switching not supported in Smelter remote UI stub' };
     },
     getToolsExpanded(): boolean {
       return false;

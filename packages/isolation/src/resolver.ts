@@ -6,7 +6,7 @@
  * union results; the caller handles messaging and DB updates.
  */
 
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import {
   worktreeExists,
   toWorktreePath,
@@ -15,8 +15,8 @@ import {
   toBranchName,
   isAncestorOf,
   verifyWorktreeOwnership,
-} from '@archon/git';
-import type { RepoPath, BranchName, WorktreePath } from '@archon/git';
+} from '@smelter/git';
+import type { RepoPath, BranchName, WorktreePath } from '@smelter/git';
 
 import type {
   IIsolationProvider,
@@ -210,7 +210,7 @@ export class IsolationResolver {
         );
         return [
           `Worktree branch '${env.branch_name}' is not based on '${baseBranch}'. ` +
-            `Recreate with: archon complete ${env.branch_name} --force`,
+            `Recreate with: smelter complete ${env.branch_name} --force`,
         ];
       }
     } catch (err) {

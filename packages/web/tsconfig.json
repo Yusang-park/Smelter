@@ -9,10 +9,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@archon/core": ["../core/src"],
-      "@archon/core/*": ["../core/src/*"],
-      "@archon/workflows": ["../workflows/src"],
-      "@archon/workflows/*": ["../workflows/src/*"]
+      "@smelter/core": ["../core/src"],
+      "@smelter/core/*": ["../core/src/*"],
+      "@smelter/workflows": ["../workflows/src"],
+      "@smelter/workflows/*": ["../workflows/src/*"]
     }
   },
   "include": ["src/**/*", "../workflows/src/defaults/text-imports.d.ts"],

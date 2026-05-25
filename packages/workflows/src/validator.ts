@@ -5,7 +5,7 @@
  * This module adds Level 3: checking that referenced resources actually exist
  * on disk (command files, MCP configs, skill directories).
  *
- * Lives in @archon/workflows (no @archon/core dependency) so both CLI and
+ * Lives in @smelter/workflows (no @smelter/core dependency) so both CLI and
  * REST API can use it.
  */
 
@@ -18,11 +18,11 @@ import {
   getDefaultCommandsPath,
   getHomeCommandsPath,
   findMarkdownFilesRecursive,
-} from '@archon/paths';
-import { execFileAsync } from '@archon/git';
+} from '@smelter/paths';
+import { execFileAsync } from '@smelter/git';
 import { BUNDLED_COMMANDS, isBinaryBuild } from './defaults/bundled-defaults';
 import { isValidCommandName } from './command-validation';
-import { getProviderCapabilities, isRegisteredProvider } from '@archon/providers';
+import { getProviderCapabilities, isRegisteredProvider } from '@smelter/providers';
 
 /** Lazy-initialized logger */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -155,7 +155,7 @@ export async function discoverAvailableCommands(
     }
   }
 
-  // 2. Home-scoped commands (~/.archon/commands/) — personal helpers reusable across repos.
+  // 2. Home-scoped commands (~/.smelter/commands/) — personal helpers reusable across repos.
   // ENOENT already returns []; we only catch other errors (EACCES/EPERM/EIO) so a broken
   // home-scope doesn't take down repo/bundled discovery.
   const homePath = getHomeCommandsPath();
@@ -207,8 +207,8 @@ async function resolveCommandInDir(rootDir: string, commandName: string): Promis
  * Returns the resolved path if found, null otherwise.
  *
  * Resolution precedence (first hit wins):
- *   1. Repo-local — `<cwd>/.archon/commands/` and configured folders
- *   2. Home-scoped — `~/.archon/commands/` (personal helpers, reusable across repos)
+ *   1. Repo-local — `<cwd>/.smelter/commands/` and configured folders
+ *   2. Home-scoped — `~/.smelter/commands/` (personal helpers, reusable across repos)
  *   3. Bundled defaults — embedded in the binary or the app's defaults folder
  */
 async function resolveCommand(
@@ -228,7 +228,7 @@ async function resolveCommand(
     if (resolved) return resolved;
   }
 
-  // 2. Home-scoped commands (~/.archon/commands/).
+  // 2. Home-scoped commands (~/.smelter/commands/).
   // ENOENT on the home dir already returns null; only wrap for other errors so a
   // broken home-scope doesn't prevent bundled-default resolution.
   try {
@@ -342,10 +342,10 @@ export async function validateWorkflowResources(
           nodeId: node.id,
           field: 'command',
           message: `Command '${node.command}' not found`,
-          hint: `Create .archon/commands/${node.command}.md or use an existing command name`,
+          hint: `Create .smelter/commands/${node.command}.md or use an existing command name`,
         };
         if (similar.length > 0) {
-          issue.hint = `Did you mean: ${similar.map(s => `'${s}'`).join(', ')}? Or create .archon/commands/${node.command}.md`;
+          issue.hint = `Did you mean: ${similar.map(s => `'${s}'`).join(', ')}? Or create .smelter/commands/${node.command}.md`;
           issue.suggestions = similar;
         }
         issues.push(issue);
@@ -499,8 +499,8 @@ export async function validateWorkflowResources(
             level: 'error',
             nodeId: node.id,
             field: 'script',
-            message: `Named script '${script}' not found in .archon/scripts/ or ~/.archon/scripts/`,
-            hint: `Create .archon/scripts/${script}.${node.runtime === 'uv' ? 'py' : 'ts'} with your script code (or place at ~/.archon/scripts/ to share across repos)`,
+            message: `Named script '${script}' not found in .smelter/scripts/ or ~/.smelter/scripts/`,
+            hint: `Create .smelter/scripts/${script}.${node.runtime === 'uv' ? 'py' : 'ts'} with your script code (or place at ~/.smelter/scripts/ to share across repos)`,
           });
         }
       }
@@ -565,7 +565,7 @@ export async function validateCommand(
       level: 'error',
       field: 'file',
       message: `Command '${commandName}' not found`,
-      hint: `Create .archon/commands/${commandName}.md`,
+      hint: `Create .smelter/commands/${commandName}.md`,
     };
     if (similar.length > 0) {
       issue.hint = `Did you mean: ${similar.map(s => `'${s}'`).join(', ')}?`;
@@ -655,8 +655,8 @@ export async function validateScript(
     issues.push({
       level: 'error',
       field: 'file',
-      message: `Script '${scriptName}' not found in .archon/scripts/ or ~/.archon/scripts/`,
-      hint: `Create .archon/scripts/${scriptName}.ts (bun) or .archon/scripts/${scriptName}.py (uv). Place at ~/.archon/scripts/ to share across repos.`,
+      message: `Script '${scriptName}' not found in .smelter/scripts/ or ~/.smelter/scripts/`,
+      hint: `Create .smelter/scripts/${scriptName}.ts (bun) or .smelter/scripts/${scriptName}.py (uv). Place at ~/.smelter/scripts/ to share across repos.`,
     });
     return { scriptName, valid: false, issues };
   }

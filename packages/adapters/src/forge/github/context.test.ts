@@ -5,7 +5,7 @@
  * for both slash command and non-slash command webhook events.
  *
  * Separated from adapter.test.ts because these require heavy module mocking
- * of @archon/core and database modules to test the full handleWebhook flow.
+ * of @smelter/core and database modules to test the full handleWebhook flow.
  */
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { createHmac } from 'crypto';
@@ -27,7 +27,7 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
@@ -54,14 +54,14 @@ const mockCreateCodebase = mock(async () => ({
 
 const mockGetLinkedIssueNumbers = mock(async () => []);
 
-mock.module('@archon/core', () => ({
+mock.module('@smelter/core', () => ({
   handleMessage: mockHandleMessage,
   classifyAndFormatError: () => 'Error occurred',
   ConversationNotFoundError: class extends Error {},
   toError: (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
   getLinkedIssueNumbers: mockGetLinkedIssueNumbers,
   onConversationClosed: mock(async () => {}),
-  getArchonWorkspacesPath: () => '/workspace',
+  getSmelterWorkspacesPath: () => '/workspace',
   getCommandFolderSearchPaths: () => [],
   ConversationLockManager: class {
     async acquireLock(_id: string, handler: () => Promise<void>): Promise<void> {
@@ -79,7 +79,7 @@ mock.module('@archon/core', () => ({
   },
 }));
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   isWorktreePath: mock(async () => false),
   cloneRepository: mock(async () => ({ ok: true, value: undefined })),
   syncRepository: mock(async () => ({ ok: true, value: undefined })),
@@ -88,12 +88,12 @@ mock.module('@archon/git', () => ({
   toBranchName: (n: string) => n,
 }));
 
-mock.module('@archon/core/db/conversations', () => ({
+mock.module('@smelter/core/db/conversations', () => ({
   getOrCreateConversation: mockGetOrCreateConversation,
   updateConversation: mockUpdateConversation,
 }));
 
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   findCodebaseByRepoUrl: mockFindCodebaseByRepoUrl,
   createCodebase: mockCreateCodebase,
   updateCodebase: mock(async () => {}),
@@ -202,7 +202,7 @@ function createTestAdapter(): GitHubAdapter {
       maxConcurrent: 10,
       activeConversationIds: [],
     }),
-  } as unknown as InstanceType<typeof import('@archon/core').ConversationLockManager>);
+  } as unknown as InstanceType<typeof import('@smelter/core').ConversationLockManager>);
 
   // @ts-expect-error - mock private method for testing
   adapter.verifySignature = mock(() => true);
@@ -276,7 +276,7 @@ describe('GitHubAdapter non-slash command context passing', () => {
   });
 
   test('should set contextToAppend for issue_comment events on issues', async () => {
-    const payload = createIssueCommentPayload('@archon help me with this issue', {
+    const payload = createIssueCommentPayload('@smelter help me with this issue', {
       issueNumber: 99,
       issueTitle: 'Bug in login flow',
     });
@@ -291,7 +291,7 @@ describe('GitHubAdapter non-slash command context passing', () => {
   });
 
   test('should set contextToAppend for issue_comment events on PRs', async () => {
-    const payload = createIssueCommentPayload('@archon review this PR', {
+    const payload = createIssueCommentPayload('@smelter review this PR', {
       issueNumber: 55,
       issueTitle: 'Add dark mode',
       isPR: true,
@@ -307,7 +307,7 @@ describe('GitHubAdapter non-slash command context passing', () => {
   });
 
   test('should set contextToAppend with different issue numbers and titles', async () => {
-    const payload = createIssueCommentPayload('@archon investigate this bug', {
+    const payload = createIssueCommentPayload('@smelter investigate this bug', {
       issueNumber: 33,
       issueTitle: 'Memory leak in worker',
     });
@@ -322,7 +322,7 @@ describe('GitHubAdapter non-slash command context passing', () => {
   });
 
   test('should also set contextToAppend for slash commands (existing behavior)', async () => {
-    const payload = createIssueCommentPayload('@archon /status', {
+    const payload = createIssueCommentPayload('@smelter /status', {
       issueNumber: 10,
       issueTitle: 'Setup tracking',
     });
@@ -338,7 +338,7 @@ describe('GitHubAdapter non-slash command context passing', () => {
 
   test('context format matches between slash and non-slash commands', async () => {
     // Slash command
-    const slashPayload = createIssueCommentPayload('@archon /help', {
+    const slashPayload = createIssueCommentPayload('@smelter /help', {
       issueNumber: 42,
       issueTitle: 'Test Issue',
     });
@@ -348,7 +348,7 @@ describe('GitHubAdapter non-slash command context passing', () => {
     mockHandleMessage.mockClear();
 
     // Non-slash command
-    const nonSlashPayload = createIssueCommentPayload('@archon help me debug this', {
+    const nonSlashPayload = createIssueCommentPayload('@smelter help me debug this', {
       issueNumber: 42,
       issueTitle: 'Test Issue',
     });

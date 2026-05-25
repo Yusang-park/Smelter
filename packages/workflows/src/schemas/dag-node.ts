@@ -174,7 +174,7 @@ export const commandNodeSchema = dagNodeBaseSchema.extend({
   command: z.string(),
 });
 
-/** DAG node that runs a named command from .archon/commands/ */
+/** DAG node that runs a named command from .smelter/commands/ */
 export type CommandNode = z.infer<typeof commandNodeSchema> & {
   prompt?: never;
   bash?: never;

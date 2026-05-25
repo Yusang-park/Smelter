@@ -35,7 +35,7 @@ pnpm-lock.yaml
 .env.local
 
 # Per-user MCP server configs (may contain secrets/topics)
-.archon/mcp/
+.smelter/mcp/
 
 # Caddy configuration (keep Caddyfile.example)
 Caddyfile
@@ -49,22 +49,22 @@ sessions/
 api_sessions/
 e2e-screenshots/
 
-# Archon logs and artifacts (generated at runtime)
-.archon/logs/
-.archon/artifacts/
-.archon/test-loop*.txt
+# Smelter logs and artifacts (generated at runtime)
+.smelter/logs/
+.smelter/artifacts/
+.smelter/test-loop*.txt
 
 # Cross-run workflow state (e.g. issue-triage memory)
-.archon/state/
+.smelter/state/
 
 # Smelter runtime state copied from local harness runs
 .smt/
 
 # Maintainer standup — per-maintainer state and briefs (direction.md is committed)
-.archon/maintainer-standup/profile.md
-.archon/maintainer-standup/state.json
-.archon/maintainer-standup/briefs/
-.archon/maintainer-standup/reviewed-prs.json
+.smelter/maintainer-standup/profile.md
+.smelter/maintainer-standup/state.json
+.smelter/maintainer-standup/briefs/
+.smelter/maintainer-standup/reviewed-prs.json
 
 # Agent artifacts (generated, local only)
 .agents/
@@ -72,7 +72,7 @@ e2e-screenshots/
 .agents/plans/
 .agents/pr-reviews
 .claude/PRPs/
-.claude/archon/
+.claude/smelter/
 .claude/mockups/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
@@ -126,4 +126,4 @@ packages/server/.env
 .playwright-cli/
 skills-lock.json
 test-results/
-.archon/ralph/
+.smelter/ralph/

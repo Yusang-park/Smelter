@@ -127,7 +127,7 @@ Choose the lowest-level test that fully specifies the behavior:
 
 ## Surface Exemption
 
-When the upstream investigation or plan records `exempt.tdd: true`, this skill is skipped by the Archon workflow prompt and flow advances to the next node.
+When the upstream investigation or plan records `exempt.tdd: true`, this skill is skipped by the Smelter workflow prompt and flow advances to the next node.
 
 Exempt surfaces: CSS/style, typography, i18n/copy-only, typo, pure dialogue. The exemption must be declared up-front; the executor cannot demote TDD mid-flow.
 

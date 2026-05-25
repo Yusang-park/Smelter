@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import type { ConversationLockManager } from '@archon/core';
+import type { ConversationLockManager } from '@smelter/core';
 import type { WebAdapter } from '../adapters/web';
 import { validationErrorHook } from './openapi-defaults';
 import { mockAllWorkflowModules } from '../test/workflow-mock-factories';
@@ -22,14 +22,14 @@ const mockSoftDeleteConversation = mock(async (_id: string) => {});
 const mockUpdateConversationTitle = mock(async (_id: string, _title: string) => {});
 
 const mockGenerateAndSetTitle = mock(async () => {});
-mock.module('@archon/core', () => ({
+mock.module('@smelter/core', () => ({
   handleMessage: mock(async () => {}),
   getDatabaseType: () => 'sqlite',
   loadConfig: mock(async () => ({})),
-  getWorkflowFolderSearchPaths: mock(() => ['.archon/workflows']),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands', '.archon/commands/defaults']),
-  getDefaultCommandsPath: mock(() => '/tmp/.archon-test-nonexistent/commands/defaults'),
-  getDefaultWorkflowsPath: mock(() => '/tmp/.archon-test-nonexistent/workflows/defaults'),
+  getWorkflowFolderSearchPaths: mock(() => ['.smelter/workflows']),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands', '.smelter/commands/defaults']),
+  getDefaultCommandsPath: mock(() => '/tmp/.smelter-test-nonexistent/commands/defaults'),
+  getDefaultWorkflowsPath: mock(() => '/tmp/.smelter-test-nonexistent/workflows/defaults'),
   cloneRepository: mock(async () => {}),
   registerRepository: mock(async () => ({ success: true })),
   removeWorktree: mock(async () => ({ success: true })),
@@ -40,7 +40,7 @@ mock.module('@archon/core', () => ({
     }
   },
   generateAndSetTitle: mockGenerateAndSetTitle,
-  getArchonWorkspacesPath: () => '/tmp/.archon/workspaces',
+  getSmelterWorkspacesPath: () => '/tmp/.smelter/workspaces',
   createLogger: () => ({
     fatal: mock(() => undefined),
     error: mock(() => undefined),
@@ -59,7 +59,7 @@ mock.module('@archon/core', () => ({
 
 mockAllWorkflowModules();
 
-mock.module('@archon/core/db/conversations', () => ({
+mock.module('@smelter/core/db/conversations', () => ({
   findConversationByPlatformId: mockFindConversationByPlatformId,
   softDeleteConversation: mockSoftDeleteConversation,
   updateConversationTitle: mockUpdateConversationTitle,
@@ -76,16 +76,16 @@ mock.module('@archon/core/db/conversations', () => ({
   })),
 }));
 
-mock.module('@archon/core/db/isolation-environments', () => ({}));
-mock.module('@archon/core/db/workflows', () => ({}));
-mock.module('@archon/core/db/workflow-events', () => ({}));
+mock.module('@smelter/core/db/isolation-environments', () => ({}));
+mock.module('@smelter/core/db/workflows', () => ({}));
+mock.module('@smelter/core/db/workflow-events', () => ({}));
 const mockAddMessage = mock(async (_convId: string, _role: string, _content: string) => ({
   id: 'msg-uuid-1',
 }));
-mock.module('@archon/core/db/messages', () => ({
+mock.module('@smelter/core/db/messages', () => ({
   addMessage: mockAddMessage,
 }));
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   listCodebases: mock(async () => [{ default_cwd: '/tmp/project' }]),
   getCodebase: mock(async () => null),
 }));
@@ -409,7 +409,7 @@ describe('POST /api/conversations with message (atomic create+send)', () => {
 // Platform conversation IDs from forge adapters contain slashes and # characters:
 // e.g. "CyberFitz-LLC/devops-platform#24" — these must be URL-encoded by the client
 // and correctly decoded by the server route params.
-// Ref: https://github.com/coleam00/Archon/issues/476
+// Ref: https://github.com/coleam00/Smelter/issues/476
 describe('GET /api/conversations/:id — forge platform IDs with encoded slashes', () => {
   const GITEA_CONV = {
     id: 'gitea-internal-uuid',

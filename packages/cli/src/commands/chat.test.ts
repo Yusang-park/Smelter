@@ -17,19 +17,19 @@ const mockLogger = {
   level: 'info',
 };
 
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
-// Mock @archon/core/db/messages (used by CLIAdapter for persistence)
-mock.module('@archon/core/db/messages', () => ({
+// Mock @smelter/core/db/messages (used by CLIAdapter for persistence)
+mock.module('@smelter/core/db/messages', () => ({
   addMessage: mock(() => Promise.resolve()),
 }));
 
-// Mock handleMessage from @archon/core
+// Mock handleMessage from @smelter/core
 const mockHandleMessage = mock(() => Promise.resolve());
 
-mock.module('@archon/core', () => ({
+mock.module('@smelter/core', () => ({
   handleMessage: mockHandleMessage,
 }));
 

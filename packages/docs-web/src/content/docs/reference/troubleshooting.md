@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Common issues and solutions when running Archon locally or in Docker.
+description: Common issues and solutions when running Smelter locally or in Docker.
 category: reference
 audience: [user, operator]
 status: current
@@ -8,7 +8,7 @@ sidebar:
   order: 7
 ---
 
-Common issues and their solutions when running Archon.
+Common issues and their solutions when running Smelter.
 
 ## Bot Not Responding
 
@@ -61,7 +61,7 @@ curl http://localhost:3090/health/db
 
 **For SQLite (default):**
 
-SQLite requires no setup. The database is created automatically at `~/.archon/archon.db`. If you see errors, check that the `~/.archon/` directory exists and is writable.
+SQLite requires no setup. The database is created automatically at `~/.smelter/smelter.db`. If you see errors, check that the `~/.smelter/` directory exists and is writable.
 
 **For remote PostgreSQL:**
 ```bash
@@ -97,11 +97,11 @@ curl -H "Authorization: token $GH_TOKEN" https://api.github.com/user
 
 **Check workspace permissions:**
 
-The workspace directory is `~/.archon/workspaces/` by default (or `/.archon/workspaces/` in Docker). Make sure it exists and is writable.
+The workspace directory is `~/.smelter/workspaces/` by default (or `/.smelter/workspaces/` in Docker). Make sure it exists and is writable.
 
 **Try manual clone:**
 ```bash
-git clone https://github.com/user/repo ~/.archon/workspaces/test-repo
+git clone https://github.com/user/repo ~/.smelter/workspaces/test-repo
 ```
 
 ## GitHub Webhook Not Triggering
@@ -156,7 +156,7 @@ You can override the port with the `PORT` environment variable:
 PORT=4000 bun run dev
 ```
 
-When running in a git worktree, Archon automatically allocates a unique port (3190-4089 range) so you don't need to worry about conflicts with the main instance.
+When running in a git worktree, Smelter automatically allocates a unique port (3190-4089 range) so you don't need to worry about conflicts with the main instance.
 
 ### Stale Processes (Windows)
 
@@ -222,7 +222,7 @@ agent-browser open http://localhost:3090
 
 ## Docker
 
-These issues are specific to running Archon inside Docker containers.
+These issues are specific to running Smelter inside Docker containers.
 
 ### Container Won't Start
 
@@ -272,12 +272,12 @@ docker compose exec postgres psql -U postgres -d remote_coding_agent -c "\dt"
 
 **Check workspace permissions inside the container:**
 ```bash
-docker compose exec app ls -la /.archon/workspaces
+docker compose exec app ls -la /.smelter/workspaces
 ```
 
 **Try manual clone inside the container:**
 ```bash
-docker compose exec app git clone https://github.com/user/repo /.archon/workspaces/test-repo
+docker compose exec app git clone https://github.com/user/repo /.smelter/workspaces/test-repo
 ```
 
 ## "Claude Code not found" When Running Compiled Binary
@@ -285,13 +285,13 @@ docker compose exec app git clone https://github.com/user/repo /.archon/workspac
 **Symptom:** A workflow that uses Claude fails with:
 
 ```
-Claude Code not found. Archon requires the Claude Code executable to be
+Claude Code not found. Smelter requires the Claude Code executable to be
 reachable at a configured path in compiled builds.
 ```
 
-**Cause:** Compiled Archon binaries (`archon` from the curl/PowerShell installer or Homebrew) do not bundle Claude Code. They need an explicit path to the Claude Code executable. Source/dev mode (`bun run`) auto-resolves via `node_modules` and is unaffected.
+**Cause:** Compiled Smelter binaries (`smelter` from the curl/PowerShell installer or Homebrew) do not bundle Claude Code. They need an explicit path to the Claude Code executable. Source/dev mode (`bun run`) auto-resolves via `node_modules` and is unaffected.
 
-**Fix:** Install Claude Code separately and point Archon at it.
+**Fix:** Install Claude Code separately and point Smelter at it.
 
 ```bash
 # macOS / Linux / WSL — Anthropic's recommended native installer
@@ -303,7 +303,7 @@ irm https://claude.ai/install.ps1 | iex
 $env:CLAUDE_BIN_PATH = "$env:USERPROFILE\.local\bin\claude.exe"
 ```
 
-For a durable setup, set the path in `~/.archon/config.yaml` instead:
+For a durable setup, set the path in `~/.smelter/config.yaml` instead:
 
 ```yaml
 assistants:
@@ -311,7 +311,7 @@ assistants:
     claudeBinaryPath: /absolute/path/to/claude
 ```
 
-`archon setup` auto-detects and writes `CLAUDE_BIN_PATH` for you. After setup, run `archon doctor` to confirm the binary actually spawns. Docker users do not need to do anything — the image pre-sets the variable.
+`smelter setup` auto-detects and writes `CLAUDE_BIN_PATH` for you. After setup, run `smelter doctor` to confirm the binary actually spawns. Docker users do not need to do anything — the image pre-sets the variable.
 
 See the [AI Assistants → Binary path configuration](/getting-started/ai-assistants/#binary-path-configuration-compiled-binaries-only) guide for the full install matrix.
 
@@ -321,18 +321,18 @@ See the [AI Assistants → Binary path configuration](/getting-started/ai-assist
 
 **Cause:** Nested Claude Code sessions can deadlock — the outer session waits for tool results that the inner session never delivers.
 
-**Fix:** Run `archon serve` from a regular shell outside Claude Code and use the Web UI or HTTP API instead.
+**Fix:** Run `smelter serve` from a regular shell outside Claude Code and use the Web UI or HTTP API instead.
 
 **Suppress the warning:** If you have a non-deadlocking setup and want to silence the warning:
 
 ```bash
-ARCHON_SUPPRESS_NESTED_CLAUDE_WARNING=1 archon workflow run ...
+SMELTER_SUPPRESS_NESTED_CLAUDE_WARNING=1 smelter workflow run ...
 ```
 
 **Adjust the timeout:** If your environment is slow and hitting the 60-second first-event timeout:
 
 ```bash
-ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS=120000 archon workflow run ...
+SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS=120000 smelter workflow run ...
 ```
 
 ## Worktree Belongs to a Different Clone
@@ -344,7 +344,7 @@ ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS=120000 archon workflow run ...
 - `Cannot adopt <path>: path contains a full git checkout, not a worktree.`
 - `Cannot adopt <path>: .git pointer is not a git-worktree reference.`
 
-**Cause:** Archon derives codebase identity from the remote URL (`owner/repo`), so two local clones of the same remote share one `codebase_id`. Worktrees are stored under a shared path (`~/.archon/workspaces/<owner>/<repo>/worktrees/`), which means a worktree created by clone A is visible on disk from clone B. The isolation system refuses to silently adopt across clones because it would operate on the wrong filesystem state.
+**Cause:** Smelter derives codebase identity from the remote URL (`owner/repo`), so two local clones of the same remote share one `codebase_id`. Worktrees are stored under a shared path (`~/.smelter/workspaces/<owner>/<repo>/worktrees/`), which means a worktree created by clone A is visible on disk from clone B. The isolation system refuses to silently adopt across clones because it would operate on the wrong filesystem state.
 
 **Fix — pick one:**
 
@@ -352,8 +352,8 @@ ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS=120000 archon workflow run ...
 
    ```bash
    # From the other clone's directory, find and remove the conflicting worktree
-   archon isolation list
-   archon complete <branch-name>          # graceful cleanup
+   smelter isolation list
+   smelter complete <branch-name>          # graceful cleanup
    # or, if no work to preserve:
    git worktree remove <path> --force
    ```
@@ -361,13 +361,13 @@ ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS=120000 archon workflow run ...
 2. **Use a different branch name** for this run so the two clones don't compete for the same worktree path:
 
    ```bash
-   archon workflow run <name> --branch <different-name> "task"
+   smelter workflow run <name> --branch <different-name> "task"
    ```
 
-3. **Work from a single clone.** If both local checkouts are for the same project, consolidate to one. Archon's codebase registration currently assumes one local path per remote; true multi-clone support is tracked in [#1192](https://github.com/coleam00/Archon/issues/1192).
+3. **Work from a single clone.** If both local checkouts are for the same project, consolidate to one. Smelter's codebase registration currently assumes one local path per remote; true multi-clone support is tracked in [#1192](https://github.com/coleam00/Smelter/issues/1192).
 
 **Other variants:**
 
-- `path contains a full git checkout, not a worktree`: something non-Archon created a full git repo at the worktree path. Remove or move it.
+- `path contains a full git checkout, not a worktree`: something non-Smelter created a full git repo at the worktree path. Remove or move it.
 - `.git pointer is not a git-worktree reference`: the `.git` file at that path points somewhere unexpected (submodule, malformed). Inspect it with `cat <path>/.git` and clean up manually.
-- `Cannot verify worktree ownership`: filesystem permission or I/O error reading `<path>/.git`. Check `ls -la <path>` and file permissions on `~/.archon/workspaces`.
+- `Cannot verify worktree ownership`: filesystem permission or I/O error reading `<path>/.git`. Check `ls -la <path>` and file permissions on `~/.smelter/workspaces`.

@@ -19,7 +19,7 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
   parseOwnerRepo: mock(() => null),
   getRunArtifactsPath: mock(() => '/tmp/artifacts'),
@@ -27,7 +27,7 @@ mock.module('@archon/paths', () => ({
 }));
 
 // --- Mock git ---
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   getDefaultBranch: mock(async () => 'main'),
   toRepoPath: mock((p: string) => p),
 }));
@@ -55,7 +55,7 @@ mock.module('./event-emitter', () => ({
 }));
 
 // --- Bootstrap provider registry (after path mocks) ---
-import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
+import { registerBuiltinProviders, clearRegistry } from '@smelter/providers';
 clearRegistry();
 registerBuiltinProviders();
 
@@ -264,7 +264,7 @@ describe('executeWorkflow', () => {
     it('uses the actionable "in use" message format with workflow name, duration, and short id', async () => {
       const otherRun = makeRun({
         id: 'abc12345-rest-of-uuid',
-        workflow_name: 'archon-implement',
+        workflow_name: 'smelter-implement',
         status: 'running',
         started_at: new Date(Date.now() - 125000).toISOString(), // 2m 5s ago
       });
@@ -290,7 +290,7 @@ describe('executeWorkflow', () => {
 
       expect(sendMessageSpy).toHaveBeenCalled();
       const sentMessage = (sendMessageSpy.mock.calls[0] as [string, string])[1];
-      expect(sentMessage).toContain('archon-implement');
+      expect(sentMessage).toContain('smelter-implement');
       expect(sentMessage).toContain('abc12345');
       expect(sentMessage).toContain('2m 5s');
       // Concrete next actions — every line tells the user something to do.
@@ -886,7 +886,7 @@ describe('executeWorkflow', () => {
     it('uses paused-specific copy when blocker is paused', async () => {
       const pausedRun = makeRun({
         id: 'paused-run-id',
-        workflow_name: 'archon-implement',
+        workflow_name: 'smelter-implement',
         status: 'paused',
         started_at: new Date(Date.now() - 10000).toISOString(),
       });
@@ -912,7 +912,7 @@ describe('executeWorkflow', () => {
     it('uses pending-specific copy when blocker is just starting', async () => {
       const pendingRun = makeRun({
         id: 'pending-run',
-        workflow_name: 'archon-implement',
+        workflow_name: 'smelter-implement',
         status: 'pending',
         started_at: new Date(Date.now() - 500).toISOString(),
       });
@@ -933,7 +933,7 @@ describe('executeWorkflow', () => {
     it('uses running copy by default', async () => {
       const runningRun = makeRun({
         id: 'running-run',
-        workflow_name: 'archon-implement',
+        workflow_name: 'smelter-implement',
         status: 'running',
         started_at: new Date(Date.now() - 60000).toISOString(),
       });

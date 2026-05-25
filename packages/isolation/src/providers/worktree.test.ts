@@ -2,11 +2,11 @@ import { describe, test, expect, beforeEach, afterEach, spyOn, mock, type Mock }
 import { join } from 'node:path';
 
 // Fixed test home — path assertions use this constant; no duplication of production isDocker() logic.
-const TEST_ARCHON_HOME = '/test/.archon';
+const TEST_SMELTER_HOME = '/test/.smelter';
 
-// Mock @archon/paths: provide getArchonHome + workspaces path helpers so @archon/git (getWorktreeBase,
-// isProjectScopedWorktreeBase) and worktree.ts resolve paths against TEST_ARCHON_HOME consistently.
-mock.module('@archon/paths', () => ({
+// Mock @smelter/paths: provide getSmelterHome + workspaces path helpers so @smelter/git (getWorktreeBase,
+// isProjectScopedWorktreeBase) and worktree.ts resolve paths against TEST_SMELTER_HOME consistently.
+mock.module('@smelter/paths', () => ({
   createLogger: () => ({
     fatal: () => undefined,
     error: () => undefined,
@@ -16,15 +16,15 @@ mock.module('@archon/paths', () => ({
     trace: () => undefined,
     child: () => undefined,
   }),
-  getArchonHome: () => TEST_ARCHON_HOME,
-  getArchonWorkspacesPath: () => join(TEST_ARCHON_HOME, 'workspaces'),
-  getArchonWorktreesPath: () => join(TEST_ARCHON_HOME, 'worktrees'),
+  getSmelterHome: () => TEST_SMELTER_HOME,
+  getSmelterWorkspacesPath: () => join(TEST_SMELTER_HOME, 'workspaces'),
+  getSmelterWorktreesPath: () => join(TEST_SMELTER_HOME, 'worktrees'),
   getProjectWorktreesPath: (owner: string, repo: string) =>
-    join(TEST_ARCHON_HOME, 'workspaces', owner, repo, 'worktrees'),
+    join(TEST_SMELTER_HOME, 'workspaces', owner, repo, 'worktrees'),
   isDocker: () => false,
 }));
 
-import * as git from '@archon/git';
+import * as git from '@smelter/git';
 import * as worktreeCopy from '../worktree-copy';
 import type { IsolationRequest, PRIsolationRequest, RepoConfigLoader } from '../types';
 
@@ -120,7 +120,7 @@ describe('WorktreeProvider', () => {
         workflowType: 'issue',
         identifier: '42',
       };
-      expect(provider.generateBranchName(request)).toBe('archon/issue-42');
+      expect(provider.generateBranchName(request)).toBe('smelter/issue-42');
     });
 
     test('generates actual branch name for same-repo PR workflows', () => {
@@ -144,7 +144,7 @@ describe('WorktreeProvider', () => {
         prBranch: 'feature/auth',
         isForkPR: true,
       };
-      expect(provider.generateBranchName(request)).toBe('archon/pr-123-review');
+      expect(provider.generateBranchName(request)).toBe('smelter/pr-123-review');
     });
 
     test('generates review-N for review workflows', () => {
@@ -154,7 +154,7 @@ describe('WorktreeProvider', () => {
         workflowType: 'review',
         identifier: '456',
       };
-      expect(provider.generateBranchName(request)).toBe('archon/review-456');
+      expect(provider.generateBranchName(request)).toBe('smelter/review-456');
     });
 
     test('generates thread-{hash} for thread workflows', () => {
@@ -165,7 +165,7 @@ describe('WorktreeProvider', () => {
         identifier: 'C123:1234567890.123456',
       };
       const name = provider.generateBranchName(request);
-      expect(name).toMatch(/^archon\/thread-[a-f0-9]{8}$/);
+      expect(name).toMatch(/^smelter\/thread-[a-f0-9]{8}$/);
     });
 
     test('generates consistent hash for same identifier', () => {
@@ -203,7 +203,7 @@ describe('WorktreeProvider', () => {
         workflowType: 'task',
         identifier: 'add-dark-mode',
       };
-      expect(provider.generateBranchName(request)).toBe('archon/task-add-dark-mode');
+      expect(provider.generateBranchName(request)).toBe('smelter/task-add-dark-mode');
     });
 
     test('slugifies task identifiers properly', () => {
@@ -213,7 +213,7 @@ describe('WorktreeProvider', () => {
         workflowType: 'task',
         identifier: 'Add Dark Mode!!!',
       };
-      expect(provider.generateBranchName(request)).toBe('archon/task-add-dark-mode');
+      expect(provider.generateBranchName(request)).toBe('smelter/task-add-dark-mode');
     });
   });
 
@@ -229,7 +229,7 @@ describe('WorktreeProvider', () => {
       const env = await provider.create(baseRequest);
 
       expect(env.provider).toBe('worktree');
-      expect(env.branchName).toBe('archon/issue-42');
+      expect(env.branchName).toBe('smelter/issue-42');
       expect(env.workingPath).toContain('issue-42');
       expect(env.status).toBe('active');
 
@@ -243,7 +243,7 @@ describe('WorktreeProvider', () => {
           'add',
           expect.any(String),
           '-b',
-          'archon/issue-42',
+          'smelter/issue-42',
           'origin/main',
         ]),
         expect.any(Object)
@@ -286,7 +286,7 @@ describe('WorktreeProvider', () => {
           'add',
           expect.any(String),
           '-b',
-          'archon/task-test-adapters',
+          'smelter/task-test-adapters',
           'feature/extract-adapters',
         ]),
         expect.any(Object)
@@ -298,7 +298,7 @@ describe('WorktreeProvider', () => {
         stderr: string;
       };
       alreadyExistsError.stderr =
-        "fatal: a branch named 'archon/task-test-adapters' already exists";
+        "fatal: a branch named 'smelter/task-test-adapters' already exists";
 
       // First call (worktree add -b) fails with "already exists"
       execSpy.mockRejectedValueOnce(alreadyExistsError);
@@ -311,7 +311,7 @@ describe('WorktreeProvider', () => {
       };
 
       await expect(provider.create(request)).rejects.toThrow(
-        'Branch "archon/task-test-adapters" already exists. Cannot create it from "feature/extract-adapters".'
+        'Branch "smelter/task-test-adapters" already exists. Cannot create it from "feature/extract-adapters".'
       );
     });
 
@@ -320,7 +320,7 @@ describe('WorktreeProvider', () => {
         stderr: string;
       };
       alreadyExistsError.stderr =
-        "fatal: a branch named 'archon/task-test-adapters' already exists";
+        "fatal: a branch named 'smelter/task-test-adapters' already exists";
 
       // First call fails (worktree add -b), second succeeds (branch -f), third succeeds (worktree add)
       execSpy.mockRejectedValueOnce(alreadyExistsError);
@@ -338,7 +338,7 @@ describe('WorktreeProvider', () => {
       // Verify branch was reset to start-point
       expect(execSpy).toHaveBeenCalledWith(
         'git',
-        ['-C', '/workspace/repo', 'branch', '-f', 'archon/task-test-adapters', 'origin/main'],
+        ['-C', '/workspace/repo', 'branch', '-f', 'smelter/task-test-adapters', 'origin/main'],
         expect.any(Object)
       );
 
@@ -351,7 +351,7 @@ describe('WorktreeProvider', () => {
           'worktree',
           'add',
           expect.any(String),
-          'archon/task-test-adapters',
+          'smelter/task-test-adapters',
         ],
         expect.any(Object)
       );
@@ -521,7 +521,7 @@ describe('WorktreeProvider', () => {
     test('adopts existing worktree when repo ownership matches', async () => {
       worktreeExistsSpy.mockResolvedValue(true);
       // .git file points to the same repo root as the request
-      mockReadFile.mockResolvedValue('gitdir: /workspace/repo/.git/worktrees/archon/issue-42\n');
+      mockReadFile.mockResolvedValue('gitdir: /workspace/repo/.git/worktrees/smelter/issue-42\n');
 
       const env = await provider.create(baseRequest);
 
@@ -538,7 +538,7 @@ describe('WorktreeProvider', () => {
 
     test('throws when worktree belongs to different repo root (cross-checkout)', async () => {
       worktreeExistsSpy.mockResolvedValue(true);
-      mockReadFile.mockResolvedValue('gitdir: /different/repo/.git/worktrees/archon/issue-42\n');
+      mockReadFile.mockResolvedValue('gitdir: /different/repo/.git/worktrees/smelter/issue-42\n');
 
       await expect(provider.create(baseRequest)).rejects.toThrow(/belongs to a different clone/);
     });
@@ -579,7 +579,7 @@ describe('WorktreeProvider', () => {
       };
       worktreeExistsSpy.mockResolvedValue(true);
       // .git file has no trailing slash — resolve() should normalize
-      mockReadFile.mockResolvedValue('gitdir: /workspace/repo/.git/worktrees/archon/issue-42\n');
+      mockReadFile.mockResolvedValue('gitdir: /workspace/repo/.git/worktrees/smelter/issue-42\n');
 
       const env = await provider.create(request);
 
@@ -643,11 +643,11 @@ describe('WorktreeProvider', () => {
         // First worktree add call fails (branch exists)
         if (callCount === 1 && args.includes('-b')) {
           const error = new Error(
-            'fatal: A branch named archon/issue-42 already exists.'
+            'fatal: A branch named smelter/issue-42 already exists.'
           ) as Error & {
             stderr?: string;
           };
-          error.stderr = 'fatal: A branch named archon/issue-42 already exists.';
+          error.stderr = 'fatal: A branch named smelter/issue-42 already exists.';
           throw error;
         }
         return { stdout: '', stderr: '' };
@@ -665,7 +665,7 @@ describe('WorktreeProvider', () => {
           'add',
           expect.any(String),
           '-b',
-          'archon/issue-42',
+          'smelter/issue-42',
         ]),
         expect.any(Object)
       );
@@ -673,7 +673,7 @@ describe('WorktreeProvider', () => {
       // Verify branch was reset to start-point before checkout
       expect(execSpy).toHaveBeenCalledWith(
         'git',
-        ['-C', '/workspace/repo', 'branch', '-f', 'archon/issue-42', 'origin/main'],
+        ['-C', '/workspace/repo', 'branch', '-f', 'smelter/issue-42', 'origin/main'],
         expect.any(Object)
       );
 
@@ -686,7 +686,7 @@ describe('WorktreeProvider', () => {
           'worktree',
           'add',
           expect.any(String),
-          'archon/issue-42',
+          'smelter/issue-42',
         ]),
         expect.any(Object)
       );
@@ -697,9 +697,9 @@ describe('WorktreeProvider', () => {
         // First worktree add call fails (branch exists)
         if (args.includes('worktree') && args.includes('add') && args.includes('-b')) {
           const error = new Error(
-            'fatal: A branch named archon/issue-42 already exists.'
+            'fatal: A branch named smelter/issue-42 already exists.'
           ) as Error & { stderr?: string };
-          error.stderr = 'fatal: A branch named archon/issue-42 already exists.';
+          error.stderr = 'fatal: A branch named smelter/issue-42 already exists.';
           throw error;
         }
         // Reset call fails (e.g., branch checked out elsewhere, update hook refused)
@@ -707,7 +707,7 @@ describe('WorktreeProvider', () => {
           const error = new Error('fatal: cannot force update the branch') as Error & {
             stderr?: string;
           };
-          error.stderr = "fatal: cannot force update the current branch 'archon/issue-42'";
+          error.stderr = "fatal: cannot force update the current branch 'smelter/issue-42'";
           throw error;
         }
         return { stdout: '', stderr: '' };
@@ -722,7 +722,7 @@ describe('WorktreeProvider', () => {
           args.includes('worktree') &&
           args.includes('add') &&
           !args.includes('-b') &&
-          args.includes('archon/issue-42')
+          args.includes('smelter/issue-42')
         );
       });
       expect(secondWorktreeAdd).toHaveLength(0);
@@ -943,7 +943,7 @@ describe('WorktreeProvider', () => {
       // workingPath should use project-scoped path, not legacy global worktrees
       expect(env.workingPath).toBe(
         join(
-          TEST_ARCHON_HOME,
+          TEST_SMELTER_HOME,
           'workspaces',
           'Widinglabs',
           'sasha-demo',
@@ -954,7 +954,7 @@ describe('WorktreeProvider', () => {
 
       // mkdir should be called with the project-scoped base (no owner/repo appended)
       expect(mkdirSpy).toHaveBeenCalledWith(
-        join(TEST_ARCHON_HOME, 'workspaces', 'Widinglabs', 'sasha-demo', 'worktrees'),
+        join(TEST_SMELTER_HOME, 'workspaces', 'Widinglabs', 'sasha-demo', 'worktrees'),
         { recursive: true }
       );
     });
@@ -1667,7 +1667,7 @@ describe('WorktreeProvider', () => {
 
     const baseRequest: IsolationRequest = {
       codebaseId: 'cb-123',
-      canonicalRepoPath: '/.archon/workspaces/owner/repo',
+      canonicalRepoPath: '/.smelter/workspaces/owner/repo',
       workflowType: 'issue',
       identifier: '42',
     };
@@ -1691,35 +1691,35 @@ describe('WorktreeProvider', () => {
       provider = new WorktreeProvider(configLoader);
 
       copyWorktreeFilesSpy.mockResolvedValue([
-        { source: '.archon', destination: '.archon' },
+        { source: '.smelter', destination: '.smelter' },
         { source: '.env.example', destination: '.env' },
         { source: '.vscode/settings.json', destination: '.vscode/settings.json' },
       ]);
 
       await provider.create(baseRequest);
 
-      // Should include default .archon plus user config
+      // Should include default .smelter plus user config
       expect(copyWorktreeFilesSpy).toHaveBeenCalledWith(
-        '/.archon/workspaces/owner/repo',
+        '/.smelter/workspaces/owner/repo',
         expect.stringContaining('issue-42'),
-        expect.arrayContaining(['.archon', '.env.example -> .env', '.vscode/settings.json'])
+        expect.arrayContaining(['.smelter', '.env.example -> .env', '.vscode/settings.json'])
       );
     });
 
-    test('calls copyWorktreeFiles with default .archon when no copyFiles configured', async () => {
+    test('calls copyWorktreeFiles with default .smelter when no copyFiles configured', async () => {
       copyWorktreeFilesSpy.mockResolvedValue([]);
 
       await provider.create(baseRequest);
 
-      // Should still be called with default .archon
+      // Should still be called with default .smelter
       expect(copyWorktreeFilesSpy).toHaveBeenCalledWith(
-        '/.archon/workspaces/owner/repo',
+        '/.smelter/workspaces/owner/repo',
         expect.stringContaining('issue-42'),
-        ['.archon']
+        ['.smelter']
       );
     });
 
-    test('calls copyWorktreeFiles with default .archon when copyFiles is empty', async () => {
+    test('calls copyWorktreeFiles with default .smelter when copyFiles is empty', async () => {
       const configLoader: RepoConfigLoader = async () => ({
         baseBranch: 'main',
         copyFiles: [],
@@ -1730,11 +1730,11 @@ describe('WorktreeProvider', () => {
 
       await provider.create(baseRequest);
 
-      // Should still be called with default .archon
+      // Should still be called with default .smelter
       expect(copyWorktreeFilesSpy).toHaveBeenCalledWith(
-        '/.archon/workspaces/owner/repo',
+        '/.smelter/workspaces/owner/repo',
         expect.stringContaining('issue-42'),
-        ['.archon']
+        ['.smelter']
       );
     });
 
@@ -1769,7 +1769,7 @@ describe('WorktreeProvider', () => {
     test('does not copy files when adopting existing worktree', async () => {
       worktreeExistsSpy.mockResolvedValue(true);
       mockReadFile.mockResolvedValue(
-        'gitdir: /.archon/workspaces/owner/repo/.git/worktrees/archon/issue-42\n'
+        'gitdir: /.smelter/workspaces/owner/repo/.git/worktrees/smelter/issue-42\n'
       );
       const configLoader: RepoConfigLoader = async () => ({
         copyFiles: ['.env.example -> .env'],
@@ -1782,24 +1782,24 @@ describe('WorktreeProvider', () => {
       expect(copyWorktreeFilesSpy).not.toHaveBeenCalled();
     });
 
-    test('should copy .archon directory by default (without config)', async () => {
+    test('should copy .smelter directory by default (without config)', async () => {
       // Mock: copyWorktreeFiles succeeds
-      copyWorktreeFilesSpy.mockResolvedValue([{ source: '.archon', destination: '.archon' }]);
+      copyWorktreeFilesSpy.mockResolvedValue([{ source: '.smelter', destination: '.smelter' }]);
 
       // Create worktree
       const result = await provider.create(baseRequest);
 
-      // Verify .archon was copied even without config
+      // Verify .smelter was copied even without config
       expect(copyWorktreeFilesSpy).toHaveBeenCalledWith(
-        '/.archon/workspaces/owner/repo',
+        '/.smelter/workspaces/owner/repo',
         expect.stringContaining('issue-42'),
-        ['.archon'] // Default only
+        ['.smelter'] // Default only
       );
 
       expect(result.workingPath).toContain('issue-42');
     });
 
-    test('should merge .archon default with user copyFiles config', async () => {
+    test('should merge .smelter default with user copyFiles config', async () => {
       // Mock: User config with additional files
       const configLoader: RepoConfigLoader = async () => ({
         baseBranch: 'main',
@@ -1809,7 +1809,7 @@ describe('WorktreeProvider', () => {
 
       // Mock: copyWorktreeFiles succeeds
       copyWorktreeFilesSpy.mockResolvedValue([
-        { source: '.archon', destination: '.archon' },
+        { source: '.smelter', destination: '.smelter' },
         { source: '.env', destination: '.env' },
         { source: '.vscode', destination: '.vscode' },
       ]);
@@ -1817,33 +1817,33 @@ describe('WorktreeProvider', () => {
       // Create worktree
       await provider.create(baseRequest);
 
-      // Verify .archon + user files were copied
+      // Verify .smelter + user files were copied
       expect(copyWorktreeFilesSpy).toHaveBeenCalledWith(
-        '/.archon/workspaces/owner/repo',
+        '/.smelter/workspaces/owner/repo',
         expect.stringContaining('issue-42'),
-        expect.arrayContaining(['.archon', '.env', '.vscode'])
+        expect.arrayContaining(['.smelter', '.env', '.vscode'])
       );
     });
 
-    test('should deduplicate .archon if user explicitly includes it', async () => {
-      // Mock: User config explicitly includes .archon
+    test('should deduplicate .smelter if user explicitly includes it', async () => {
+      // Mock: User config explicitly includes .smelter
       const configLoader: RepoConfigLoader = async () => ({
         baseBranch: 'main',
-        copyFiles: ['.archon', '.env'],
+        copyFiles: ['.smelter', '.env'],
       });
       provider = new WorktreeProvider(configLoader);
 
       copyWorktreeFilesSpy.mockResolvedValue([
-        { source: '.archon', destination: '.archon' },
+        { source: '.smelter', destination: '.smelter' },
         { source: '.env', destination: '.env' },
       ]);
 
       await provider.create(baseRequest);
 
-      // Verify .archon appears only once (deduplicated by Set)
+      // Verify .smelter appears only once (deduplicated by Set)
       const copyFilesArg = copyWorktreeFilesSpy.mock.calls[0][2];
-      const archonCount = copyFilesArg.filter((f: string) => f === '.archon').length;
-      expect(archonCount).toBe(1);
+      const smelterCount = copyFilesArg.filter((f: string) => f === '.smelter').length;
+      expect(smelterCount).toBe(1);
     });
 
     test('throws with config error details when config loading fails and no fromBranch', async () => {
@@ -1853,7 +1853,7 @@ describe('WorktreeProvider', () => {
       };
       provider = new WorktreeProvider(configLoader);
 
-      copyWorktreeFilesSpy.mockResolvedValue([{ source: '.archon', destination: '.archon' }]);
+      copyWorktreeFilesSpy.mockResolvedValue([{ source: '.smelter', destination: '.smelter' }]);
 
       // Should throw with the actual config error, not generic "no base branch"
       await expect(provider.create(baseRequest)).rejects.toThrow(
@@ -1920,7 +1920,7 @@ describe('WorktreeProvider', () => {
       // Simulate valid worktree: directory exists and IS a valid worktree
       accessSpy.mockResolvedValue(undefined); // Directory exists
       worktreeExistsSpy.mockResolvedValue(true); // And IS a valid worktree (will be adopted)
-      mockReadFile.mockResolvedValue('gitdir: /workspace/repo/.git/worktrees/archon/issue-999\n');
+      mockReadFile.mockResolvedValue('gitdir: /workspace/repo/.git/worktrees/smelter/issue-999\n');
 
       await provider.create(request);
 
@@ -2217,7 +2217,7 @@ describe('WorktreeProvider', () => {
       // Worktree exists - triggers adoption path (skips createWorktree)
       worktreeExistsSpy.mockResolvedValue(true);
       mockReadFile.mockResolvedValue(
-        'gitdir: /workspace/owner/repo/.git/worktrees/archon/issue-42\n'
+        'gitdir: /workspace/owner/repo/.git/worktrees/smelter/issue-42\n'
       );
 
       await provider.create(baseRequest);
@@ -2243,7 +2243,7 @@ describe('WorktreeProvider', () => {
           'add',
           expect.any(String),
           '-b',
-          'archon/issue-42',
+          'smelter/issue-42',
           'origin/develop',
         ]),
         expect.any(Object)
@@ -2258,7 +2258,7 @@ describe('WorktreeProvider', () => {
       await provider.create(baseRequest);
 
       // syncWorkspace called with undefined → triggers auto-detect via getDefaultBranch
-      // resetAfterFetch: false because test path is not a managed clone under ~/.archon/workspaces
+      // resetAfterFetch: false because test path is not a managed clone under ~/.smelter/workspaces
       expect(syncWorkspaceSpy).toHaveBeenCalledWith('/workspace/owner/repo', undefined, {
         resetAfterFetch: false,
       });
@@ -2369,7 +2369,7 @@ describe('WorktreeProvider', () => {
       syncWorkspaceSpy.mockRejectedValue(
         new Error(
           "Configured base branch 'does-not-exist' not found on remote. " +
-            'Either create the branch, update worktree.baseBranch in .archon/config.yaml, ' +
+            'Either create the branch, update worktree.baseBranch in .smelter/config.yaml, ' +
             'or remove the setting to use the auto-detected default branch.'
         )
       );
@@ -2394,7 +2394,7 @@ describe('WorktreeProvider', () => {
     test('getWorktreePath handles Unix-style paths', () => {
       const request: IsolationRequest = {
         codebaseId: 'cb-123',
-        canonicalRepoPath: '/home/dev/.archon/workspaces/owner/repo',
+        canonicalRepoPath: '/home/dev/.smelter/workspaces/owner/repo',
         workflowType: 'issue',
         identifier: '42',
       };
@@ -2408,7 +2408,7 @@ describe('WorktreeProvider', () => {
     test('getWorktreePath handles Windows-style paths', () => {
       const request: IsolationRequest = {
         codebaseId: 'cb-123',
-        canonicalRepoPath: 'C:\\Users\\dev\\.archon\\workspaces\\owner\\repo',
+        canonicalRepoPath: 'C:\\Users\\dev\\.smelter\\workspaces\\owner\\repo',
         workflowType: 'issue',
         identifier: '42',
       };
@@ -2422,7 +2422,7 @@ describe('WorktreeProvider', () => {
     test('getWorktreePath handles mixed separator paths', () => {
       const request: IsolationRequest = {
         codebaseId: 'cb-123',
-        canonicalRepoPath: 'C:/Users/dev\\.archon/workspaces\\owner/repo',
+        canonicalRepoPath: 'C:/Users/dev\\.smelter/workspaces\\owner/repo',
         workflowType: 'issue',
         identifier: '42',
       };
@@ -2457,7 +2457,7 @@ describe('WorktreeProvider', () => {
       const branchName = provider.generateBranchName(request);
       const path = provider.getWorktreePath(request, branchName);
       expect(path).toBe(
-        join(TEST_ARCHON_HOME, 'workspaces', 'Widinglabs', 'sasha-demo', 'worktrees', branchName)
+        join(TEST_SMELTER_HOME, 'workspaces', 'Widinglabs', 'sasha-demo', 'worktrees', branchName)
       );
     });
   });
@@ -2483,7 +2483,7 @@ describe('WorktreeProvider', () => {
     test('empty / whitespace-only path is ignored and default layout applies', () => {
       const branch = provider.generateBranchName(baseRequest);
       const expectedDefault = join(
-        TEST_ARCHON_HOME,
+        TEST_SMELTER_HOME,
         'workspaces',
         'owner',
         'myapp',
@@ -2496,27 +2496,27 @@ describe('WorktreeProvider', () => {
 
     test('null / undefined config falls back to workspace-scoped default', () => {
       const branch = provider.generateBranchName(baseRequest);
-      const expected = join(TEST_ARCHON_HOME, 'workspaces', 'owner', 'myapp', 'worktrees', branch);
+      const expected = join(TEST_SMELTER_HOME, 'workspaces', 'owner', 'myapp', 'worktrees', branch);
       expect(provider.getWorktreePath(baseRequest, branch, null)).toBe(expected);
       expect(provider.getWorktreePath(baseRequest, branch, undefined)).toBe(expected);
       expect(provider.getWorktreePath(baseRequest, branch)).toBe(expected);
     });
 
-    test('override wins even when repo lives under ~/.archon/workspaces/', () => {
+    test('override wins even when repo lives under ~/.smelter/workspaces/', () => {
       // Precedence contract: per-repo `worktree.path` is the highest layer.
       // A repo that would normally land in workspaces/owner/repo/worktrees/
       // still gets a repo-local worktree when the config opts in.
       const request: IsolationRequest = {
         codebaseId: 'cb-local-2',
         codebaseName: 'owner/repo',
-        canonicalRepoPath: join(TEST_ARCHON_HOME, 'workspaces', 'owner', 'repo'),
+        canonicalRepoPath: join(TEST_SMELTER_HOME, 'workspaces', 'owner', 'repo'),
         workflowType: 'task',
         identifier: 'my-task',
       };
       const branch = provider.generateBranchName(request);
       const result = provider.getWorktreePath(request, branch, { path: 'worktrees-local' });
       expect(result).toBe(
-        join(TEST_ARCHON_HOME, 'workspaces', 'owner', 'repo', 'worktrees-local', branch)
+        join(TEST_SMELTER_HOME, 'workspaces', 'owner', 'repo', 'worktrees-local', branch)
       );
     });
 
@@ -2543,9 +2543,9 @@ describe('WorktreeProvider', () => {
     test('accepts a nested relative path without `..`', () => {
       const branch = provider.generateBranchName(baseRequest);
       const result = provider.getWorktreePath(baseRequest, branch, {
-        path: '.archon/worktrees',
+        path: '.smelter/worktrees',
       });
-      expect(result).toBe(join('/Users/dev/Projects/myapp', '.archon/worktrees', branch));
+      expect(result).toBe(join('/Users/dev/Projects/myapp', '.smelter/worktrees', branch));
     });
   });
 

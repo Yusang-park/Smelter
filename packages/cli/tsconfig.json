@@ -3,16 +3,16 @@
   "compilerOptions": {
     "noEmit": true,
     "paths": {
-      "@archon/adapters": ["../adapters/src"],
-      "@archon/adapters/*": ["../adapters/src/*"],
-      "@archon/core": ["../core/src"],
-      "@archon/core/*": ["../core/src/*"],
-      "@archon/server": ["../server/src"],
-      "@archon/server/*": ["../server/src/*"],
-      "@archon/workflows": ["../workflows/src"],
-      "@archon/workflows/*": ["../workflows/src/*"],
-      "@archon/paths": ["../paths/src"],
-      "@archon/git": ["../git/src"]
+      "@smelter/adapters": ["../adapters/src"],
+      "@smelter/adapters/*": ["../adapters/src/*"],
+      "@smelter/core": ["../core/src"],
+      "@smelter/core/*": ["../core/src/*"],
+      "@smelter/server": ["../server/src"],
+      "@smelter/server/*": ["../server/src/*"],
+      "@smelter/workflows": ["../workflows/src"],
+      "@smelter/workflows/*": ["../workflows/src/*"],
+      "@smelter/paths": ["../paths/src"],
+      "@smelter/git": ["../git/src"]
     }
   },
   "include": [

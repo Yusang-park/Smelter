@@ -30,15 +30,15 @@ import type { NodeConfig } from '../../types';
 
 /**
  * Pi's ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'.
- * Archon's common surface includes 'off' (from Codex's modelReasoningEffort)
+ * Smelter's common surface includes 'off' (from Codex's modelReasoningEffort)
  * and 'max' (from Claude's EffortLevel enum). Map into Pi's vocabulary:
  *  - 'off'    → undefined (no explicit thinkingLevel; Pi's implicit off)
- *  - 'max'    → 'xhigh'  (Archon's EffortLevel doesn't have xhigh)
+ *  - 'max'    → 'xhigh'  (Smelter's EffortLevel doesn't have xhigh)
  *  - others pass through if they're already Pi-native
  *
  * See packages/workflows/src/schemas/dag-node.ts#effortLevelSchema for
- * the Archon schema enum (`low | medium | high | max`). Workflow YAML can
- * only carry Archon-enum values; Pi-native `minimal` / `xhigh` are accepted
+ * the Smelter schema enum (`low | medium | high | max`). Workflow YAML can
+ * only carry Smelter-enum values; Pi-native `minimal` / `xhigh` are accepted
  * here for programmatic callers (orchestrator, tests) that bypass the
  * schema validator.
  */
@@ -65,7 +65,7 @@ export interface ResolvedThinkingLevel {
 }
 
 /**
- * Resolve Archon's `effort` / `thinking` node fields to Pi's `ThinkingLevel`.
+ * Resolve Smelter's `effort` / `thinking` node fields to Pi's `ThinkingLevel`.
  *
  * Precedence: `thinking` > `effort` (when both are set and valid).
  * 'off' on either → `level: undefined` (Pi runs without explicit thinking).
@@ -169,14 +169,14 @@ const PI_DEFAULT_TOOL_NAMES = [
 ] as const satisfies readonly PiToolName[];
 
 /**
- * Filter Pi's built-in tool set against Archon's `allowed_tools` /
+ * Filter Pi's built-in tool set against Smelter's `allowed_tools` /
  * `denied_tools` node config, with managed env injected into any bash tool.
  *
  * Semantics:
  *   - neither allow/deny set, no env → return undefined (Pi's default tools)
  *   - neither allow/deny set, env present → return Pi's default 4 tools with
  *     an env-aware bash, so codebase env vars reach bash subprocesses
- *   - allowed_tools: [] → return [] (explicit no-tools; valid Archon idiom)
+ *   - allowed_tools: [] → return [] (explicit no-tools; valid Smelter idiom)
  *   - allowed_tools: [X, Y] → only X, Y (normalized to lowercase)
  *   - denied_tools subtracts from allowed_tools (or full set if allowed_tools absent)
  *   - tool names not in Pi's built-in set are silently dropped but reported
@@ -258,7 +258,7 @@ export interface ResolvedSkills {
 
 /**
  * Pi's skill-discovery search order for a named skill. Mirrors the locations
- * Claude's SDK and Pi's default resource loader both respect, so Archon
+ * Claude's SDK and Pi's default resource loader both respect, so Smelter
  * workflows that already work under Claude find the same skills under Pi.
  *
  * Order (first match wins per name):
@@ -269,7 +269,7 @@ export interface ResolvedSkills {
  *
  * Ancestor traversal above cwd is deliberately not done in v2 — matches the
  * Pi provider's cwd-bound scope and avoids ambiguity about which repo's
- * skills win when Archon runs out of a subdirectory.
+ * skills win when Smelter runs out of a subdirectory.
  */
 function skillSearchRoots(cwd: string): string[] {
   // Prefer `HOME` env var when set — Bun's os.homedir() bypasses `HOME` and
@@ -286,7 +286,7 @@ function skillSearchRoots(cwd: string): string[] {
 }
 
 /**
- * Resolve Archon's name-based `skills:` nodeConfig references to absolute
+ * Resolve Smelter's name-based `skills:` nodeConfig references to absolute
  * directory paths Pi's resource loader can consume via `additionalSkillPaths`.
  *
  * Each named skill is expected to be a directory containing a `SKILL.md`

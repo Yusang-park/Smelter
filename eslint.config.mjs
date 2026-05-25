@@ -18,7 +18,7 @@ export default tseslint.config(
       'worktrees/**',
       '.claude/worktrees/**',
       '.claude/skills/**',
-      '.archon/**', // User workflow/script/command content — not in any tsconfig project
+      '.smelter/**', // User workflow/script/command content — not in any tsconfig project
       '**/*.generated.ts', // Auto-generated source files (content inlined via JSON.stringify)
       '**/*.js',
       '*.mjs',

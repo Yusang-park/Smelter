@@ -5,7 +5,7 @@
  */
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
 
-// Mock @archon/paths to suppress noisy logger output during tests
+// Mock @smelter/paths to suppress noisy logger output during tests
 const mockLogger = {
   fatal: mock(() => undefined),
   error: mock(() => undefined),
@@ -20,16 +20,16 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonWorkspacesPath: mock(() => '/tmp/test-workspaces'),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands', '.claude/commands']),
-  logArchonPaths: mock(() => undefined),
+  getSmelterWorkspacesPath: mock(() => '/tmp/test-workspaces'),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands', '.claude/commands']),
+  logSmelterPaths: mock(() => undefined),
   validateAppDefaultsPaths: mock(async () => undefined),
 }));
 
-// Mock @archon/core/db modules to throw immediately (avoid DB connection hangs in tests)
-mock.module('@archon/core/db/conversations', () => ({
+// Mock @smelter/core/db modules to throw immediately (avoid DB connection hangs in tests)
+mock.module('@smelter/core/db/conversations', () => ({
   getOrCreateConversation: mock(async () => {
     throw new Error('DB not mocked in tests');
   }),
@@ -38,7 +38,7 @@ mock.module('@archon/core/db/conversations', () => ({
   }),
   getConversation: mock(async () => null),
 }));
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   findCodebaseByRepoUrl: mock(async () => null),
   createCodebase: mock(async () => {
     throw new Error('DB not mocked in tests');
@@ -48,10 +48,10 @@ mock.module('@archon/core/db/codebases', () => ({
   updateCodebase: mock(async () => undefined),
 }));
 
-// Mock @archon/core
+// Mock @smelter/core
 const mockHandleMessage = mock(async () => undefined);
 const mockOnConversationClosed = mock(async () => undefined);
-mock.module('@archon/core', () => ({
+mock.module('@smelter/core', () => ({
   handleMessage: mockHandleMessage,
   classifyAndFormatError: mock((err: Error) => err.message),
   toError: mock((e: unknown) => (e instanceof Error ? e : new Error(String(e)))),
@@ -64,8 +64,8 @@ mock.module('@archon/core', () => ({
   },
 }));
 
-// Mock @archon/git
-mock.module('@archon/git', () => ({
+// Mock @smelter/git
+mock.module('@smelter/git', () => ({
   cloneRepository: mock(async () => ({ ok: true })),
   syncRepository: mock(async () => ({ ok: true })),
   addSafeDirectory: mock(async () => undefined),
@@ -75,8 +75,8 @@ mock.module('@archon/git', () => ({
   execFileAsync: mock(async () => ({ stdout: '', stderr: '' })),
 }));
 
-// Mock @archon/isolation
-mock.module('@archon/isolation', () => ({
+// Mock @smelter/isolation
+mock.module('@smelter/isolation', () => ({
   IsolationHints: {},
 }));
 
@@ -86,7 +86,7 @@ globalThis.fetch = mockFetch as typeof globalThis.fetch;
 
 // Now import the adapter (after all mocks)
 const { GitLabAdapter } = await import('./adapter');
-const { ConversationLockManager } = await import('@archon/core');
+const { ConversationLockManager } = await import('@smelter/core');
 
 // Helper: Create adapter with default test config
 function createAdapter(options?: {
@@ -101,7 +101,7 @@ function createAdapter(options?: {
     options?.secret ?? 'test-secret',
     lockManager as never,
     options?.gitlabUrl ?? 'https://gitlab.example.com',
-    options?.botMention ?? 'archon'
+    options?.botMention ?? 'smelter'
   );
 }
 
@@ -129,7 +129,7 @@ function createNotePayload(overrides?: {
     },
     object_attributes: {
       noteable_type: noteableType,
-      note: overrides?.note ?? '@archon hello',
+      note: overrides?.note ?? '@smelter hello',
       noteable_id: 100,
     },
   };
@@ -218,17 +218,17 @@ describe('GitLabAdapter', () => {
     test('ignores comments with bot response marker', async () => {
       const adapter = createAdapter();
       const payload = createNotePayload({
-        note: '@archon hello\n\n<!-- archon-bot-response -->',
+        note: '@smelter hello\n\n<!-- smelter-bot-response -->',
       });
       await adapter.handleWebhook(payload, 'test-secret');
       expect(mockHandleMessage).not.toHaveBeenCalled();
     });
 
     test('ignores comments from bot account', async () => {
-      const adapter = createAdapter({ botMention: 'archon' });
+      const adapter = createAdapter({ botMention: 'smelter' });
       const payload = createNotePayload({
-        note: '@archon something',
-        username: 'archon',
+        note: '@smelter something',
+        username: 'smelter',
       });
       await adapter.handleWebhook(payload, 'test-secret');
       expect(mockHandleMessage).not.toHaveBeenCalled();
@@ -248,7 +248,7 @@ describe('GitLabAdapter', () => {
     test('rejects unauthorized users when whitelist is set', async () => {
       process.env.GITLAB_ALLOWED_USERS = 'alice,bob';
       const adapter = createAdapter();
-      const payload = createNotePayload({ username: 'mallory', note: '@archon hello' });
+      const payload = createNotePayload({ username: 'mallory', note: '@smelter hello' });
       await adapter.handleWebhook(payload, 'test-secret');
       expect(mockHandleMessage).not.toHaveBeenCalled();
     });
@@ -359,7 +359,7 @@ describe('GitLabAdapter', () => {
           iid: 1,
           action: 'open',
           title: 'New MR',
-          description: '@archon review this',
+          description: '@smelter review this',
           state: 'opened',
           source_branch: 'feature',
           target_branch: 'main',
@@ -377,7 +377,7 @@ describe('GitLabAdapter', () => {
   describe('mention patterns', () => {
     test('detects mention at end of string', async () => {
       const adapter = createAdapter();
-      const payload = createNotePayload({ note: 'help me @archon' });
+      const payload = createNotePayload({ note: 'help me @smelter' });
       await adapter.handleWebhook(payload, 'test-secret');
       // DB mock throws, so mention detection succeeded if webhook_setup_failed was logged
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -388,7 +388,7 @@ describe('GitLabAdapter', () => {
 
     test('detects mention with comma separator', async () => {
       const adapter = createAdapter();
-      const payload = createNotePayload({ note: '@archon, please help' });
+      const payload = createNotePayload({ note: '@smelter, please help' });
       await adapter.handleWebhook(payload, 'test-secret');
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'mygroup/myproject#1' }),
@@ -398,7 +398,7 @@ describe('GitLabAdapter', () => {
 
     test('case-insensitive mention detection', async () => {
       const adapter = createAdapter();
-      const payload = createNotePayload({ note: '@ARCHON help' });
+      const payload = createNotePayload({ note: '@SMELTER help' });
       await adapter.handleWebhook(payload, 'test-secret');
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'mygroup/myproject#1' }),
@@ -408,26 +408,26 @@ describe('GitLabAdapter', () => {
   });
 
   describe('stripMention', () => {
-    const adapter = createAdapter({ botMention: 'archon' });
+    const adapter = createAdapter({ botMention: 'smelter' });
     const strip = (text: string) =>
       (adapter as unknown as { stripMention: (t: string) => string }).stripMention(text);
 
     test('strips mention followed by space', () => {
-      expect(strip('@archon hello')).toBe('hello');
+      expect(strip('@smelter hello')).toBe('hello');
     });
 
     test('strips mention followed by comma', () => {
-      expect(strip('@archon, please help')).toBe('please help');
+      expect(strip('@smelter, please help')).toBe('please help');
     });
 
     test('strips mention at end of string', () => {
-      expect(strip('help me @archon')).toBe('help me');
+      expect(strip('help me @smelter')).toBe('help me');
     });
 
-    test('does NOT strip partial-prefix username (@archonbot)', () => {
-      // Regression: old regex `@archon[\s,:;]*` would strip '@archon' from '@archonbot',
+    test('does NOT strip partial-prefix username (@smelterbot)', () => {
+      // Regression: old regex `@smelter[\s,:;]*` would strip '@smelter' from '@smelterbot',
       // yielding 'bot hello'. New regex requires a separator or end-of-string.
-      expect(strip('@archonbot hello')).toBe('@archonbot hello');
+      expect(strip('@smelterbot hello')).toBe('@smelterbot hello');
     });
   });
 
@@ -557,7 +557,7 @@ describe('GitLabAdapter', () => {
         },
         object_attributes: {
           noteable_type: 'MergeRequest',
-          note: '@archon review',
+          note: '@smelter review',
           noteable_id: 99,
         },
         merge_request: {
@@ -588,7 +588,7 @@ describe('GitLabAdapter', () => {
 
     test('posts to correct issue notes API endpoint', async () => {
       const adapter = createAdapter();
-      await adapter.sendMessage('mygroup/myproject#42', 'Hello from Archon');
+      await adapter.sendMessage('mygroup/myproject#42', 'Hello from Smelter');
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -616,8 +616,8 @@ describe('GitLabAdapter', () => {
       const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(options.body as string) as { body: string };
       expect(body.body).toContain('Test message');
-      expect(body.body).toContain('<!-- archon-bot-response -->');
-      expect(body.body).toBe('Test message\n\n<!-- archon-bot-response -->');
+      expect(body.body).toContain('<!-- smelter-bot-response -->');
+      expect(body.body).toBe('Test message\n\n<!-- smelter-bot-response -->');
     });
 
     test('encodes nested project path in URL', async () => {

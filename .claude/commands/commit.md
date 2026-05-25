@@ -81,6 +81,6 @@ Fixes #482
 - `.claude/commands/` — slash commands created or modified
 - `.claude/docs/` — reference docs added or updated
 - `CLAUDE.md` — global rules changes
-- `.archon/workflows/` or `.archon/commands/` — workflow or command definitions
+- `.smelter/workflows/` or `.smelter/commands/` — workflow or command definitions
 
 **Why this matters:** Your git log is long-term memory. Future agents and sessions use `git log` to understand project history. If context changes aren't captured in commits, the AI layer's evolution becomes invisible — you lose the ability to trace WHY a rule exists or WHEN a command was added.

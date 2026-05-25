@@ -38,7 +38,7 @@ export function parseWorkflowDescription(description: string): ParsedDescription
     result.whenToUse = whenMatch[1].trim();
   }
 
-  // Fallback: "Handles:" (e.g., archon-assist)
+  // Fallback: "Handles:" (e.g., smelter-assist)
   if (!result.whenToUse) {
     const handlesRe = /Handles:\s*(.+?)(?=\n\s*(?:Capability:|Note:|\n\n)|$)/s;
     const handlesMatch = handlesRe.exec(text);
@@ -69,7 +69,7 @@ export function parseWorkflowDescription(description: string): ParsedDescription
     result.does = doesMatch[1].trim();
   }
 
-  // Fallback: "Capability:" (e.g., archon-assist)
+  // Fallback: "Capability:" (e.g., smelter-assist)
   if (!result.does) {
     const capRe = /Capability:\s*(.+?)(?=\n\s*(?:Note:|\n\n)|$)/s;
     const capMatch = capRe.exec(text);
@@ -93,11 +93,11 @@ const ACRONYMS = new Set(['pr', 'ci', 'dag', 'prd', 'api', 'ai']);
 
 /**
  * Convert a workflow name to a display-friendly title.
- * Strips `archon-` prefix, converts kebab-case to Title Case,
+ * Strips `smelter-` prefix, converts kebab-case to Title Case,
  * preserves known acronyms (PR, CI, DAG, etc.).
  */
 export function getWorkflowDisplayName(name: string): string {
-  const stripped = name.replace(/^archon-/, '');
+  const stripped = name.replace(/^smelter-/, '');
   return stripped
     .split('-')
     .map(word =>

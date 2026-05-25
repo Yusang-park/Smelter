@@ -17,11 +17,11 @@ import {
   resolveScopedEnvPath,
 } from './setup';
 import * as setupModule from './setup';
-import { copyArchonSkill } from './skill';
+import { copySmelterSkill } from './skill';
 import { parse as parseDotenv } from 'dotenv';
 
 // Test directory for file operations
-const TEST_DIR = join(tmpdir(), 'archon-setup-test-' + Date.now());
+const TEST_DIR = join(tmpdir(), 'smelter-setup-test-' + Date.now());
 
 describe('setup command', () => {
   beforeEach(() => {
@@ -56,23 +56,23 @@ describe('setup command', () => {
 
   describe('checkExistingConfig', () => {
     it('should return null when no .env file exists', () => {
-      // Mock ARCHON_HOME to point to non-existent directory
-      const originalHome = process.env.ARCHON_HOME;
-      process.env.ARCHON_HOME = join(TEST_DIR, 'nonexistent');
+      // Mock SMELTER_HOME to point to non-existent directory
+      const originalHome = process.env.SMELTER_HOME;
+      process.env.SMELTER_HOME = join(TEST_DIR, 'nonexistent');
 
       const result = checkExistingConfig();
 
       expect(result).toBeNull();
 
       if (originalHome === undefined) {
-        delete process.env.ARCHON_HOME;
+        delete process.env.SMELTER_HOME;
       } else {
-        process.env.ARCHON_HOME = originalHome;
+        process.env.SMELTER_HOME = originalHome;
       }
     });
 
     it('should detect existing configuration values', () => {
-      const envDir = join(TEST_DIR, '.archon');
+      const envDir = join(TEST_DIR, '.smelter');
       mkdirSync(envDir, { recursive: true });
       const envPath = join(envDir, '.env');
 
@@ -89,8 +89,8 @@ CODEX_ACCOUNT_ID=account1
 `.trim()
       );
 
-      const originalHome = process.env.ARCHON_HOME;
-      process.env.ARCHON_HOME = envDir;
+      const originalHome = process.env.SMELTER_HOME;
+      process.env.SMELTER_HOME = envDir;
 
       const result = checkExistingConfig();
 
@@ -102,9 +102,9 @@ CODEX_ACCOUNT_ID=account1
       expect(result?.platforms.slack).toBe(false);
 
       if (originalHome === undefined) {
-        delete process.env.ARCHON_HOME;
+        delete process.env.SMELTER_HOME;
       } else {
-        process.env.ARCHON_HOME = originalHome;
+        process.env.SMELTER_HOME = originalHome;
       }
     });
   });
@@ -320,22 +320,22 @@ CODEX_ACCOUNT_ID=account1
     });
   });
 
-  describe('copyArchonSkill', () => {
+  describe('copySmelterSkill', () => {
     it('should create skill files in target directory', async () => {
       const target = join(TEST_DIR, 'skill-target');
       mkdirSync(target, { recursive: true });
 
-      await copyArchonSkill(target);
+      await copySmelterSkill(target);
 
-      expect(existsSync(join(target, '.claude', 'skills', 'archon', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(target, '.claude', 'skills', 'archon', 'guides', 'setup.md'))).toBe(
+      expect(existsSync(join(target, '.claude', 'skills', 'smelter', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(target, '.claude', 'skills', 'smelter', 'guides', 'setup.md'))).toBe(
         true
       );
       expect(
-        existsSync(join(target, '.claude', 'skills', 'archon', 'references', 'workflow-dag.md'))
+        existsSync(join(target, '.claude', 'skills', 'smelter', 'references', 'workflow-dag.md'))
       ).toBe(true);
       expect(
-        existsSync(join(target, '.claude', 'skills', 'archon', 'examples', 'dag-workflow.yaml'))
+        existsSync(join(target, '.claude', 'skills', 'smelter', 'examples', 'dag-workflow.yaml'))
       ).toBe(true);
     });
 
@@ -343,23 +343,23 @@ CODEX_ACCOUNT_ID=account1
       const target = join(TEST_DIR, 'skill-target-content');
       mkdirSync(target, { recursive: true });
 
-      await copyArchonSkill(target);
+      await copySmelterSkill(target);
 
       const content = readFileSync(
-        join(target, '.claude', 'skills', 'archon', 'SKILL.md'),
+        join(target, '.claude', 'skills', 'smelter', 'SKILL.md'),
         'utf-8'
       );
       expect(content.length).toBeGreaterThan(0);
-      expect(content).toContain('archon');
+      expect(content).toContain('smelter');
     });
 
     it('should overwrite existing skill files', async () => {
       const target = join(TEST_DIR, 'skill-target-overwrite');
-      const skillDir = join(target, '.claude', 'skills', 'archon');
+      const skillDir = join(target, '.claude', 'skills', 'smelter');
       mkdirSync(skillDir, { recursive: true });
       writeFileSync(join(skillDir, 'SKILL.md'), 'old content');
 
-      await copyArchonSkill(target);
+      await copySmelterSkill(target);
 
       const content = readFileSync(join(skillDir, 'SKILL.md'), 'utf-8');
       expect(content).not.toBe('old content');
@@ -367,23 +367,23 @@ CODEX_ACCOUNT_ID=account1
 
     it('should create skill files even when target directory does not exist', async () => {
       const target = join(TEST_DIR, 'non-existent-parent', 'skill-target-new');
-      // Do NOT pre-create target — copyArchonSkill must handle it
+      // Do NOT pre-create target — copySmelterSkill must handle it
 
-      await copyArchonSkill(target);
+      await copySmelterSkill(target);
 
-      expect(existsSync(join(target, '.claude', 'skills', 'archon', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(target, '.claude', 'skills', 'smelter', 'SKILL.md'))).toBe(true);
     });
   });
 
   describe('bootstrapProjectConfig', () => {
-    it('creates .archon/config.yaml when it does not exist', () => {
+    it('creates .smelter/config.yaml when it does not exist', () => {
       const target = join(TEST_DIR, 'bootstrap-target');
       mkdirSync(target, { recursive: true });
 
       const result = bootstrapProjectConfig(target);
 
       expect(result.state).toBe('created');
-      expect(result.path).toBe(join(target, '.archon', 'config.yaml'));
+      expect(result.path).toBe(join(target, '.smelter', 'config.yaml'));
       expect(existsSync(result.path)).toBe(true);
       const content = readFileSync(result.path, 'utf-8');
       // Must be valid YAML — comment lines only — so loaders treat it as empty.
@@ -392,28 +392,28 @@ CODEX_ACCOUNT_ID=account1
       expect(content).toContain('github.com/Yusang-park/Smelter');
     });
 
-    it('creates the .archon directory if missing (idempotent on parent)', () => {
-      const target = join(TEST_DIR, 'bootstrap-no-archon-dir');
+    it('creates the .smelter directory if missing (idempotent on parent)', () => {
+      const target = join(TEST_DIR, 'bootstrap-no-smelter-dir');
       mkdirSync(target, { recursive: true });
-      // Do NOT pre-create .archon — bootstrap must create it
+      // Do NOT pre-create .smelter — bootstrap must create it
 
       const result = bootstrapProjectConfig(target);
 
       expect(result.state).toBe('created');
-      expect(existsSync(join(target, '.archon'))).toBe(true);
+      expect(existsSync(join(target, '.smelter'))).toBe(true);
     });
 
     it('is idempotent — leaves an existing config untouched', () => {
       const target = join(TEST_DIR, 'bootstrap-existing');
-      const archonDir = join(target, '.archon');
-      mkdirSync(archonDir, { recursive: true });
+      const smelterDir = join(target, '.smelter');
+      mkdirSync(smelterDir, { recursive: true });
       const userContent = '# my custom config\nassistants:\n  claude:\n    model: opus\n';
-      writeFileSync(join(archonDir, 'config.yaml'), userContent);
+      writeFileSync(join(smelterDir, 'config.yaml'), userContent);
 
       const result = bootstrapProjectConfig(target);
 
       expect(result.state).toBe('existed');
-      const after = readFileSync(join(archonDir, 'config.yaml'), 'utf-8');
+      const after = readFileSync(join(smelterDir, 'config.yaml'), 'utf-8');
       expect(after).toBe(userContent);
     });
 
@@ -519,28 +519,28 @@ describe('detectClaudeExecutablePath probe order', () => {
  *
  * Invariants:
  *   - <repo>/.env is NEVER written.
- *   - Default write targets ~/.archon/.env (home scope) with merge preserving
+ *   - Default write targets ~/.smelter/.env (home scope) with merge preserving
  *     existing non-empty values.
- *   - --scope project writes to <repo>/.archon/.env.
+ *   - --scope project writes to <repo>/.smelter/.env.
  *   - --force overwrites the target wholesale, still writes a backup.
  *   - Merge preserves user-added keys not in the proposed content.
  */
 describe('writeScopedEnv (#1303)', () => {
-  const ROOT = join(tmpdir(), 'archon-write-scoped-env-test-' + Date.now());
-  const HOME_DIR = join(ROOT, 'archon-home');
+  const ROOT = join(tmpdir(), 'smelter-write-scoped-env-test-' + Date.now());
+  const HOME_DIR = join(ROOT, 'smelter-home');
   const REPO_DIR = join(ROOT, 'repo');
-  let originalArchonHome: string | undefined;
+  let originalSmelterHome: string | undefined;
 
   beforeEach(() => {
     mkdirSync(HOME_DIR, { recursive: true });
     mkdirSync(REPO_DIR, { recursive: true });
-    originalArchonHome = process.env.ARCHON_HOME;
-    process.env.ARCHON_HOME = HOME_DIR;
+    originalSmelterHome = process.env.SMELTER_HOME;
+    process.env.SMELTER_HOME = HOME_DIR;
   });
 
   afterEach(() => {
-    if (originalArchonHome === undefined) delete process.env.ARCHON_HOME;
-    else process.env.ARCHON_HOME = originalArchonHome;
+    if (originalSmelterHome === undefined) delete process.env.SMELTER_HOME;
+    else process.env.SMELTER_HOME = originalSmelterHome;
     rmSync(ROOT, { recursive: true, force: true });
   });
 
@@ -617,7 +617,7 @@ describe('writeScopedEnv (#1303)', () => {
     });
     expect(result.forced).toBe(true);
     expect(result.backupPath).not.toBeNull();
-    expect(result.backupPath).toMatch(/\.archon-backup-\d{4}-\d{2}-\d{2}T/);
+    expect(result.backupPath).toMatch(/\.smelter-backup-\d{4}-\d{2}-\d{2}T/);
     // Backup has the old content
     expect(readFileSync(result.backupPath as string, 'utf-8')).toContain('OLD_KEY=old');
     // Target has the new content only — OLD_KEY is gone
@@ -637,14 +637,14 @@ describe('writeScopedEnv (#1303)', () => {
     expect(result.forced).toBe(false); // no existing file means force was effectively a no-op
   });
 
-  it('--scope project writes to <repo>/.archon/.env, creating the directory', () => {
-    expect(existsSync(join(REPO_DIR, '.archon'))).toBe(false);
+  it('--scope project writes to <repo>/.smelter/.env, creating the directory', () => {
+    expect(existsSync(join(REPO_DIR, '.smelter'))).toBe(false);
     const result = writeScopedEnv('FOO=bar\n', {
       scope: 'project',
       repoPath: REPO_DIR,
       force: false,
     });
-    expect(result.targetPath).toBe(join(REPO_DIR, '.archon', '.env'));
+    expect(result.targetPath).toBe(join(REPO_DIR, '.smelter', '.env'));
     expect(existsSync(result.targetPath)).toBe(true);
     expect(existsSync(join(HOME_DIR, '.env'))).toBe(false);
   });
@@ -664,9 +664,9 @@ describe('writeScopedEnv (#1303)', () => {
     expect(readFileSync(repoEnvPath, 'utf-8')).toBe(sentinel);
   });
 
-  it('resolveScopedEnvPath returns the archon-owned path for each scope', () => {
+  it('resolveScopedEnvPath returns the smelter-owned path for each scope', () => {
     expect(resolveScopedEnvPath('home', REPO_DIR)).toBe(join(HOME_DIR, '.env'));
-    expect(resolveScopedEnvPath('project', REPO_DIR)).toBe(join(REPO_DIR, '.archon', '.env'));
+    expect(resolveScopedEnvPath('project', REPO_DIR)).toBe(join(REPO_DIR, '.smelter', '.env'));
   });
 
   it('serializeEnv round-trips through dotenv.parse', () => {

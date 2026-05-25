@@ -1,6 +1,6 @@
 # Adapter Implementation Guide
 
-> **Purpose**: Complete reference for understanding and building platform adapters in Archon.
+> **Purpose**: Complete reference for understanding and building platform adapters in Smelter.
 > **When to use**: Building a new adapter, debugging adapter behavior, understanding cross-platform message flow.
 > **Size**: ~400 lines — use a scout sub-agent to check relevance before loading.
 
@@ -136,7 +136,7 @@ Only Discord creates real threads. Slack's `channel:ts` format already ensures t
 1. HMAC-SHA256 signature verification via `timingSafeEqual`
 2. Auth check against `GITHUB_ALLOWED_USERS` (username from `event.sender.login`)
 3. `parseEvent()` extracts fields — **only handles `issue_comment.created`, `issues.closed`, `pull_request.closed`** — NOT `issues.opened` or `pull_request.opened` (descriptions contain docs, not commands; see #96)
-4. Self-loop prevention: ignores comments containing `<!-- archon-bot-response -->`
+4. Self-loop prevention: ignores comments containing `<!-- smelter-bot-response -->`
 5. Bot mention check via `hasMention()`
 6. `getOrCreateCodebaseForRepo()` upserts codebase record
 7. `ensureRepoReady()` clones (new) or syncs (existing) the repository
@@ -144,7 +144,7 @@ Only Discord creates real threads. Slack's `channel:ts` format already ensures t
 
 **Conversation ID:** `owner/repo#number` (e.g., `acme/api#42`).
 
-**Sending:** `octokit.rest.issues.createComment` with retry logic (3 attempts, exponential backoff). Appends `<!-- archon-bot-response -->` marker to every comment.
+**Sending:** `octokit.rest.issues.createComment` with retry logic (3 attempts, exponential backoff). Appends `<!-- smelter-bot-response -->` marker to every comment.
 
 **Streaming mode:** Always `'batch'` (hardcoded).
 

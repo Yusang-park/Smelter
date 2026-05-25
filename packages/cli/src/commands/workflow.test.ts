@@ -2,8 +2,8 @@
  * Tests for workflow commands
  */
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
-import type { WorkflowEmitterEvent } from '@archon/workflows/event-emitter';
-import { makeTestWorkflowWithSource } from '@archon/workflows/test-utils';
+import type { WorkflowEmitterEvent } from '@smelter/workflows/event-emitter';
+import { makeTestWorkflowWithSource } from '@smelter/workflows/test-utils';
 import {
   workflowListCommand,
   workflowRunCommand,
@@ -25,14 +25,14 @@ const mockLogger = {
   child: mock(() => mockLogger),
 };
 
-// Mock @archon/paths (createLogger moved here from @archon/core)
-mock.module('@archon/paths', () => ({
+// Mock @smelter/paths (createLogger moved here from @smelter/core)
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonHome: mock(() => '/home/test/.archon'),
+  getSmelterHome: mock(() => '/home/test/.smelter'),
 }));
 
-// Mock @archon/isolation (getIsolationProvider moved here from @archon/core)
-mock.module('@archon/isolation', () => ({
+// Mock @smelter/isolation (getIsolationProvider moved here from @smelter/core)
+mock.module('@smelter/isolation', () => ({
   configureIsolation: mock(() => undefined),
   getIsolationProvider: mock(() => ({
     create: mock(() =>
@@ -50,8 +50,8 @@ mock.module('@archon/isolation', () => ({
   })),
 }));
 
-// Mock the @archon/core modules
-mock.module('@archon/core', () => ({
+// Mock the @smelter/core modules
+mock.module('@smelter/core', () => ({
   registerRepository: mock(() =>
     Promise.resolve({
       codebaseId: 'cb-auto',
@@ -70,10 +70,10 @@ mock.module('@archon/core', () => ({
   })),
 }));
 
-mock.module('@archon/workflows/workflow-discovery', () => ({
+mock.module('@smelter/workflows/workflow-discovery', () => ({
   discoverWorkflowsWithConfig: mock(() => Promise.resolve({ workflows: [], errors: [] })),
 }));
-mock.module('@archon/workflows/executor', () => ({
+mock.module('@smelter/workflows/executor', () => ({
   executeWorkflow: mock(() => Promise.resolve({ success: true, workflowRunId: 'test-run-id' })),
 }));
 
@@ -81,7 +81,7 @@ mock.module('@archon/workflows/executor', () => ({
 let capturedSubscribeHandler: ((event: WorkflowEmitterEvent) => void) | null = null;
 const mockUnsubscribe = mock(() => undefined);
 
-mock.module('@archon/workflows/event-emitter', () => ({
+mock.module('@smelter/workflows/event-emitter', () => ({
   getWorkflowEventEmitter: mock(() => ({
     subscribeForConversation: mock(
       (_convId: string, handler: (event: WorkflowEmitterEvent) => void) => {
@@ -92,7 +92,7 @@ mock.module('@archon/workflows/event-emitter', () => ({
   })),
 }));
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   findRepoRoot: mock(() => Promise.resolve(null)),
   getRemoteUrl: mock(() => Promise.resolve(null)),
   checkout: mock(() => Promise.resolve()),
@@ -103,7 +103,7 @@ mock.module('@archon/git', () => ({
   isAncestorOf: mock(() => Promise.resolve(true)),
 }));
 
-mock.module('@archon/core/db/conversations', () => ({
+mock.module('@smelter/core/db/conversations', () => ({
   getOrCreateConversation: mock(() =>
     Promise.resolve({ id: 'conv-123', platform_type: 'cli', platform_conversation_id: 'cli-123' })
   ),
@@ -111,21 +111,21 @@ mock.module('@archon/core/db/conversations', () => ({
   updateConversation: mock(() => Promise.resolve()),
 }));
 
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   findCodebaseByDefaultCwd: mock(() => Promise.resolve(null)),
   getCodebase: mock(() => Promise.resolve(null)),
 }));
 
-mock.module('@archon/core/db/isolation-environments', () => ({
+mock.module('@smelter/core/db/isolation-environments', () => ({
   findActiveByWorkflow: mock(() => Promise.resolve(null)),
   create: mock(() => Promise.resolve({ id: 'iso-123' })),
 }));
 
-mock.module('@archon/core/db/messages', () => ({
+mock.module('@smelter/core/db/messages', () => ({
   addMessage: mock(() => Promise.resolve()),
 }));
 
-mock.module('@archon/core/db/workflows', () => ({
+mock.module('@smelter/core/db/workflows', () => ({
   getActiveWorkflowRun: mock(() => Promise.resolve(null)),
   failWorkflowRun: mock(() => Promise.resolve()),
   cancelWorkflowRun: mock(() => Promise.resolve()),
@@ -137,7 +137,7 @@ mock.module('@archon/core/db/workflows', () => ({
   deleteOldWorkflowRuns: mock(() => Promise.resolve({ count: 0 })),
 }));
 
-mock.module('@archon/core/db/workflow-events', () => ({
+mock.module('@smelter/core/db/workflow-events', () => ({
   listWorkflowEvents: mock(() => Promise.resolve([])),
   createWorkflowEvent: mock(() => Promise.resolve()),
 }));
@@ -154,7 +154,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should display message when no workflows found', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [],
       errors: [],
@@ -167,7 +167,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should list workflows with names and descriptions', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'General assistance workflow' }),
@@ -191,7 +191,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should output JSON when json flag is true', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'General assistance workflow' }),
@@ -223,7 +223,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should include errors in JSON output', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [],
       errors: [{ filename: 'bad.yaml', error: 'Invalid YAML', errorType: 'parse_error' }],
@@ -246,7 +246,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should not print header text in JSON mode', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [],
       errors: [],
@@ -263,7 +263,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should include modelReasoningEffort and webSearchMode in JSON output when present', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({
@@ -296,7 +296,7 @@ describe('workflowListCommand', () => {
   });
 
   it('should produce text output when json flag is false', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'General assistance' }),
@@ -311,7 +311,7 @@ describe('workflowListCommand', () => {
   });
 
   it('calls discoverWorkflowsWithConfig with (cwd, loadConfig) — home scope is internal', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [],
       errors: [],
@@ -319,13 +319,13 @@ describe('workflowListCommand', () => {
 
     await workflowListCommand('/test/path');
 
-    // After the globalSearchPath refactor, discovery reads ~/.archon/workflows/
+    // After the globalSearchPath refactor, discovery reads ~/.smelter/workflows/
     // on every call with no option — every caller inherits home-scope for free.
     expect(discoverWorkflowsWithConfig).toHaveBeenCalledWith('/test/path', expect.any(Function));
   });
 
   it('should throw error when discoverWorkflows fails', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockRejectedValueOnce(
       new Error('Permission denied')
     );
@@ -350,19 +350,19 @@ describe('workflowRunCommand', () => {
   });
 
   it('should throw error when no workflows found', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [],
       errors: [],
     });
 
     await expect(workflowRunCommand('/test/path', 'assist', 'hello')).rejects.toThrow(
-      'No workflows found in .archon/workflows/'
+      'No workflows found in .smelter/workflows/'
     );
   });
 
   it('should throw error when workflow not found', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'Help' }),
@@ -377,7 +377,7 @@ describe('workflowRunCommand', () => {
   });
 
   it('should include available workflows in error when workflow not found', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'Help' }),
@@ -397,14 +397,14 @@ describe('workflowRunCommand', () => {
   });
 
   it('should resolve workflow by suffix match', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
-        makeTestWorkflowWithSource({ name: 'archon-assist', description: 'Help' }),
-        makeTestWorkflowWithSource({ name: 'archon-plan', description: 'Plan' }),
+        makeTestWorkflowWithSource({ name: 'smelter-assist', description: 'Help' }),
+        makeTestWorkflowWithSource({ name: 'smelter-plan', description: 'Plan' }),
       ],
       errors: [],
     });
@@ -422,28 +422,31 @@ describe('workflowRunCommand', () => {
       default_cwd: '/test/path',
     });
 
-    // Should resolve successfully — "assist" suffix-matches "archon-assist"
+    // Should resolve successfully — "assist" suffix-matches "smelter-assist"
     await workflowRunCommand('/test/path', 'assist', 'hello');
 
     // Verify suffix matching tier was used
     expect(mockLogger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ requested: 'assist', matched: 'archon-assist' }),
+      expect.objectContaining({ requested: 'assist', matched: 'smelter-assist' }),
       'workflow.resolve_suffix_match'
     );
   });
 
   it('should resolve workflow by substring match', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
-        makeTestWorkflowWithSource({ name: 'archon-smart-pr-review', description: 'Smart review' }),
-        makeTestWorkflowWithSource({ name: 'archon-assist', description: 'Help' }),
+        makeTestWorkflowWithSource({
+          name: 'smelter-smart-pr-review',
+          description: 'Smart review',
+        }),
+        makeTestWorkflowWithSource({ name: 'smelter-assist', description: 'Help' }),
       ],
       errors: [],
     });
 
-    // "smart" substring-matches only "archon-smart-pr-review"
+    // "smart" substring-matches only "smelter-smart-pr-review"
     // Will fail downstream at executeWorkflow mock, but must NOT throw "not found"
     const error = await workflowRunCommand('/test/path', 'smart', 'hello').catch(
       (e: unknown) => e as Error
@@ -454,14 +457,14 @@ describe('workflowRunCommand', () => {
   });
 
   it('should prefer case-insensitive exact match over suffix match', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'Help' }),
-        makeTestWorkflowWithSource({ name: 'archon-assist', description: 'Long' }),
+        makeTestWorkflowWithSource({ name: 'smelter-assist', description: 'Long' }),
       ],
       errors: [],
     });
@@ -494,10 +497,10 @@ describe('workflowRunCommand', () => {
   });
 
   it('should throw ambiguous error for multiple suffix matches', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
-        makeTestWorkflowWithSource({ name: 'archon-review', description: 'Review' }),
+        makeTestWorkflowWithSource({ name: 'smelter-review', description: 'Review' }),
         makeTestWorkflowWithSource({ name: 'custom-review', description: 'Custom review' }),
       ],
       errors: [],
@@ -509,14 +512,17 @@ describe('workflowRunCommand', () => {
   });
 
   it('should throw ambiguous error for multiple substring matches', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({
-          name: 'archon-comprehensive-pr-review',
+          name: 'smelter-comprehensive-pr-review',
           description: 'Full review',
         }),
-        makeTestWorkflowWithSource({ name: 'archon-smart-pr-review', description: 'Smart review' }),
+        makeTestWorkflowWithSource({
+          name: 'smelter-smart-pr-review',
+          description: 'Smart review',
+        }),
       ],
       errors: [],
     });
@@ -527,14 +533,14 @@ describe('workflowRunCommand', () => {
   });
 
   it('should prefer exact match over suffix match', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
         makeTestWorkflowWithSource({ name: 'assist', description: 'Short name' }),
-        makeTestWorkflowWithSource({ name: 'archon-assist', description: 'Long name' }),
+        makeTestWorkflowWithSource({ name: 'smelter-assist', description: 'Long name' }),
       ],
       errors: [],
     });
@@ -563,8 +569,8 @@ describe('workflowRunCommand', () => {
   });
 
   it('should throw error when database access fails', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const conversationDb = await import('@archon/core/db/conversations');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const conversationDb = await import('@smelter/core/db/conversations');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -580,9 +586,9 @@ describe('workflowRunCommand', () => {
   });
 
   it('should throw when codebase lookup fails (isolation is default)', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -601,10 +607,10 @@ describe('workflowRunCommand', () => {
   });
 
   it('should continue when codebase lookup fails with --no-worktree', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -632,10 +638,10 @@ describe('workflowRunCommand', () => {
   });
 
   it('should throw error when workflow execution fails', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -658,11 +664,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('should call generateAndSetTitle with workflow name and user message', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const core = await import('@archon/core');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const core = await import('@smelter/core');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -696,11 +702,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('passes fromBranch into isolation task request', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const isolation = await import('@archon/isolation');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const isolation = await import('@smelter/isolation');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -739,7 +745,7 @@ describe('workflowRunCommand', () => {
   });
 
   it('throws when --branch is used with --no-worktree', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -756,7 +762,7 @@ describe('workflowRunCommand', () => {
   });
 
   it('throws when --from is used with --no-worktree', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -773,12 +779,12 @@ describe('workflowRunCommand', () => {
   });
 
   it('creates worktree with auto-generated branch when no --branch given', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const isolation = await import('@archon/isolation');
-    const isolationDb = await import('@archon/core/db/isolation-environments');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const isolation = await import('@smelter/isolation');
+    const isolationDb = await import('@smelter/core/db/isolation-environments');
 
     // Snapshot call counts before this test (process-global mocks)
     const findActiveCallsBefore = (isolationDb.findActiveByWorkflow as ReturnType<typeof mock>).mock
@@ -825,11 +831,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('skips isolation when --no-worktree flag is set', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const isolation = await import('@archon/isolation');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const isolation = await import('@smelter/isolation');
 
     // Snapshot provider.create call count before this test
     const getIsolationProviderMock = isolation.getIsolationProvider as ReturnType<typeof mock>;
@@ -870,11 +876,11 @@ describe('workflowRunCommand', () => {
   // -------------------------------------------------------------------------
 
   it('surfaces auto-registration failures instead of claiming the repo is invalid', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { registerRepository } = await import('@archon/core');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const gitModule = await import('@archon/git');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { registerRepository } = await import('@smelter/core');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const gitModule = await import('@smelter/git');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -887,8 +893,8 @@ describe('workflowRunCommand', () => {
     (gitModule.findRepoRoot as ReturnType<typeof mock>).mockResolvedValueOnce('/test/path');
     (registerRepository as ReturnType<typeof mock>).mockRejectedValueOnce(
       new Error(
-        'Source symlink at /home/test/.archon/workspaces/acme/widget/source already points to ' +
-          '/home/test/.archon/workspaces/widget, expected /test/path'
+        'Source symlink at /home/test/.smelter/workspaces/acme/widget/source already points to ' +
+          '/home/test/.smelter/workspaces/widget, expected /test/path'
       )
     );
 
@@ -899,17 +905,17 @@ describe('workflowRunCommand', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toContain('Cannot create worktree: repository registration failed.');
     expect(error.message).toContain(
-      'Remove the stale workspace entry at /home/test/.archon/workspaces/acme/widget and retry'
+      'Remove the stale workspace entry at /home/test/.smelter/workspaces/acme/widget and retry'
     );
     expect(error.message).not.toContain('not in a git repository');
   });
 
   it('surfaces auto-registration failures on --resume instead of claiming the repo is invalid', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { registerRepository } = await import('@archon/core');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const gitModule = await import('@archon/git');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { registerRepository } = await import('@smelter/core');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const gitModule = await import('@smelter/git');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -922,8 +928,8 @@ describe('workflowRunCommand', () => {
     (gitModule.findRepoRoot as ReturnType<typeof mock>).mockResolvedValueOnce('/test/path');
     (registerRepository as ReturnType<typeof mock>).mockRejectedValueOnce(
       new Error(
-        'Source symlink at /home/test/.archon/workspaces/acme/widget/source already points to ' +
-          '/home/test/.archon/workspaces/widget, expected /test/path'
+        'Source symlink at /home/test/.smelter/workspaces/acme/widget/source already points to ' +
+          '/home/test/.smelter/workspaces/widget, expected /test/path'
       )
     );
 
@@ -934,17 +940,17 @@ describe('workflowRunCommand', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toContain('Cannot resume: repository registration failed.');
     expect(error.message).toContain(
-      'Remove the stale workspace entry at /home/test/.archon/workspaces/acme/widget and retry'
+      'Remove the stale workspace entry at /home/test/.smelter/workspaces/acme/widget and retry'
     );
     expect(error.message).not.toContain('Not in a git repository');
   });
 
   it('falls back to generic workspace hint when registration error has an unrecognized shape', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { registerRepository } = await import('@archon/core');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const gitModule = await import('@archon/git');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { registerRepository } = await import('@smelter/core');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const gitModule = await import('@smelter/git');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -956,7 +962,7 @@ describe('workflowRunCommand', () => {
     (codebaseDb.findCodebaseByDefaultCwd as ReturnType<typeof mock>).mockResolvedValueOnce(null);
     (gitModule.findRepoRoot as ReturnType<typeof mock>).mockResolvedValueOnce('/test/path');
     (registerRepository as ReturnType<typeof mock>).mockRejectedValueOnce(
-      new Error("EACCES: permission denied, mkdir '/home/test/.archon/workspaces/acme'")
+      new Error("EACCES: permission denied, mkdir '/home/test/.smelter/workspaces/acme'")
     );
 
     const error = await workflowRunCommand('/test/path', 'assist', 'hello', {}).catch(
@@ -968,7 +974,7 @@ describe('workflowRunCommand', () => {
     expect(error.message).toContain('EACCES: permission denied');
     // Path-separator-agnostic check: on Windows path.join normalizes to `\`,
     // on POSIX to `/`. Assert the hint prefix + the final segment separately.
-    expect(error.message).toContain('Check your Archon workspace registration under');
+    expect(error.message).toContain('Check your Smelter workspace registration under');
     expect(error.message).toMatch(/workspaces\b/);
     expect(error.message).not.toContain('Remove the stale workspace entry');
   });
@@ -978,11 +984,11 @@ describe('workflowRunCommand', () => {
   // -------------------------------------------------------------------------
 
   it('skips isolation when workflow YAML pins worktree.enabled: false', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const isolation = await import('@archon/isolation');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const isolation = await import('@smelter/isolation');
 
     const getIsolationProviderMock = isolation.getIsolationProvider as ReturnType<typeof mock>;
     const providerBefore = getIsolationProviderMock.mock.results.at(-1)?.value as
@@ -1024,7 +1030,7 @@ describe('workflowRunCommand', () => {
   });
 
   it('throws when workflow pins worktree.enabled: false but caller passes --branch', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
@@ -1043,7 +1049,7 @@ describe('workflowRunCommand', () => {
   });
 
   it('throws when workflow pins worktree.enabled: false but caller passes --from', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
@@ -1062,10 +1068,10 @@ describe('workflowRunCommand', () => {
   });
 
   it('accepts worktree.enabled: false + --no-worktree as redundant (no error)', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
@@ -1095,7 +1101,7 @@ describe('workflowRunCommand', () => {
   });
 
   it('throws when workflow pins worktree.enabled: true but caller passes --no-worktree', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [
@@ -1114,10 +1120,10 @@ describe('workflowRunCommand', () => {
   });
 
   it('throws when isolation cannot be created due to missing codebase', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const gitModule = await import('@archon/git');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const gitModule = await import('@smelter/git');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1137,12 +1143,12 @@ describe('workflowRunCommand', () => {
   });
 
   it('emits warning when reused worktree has mismatched base branch', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const isolationDb = await import('@archon/core/db/isolation-environments');
-    const gitModule = await import('@archon/git');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const isolationDb = await import('@smelter/core/db/isolation-environments');
+    const gitModule = await import('@smelter/git');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1179,11 +1185,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('does not emit base branch warning when reused worktree is valid', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const isolationDb = await import('@archon/core/db/isolation-environments');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const isolationDb = await import('@smelter/core/db/isolation-environments');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1223,11 +1229,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('sends dispatch message before executeWorkflow with correct metadata', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const messagesDb = await import('@archon/core/db/messages');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const messagesDb = await import('@smelter/core/db/messages');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1275,11 +1281,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('sends result card when executeWorkflow returns a summary', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const messagesDb = await import('@archon/core/db/messages');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const messagesDb = await import('@smelter/core/db/messages');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1311,11 +1317,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('does not send result card when executeWorkflow has no summary', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const messagesDb = await import('@archon/core/db/messages');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const messagesDb = await import('@smelter/core/db/messages');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1346,11 +1352,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('does not throw and logs warn when result message DB persist fails', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const messagesDb = await import('@archon/core/db/messages');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const messagesDb = await import('@smelter/core/db/messages');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1387,11 +1393,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('does not throw and continues to executeWorkflow when dispatch sendMessage fails', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const messagesDb = await import('@archon/core/db/messages');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const messagesDb = await import('@smelter/core/db/messages');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1422,11 +1428,11 @@ describe('workflowRunCommand', () => {
   });
 
   it('does not send result card when workflow is paused even with summary', async () => {
-    const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
-    const { executeWorkflow } = await import('@archon/workflows/executor');
-    const conversationDb = await import('@archon/core/db/conversations');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const messagesDb = await import('@archon/core/db/messages');
+    const { discoverWorkflowsWithConfig } = await import('@smelter/workflows/workflow-discovery');
+    const { executeWorkflow } = await import('@smelter/workflows/executor');
+    const conversationDb = await import('@smelter/core/db/conversations');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const messagesDb = await import('@smelter/core/db/messages');
 
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'Help' })],
@@ -1478,7 +1484,7 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should print message when no active runs', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([]);
 
     await workflowStatusCommand();
@@ -1487,7 +1493,7 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should list active runs with ID, name, path, status, and age', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([
       {
         id: 'run-abc',
@@ -1508,7 +1514,7 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should output JSON when json=true', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([]);
 
     await workflowStatusCommand(true);
@@ -1517,8 +1523,8 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should show node summaries in verbose mode', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const workflowEventsDb = await import('@archon/core/db/workflow-events');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const workflowEventsDb = await import('@smelter/core/db/workflow-events');
 
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([
       {
@@ -1562,8 +1568,8 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should show error message for failed node in verbose mode', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const workflowEventsDb = await import('@archon/core/db/workflow-events');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const workflowEventsDb = await import('@smelter/core/db/workflow-events');
 
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([
       {
@@ -1606,8 +1612,8 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should not show nodes section when no events in verbose mode', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const workflowEventsDb = await import('@archon/core/db/workflow-events');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const workflowEventsDb = await import('@smelter/core/db/workflow-events');
 
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([
       {
@@ -1627,8 +1633,8 @@ describe('workflowStatusCommand', () => {
   });
 
   it('should include events in JSON verbose output', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const workflowEventsDb = await import('@archon/core/db/workflow-events');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const workflowEventsDb = await import('@smelter/core/db/workflow-events');
 
     (workflowDb.listWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce([
       {
@@ -1672,7 +1678,7 @@ describe('workflowResumeCommand', () => {
   });
 
   it('should throw when run not found', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     await expect(workflowResumeCommand('missing-id')).rejects.toThrow(
@@ -1681,7 +1687,7 @@ describe('workflowResumeCommand', () => {
   });
 
   it('should throw when run is not resumable', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-1',
       workflow_name: 'test',
@@ -1694,7 +1700,7 @@ describe('workflowResumeCommand', () => {
   });
 
   it('should print resume info and delegate to workflowRunCommand', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-1',
       workflow_name: 'implement',
@@ -1718,7 +1724,7 @@ describe('workflowResumeCommand', () => {
   });
 
   it('should throw when run has no working path', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-no-path',
       workflow_name: 'implement',
@@ -1732,9 +1738,9 @@ describe('workflowResumeCommand', () => {
   });
 
   it('should pass codebase_id from run record to workflowRunCommand', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const workflowDiscovery = await import('@archon/workflows/workflow-discovery');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const workflowDiscovery = await import('@smelter/workflows/workflow-discovery');
 
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-1',
@@ -1771,9 +1777,9 @@ describe('workflowResumeCommand', () => {
   });
 
   it('should fall through to auto-registration when getCodebase throws', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const workflowDiscovery = await import('@archon/workflows/workflow-discovery');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const workflowDiscovery = await import('@smelter/workflows/workflow-discovery');
 
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-err',
@@ -1822,7 +1828,7 @@ describe('workflowApproveCommand', () => {
   });
 
   it('should throw when run not found', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     await expect(workflowApproveCommand('missing-id')).rejects.toThrow(
@@ -1831,10 +1837,10 @@ describe('workflowApproveCommand', () => {
   });
 
   it('should pass codebase_id from run record to workflowRunCommand', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const workflowDiscovery = await import('@archon/workflows/workflow-discovery');
-    const core = await import('@archon/core');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const workflowDiscovery = await import('@smelter/workflows/workflow-discovery');
+    const core = await import('@smelter/core');
 
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-approve-1',
@@ -1873,11 +1879,11 @@ describe('workflowApproveCommand', () => {
   });
 
   it('should pass original platform conversation ID through to workflowRunCommand', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const codebaseDb = await import('@archon/core/db/codebases');
-    const conversationsDb = await import('@archon/core/db/conversations');
-    const workflowDiscovery = await import('@archon/workflows/workflow-discovery');
-    const core = await import('@archon/core');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const codebaseDb = await import('@smelter/core/db/codebases');
+    const conversationsDb = await import('@smelter/core/db/conversations');
+    const workflowDiscovery = await import('@smelter/workflows/workflow-discovery');
+    const core = await import('@smelter/core');
 
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-approve-conv',
@@ -1937,7 +1943,7 @@ describe('workflowAbandonCommand', () => {
   });
 
   it('should throw when run not found', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     await expect(workflowAbandonCommand('missing-id')).rejects.toThrow(
@@ -1946,7 +1952,7 @@ describe('workflowAbandonCommand', () => {
   });
 
   it('should throw when run is not abandonable', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-1',
       workflow_name: 'test',
@@ -1959,7 +1965,7 @@ describe('workflowAbandonCommand', () => {
   });
 
   it('should abandon a running workflow', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-1',
       workflow_name: 'implement',
@@ -1986,7 +1992,7 @@ describe('workflowCleanupCommand', () => {
   });
 
   it('should print deletion count when runs are deleted', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.deleteOldWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce({
       count: 5,
     });
@@ -1997,7 +2003,7 @@ describe('workflowCleanupCommand', () => {
   });
 
   it('should print no-op message when count is 0', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.deleteOldWorkflowRuns as ReturnType<typeof mock>).mockResolvedValueOnce({
       count: 0,
     });
@@ -2008,7 +2014,7 @@ describe('workflowCleanupCommand', () => {
   });
 
   it('should throw when deleteOldWorkflowRuns fails', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.deleteOldWorkflowRuns as ReturnType<typeof mock>).mockRejectedValueOnce(
       new Error('disk full')
     );
@@ -2031,14 +2037,14 @@ describe('workflowRejectCommand', () => {
   });
 
   it('should throw when run not found', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     await expect(workflowRejectCommand('missing-id')).rejects.toThrow();
   });
 
   it('should throw when run is not paused', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-1',
       workflow_name: 'my-wf',
@@ -2050,8 +2056,8 @@ describe('workflowRejectCommand', () => {
   });
 
   it('cancels immediately when no on_reject configured', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const core = await import('@archon/core');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const core = await import('@smelter/core');
 
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-plain',
@@ -2073,7 +2079,7 @@ describe('workflowRejectCommand', () => {
   });
 
   it('updates metadata and auto-resumes when on_reject configured and under limit', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
 
     const runData = {
       id: 'run-on-reject',
@@ -2109,9 +2115,9 @@ describe('workflowRejectCommand', () => {
   });
 
   it('should pass original platform conversation ID through on reject-resume', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const conversationsDb = await import('@archon/core/db/conversations');
-    const workflowDiscovery = await import('@archon/workflows/workflow-discovery');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const conversationsDb = await import('@smelter/core/db/conversations');
+    const workflowDiscovery = await import('@smelter/workflows/workflow-discovery');
 
     const runData = {
       id: 'run-reject-conv',
@@ -2164,8 +2170,8 @@ describe('workflowRejectCommand', () => {
   });
 
   it('cancels when max attempts reached', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
-    const core = await import('@archon/core');
+    const workflowDb = await import('@smelter/core/db/workflows');
+    const core = await import('@smelter/core');
 
     (workflowDb.getWorkflowRun as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'run-max',
@@ -2196,7 +2202,7 @@ describe('workflowRejectCommand', () => {
   });
 
   it('throws when on_reject configured but working_path is null', async () => {
-    const workflowDb = await import('@archon/core/db/workflows');
+    const workflowDb = await import('@smelter/core/db/workflows');
 
     const runData = {
       id: 'run-no-path',
@@ -2232,14 +2238,14 @@ describe('workflowRunCommand — progress rendering', () => {
 
   function setupWorkflowMocks(): void {
     // These need to be set up for each test since workflowRunCommand has many dependencies
-    const discoverMock = require('@archon/workflows/workflow-discovery')
+    const discoverMock = require('@smelter/workflows/workflow-discovery')
       .discoverWorkflowsWithConfig as ReturnType<typeof mock>;
     discoverMock.mockResolvedValueOnce({
       workflows: [makeTestWorkflowWithSource({ name: 'plan', description: 'Plan work' })],
       errors: [],
     });
 
-    const conversationDb = require('@archon/core/db/conversations');
+    const conversationDb = require('@smelter/core/db/conversations');
     (conversationDb.getOrCreateConversation as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'conv-1',
       platform: 'cli',
@@ -2249,7 +2255,7 @@ describe('workflowRunCommand — progress rendering', () => {
       codebase_id: null,
     });
 
-    const codebaseDb = require('@archon/core/db/codebases');
+    const codebaseDb = require('@smelter/core/db/codebases');
     (codebaseDb.findCodebaseByDefaultCwd as ReturnType<typeof mock>).mockResolvedValueOnce({
       id: 'cb-1',
       name: 'test-repo',
@@ -2302,7 +2308,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write node_started event to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2323,7 +2329,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write node_completed event with duration to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2345,7 +2351,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write node_failed event to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2367,7 +2373,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write node_skipped event to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2389,7 +2395,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write approval_pending event to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2412,7 +2418,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should not write tool_started without verbose', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2433,7 +2439,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write tool_started with verbose', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2462,7 +2468,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should call unsubscribe even when executeWorkflow throws', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       throw new Error('executor crashed');
     });
@@ -2477,7 +2483,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write node_completed with sub-second duration to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2499,7 +2505,7 @@ describe('workflowRunCommand — progress rendering', () => {
   it('should write node_completed with minutes duration to stderr', async () => {
     setupWorkflowMocks();
 
-    const { executeWorkflow } = require('@archon/workflows/executor');
+    const { executeWorkflow } = require('@smelter/workflows/executor');
     (executeWorkflow as ReturnType<typeof mock>).mockImplementationOnce(async () => {
       if (capturedSubscribeHandler) {
         capturedSubscribeHandler({
@@ -2528,18 +2534,18 @@ describe('extractStaleWorkspaceEntry', () => {
     const { extractStaleWorkspaceEntry } = await import('./workflow');
     expect(
       extractStaleWorkspaceEntry(
-        'Source symlink at /home/user/.archon/workspaces/acme/widget/source already points to /other, expected /here'
+        'Source symlink at /home/user/.smelter/workspaces/acme/widget/source already points to /other, expected /here'
       )
-    ).toBe('/home/user/.archon/workspaces/acme/widget');
+    ).toBe('/home/user/.smelter/workspaces/acme/widget');
   });
 
   it('extracts the workspace dir from a Windows source-symlink error (backslash sep)', async () => {
     const { extractStaleWorkspaceEntry } = await import('./workflow');
     expect(
       extractStaleWorkspaceEntry(
-        'Source symlink at C:\\Users\\me\\.archon\\workspaces\\acme\\widget\\source already points to D:\\x, expected D:\\y'
+        'Source symlink at C:\\Users\\me\\.smelter\\workspaces\\acme\\widget\\source already points to D:\\x, expected D:\\y'
       )
-    ).toBe('C:\\Users\\me\\.archon\\workspaces\\acme\\widget');
+    ).toBe('C:\\Users\\me\\.smelter\\workspaces\\acme\\widget');
   });
 
   it('returns null when the prefix does not match (unrelated error)', async () => {

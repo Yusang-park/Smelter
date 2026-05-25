@@ -11,14 +11,14 @@ const shippedItems = roadmapItems.filter(i => i.status === 'shipped');
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Roadmap — Archon</title>
-  <meta name="description" content="What we're building next — Archon's public development roadmap." />
+  <title>Roadmap — Smelter</title>
+  <meta name="description" content="What we're building next — Smelter's public development roadmap." />
   <link rel="icon" href="/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script is:inline>
-    if(!localStorage.getItem('archon-theme-init')){localStorage.setItem('archon-theme-init','1');localStorage.setItem('starlight-theme','dark');document.documentElement.dataset.theme='dark';}
+    if(!localStorage.getItem('smelter-theme-init')){localStorage.setItem('smelter-theme-init','1');localStorage.setItem('starlight-theme','dark');document.documentElement.dataset.theme='dark';}
   </script>
 </head>
 <body>
@@ -26,13 +26,13 @@ const shippedItems = roadmapItems.filter(i => i.status === 'shipped');
 <nav class="nav">
   <div class="nav-inner">
     <a href="/" class="nav-logo">
-      <img src="/favicon.png" alt="Archon" width="28" height="28" />
-      <span>Archon</span>
+      <img src="/favicon.png" alt="Smelter" width="28" height="28" />
+      <span>Smelter</span>
     </a>
     <div class="nav-links">
       <a href="/">Docs</a>
       <a href="/roadmap/" class="active">Roadmap</a>
-      <a href="https://github.com/coleam00/Archon" target="_blank" rel="noopener" class="nav-github">
+      <a href="https://github.com/coleam00/Smelter" target="_blank" rel="noopener" class="nav-github">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
         </svg>
@@ -80,7 +80,7 @@ const shippedItems = roadmapItems.filter(i => i.status === 'shipped');
                   <span class="card-issues-label">Tracked issues</span>
                   <div class="card-issues-list">
                     {item.issues.map(n => (
-                      <a class="issue-ref" href={`https://github.com/coleam00/Archon/issues/${n}`} target="_blank" rel="noopener">#{n}</a>
+                      <a class="issue-ref" href={`https://github.com/coleam00/Smelter/issues/${n}`} target="_blank" rel="noopener">#{n}</a>
                     ))}
                   </div>
                 </div>
@@ -114,7 +114,7 @@ const shippedItems = roadmapItems.filter(i => i.status === 'shipped');
                   <div class="card-issues">
                     <div class="card-issues-list">
                       {item.issues.map(n => (
-                        <a class="issue-ref" href={`https://github.com/coleam00/Archon/issues/${n}`} target="_blank" rel="noopener">#{n}</a>
+                        <a class="issue-ref" href={`https://github.com/coleam00/Smelter/issues/${n}`} target="_blank" rel="noopener">#{n}</a>
                       ))}
                     </div>
                   </div>
@@ -166,7 +166,7 @@ const shippedItems = roadmapItems.filter(i => i.status === 'shipped');
   <footer class="footer">
     <p>
       Have a feature request?{' '}
-      <a href="https://github.com/coleam00/Archon/issues" target="_blank" rel="noopener">
+      <a href="https://github.com/coleam00/Smelter/issues" target="_blank" rel="noopener">
         Open an issue on GitHub →
       </a>
     </p>

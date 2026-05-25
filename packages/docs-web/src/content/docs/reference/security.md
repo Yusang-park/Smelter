@@ -1,20 +1,20 @@
 ---
 title: Security
-description: Security model, permissions, authorization, and data privacy in Archon.
+description: Security model, permissions, authorization, and data privacy in Smelter.
 category: reference
 audience: [user, operator]
 sidebar:
   order: 8
 ---
 
-This page covers Archon's security model: how AI permissions work, how platform access is controlled, how webhooks are verified, and what data is and is not logged.
+This page covers Smelter's security model: how AI permissions work, how platform access is controlled, how webhooks are verified, and what data is and is not logged.
 
 ## Permission Model
 
-Archon runs the Claude Code SDK in `bypassPermissions` mode. This means the AI agent can read, write, and execute files without interactive confirmation prompts.
+Smelter runs the Claude Code SDK in `bypassPermissions` mode. This means the AI agent can read, write, and execute files without interactive confirmation prompts.
 
 **Why this is used:**
-- Archon is designed for automated, unattended workflows triggered from Slack, Telegram, GitHub, and other platforms where there is no human at a terminal to approve each action.
+- Smelter is designed for automated, unattended workflows triggered from Slack, Telegram, GitHub, and other platforms where there is no human at a terminal to approve each action.
 - Requiring interactive permission prompts would block every workflow and make remote operation impossible.
 
 **What this means in practice:**
@@ -28,7 +28,7 @@ Archon runs the Claude Code SDK in `bypassPermissions` mode. This means the AI a
 - The system is designed as a single-developer tool -- there is no multi-tenant isolation.
 
 :::caution
-Because `bypassPermissions` grants full file and shell access, only run Archon in environments where the AI agent is trusted with the repository contents. Do not expose Archon to untrusted users without adapter-level authorization (see below).
+Because `bypassPermissions` grants full file and shell access, only run Smelter in environments where the AI agent is trusted with the repository contents. Do not expose Smelter to untrusted users without adapter-level authorization (see below).
 :::
 
 ## Tool Restrictions
@@ -54,7 +54,7 @@ nodes:
 
 ## Data Privacy and Logging
 
-Archon uses structured logging (Pino) with explicit rules about what is and is not recorded.
+Smelter uses structured logging (Pino) with explicit rules about what is and is not recorded.
 
 **Never logged:**
 - API keys or tokens (masked to first 8 characters + `...` when referenced)
@@ -108,36 +108,36 @@ The GitHub and Gitea adapters verify webhook signatures to ensure payloads origi
 
 **Setup:**
 1. Generate a random secret: `openssl rand -hex 32`
-2. Set it in both the platform webhook configuration and Archon's environment (`WEBHOOK_SECRET` for GitHub, `GITEA_WEBHOOK_SECRET` for Gitea)
+2. Set it in both the platform webhook configuration and Smelter's environment (`WEBHOOK_SECRET` for GitHub, `GITEA_WEBHOOK_SECRET` for Gitea)
 3. The secrets must match exactly
 
 ## Secrets Handling
 
 **Environment files:**
-- All secrets (API keys, tokens, webhook secrets) belong in archon-owned `.env` files (`~/.archon/.env` or `<cwd>/.archon/.env`), never in source control.
-- Never put archon secrets in `<cwd>/.env` — that file is stripped at boot (see below) and `archon setup` never writes to it. Put them in `~/.archon/.env` (home scope) or `<cwd>/.archon/.env` (project scope).
-- Archon's `.gitignore` excludes `.env` files. `<cwd>/.archon/.env` should also be gitignored (project-local secrets).
+- All secrets (API keys, tokens, webhook secrets) belong in smelter-owned `.env` files (`~/.smelter/.env` or `<cwd>/.smelter/.env`), never in source control.
+- Never put smelter secrets in `<cwd>/.env` — that file is stripped at boot (see below) and `smelter setup` never writes to it. Put them in `~/.smelter/.env` (home scope) or `<cwd>/.smelter/.env` (project scope).
+- Smelter's `.gitignore` excludes `.env` files. `<cwd>/.smelter/.env` should also be gitignored (project-local secrets).
 
 **Subprocess env isolation:**
 - At startup, `stripCwdEnv()` removes **all** keys that Bun auto-loaded from the CWD `.env` files (`.env`, `.env.local`, `.env.development`, `.env.production`), plus nested Claude Code session markers (`CLAUDECODE`, `CLAUDE_CODE_*` except auth vars) and debugger vars (`NODE_OPTIONS`, `VSCODE_INSPECTOR_OPTIONS`). This runs before any module reads `process.env`.
-- Then `loadArchonEnv(cwd)` loads archon-owned env from `~/.archon/.env` (user scope) and `<cwd>/.archon/.env` (repo scope, wins over user) with `override: true`. Both are trusted sources — the user controls them and all keys are intentional.
-- Per-codebase env vars configured via `codebase_env_vars` or `.archon/config.yaml` `env:` are merged on top at workflow execution time.
-- `<cwd>/.env` is the **only** untrusted source. It belongs to the target project, not to Archon. Directory ownership (`.archon/`) is the security boundary — not the filename.
+- Then `loadSmelterEnv(cwd)` loads smelter-owned env from `~/.smelter/.env` (user scope) and `<cwd>/.smelter/.env` (repo scope, wins over user) with `override: true`. Both are trusted sources — the user controls them and all keys are intentional.
+- Per-codebase env vars configured via `codebase_env_vars` or `.smelter/config.yaml` `env:` are merged on top at workflow execution time.
+- `<cwd>/.env` is the **only** untrusted source. It belongs to the target project, not to Smelter. Directory ownership (`.smelter/`) is the security boundary — not the filename.
 
 ### Target repo `.env` isolation
 
-Archon prevents target repo `.env` from leaking into subprocesses through structural protection:
+Smelter prevents target repo `.env` from leaking into subprocesses through structural protection:
 
-1. **Boot cleanup:** `stripCwdEnv()` removes Bun-auto-loaded CWD `.env` keys from `process.env` before any application code runs. **This is the primary guard** — every subprocess Archon spawns inherits from the already-cleaned `process.env`.
-2. **Claude Code subprocess:** when the SDK is configured to spawn a Bun-runnable JS entry point (legacy npm-installed `cli.js`/`cli.mjs`/`cli.cjs`), Archon also passes `executableArgs: ['--no-env-file']` so Bun skips its env autoload inside the spawned process. SDK 0.2.x ships per-platform native binaries instead — those don't auto-load `.env` from cwd, so the flag is unnecessary and is omitted.
+1. **Boot cleanup:** `stripCwdEnv()` removes Bun-auto-loaded CWD `.env` keys from `process.env` before any application code runs. **This is the primary guard** — every subprocess Smelter spawns inherits from the already-cleaned `process.env`.
+2. **Claude Code subprocess:** when the SDK is configured to spawn a Bun-runnable JS entry point (legacy npm-installed `cli.js`/`cli.mjs`/`cli.cjs`), Smelter also passes `executableArgs: ['--no-env-file']` so Bun skips its env autoload inside the spawned process. SDK 0.2.x ships per-platform native binaries instead — those don't auto-load `.env` from cwd, so the flag is unnecessary and is omitted.
 3. **Bun script nodes:** `bun --no-env-file` prevents script node subprocesses from loading target repo `.env`.
 4. **Bash nodes:** Not affected — bash does not auto-load `.env` files.
 
-Archon's own env sources (`~/.archon/.env`, dev `.env`) are loaded after the CWD strip and pass through to subprocesses normally.
+Smelter's own env sources (`~/.smelter/.env`, dev `.env`) are loaded after the CWD strip and pass through to subprocesses normally.
 
 **If you need env vars available during workflow execution**, use managed env injection:
-- `.archon/config.yaml` `env:` section (per-repo, checked into version control)
-- Web UI: Settings → Projects → Env Vars (per-codebase, stored in Archon DB)
+- `.smelter/config.yaml` `env:` section (per-repo, checked into version control)
+- Web UI: Settings → Projects → Env Vars (per-codebase, stored in Smelter DB)
 
 **CORS:**
 - API routes use `WEB_UI_ORIGIN` to restrict CORS. The default is `*` (allow all), which is appropriate for local single-developer use. Set a specific origin when exposing the server publicly.

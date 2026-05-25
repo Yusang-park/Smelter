@@ -8,13 +8,13 @@
  *   smelter version                    Show version info
  */
 // Must be the very first import — strips Bun-auto-loaded CWD .env keys before
-// any module reads process.env at init time (e.g. @archon/paths/logger reads LOG_LEVEL).
-import '@archon/paths/strip-cwd-env-boot';
-// Then load archon-owned env from ~/.archon/.env (user scope) and
-// <cwd>/.archon/.env (repo scope, wins over user). Both with override: true.
+// any module reads process.env at init time (e.g. @smelter/paths/logger reads LOG_LEVEL).
+import '@smelter/paths/strip-cwd-env-boot';
+// Then load smelter-owned env from ~/.smelter/.env (user scope) and
+// <cwd>/.smelter/.env (repo scope, wins over user). Both with override: true.
 // See packages/paths/src/env-loader.ts and the three-path model (#1302 / #1303).
-import { loadArchonEnv } from '@archon/paths/env-loader';
-loadArchonEnv(process.cwd());
+import { loadSmelterEnv } from '@smelter/paths/env-loader';
+loadSmelterEnv(process.cwd());
 
 import { parseArgs } from 'util';
 import { resolve } from 'path';
@@ -34,7 +34,7 @@ if (!process.env.CLAUDE_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
 // DATABASE_URL is no longer required - SQLite will be used as default
 
 // Bootstrap provider registry before any provider lookups
-import { registerBuiltinProviders, registerCommunityProviders } from '@archon/providers';
+import { registerBuiltinProviders, registerCommunityProviders } from '@smelter/providers';
 registerBuiltinProviders();
 registerCommunityProviders();
 
@@ -52,7 +52,7 @@ import {
   workflowEventEmitCommand,
   isValidEventType,
 } from './commands/workflow';
-import { WORKFLOW_EVENT_TYPES } from '@archon/workflows/store';
+import { WORKFLOW_EVENT_TYPES } from '@smelter/workflows/store';
 import {
   isolationListCommand,
   isolationCleanupCommand,
@@ -66,7 +66,7 @@ import { skillInstallCommand } from './commands/skill';
 import { validateWorkflowsCommand, validateCommandsCommand } from './commands/validate';
 import { serveCommand } from './commands/serve';
 import { doctorCommand } from './commands/doctor';
-import { closeDatabase } from '@archon/core';
+import { closeDatabase } from '@smelter/core';
 import {
   setLogLevel,
   createLogger,
@@ -74,8 +74,8 @@ import {
   BUNDLED_IS_BINARY,
   BUNDLED_VERSION,
   shutdownTelemetry,
-} from '@archon/paths';
-import * as git from '@archon/git';
+} from '@smelter/paths';
+import * as git from '@smelter/git';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -106,7 +106,7 @@ Commands:
   continue <branch> [msg]    Continue work on an existing worktree with prior context
   complete <branch> [...]    Complete branch lifecycle (remove worktree + branches)
   serve                      Start the web UI server (downloads web UI on first run)
-  skill install [path]       Install the bundled Smelter skill into .claude/skills/archon
+  skill install [path]       Install the bundled Smelter skill into .claude/skills/smelter
   doctor                     Verify your Smelter setup (Claude binary, gh auth, DB, adapters)
   validate workflows [name]  Validate workflow definitions and their references
   validate commands [name]   Validate command files
@@ -123,7 +123,7 @@ Options:
   --quiet, -q                Reduce log verbosity to warnings and errors only
   --verbose, -v              Show debug-level output
   --json                     Output machine-readable JSON (for workflow list)
-  --workflow <name>          Workflow to run for 'continue' (default: archon-assist)
+  --workflow <name>          Workflow to run for 'continue' (default: smelter-assist)
   --no-context               Skip context injection for 'continue'
   --port <port>              Override server port for 'serve' (default: 3090)
   --download-only            Download web UI without starting the server
@@ -338,8 +338,8 @@ async function main(): Promise<number> {
         const scope: 'home' | 'project' = rawScope ?? 'home';
         const forceFlag = (values.force as boolean | undefined) ?? false;
         // For --scope project, resolve to the git repo root so running from a
-        // subdirectory writes to <repo-root>/.archon/.env (what loadArchonEnv
-        // reads at boot) — not <subdir>/.archon/.env.
+        // subdirectory writes to <repo-root>/.smelter/.env (what loadSmelterEnv
+        // reads at boot) — not <subdir>/.smelter/.env.
         let repoPath = cwd;
         if (scope === 'project') {
           const repoRoot = await git.findRepoRoot(cwd);

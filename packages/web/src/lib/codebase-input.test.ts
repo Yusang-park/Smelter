@@ -3,26 +3,26 @@ import { getCodebaseInput } from '@/lib/codebase-input';
 
 describe('getCodebaseInput', () => {
   test('treats GitHub repository inputs as urls', () => {
-    expect(getCodebaseInput('https://github.com/coleam00/Archon')).toEqual({
-      url: 'https://github.com/coleam00/Archon',
+    expect(getCodebaseInput('https://github.com/coleam00/Smelter')).toEqual({
+      url: 'https://github.com/coleam00/Smelter',
     });
   });
 
   test('treats SSH git@ shorthand as urls', () => {
-    expect(getCodebaseInput('git@github.com:coleam00/Archon.git')).toEqual({
-      url: 'git@github.com:coleam00/Archon.git',
+    expect(getCodebaseInput('git@github.com:coleam00/Smelter.git')).toEqual({
+      url: 'git@github.com:coleam00/Smelter.git',
     });
   });
 
   test('treats ssh:// URLs as urls', () => {
-    expect(getCodebaseInput('ssh://git@github.com/coleam00/Archon.git')).toEqual({
-      url: 'ssh://git@github.com/coleam00/Archon.git',
+    expect(getCodebaseInput('ssh://git@github.com/coleam00/Smelter.git')).toEqual({
+      url: 'ssh://git@github.com/coleam00/Smelter.git',
     });
   });
 
   test('treats git:// URLs as urls', () => {
-    expect(getCodebaseInput('git://github.com/coleam00/Archon.git')).toEqual({
-      url: 'git://github.com/coleam00/Archon.git',
+    expect(getCodebaseInput('git://github.com/coleam00/Smelter.git')).toEqual({
+      url: 'git://github.com/coleam00/Smelter.git',
     });
   });
 
@@ -45,20 +45,20 @@ describe('getCodebaseInput', () => {
   });
 
   test('treats home-relative paths as paths', () => {
-    expect(getCodebaseInput('~/src/archon')).toEqual({
-      path: '~/src/archon',
+    expect(getCodebaseInput('~/src/smelter')).toEqual({
+      path: '~/src/smelter',
     });
   });
 
   test('treats windows local paths as paths', () => {
-    expect(getCodebaseInput('C:\\repo\\archon')).toEqual({
-      path: 'C:\\repo\\archon',
+    expect(getCodebaseInput('C:\\repo\\smelter')).toEqual({
+      path: 'C:\\repo\\smelter',
     });
   });
 
   test('treats windows UNC paths as paths', () => {
-    expect(getCodebaseInput('\\\\server\\share\\archon')).toEqual({
-      path: '\\\\server\\share\\archon',
+    expect(getCodebaseInput('\\\\server\\share\\smelter')).toEqual({
+      path: '\\\\server\\share\\smelter',
     });
   });
 });

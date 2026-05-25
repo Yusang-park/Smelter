@@ -3,8 +3,8 @@
  */
 import type { WorkflowDefinition, WorkflowLoadError, DagNode, WorkflowNodeHooks } from './schemas';
 import { isLoopNode, isApprovalNode, isCancelNode, isScriptNode } from './schemas';
-import { createLogger } from '@archon/paths';
-import { isRegisteredProvider, getRegisteredProviders } from '@archon/providers';
+import { createLogger } from '@smelter/paths';
+import { isRegisteredProvider, getRegisteredProviders } from '@smelter/providers';
 import {
   dagNodeSchema,
   BASH_NODE_AI_FIELDS,
@@ -225,7 +225,7 @@ export function parseWorkflow(content: string, filename: string): ParseResult {
     const hasSteps = Array.isArray(raw.steps) && raw.steps.length > 0;
     if (hasSteps) {
       errors.push(
-        '`steps:` format has been removed. Workflows now use `nodes:` (DAG) format exclusively. Your bundled defaults are already updated — custom workflows need manual migration. See docs/sequential-dag-migration-guide.md for conversion patterns, or run: claude "Read docs/sequential-dag-migration-guide.md then convert .archon/workflows/<file> to nodes: format"'
+        '`steps:` format has been removed. Workflows now use `nodes:` (DAG) format exclusively. Your bundled defaults are already updated — custom workflows need manual migration. See docs/sequential-dag-migration-guide.md for conversion patterns, or run: claude "Read docs/sequential-dag-migration-guide.md then convert .smelter/workflows/<file> to nodes: format"'
       );
     }
 
@@ -291,7 +291,7 @@ export function parseWorkflow(content: string, filename: string): ParseResult {
     // Validate provider identity at load time, both at the workflow level and
     // per node. Model strings are NOT validated — they pass through to the SDK
     // at run time, which is the source of truth for what model names exist
-    // (vendor SDKs ship new models faster than Archon can update).
+    // (vendor SDKs ship new models faster than Smelter can update).
     if (provider && !isRegisteredProvider(provider)) {
       return {
         workflow: null,

@@ -9,7 +9,7 @@ sidebar:
   order: 10
 ---
 
-The `archon-remotion-generate` workflow uses AI to create Remotion video compositions.
+The `smelter-remotion-generate` workflow uses AI to create Remotion video compositions.
 It generates React/TypeScript code, renders preview stills, renders the full video,
 and summarizes the output — all as a DAG workflow with per-node skills.
 
@@ -37,7 +37,7 @@ preloads this skill to produce higher-quality Remotion code.
 
 ```bash
 # From your Remotion project directory:
-bun run cli workflow run archon-remotion-generate "Create a 5-second countdown from 5 to 1 with bouncy spring animations and a glowing effect"
+bun run cli workflow run smelter-remotion-generate "Create a 5-second countdown from 5 to 1 with bouncy spring animations and a glowing effect"
 ```
 
 Output lands in `out/video.mp4`.
@@ -113,13 +113,13 @@ Good prompts describe the visual result, not the code:
 
 ```bash
 # Good — describes what to see
-bun run cli workflow run archon-remotion-generate "A 10-second animated bar chart showing monthly revenue growing from $10K to $100K, with each bar sliding up with a spring animation"
+bun run cli workflow run smelter-remotion-generate "A 10-second animated bar chart showing monthly revenue growing from $10K to $100K, with each bar sliding up with a spring animation"
 
 # Good — specific visual style
-bun run cli workflow run archon-remotion-generate "Dark background, white text. Three slides: title card with company name, bullet points sliding in one by one, closing CTA with a pulse animation"
+bun run cli workflow run smelter-remotion-generate "Dark background, white text. Three slides: title card with company name, bullet points sliding in one by one, closing CTA with a pulse animation"
 
 # Less good — too vague
-bun run cli workflow run archon-remotion-generate "make a video"
+bun run cli workflow run smelter-remotion-generate "make a video"
 ```
 
 ## Adding MCP Servers
@@ -128,7 +128,7 @@ Combine skills with MCP for richer workflows. For example, add the Remotion docs
 MCP server so the agent can look up API details:
 
 ```json
-// .archon/mcp/remotion.json
+// .smelter/mcp/remotion.json
 {
   "remotion-docs": {
     "command": "npx",
@@ -147,7 +147,7 @@ nodes:
     prompt: "Create a video: $ARGUMENTS"
     skills:
       - remotion-best-practices
-    mcp: .archon/mcp/remotion.json
+    mcp: .smelter/mcp/remotion.json
     allowed_tools:
       - Read
       - Write

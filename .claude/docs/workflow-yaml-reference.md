@@ -1,6 +1,6 @@
 # Workflow YAML Reference
 
-> **Purpose**: Complete specification of every field, option, and type in Archon's workflow system.
+> **Purpose**: Complete specification of every field, option, and type in Smelter's workflow system.
 > **When to use**: Writing or debugging workflow YAML files, understanding execution modes, working on the workflow engine.
 > **Size**: ~450 lines — use a scout sub-agent to check relevance before loading.
 
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Workflows are YAML files discovered from `.archon/workflows/` (recursively) plus bundled defaults. Each must have exactly one execution mode: `steps:`, `loop:` + `prompt:`, or `nodes:`. Parsed by `parseWorkflow()` in `packages/workflows/src/loader.ts:448`.
+Workflows are YAML files discovered from `.smelter/workflows/` (recursively) plus bundled defaults. Each must have exactly one execution mode: `steps:`, `loop:` + `prompt:`, or `nodes:`. Parsed by `parseWorkflow()` in `packages/workflows/src/loader.ts:448`.
 
 ---
 
@@ -17,7 +17,7 @@ Workflows are YAML files discovered from `.archon/workflows/` (recursively) plus
 ### `name` (required)
 - **Type**: non-empty string
 - **Used by**: Router for exact-match lookup; displayed in workflow list
-- **Example**: `name: archon-fix-github-issue-dag`
+- **Example**: `name: smelter-fix-github-issue-dag`
 
 ### `description` (required)
 - **Type**: non-empty string (multiline supported)
@@ -25,7 +25,7 @@ Workflows are YAML files discovered from `.archon/workflows/` (recursively) plus
 
 ### `provider` (optional)
 - **Type**: `'claude'` | `'codex'`
-- **Default**: falls back to `.archon/config.yaml` assistants default (Claude)
+- **Default**: falls back to `.smelter/config.yaml` assistants default (Claude)
 
 ### `model` (optional)
 - **Type**: string — must be compatible with provider
@@ -35,7 +35,7 @@ Workflows are YAML files discovered from `.archon/workflows/` (recursively) plus
 
 ### `modelReasoningEffort` (optional, Codex only)
 - **Type**: `'minimal'` | `'low'` | `'medium'` | `'high'` | `'xhigh'`
-- **Default**: from `.archon/config.yaml` `assistants.codex.modelReasoningEffort`
+- **Default**: from `.smelter/config.yaml` `assistants.codex.modelReasoningEffort`
 
 ### `webSearchMode` (optional, Codex only)
 - **Type**: `'disabled'` | `'cached'` | `'live'`
@@ -51,12 +51,12 @@ Workflows are YAML files discovered from `.archon/workflows/` (recursively) plus
 name: my-workflow
 description: Sequential execution example
 steps:
-  - command: archon-plan
-  - command: archon-implement
+  - command: smelter-plan
+  - command: smelter-implement
     clearContext: true
   - parallel:
-      - command: archon-review-code
-      - command: archon-review-tests
+      - command: smelter-review-code
+      - command: smelter-review-tests
 ```
 
 ### Single Step Fields
@@ -125,7 +125,7 @@ nodes:
       required: [type]
     allowed_tools: []
   - id: implement
-    command: archon-implement
+    command: smelter-implement
     depends_on: [classify]
     when: "$classify.output.type == 'BUG'"
   - id: lint
@@ -152,7 +152,7 @@ Nodes are sorted topologically (Kahn's algorithm). Nodes in the same layer run c
 **`command:`** — Named command file, AI-executed
 ```yaml
 - id: plan
-  command: archon-create-plan
+  command: smelter-create-plan
 ```
 
 **`prompt:`** — Inline prompt string, AI-executed
@@ -277,7 +277,7 @@ Four rules enforced at `loader.ts:370-439`:
 1. Searches all paths recursively for `*.yaml` and `*.yml` files
 2. Merges bundled defaults with repo-specific workflows (repo overrides by name)
 3. One broken YAML doesn't abort discovery — errors returned in `WorkflowLoadResult.errors`
-4. Opt-out: `defaults.loadDefaultWorkflows: false` in `.archon/config.yaml`
+4. Opt-out: `defaults.loadDefaultWorkflows: false` in `.smelter/config.yaml`
 
 ---
 
@@ -285,12 +285,12 @@ Four rules enforced at `loader.ts:370-439`:
 
 | File | Mode | Key Features |
 |------|------|-------------|
-| `archon-feature-development.yaml` | `steps:` | Simple two-step sequential |
-| `archon-plan-to-pr.yaml` | `steps:` | 11 steps with parallel review block |
-| `archon-ralph-fresh.yaml` | `loop:` | `fresh_context: true`, `<promise>COMPLETE</promise>` |
-| `archon-smart-pr-review.yaml` | `nodes:` | `output_format`, `when:`, `trigger_rule: one_success` |
-| `archon-validate-pr.yaml` | `nodes:` | `idle_timeout: 1800000`, bash nodes, `trigger_rule: all_done` |
-| `archon-fix-github-issue-dag.yaml` | `nodes:` | Full lifecycle with all DAG features |
+| `smelter-feature-development.yaml` | `steps:` | Simple two-step sequential |
+| `smelter-plan-to-pr.yaml` | `steps:` | 11 steps with parallel review block |
+| `smelter-ralph-fresh.yaml` | `loop:` | `fresh_context: true`, `<promise>COMPLETE</promise>` |
+| `smelter-smart-pr-review.yaml` | `nodes:` | `output_format`, `when:`, `trigger_rule: one_success` |
+| `smelter-validate-pr.yaml` | `nodes:` | `idle_timeout: 1800000`, bash nodes, `trigger_rule: all_done` |
+| `smelter-fix-github-issue-dag.yaml` | `nodes:` | Full lifecycle with all DAG features |
 
 ---
 

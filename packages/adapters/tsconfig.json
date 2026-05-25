@@ -3,12 +3,12 @@
   "compilerOptions": {
     "noEmit": true,
     "paths": {
-      "@archon/core": ["../core/src"],
-      "@archon/core/*": ["../core/src/*"],
-      "@archon/workflows": ["../workflows/src"],
-      "@archon/workflows/*": ["../workflows/src/*"],
-      "@archon/paths": ["../paths/src"],
-      "@archon/git": ["../git/src"]
+      "@smelter/core": ["../core/src"],
+      "@smelter/core/*": ["../core/src/*"],
+      "@smelter/workflows": ["../workflows/src"],
+      "@smelter/workflows/*": ["../workflows/src/*"],
+      "@smelter/paths": ["../paths/src"],
+      "@smelter/git": ["../git/src"]
     }
   },
   "include": ["src/**/*", "../core/src/**/*.ts", "../workflows/src/defaults/text-imports.d.ts"],

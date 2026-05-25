@@ -61,7 +61,7 @@ complexity, each building on the previous. (Prepped by Rasmus.)
 
 **Follow the full guide**: [part2-guide.md](part2-guide.md) — contains all
 copy-paste prompts, feature tables, architecture diagrams, bash commands,
-talking points, and cleanup steps. Runs on this codebase (`coleam00/Archon`).
+talking points, and cleanup steps. Runs on this codebase (`coleam00/Smelter`).
 
 **Section summary** (see part2-guide.md for full demo steps):
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Verifies that packages/cli/src/bundled-skill.ts embeds every file from
- * .claude/skills/archon/. The bundled-skill.ts file is hand-maintained
+ * .claude/skills/smelter/. The bundled-skill.ts file is hand-maintained
  * (uses Bun's `with { type: 'text' }` import attributes, which the
  * generator approach in scripts/generate-bundled-defaults.ts cannot
  * reproduce for the binary build). This script is the safety net.
@@ -11,7 +11,7 @@
  *   bun run scripts/check-bundled-skill.ts --check  # exit 2 if missing (CI)
  *
  * Exit codes:
- *   0  bundled-skill.ts covers every file under .claude/skills/archon/
+ *   0  bundled-skill.ts covers every file under .claude/skills/smelter/
  *   1  missing files (default mode)
  *   2  missing files (--check mode, used by `bun run validate`)
  */
@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative, resolve } from 'path';
 
 const REPO_ROOT = resolve(import.meta.dir, '..');
-const SKILL_ROOT = join(REPO_ROOT, '.claude', 'skills', 'archon');
+const SKILL_ROOT = join(REPO_ROOT, '.claude', 'skills', 'smelter');
 const BUNDLED_SKILL_PATH = join(REPO_ROOT, 'packages', 'cli', 'src', 'bundled-skill.ts');
 
 const CHECK_ONLY = process.argv.includes('--check');

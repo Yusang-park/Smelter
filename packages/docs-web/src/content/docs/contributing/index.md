@@ -1,13 +1,13 @@
 ---
 title: Contributing
-description: Developer guides for contributing to Archon — internals, testing, releasing.
+description: Developer guides for contributing to Smelter — internals, testing, releasing.
 category: contributing
 audience: [developer]
 sidebar:
   order: 0
 ---
 
-Guides for developers contributing to the Archon codebase.
+Guides for developers contributing to the Smelter codebase.
 
 ## Developer Guides
 

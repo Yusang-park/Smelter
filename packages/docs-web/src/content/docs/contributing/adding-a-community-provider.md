@@ -3,11 +3,11 @@ title: Adding a Community Provider
 description: Step-by-step guide to adding a new AI agent provider under packages/providers/src/community/.
 ---
 
-Archon's provider registry (Phase 2, [#1195](https://github.com/coleam00/Archon/pull/1195)) is designed so community providers can be added with changes localized to a single directory. This guide walks through the pattern using the Pi provider as the reference implementation (`packages/providers/src/community/pi/`).
+Smelter's provider registry (Phase 2, [#1195](https://github.com/coleam00/Smelter/pull/1195)) is designed so community providers can be added with changes localized to a single directory. This guide walks through the pattern using the Pi provider as the reference implementation (`packages/providers/src/community/pi/`).
 
 ## The contract
 
-Every provider implements `IAgentProvider` from `@archon/providers/types`:
+Every provider implements `IAgentProvider` from `@smelter/providers/types`:
 
 ```typescript
 export interface IAgentProvider {
@@ -23,7 +23,7 @@ export interface IAgentProvider {
 }
 ```
 
-The provider yields a stream of `MessageChunk` variants (see `packages/providers/src/types.ts`). Archon normalizes every backend to this shape so platform adapters, the DAG executor, and the orchestrator don't need to know whether they're talking to Claude, Codex, Pi, or your provider.
+The provider yields a stream of `MessageChunk` variants (see `packages/providers/src/types.ts`). Smelter normalizes every backend to this shape so platform adapters, the DAG executor, and the orchestrator don't need to know whether they're talking to Claude, Codex, Pi, or your provider.
 
 ## Directory layout
 
@@ -50,7 +50,7 @@ Each file has one job. Optional files only exist when the translation surface is
 
 ### 1. Capabilities (start honest)
 
-Declare only what you've actually wired. The dag-executor emits a warning to the user when a workflow node uses a feature your provider doesn't support — under-declaration is self-correcting via those warnings; over-declaration means Archon silently drops configuration.
+Declare only what you've actually wired. The dag-executor emits a warning to the user when a workflow node uses a feature your provider doesn't support — under-declaration is self-correcting via those warnings; over-declaration means Smelter silently drops configuration.
 
 ```typescript
 // capabilities.ts
@@ -80,7 +80,7 @@ Implement `IAgentProvider`. Pattern:
 
 ```typescript
 // provider.ts
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import type { IAgentProvider, MessageChunk, ProviderCapabilities, SendQueryOptions } from '../../types';
 import { YOUR_CAPABILITIES } from './capabilities';
 
@@ -92,7 +92,7 @@ function getLog() {
 
 export class YourProvider implements IAgentProvider {
   async *sendQuery(prompt, cwd, resumeSessionId, options): AsyncGenerator<MessageChunk> {
-    // 1. Parse assistantConfig (user-level defaults from .archon/config.yaml)
+    // 1. Parse assistantConfig (user-level defaults from .smelter/config.yaml)
     // 2. Resolve model (options.model || config default)
     // 3. Resolve auth (options.env → process.env → config)
     // 4. Translate nodeConfig to SDK options (only for capabilities you declared)
@@ -163,7 +163,7 @@ This keeps the provider class readable — `provider.ts` orchestrates; the trans
 - **Don't edit `AssistantDefaultsConfig` or `AssistantDefaults` in `packages/core/src/config/config-types.ts`.** Community provider defaults live behind the generic `[string]` index signature that was designed for this case. Adding a typed slot defeats the Phase 2 contract and forces future providers to follow suit.
 - **Don't call `registerProvider()` from CLI or server entrypoints directly.** Use the `registerCommunityProviders()` aggregator. Entrypoints should never grow per-community-provider calls.
 - **Don't overclaim capabilities.** If a workflow node uses `hooks: [...]` and your provider silently ignores it, the user has no feedback. The dag-executor warns honestly if you declare `hooks: false`.
-- **Don't write session state or credentials outside your provider's SDK-managed directory.** Archon's config, workspaces, and sessions are managed elsewhere — your provider should stay within its own SDK's storage conventions (mirror how Claude writes to `~/.claude/` and Codex uses its thread store).
+- **Don't write session state or credentials outside your provider's SDK-managed directory.** Smelter's config, workspaces, and sessions are managed elsewhere — your provider should stay within its own SDK's storage conventions (mirror how Claude writes to `~/.claude/` and Codex uses its thread store).
 
 ## Reference implementation
 

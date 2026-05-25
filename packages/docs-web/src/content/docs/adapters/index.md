@@ -1,6 +1,6 @@
 ---
 title: Platform Adapters
-description: Overview of all platform adapters available for connecting to Archon.
+description: Overview of all platform adapters available for connecting to Smelter.
 category: adapters
 area: adapters
 audience: [user, operator]
@@ -9,7 +9,7 @@ sidebar:
   order: 0
 ---
 
-Archon supports multiple platform adapters. Each adapter connects Archon to a different communication channel, letting you trigger workflows and interact with AI agents from wherever you work.
+Smelter supports multiple platform adapters. Each adapter connects Smelter to a different communication channel, letting you trigger workflows and interact with AI agents from wherever you work.
 
 ## Core Adapters
 
@@ -35,10 +35,10 @@ Community adapters follow the same `IPlatformAdapter` interface but target platf
 
 All adapters implement the `IPlatformAdapter` interface. They handle:
 
-- **Message ingestion** -- receiving messages from the platform and forwarding them to Archon's orchestrator
+- **Message ingestion** -- receiving messages from the platform and forwarding them to Smelter's orchestrator
 - **Response delivery** -- streaming or batching AI responses back to the platform
 - **Authorization** -- optional user whitelists to restrict access
-- **Conversation tracking** -- mapping platform-specific identifiers (thread IDs, chat IDs, issue numbers) to Archon conversations
+- **Conversation tracking** -- mapping platform-specific identifiers (thread IDs, chat IDs, issue numbers) to Smelter conversations
 
 ## Choosing an Adapter
 

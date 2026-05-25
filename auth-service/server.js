@@ -10,7 +10,7 @@ const PORT = parseInt(process.env.AUTH_PORT ?? '9000', 10);
 const USERNAME = process.env.AUTH_USERNAME ?? '';
 const PASSWORD_HASH = process.env.AUTH_PASSWORD_HASH ?? '';
 const COOKIE_SECRET = process.env.COOKIE_SECRET ?? '';
-const COOKIE_NAME = 'archon_auth';
+const COOKIE_NAME = 'smelter_auth';
 const COOKIE_MAX_AGE = parseInt(process.env.COOKIE_MAX_AGE ?? '86400', 10);
 
 if (!USERNAME || !PASSWORD_HASH || !COOKIE_SECRET) {

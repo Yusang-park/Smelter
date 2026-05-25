@@ -8,11 +8,11 @@
  * Imports parseWorkflow from loader.ts (parsing concern stays there).
  *
  * Scopes (precedence lowest → highest):
- *   1. `bundled` — embedded in the Archon binary (or read from the app's
+ *   1. `bundled` — embedded in the Smelter binary (or read from the app's
  *      defaults folder in source mode).
- *   2. `global`  — home-scoped at `~/.archon/workflows/`. Applies to every
+ *   2. `global`  — home-scoped at `~/.smelter/workflows/`. Applies to every
  *      repo; discovered automatically (no caller option needed).
- *   3. `project` — repo-local at `<cwd>/.archon/workflows/`.
+ *   3. `project` — repo-local at `<cwd>/.smelter/workflows/`.
  *
  * Same-named files at a higher scope override those at lower scopes.
  */
@@ -24,9 +24,9 @@ import type {
   WorkflowLoadResult,
   WorkflowWithSource,
 } from './schemas';
-import * as archonPaths from '@archon/paths';
+import * as smelterPaths from '@smelter/paths';
 import { BUNDLED_WORKFLOWS, isBinaryBuild } from './defaults/bundled-defaults';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import { parseWorkflow } from './loader';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
@@ -37,7 +37,7 @@ function getLog(): ReturnType<typeof createLogger> {
 }
 
 /**
- * One-time deprecation warning for the pre-refactor `~/.archon/.archon/workflows/`
+ * One-time deprecation warning for the pre-refactor `~/.smelter/.smelter/workflows/`
  * location. Scoped to the process so the warning fires exactly once regardless
  * of how many times discovery runs.
  *
@@ -56,8 +56,8 @@ async function maybeWarnLegacyHomePath(): Promise<void> {
   // resolution at server startup) can't both pass the guard and double-warn.
   hasWarnedLegacyHomePath = true;
 
-  const legacyPath = archonPaths.getLegacyHomeWorkflowsPath();
-  const newPath = archonPaths.getHomeWorkflowsPath();
+  const legacyPath = smelterPaths.getLegacyHomeWorkflowsPath();
+  const newPath = smelterPaths.getHomeWorkflowsPath();
   try {
     await access(legacyPath);
   } catch (error) {
@@ -69,7 +69,7 @@ async function maybeWarnLegacyHomePath(): Promise<void> {
     return;
   }
   // Legacy directory exists — surface an actionable migration hint exactly once.
-  const moveCommand = `mv "${legacyPath}" "${newPath}" && rmdir "${join(archonPaths.getArchonHome(), '.archon')}"`;
+  const moveCommand = `mv "${legacyPath}" "${newPath}" && rmdir "${join(smelterPaths.getSmelterHome(), '.smelter')}"`;
   getLog().warn({ legacyPath, newPath, moveCommand }, 'workflow.legacy_home_path_detected');
 }
 
@@ -81,7 +81,7 @@ interface DirLoadResult {
 /**
  * Maximum subfolder depth we descend into when discovering workflows/commands/scripts.
  *
- * `1` allows one level of grouping (e.g. `.archon/workflows/defaults/foo.yaml`);
+ * `1` allows one level of grouping (e.g. `.smelter/workflows/defaults/foo.yaml`);
  * `0` would mean only files at the root. We stop at 1 deliberately — deeper
  * nesting has never been part of the documented convention and adds no
  * organizational value, just routing ambiguity.
@@ -189,14 +189,14 @@ function loadBundledWorkflows(): DirLoadResult {
  *
  * Loads three scopes in order (later overrides earlier by filename):
  *   1. Bundled defaults (unless `options.loadDefaults === false`).
- *   2. Home-scoped `~/.archon/workflows/` — classified as `source: 'global'`.
+ *   2. Home-scoped `~/.smelter/workflows/` — classified as `source: 'global'`.
  *      No caller option: every caller gets home-scoped discovery for free.
- *   3. Repo-scoped `<cwd>/.archon/workflows/` — classified as `source: 'project'`.
+ *   3. Repo-scoped `<cwd>/.smelter/workflows/` — classified as `source: 'project'`.
  *
  * When running as a compiled binary, bundled defaults are loaded from embedded
  * content. In source/dev mode they're loaded from the filesystem.
  *
- * Migration: if the retired `~/.archon/.archon/workflows/` path exists, the
+ * Migration: if the retired `~/.smelter/.smelter/workflows/` path exists, the
  * first call per process logs a WARN with the exact `mv` command. The legacy
  * location is not read — users must migrate manually.
  */
@@ -222,7 +222,7 @@ export async function discoverWorkflows(
       getLog().info({ count: bundledResult.workflows.size }, 'bundled_default_workflows_loaded');
     } else {
       // Bun: load from filesystem (development mode)
-      const appDefaultsPath = archonPaths.getDefaultWorkflowsPath();
+      const appDefaultsPath = smelterPaths.getDefaultWorkflowsPath();
       getLog().debug({ appDefaultsPath }, 'loading_app_default_workflows');
       try {
         await access(appDefaultsPath);
@@ -249,10 +249,10 @@ export async function discoverWorkflows(
     }
   }
 
-  // 2. Load home-scoped workflows from ~/.archon/workflows/. No caller option —
+  // 2. Load home-scoped workflows from ~/.smelter/workflows/. No caller option —
   // discovery is responsible for surfacing home-scoped content everywhere.
   await maybeWarnLegacyHomePath();
-  const homeWorkflowPath = archonPaths.getHomeWorkflowsPath();
+  const homeWorkflowPath = smelterPaths.getHomeWorkflowsPath();
   getLog().debug({ homeWorkflowPath }, 'searching_home_workflows');
   try {
     await access(homeWorkflowPath);
@@ -275,7 +275,7 @@ export async function discoverWorkflows(
   }
 
   // 3. Load from repo's workflow folder (overrides app defaults AND home scope by exact filename)
-  const [workflowFolder] = archonPaths.getWorkflowFolderSearchPaths();
+  const [workflowFolder] = smelterPaths.getWorkflowFolderSearchPaths();
   const workflowPath = join(cwd, workflowFolder);
 
   getLog().debug({ workflowPath }, 'searching_repo_workflows');
@@ -314,7 +314,7 @@ export async function discoverWorkflows(
       await access(repoDefaultsPath);
       const defaultEntries = await readdir(repoDefaultsPath);
       const oldDefaults = defaultEntries.filter(
-        f => (f.endsWith('.yaml') || f.endsWith('.yml')) && !f.startsWith('archon-')
+        f => (f.endsWith('.yaml') || f.endsWith('.yml')) && !f.startsWith('smelter-')
       );
       if (oldDefaults.length > 0) {
         getLog().warn(

@@ -7,7 +7,7 @@ import type { DagNodeData } from './DagNodeComponent';
 import type { CommandEntry, DagNode } from '@/lib/api';
 import { useProviders } from '@/hooks/useProviders';
 
-// Keep in sync with triggerRuleSchema.options in @archon/workflows/schemas/dag-node.ts
+// Keep in sync with triggerRuleSchema.options in @smelter/workflows/schemas/dag-node.ts
 // (api.generated.d.ts is type-only and cannot export runtime values)
 type TriggerRule = NonNullable<DagNode['trigger_rule']>;
 const TRIGGER_RULES: readonly TriggerRule[] = [
@@ -677,7 +677,7 @@ function AdvancedTab({
           onChange={(e): void => {
             onUpdate({ mcp: e.target.value || undefined });
           }}
-          placeholder=".archon/mcp/github.json"
+          placeholder=".smelter/mcp/github.json"
           className={cn(inputClass, 'font-mono')}
         />
         <p className="text-[9px] text-text-tertiary">

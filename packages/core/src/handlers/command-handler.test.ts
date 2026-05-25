@@ -10,13 +10,13 @@
  */
 import { describe, test, expect, mock, beforeEach, afterAll, spyOn, type Mock } from 'bun:test';
 import { createMockLogger } from '../test/mocks/logger';
-import { makeTestWorkflowWithSource } from '@archon/workflows/test-utils';
+import { makeTestWorkflowWithSource } from '@smelter/workflows/test-utils';
 import { Conversation } from '../types';
 import { resolve, join } from 'path';
 import * as fsPromises from 'fs/promises';
-import * as gitUtils from '@archon/git';
+import * as gitUtils from '@smelter/git';
 import * as pathValidation from '../utils/path-validation';
-import * as workflowDiscovery from '@archon/workflows/workflow-discovery';
+import * as workflowDiscovery from '@smelter/workflows/workflow-discovery';
 
 // Create mock functions for database modules (safe to mock - no standalone tests)
 const mockUpdateConversation = mock(() => Promise.resolve());
@@ -149,7 +149,7 @@ mock.module('../isolation', () => ({
     healthCheck: mock(() => Promise.resolve(true)),
   }),
 }));
-mock.module('@archon/isolation', () => ({
+mock.module('@smelter/isolation', () => ({
   getIsolationProvider: () => ({
     providerType: 'worktree',
     create: mockIsolationCreate,
@@ -191,14 +191,14 @@ mock.module('../services/cleanup-service', () => ({
 
 // Mock logger to suppress noisy output during tests
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands']),
+  getSmelterWorkspacesPath: mock(() => '/home/test/.smelter/workspaces'),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands']),
   expandTilde: mock((p: string) => p.replace(/^~/, '/home/test')),
   ensureProjectStructure: mock(() => Promise.resolve()),
   getProjectSourcePath: mock(
-    (owner: string, repo: string) => `/home/test/.archon/workspaces/${owner}/${repo}/source`
+    (owner: string, repo: string) => `/home/test/.smelter/workspaces/${owner}/${repo}/source`
   ),
   createProjectSourceSymlink: mock(() => Promise.resolve()),
   parseOwnerRepo: mock((name: string) => {
@@ -489,7 +489,7 @@ describe('CommandHandler', () => {
       test('should return help message', async () => {
         const result = await handleCommand(baseConversation, '/help');
         expect(result.success).toBe(true);
-        expect(result.message).toContain('Archon Orchestrator');
+        expect(result.message).toContain('Smelter Orchestrator');
         expect(result.message).toContain('/workflow list');
         expect(result.message).toContain('/status');
       });
@@ -1159,7 +1159,10 @@ describe('CommandHandler', () => {
       test('should match workflow name via suffix match', async () => {
         spyDiscoverWorkflows.mockResolvedValueOnce({
           workflows: [
-            makeTestWorkflowWithSource({ name: 'archon-assist', description: 'General assistant' }),
+            makeTestWorkflowWithSource({
+              name: 'smelter-assist',
+              description: 'General assistant',
+            }),
           ],
           errors: [],
         });
@@ -1167,14 +1170,14 @@ describe('CommandHandler', () => {
         const result = await handleCommand(conversationWithCodebase, '/workflow run assist');
 
         expect(result.success).toBe(true);
-        expect(result.workflow?.definition.name).toBe('archon-assist');
+        expect(result.workflow?.definition.name).toBe('smelter-assist');
       });
 
       test('should match workflow name via substring match', async () => {
         spyDiscoverWorkflows.mockResolvedValueOnce({
           workflows: [
             makeTestWorkflowWithSource({
-              name: 'archon-smart-pr-review',
+              name: 'smelter-smart-pr-review',
               description: 'Smart PR review',
             }),
           ],
@@ -1184,13 +1187,13 @@ describe('CommandHandler', () => {
         const result = await handleCommand(conversationWithCodebase, '/workflow run smart');
 
         expect(result.success).toBe(true);
-        expect(result.workflow?.definition.name).toBe('archon-smart-pr-review');
+        expect(result.workflow?.definition.name).toBe('smelter-smart-pr-review');
       });
 
       test('should return failure with candidates on ambiguous suffix match', async () => {
         spyDiscoverWorkflows.mockResolvedValueOnce({
           workflows: [
-            makeTestWorkflowWithSource({ name: 'archon-review', description: 'Review' }),
+            makeTestWorkflowWithSource({ name: 'smelter-review', description: 'Review' }),
             makeTestWorkflowWithSource({ name: 'custom-review', description: 'Custom review' }),
           ],
           errors: [],
@@ -1200,7 +1203,7 @@ describe('CommandHandler', () => {
 
         expect(result.success).toBe(false);
         expect(result.message).toContain('Ambiguous workflow');
-        expect(result.message).toContain('archon-review');
+        expect(result.message).toContain('smelter-review');
         expect(result.message).toContain('custom-review');
       });
     });

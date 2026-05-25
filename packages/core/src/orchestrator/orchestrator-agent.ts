@@ -7,7 +7,7 @@
  * - Does NOT require a project to be selected before starting a conversation
  */
 import { existsSync } from 'fs';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import type {
   IPlatformAdapter,
   HandleMessageContext,
@@ -15,34 +15,34 @@ import type {
   Codebase,
   AttachedFile,
 } from '../types';
-import type { SendQueryOptions } from '@archon/providers/types';
+import type { SendQueryOptions } from '@smelter/providers/types';
 import { ConversationNotFoundError } from '../types';
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import * as commandHandler from '../handlers/command-handler';
-import { formatToolCall } from '@archon/workflows/utils/tool-formatter';
+import { formatToolCall } from '@smelter/workflows/utils/tool-formatter';
 import { classifyAndFormatError } from '../utils/error-formatter';
 import { toError } from '../utils/error';
-import { getAgentProvider, getProviderCapabilities } from '@archon/providers';
-import { getArchonWorkspacesPath, ensureArchonWorkspacesPath } from '@archon/paths';
-import { syncArchonToWorktree } from '../utils/worktree-sync';
-import { syncWorkspace, toRepoPath } from '@archon/git';
-import type { WorkspaceSyncResult } from '@archon/git';
-import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
-import { findWorkflow } from '@archon/workflows/router';
-import { executeWorkflow } from '@archon/workflows/executor';
+import { getAgentProvider, getProviderCapabilities } from '@smelter/providers';
+import { getSmelterWorkspacesPath, ensureSmelterWorkspacesPath } from '@smelter/paths';
+import { syncSmelterToWorktree } from '../utils/worktree-sync';
+import { syncWorkspace, toRepoPath } from '@smelter/git';
+import type { WorkspaceSyncResult } from '@smelter/git';
+import { discoverWorkflowsWithConfig } from '@smelter/workflows/workflow-discovery';
+import { findWorkflow } from '@smelter/workflows/router';
+import { executeWorkflow } from '@smelter/workflows/executor';
 import type {
   WorkflowDefinition,
   WorkflowWithSource,
   WorkflowLoadError,
-} from '@archon/workflows/schemas/workflow';
+} from '@smelter/workflows/schemas/workflow';
 import { createWorkflowDeps } from '../workflows/store-adapter';
 import { loadConfig } from '../config/config-loader';
 import type { MergedConfig } from '../config/config-types';
 import { generateAndSetTitle } from '../services/title-generator';
 import { validateAndResolveIsolation, dispatchBackgroundWorkflow } from './orchestrator';
-import { IsolationBlockedError } from '@archon/isolation';
+import { IsolationBlockedError } from '@smelter/isolation';
 import {
   buildOrchestratorPrompt,
   buildProjectScopedPrompt,
@@ -53,7 +53,7 @@ import * as messageDb from '../db/messages';
 import * as workflowDb from '../db/workflows';
 import * as workflowEventDb from '../db/workflow-events';
 import { getCodebaseEnvVars } from '../db/env-vars';
-import type { ApprovalContext } from '@archon/workflows/schemas/workflow-run';
+import type { ApprovalContext } from '@smelter/workflows/schemas/workflow-run';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -134,7 +134,7 @@ export function parseOrchestratorCommands(
     const workflow = findWorkflow(workflowName, [...workflows]);
     if (workflow) {
       // Validate project exists (case-insensitive, supports partial name matching)
-      // e.g., "Archon" matches "coleam00/Archon"
+      // e.g., "Smelter" matches "coleam00/Smelter"
       const matchedCodebase = findCodebaseByName(codebases, projectName);
       if (matchedCodebase) {
         // Extract message before the command
@@ -412,9 +412,9 @@ async function discoverAllWorkflows(conversation: Conversation): Promise<Discove
   let config: MergedConfig | undefined;
 
   try {
-    // Home-scoped workflows at ~/.archon/workflows/ are discovered automatically
+    // Home-scoped workflows at ~/.smelter/workflows/ are discovered automatically
     // by discoverWorkflowsWithConfig — no option needed.
-    const result = await discoverWorkflowsWithConfig(getArchonWorkspacesPath(), loadConfig);
+    const result = await discoverWorkflowsWithConfig(getSmelterWorkspacesPath(), loadConfig);
     workflows = [...result.workflows];
     allErrors.push(...result.errors);
   } catch (error) {
@@ -427,13 +427,13 @@ async function discoverAllWorkflows(conversation: Conversation): Promise<Discove
       const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
       if (codebase) {
         // Sync canonical source with remote before the AI reads codebase state.
-        // Only hard-reset for Archon-managed clones (under ~/.archon/workspaces/).
+        // Only hard-reset for Smelter-managed clones (under ~/.smelter/workspaces/).
         // Locally-registered repos get fetch-only to avoid destroying uncommitted work.
         // Non-fatal: if fetch fails (network, no remote), proceed with local state.
         try {
           const isManagedClone = codebase.default_cwd
             .replace(/\\/g, '/')
-            .startsWith(getArchonWorkspacesPath().replace(/\\/g, '/'));
+            .startsWith(getSmelterWorkspacesPath().replace(/\\/g, '/'));
           syncResult = await syncWorkspace(toRepoPath(codebase.default_cwd), undefined, {
             resetAfterFetch: isManagedClone,
           });
@@ -452,7 +452,7 @@ async function discoverAllWorkflows(conversation: Conversation): Promise<Discove
           getLog().warn({ err: error, codebaseId: codebase.id }, 'workspace.sync_failed');
         }
         const workflowCwd = conversation.cwd ?? codebase.default_cwd;
-        await syncArchonToWorktree(workflowCwd);
+        await syncSmelterToWorktree(workflowCwd);
         // Load config once for this codebase path; reuse below to avoid a second disk read
         const loadedConfig = await loadConfig(workflowCwd);
         config = loadedConfig;
@@ -567,7 +567,7 @@ export async function handleMessage(
         conversation.id,
         message,
         conversation.ai_assistant_type,
-        getArchonWorkspacesPath()
+        getSmelterWorkspacesPath()
       );
     }
 
@@ -821,7 +821,7 @@ export async function handleMessage(
       attachedFiles,
       workflowContext
     );
-    const cwd = await ensureArchonWorkspacesPath();
+    const cwd = await ensureSmelterWorkspacesPath();
 
     // 4. Update activity and get/create session
     await db.touchConversation(conversation.id);
@@ -1487,7 +1487,7 @@ async function handleWorkflowRunCommand(
     const codebase = codebases[0];
     const workflowCwd = conversation.cwd ?? codebase.default_cwd;
     try {
-      await syncArchonToWorktree(workflowCwd);
+      await syncSmelterToWorktree(workflowCwd);
     } catch (error) {
       getLog().debug(
         { err: error as Error, workflowCwd },
@@ -1503,7 +1503,7 @@ async function handleWorkflowRunCommand(
       getLog().error({ err, cwd: workflowCwd }, 'workflow_discovery_failed');
       await platform.sendMessage(
         conversationId,
-        `Failed to load workflows: ${err.message}\n\nCheck .archon/workflows/ for YAML syntax issues.`
+        `Failed to load workflows: ${err.message}\n\nCheck .smelter/workflows/ for YAML syntax issues.`
       );
       return;
     }

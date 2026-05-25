@@ -5,14 +5,14 @@ import type { WorkflowEventRow } from './workflow-events';
 
 // Mock logger to suppress noisy output during tests
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonHome: mock(() => '/home/test/.archon'),
-  getArchonConfigPath: mock(() => '/home/test/.archon/config.yaml'),
-  getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
-  getArchonWorktreesPath: mock(() => '/home/test/.archon/worktrees'),
-  getDefaultCommandsPath: mock(() => '/app/.archon/commands/defaults'),
-  getDefaultWorkflowsPath: mock(() => '/app/.archon/workflows/defaults'),
+  getSmelterHome: mock(() => '/home/test/.smelter'),
+  getSmelterConfigPath: mock(() => '/home/test/.smelter/config.yaml'),
+  getSmelterWorkspacesPath: mock(() => '/home/test/.smelter/workspaces'),
+  getSmelterWorktreesPath: mock(() => '/home/test/.smelter/worktrees'),
+  getDefaultCommandsPath: mock(() => '/app/.smelter/commands/defaults'),
+  getDefaultWorkflowsPath: mock(() => '/app/.smelter/workflows/defaults'),
 }));
 
 const mockQuery = mock(() => Promise.resolve(createQueryResult([])));

@@ -18,7 +18,7 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
@@ -106,7 +106,7 @@ describe('Workflow Logger', () => {
     });
 
     it('should create logs directory if it does not exist', async () => {
-      // testDir has no .archon/logs yet
+      // testDir has no .smelter/logs yet
       await logWorkflowEvent(testDir, 'new-dir-test', {
         type: 'workflow_start',
       });

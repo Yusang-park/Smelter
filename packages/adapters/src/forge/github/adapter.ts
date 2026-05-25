@@ -6,8 +6,8 @@ import { Octokit } from '@octokit/rest';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { readdir, access } from 'fs/promises';
 import { join } from 'path';
-import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
-import type { IsolationHints } from '@archon/isolation';
+import type { IPlatformAdapter, MessageMetadata } from '@smelter/core';
+import type { IsolationHints } from '@smelter/isolation';
 import {
   ConversationNotFoundError,
   handleMessage,
@@ -16,8 +16,8 @@ import {
   getLinkedIssueNumbers,
   onConversationClosed,
   ConversationLockManager,
-} from '@archon/core';
-import { getArchonWorkspacesPath, getCommandFolderSearchPaths } from '@archon/paths';
+} from '@smelter/core';
+import { getSmelterWorkspacesPath, getCommandFolderSearchPaths } from '@smelter/paths';
 import {
   isWorktreePath,
   cloneRepository,
@@ -25,10 +25,10 @@ import {
   addSafeDirectory,
   toRepoPath,
   toBranchName,
-} from '@archon/git';
-import * as db from '@archon/core/db/conversations';
-import * as codebaseDb from '@archon/core/db/codebases';
-import { createLogger } from '@archon/paths';
+} from '@smelter/git';
+import * as db from '@smelter/core/db/conversations';
+import * as codebaseDb from '@smelter/core/db/codebases';
+import { createLogger } from '@smelter/paths';
 import { parseAllowedUsers as parseGitHubAllowedUsers, isGitHubUserAuthorized } from './auth';
 import { splitIntoParagraphChunks } from '../../utils/message-splitting';
 import type { WebhookEvent } from './types';
@@ -43,7 +43,7 @@ function getLog(): ReturnType<typeof createLogger> {
 const MAX_LENGTH = 65000; // GitHub comment limit (~65,536, leave buffer for safety)
 
 /** Hidden marker added to bot comments to prevent self-triggering loops */
-const BOT_RESPONSE_MARKER = '<!-- archon-bot-response -->';
+const BOT_RESPONSE_MARKER = '<!-- smelter-bot-response -->';
 
 export class GitHubAdapter implements IPlatformAdapter {
   private octokit: Octokit;
@@ -63,7 +63,7 @@ export class GitHubAdapter implements IPlatformAdapter {
     this.octokit = new Octokit({ auth: token });
     this.webhookSecret = webhookSecret;
     this.lockManager = lockManager;
-    this.botMention = botMention ?? 'Archon';
+    this.botMention = botMention ?? 'Smelter';
 
     // Parse GitHub user whitelist (optional - empty = open access)
     this.allowedUsers = parseGitHubAllowedUsers(process.env.GITHUB_ALLOWED_USERS);
@@ -523,7 +523,7 @@ export class GitHubAdapter implements IPlatformAdapter {
   }
 
   /**
-   * Auto-detect and load commands from .archon/commands/ (or configured folder)
+   * Auto-detect and load commands from .smelter/commands/ (or configured folder)
    */
   private async autoDetectAndLoadCommands(repoPath: string, codebaseId: string): Promise<void> {
     const commandFolders = getCommandFolderSearchPaths();
@@ -582,7 +582,7 @@ export class GitHubAdapter implements IPlatformAdapter {
 
     // Canonical path includes owner to prevent collisions between repos with same name
     // e.g., alice/utils and bob/utils get separate directories
-    const canonicalPath = join(getArchonWorkspacesPath(), owner, repo);
+    const canonicalPath = join(getSmelterWorkspacesPath(), owner, repo);
 
     if (existing) {
       // Check if existing codebase points to a worktree path - fix it if so

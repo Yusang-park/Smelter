@@ -1,6 +1,6 @@
 # Isolation & Worktree System Guide
 
-> **Purpose**: Complete reference for how Archon creates, manages, and cleans up git worktrees for parallel development.
+> **Purpose**: Complete reference for how Smelter creates, manages, and cleans up git worktrees for parallel development.
 > **When to use**: Working on worktree lifecycle, debugging isolation issues, understanding the resolution algorithm.
 > **Size**: ~350 lines — use a scout sub-agent to check relevance before loading.
 
@@ -78,7 +78,7 @@ Compares `store.countActiveByCodebase()` against `maxWorktrees` (default 25). If
 - `findExisting()` → checks if path already exists or PR branch already has a worktree
 
 **2. Sync workspace**
-- Calls `syncWorkspace(repoPath, baseBranch)` from `@archon/git/repo.ts`
+- Calls `syncWorkspace(repoPath, baseBranch)` from `@smelter/git/repo.ts`
 - Runs `git fetch origin <branch>` (60s timeout)
 - Auto-detects default branch: `symbolic-ref` → `origin/main` → `master`
 
@@ -89,8 +89,8 @@ Compares `store.countActiveByCodebase()` against `maxWorktrees` (default 25). If
 - Before creation: `cleanOrphanDirectoryIfExists()` removes stale non-worktree directories
 
 **4. Copy configured files**
-- Default: always copies `.archon/` directory
-- User config: additional paths from `.archon/config.yaml` `worktree.copyFiles`
+- Default: always copies `.smelter/` directory
+- User config: additional paths from `.smelter/config.yaml` `worktree.copyFiles`
 - Supports `"source -> destination"` arrow syntax
 - Path traversal blocked (security check via `isPathWithinRoot()`)
 
@@ -100,12 +100,12 @@ Compares `store.countActiveByCodebase()` against `maxWorktrees` (default 25). If
 
 `getWorktreeBase()` in `packages/git/src/worktree.ts:29`:
 
-- **Project-scoped** (repo under `~/.archon/workspaces/owner/repo/`):
-  - Base: `~/.archon/workspaces/owner/repo/worktrees/`
+- **Project-scoped** (repo under `~/.smelter/workspaces/owner/repo/`):
+  - Base: `~/.smelter/workspaces/owner/repo/worktrees/`
   - Path: `<base>/<branchName>`
 
 - **Legacy global** (repo elsewhere):
-  - Base: `~/.archon/worktrees/`
+  - Base: `~/.smelter/worktrees/`
   - Path: `<base>/owner/repo/<branchName>`
 
 ---

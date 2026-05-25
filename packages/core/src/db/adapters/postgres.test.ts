@@ -39,8 +39,8 @@ mock.module('pg', () => ({
   Pool: MockPool,
 }));
 
-// ---- also mock @archon/paths so logger calls don't blow up ----------------
-mock.module('@archon/paths', () => ({
+// ---- also mock @smelter/paths so logger calls don't blow up ----------------
+mock.module('@smelter/paths', () => ({
   createLogger: () => ({
     info: () => {},
     warn: () => {},

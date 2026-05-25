@@ -9,7 +9,7 @@
  * Read operations also throw on error — callers own the degradation policy.
  */
 import { pool, getDialect } from './connection';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;

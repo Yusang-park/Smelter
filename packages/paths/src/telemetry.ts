@@ -1,24 +1,24 @@
 /**
- * Anonymous PostHog telemetry for Archon.
+ * Anonymous PostHog telemetry for Smelter.
  *
  * Emits one event — `workflow_invoked` — each time a workflow starts. No PII,
- * no user identity. A random UUID is persisted to `${ARCHON_HOME}/telemetry-id`
+ * no user identity. A random UUID is persisted to `${SMELTER_HOME}/telemetry-id`
  * so we can count distinct installs; `$process_person_profile: false` keeps
  * events in PostHog's anonymous tier (no person profile ever created).
  *
  * Opt-out (any one disables telemetry):
- *   - ARCHON_TELEMETRY_DISABLED=1
+ *   - SMELTER_TELEMETRY_DISABLED=1
  *   - DO_NOT_TRACK=1                   (de facto standard)
  *   - POSTHOG_API_KEY unset *and* no embedded default
  *
  * All functions are fire-and-forget: telemetry errors are logged at debug level
- * and swallowed. Capture must never crash Archon.
+ * and swallowed. Capture must never crash Smelter.
  */
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { PostHog } from 'posthog-node';
-import { getArchonHome } from './archon-paths';
+import { getSmelterHome } from './smelter-paths';
 import { createLogger } from './logger';
 
 // Minimal shape of posthog-node's `fetch` option — copied from @posthog/core
@@ -68,14 +68,14 @@ function getHost(): string {
  * Exported for tests and callers that want to short-circuit early.
  */
 export function isTelemetryDisabled(): boolean {
-  if (process.env.ARCHON_TELEMETRY_DISABLED === '1') return true;
+  if (process.env.SMELTER_TELEMETRY_DISABLED === '1') return true;
   if (process.env.DO_NOT_TRACK === '1') return true;
   if (!getApiKey()) return true;
   return false;
 }
 
 /**
- * Load or create a stable anonymous install UUID at `${ARCHON_HOME}/telemetry-id`.
+ * Load or create a stable anonymous install UUID at `${SMELTER_HOME}/telemetry-id`.
  * If the file can't be read or written (permissions, disk full), a fresh UUID
  * is returned for this session — telemetry still works, just not correlated
  * across runs.
@@ -85,7 +85,7 @@ export function isTelemetryDisabled(): boolean {
  * @internal
  */
 export function getOrCreateTelemetryId(): string {
-  const idPath = join(getArchonHome(), 'telemetry-id');
+  const idPath = join(getSmelterHome(), 'telemetry-id');
   try {
     if (existsSync(idPath)) {
       const existing = readFileSync(idPath, 'utf8').trim();
@@ -97,7 +97,7 @@ export function getOrCreateTelemetryId(): string {
 
   const id = randomUUID();
   try {
-    mkdirSync(getArchonHome(), { recursive: true });
+    mkdirSync(getSmelterHome(), { recursive: true });
     writeFileSync(idPath, id, 'utf8');
   } catch (error) {
     getLog().debug({ err: error as Error, idPath }, 'telemetry.id_persist_failed');
@@ -186,7 +186,7 @@ export interface WorkflowInvokedProperties {
   workflowName: string;
   workflowDescription?: string;
   platform?: string;
-  archonVersion?: string;
+  smelterVersion?: string;
 }
 
 /**
@@ -208,7 +208,7 @@ export function captureWorkflowInvoked(props: WorkflowInvokedProperties): void {
           workflow_name: props.workflowName,
           ...(description ? { workflow_description: description } : {}),
           ...(props.platform ? { platform: props.platform } : {}),
-          ...(props.archonVersion ? { archon_version: props.archonVersion } : {}),
+          ...(props.smelterVersion ? { smelter_version: props.smelterVersion } : {}),
         },
       });
     } catch (error) {

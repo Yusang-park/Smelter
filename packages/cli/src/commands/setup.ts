@@ -1,5 +1,5 @@
 /**
- * Setup command - Interactive CLI wizard for Archon credential configuration
+ * Setup command - Interactive CLI wizard for Smelter credential configuration
  *
  * Guides users through configuring:
  * - AI assistants (Claude and/or Codex)
@@ -8,9 +8,9 @@
  * SQLite is the implicit default; no database prompt. PostgreSQL users set
  * DATABASE_URL by hand (documented separately).
  *
- * Writes configuration to one archon-owned env file, chosen by --scope:
- *   - 'home'    (default)  → ~/.archon/.env
- *   - 'project'            → <repo>/.archon/.env
+ * Writes configuration to one smelter-owned env file, chosen by --scope:
+ *   - 'home'    (default)  → ~/.smelter/.env
+ *   - 'project'            → <repo>/.smelter/.env
  *
  * Never writes to <repo>/.env — that file is stripped at boot by stripCwdEnv()
  * (see #1302 / #1303 three-path model). Writing there would be incoherent
@@ -37,16 +37,16 @@ import {
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, chmodSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
 import { join, dirname } from 'path';
-import { copyArchonSkill } from './skill';
+import { copySmelterSkill } from './skill';
 import { homedir } from 'os';
 import { randomBytes } from 'crypto';
 import { spawn, execSync, spawnSync, type ChildProcess } from 'child_process';
-import { execFileAsync } from '@archon/git';
-import { getRegisteredProviders } from '@archon/providers';
+import { execFileAsync } from '@smelter/git';
+import { getRegisteredProviders } from '@smelter/providers';
 import {
-  getArchonEnvPath as pathsGetArchonEnvPath,
-  getRepoArchonEnvPath as pathsGetRepoArchonEnvPath,
-} from '@archon/paths';
+  getSmelterEnvPath as pathsGetSmelterEnvPath,
+  getRepoSmelterEnvPath as pathsGetRepoSmelterEnvPath,
+} from '@smelter/paths';
 
 // =============================================================================
 // Types
@@ -59,7 +59,7 @@ interface SetupConfig {
     claudeApiKey?: string;
     claudeOauthToken?: string;
     /** Absolute path to Claude Code SDK's cli.js. Written as CLAUDE_BIN_PATH
-     *  in ~/.archon/.env. Required in compiled Archon binaries; harmless in dev. */
+     *  in ~/.smelter/.env. Required in compiled Smelter binaries; harmless in dev. */
     claudeBinaryPath?: string;
     codex: boolean;
     codexTokens?: CodexTokens;
@@ -114,7 +114,7 @@ interface ExistingConfig {
 interface SetupOptions {
   spawn?: boolean;
   repoPath: string;
-  /** Which archon-owned file to target. Default: 'home'. */
+  /** Which smelter-owned file to target. Default: 'home'. */
   scope?: 'home' | 'project';
   /** Skip merge and overwrite the target wholesale (backup still written). Default: false. */
   force?: boolean;
@@ -130,17 +130,17 @@ interface SpawnResult {
 // =============================================================================
 
 /**
- * Get the Archon home directory (typically ~/.archon)
+ * Get the Smelter home directory (typically ~/.smelter)
  */
-function getArchonHome(): string {
-  const envHome = process.env.ARCHON_HOME;
+function getSmelterHome(): string {
+  const envHome = process.env.SMELTER_HOME;
   if (envHome) {
     if (envHome.startsWith('~')) {
       return join(homedir(), envHome.slice(1));
     }
     return envHome;
   }
-  return join(homedir(), '.archon');
+  return join(homedir(), '.smelter');
 }
 
 /**
@@ -212,7 +212,7 @@ export function probeWhichClaude(): string | null {
 /**
  * Try to locate the Claude Code executable on disk.
  *
- * Compiled Archon binaries need an explicit path because the Claude Agent
+ * Compiled Smelter binaries need an explicit path because the Claude Agent
  * SDK's `import.meta.url` resolution is frozen to the build host's filesystem.
  * The SDK's `pathToClaudeCodeExecutable` accepts either:
  *   - A native compiled binary (from the curl/PowerShell/winget installers — current default)
@@ -318,13 +318,13 @@ After installation, run 'codex' to authenticate.`,
 };
 
 /**
- * Check for existing configuration at the selected scope's archon-owned env
+ * Check for existing configuration at the selected scope's smelter-owned env
  * file. Defaults to home scope for backward compatibility — callers writing to
  * project scope must pass a path so the Add/Update/Fresh decision reflects the
  * actual target.
  */
 export function checkExistingConfig(envPath?: string): ExistingConfig | null {
-  const path = envPath ?? join(getArchonHome(), '.env');
+  const path = envPath ?? join(getSmelterHome(), '.env');
 
   if (!existsSync(path)) {
     return null;
@@ -580,7 +580,7 @@ async function collectCodexAuth(): Promise<CodexTokens | null> {
         '1. Run `codex login` in your terminal\n' +
         '2. Complete the login flow\n' +
         '3. Tokens will be saved to ~/.codex/auth.json\n\n' +
-        'You can skip Codex setup now and run `archon setup` again later.',
+        'You can skip Codex setup now and run `smelter setup` again later.',
       'Codex Auth'
     );
   }
@@ -713,7 +713,7 @@ Or use a version manager like nvm:
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
     nvm install 18
 
-After installing Node.js, run 'archon setup' again.`,
+After installing Node.js, run 'smelter setup' again.`,
           'Node.js Not Found'
         );
         const continueWithoutCodex = await confirm({
@@ -740,7 +740,7 @@ Or use a version manager like nvm:
     nvm install 18
     nvm use 18
 
-After upgrading, run 'archon setup' again.`,
+After upgrading, run 'smelter setup' again.`,
           'Node.js Version Too Old'
         );
         const continueWithoutCodex = await confirm({
@@ -779,7 +779,9 @@ After upgrading, run 'archon setup' again.`,
   }
 
   if (!hasClaude && !hasCodex) {
-    log.warning('No AI assistant selected. You can add one later by running `archon setup` again.');
+    log.warning(
+      'No AI assistant selected. You can add one later by running `smelter setup` again.'
+    );
     return {
       claude: false,
       codex: false,
@@ -969,7 +971,7 @@ async function collectGitHubConfig(): Promise<GitHubConfig> {
   }
 
   const customMention = await confirm({
-    message: 'Do you want to set a custom @mention name? (Default: archon)',
+    message: 'Do you want to set a custom @mention name? (Default: smelter)',
   });
 
   if (isCancel(customMention)) {
@@ -981,7 +983,7 @@ async function collectGitHubConfig(): Promise<GitHubConfig> {
   if (customMention) {
     const mention = await text({
       message: 'Enter the @mention name (without @):',
-      placeholder: 'archon',
+      placeholder: 'smelter',
       validate: value => {
         if (!value) return 'Mention name is required';
         if (value.includes('@')) return 'Do not include @ symbol';
@@ -1064,7 +1066,7 @@ async function collectTelegramConfig(): Promise<TelegramConfig> {
   if (!allowedUserIds?.trim()) {
     log.warning(
       'No allowlist set — your Telegram bot will accept messages from ANYONE.\n' +
-        'Add TELEGRAM_ALLOWED_USER_IDS to ~/.archon/.env after setup to restrict access.'
+        'Add TELEGRAM_ALLOWED_USER_IDS to ~/.smelter/.env after setup to restrict access.'
     );
   }
 
@@ -1282,7 +1284,7 @@ export function generateEnvContent(config: SetupConfig): string {
   // Server
   // PORT is intentionally omitted: both the Hono server (packages/core/src/utils/port-allocation.ts)
   // and the Vite dev proxy (packages/web/vite.config.ts) default to 3090 when unset, which keeps
-  // them in sync. Writing a fixed PORT here risked a mismatch if ~/.archon/.env leaks a PORT that
+  // them in sync. Writing a fixed PORT here risked a mismatch if ~/.smelter/.env leaks a PORT that
   // the Vite proxy (which only reads repo-local .env) never sees — see #1152.
   lines.push('# Server');
   lines.push('# PORT=3090  # Default: 3090. Uncomment to override.');
@@ -1296,19 +1298,19 @@ export function generateEnvContent(config: SetupConfig): string {
 }
 
 /**
- * Resolve the target path for the selected scope. Delegates to `@archon/paths`
- * so Docker (`/.archon`), the `ARCHON_HOME` override, and the "undefined"
+ * Resolve the target path for the selected scope. Delegates to `@smelter/paths`
+ * so Docker (`/.smelter`), the `SMELTER_HOME` override, and the "undefined"
  * literal guard behave identically to the loader. Never resolves to
  * `<repoPath>/.env` — that path belongs to the user.
  */
 export function resolveScopedEnvPath(scope: 'home' | 'project', repoPath: string): string {
-  if (scope === 'project') return pathsGetRepoArchonEnvPath(repoPath);
-  return pathsGetArchonEnvPath();
+  if (scope === 'project') return pathsGetRepoSmelterEnvPath(repoPath);
+  return pathsGetSmelterEnvPath();
 }
 
 /**
- * Result of attempting to bootstrap project-scoped Archon config.
- *  - `created`: `.archon/config.yaml` did not exist; we wrote a starter.
+ * Result of attempting to bootstrap project-scoped Smelter config.
+ *  - `created`: `.smelter/config.yaml` did not exist; we wrote a starter.
  *  - `existed`: file already present; left untouched (idempotent re-run).
  *  - `failed`: mkdir or write failed (permissions, read-only FS, etc.).
  *    Setup continues — the user can hand-create the file later.
@@ -1319,24 +1321,24 @@ export type BootstrapProjectConfigResult =
   | { state: 'failed'; path: string; error: string };
 
 /**
- * Create `<projectPath>/.archon/config.yaml` with a commented-out template if
+ * Create `<projectPath>/.smelter/config.yaml` with a commented-out template if
  * absent. Pairs with the skill install — gives the user a place to put
  * per-project overrides without manual mkdir. Workflows/commands/scripts
  * subdirs are intentionally not created; empty directories would clutter
- * users' trees and Archon's loaders handle their absence cleanly.
+ * users' trees and Smelter's loaders handle their absence cleanly.
  */
 export function bootstrapProjectConfig(projectPath: string): BootstrapProjectConfigResult {
-  const archonDir = join(projectPath, '.archon');
-  const configPath = join(archonDir, 'config.yaml');
+  const smelterDir = join(projectPath, '.smelter');
+  const configPath = join(smelterDir, 'config.yaml');
   try {
-    mkdirSync(archonDir, { recursive: true });
+    mkdirSync(smelterDir, { recursive: true });
     // `wx` flag = exclusive create. Atomic against a concurrent create between
     // a check and a write, so an in-flight user edit is never overwritten.
     writeFileSync(
       configPath,
       [
         '# Project-scoped Smelter config',
-        '# Inherits defaults from ~/.archon/config.yaml.',
+        '# Inherits defaults from ~/.smelter/config.yaml.',
         '# Reference: https://github.com/Yusang-park/Smelter',
         '#',
         '# Examples:',
@@ -1404,7 +1406,7 @@ interface WriteScopedEnvResult {
 }
 
 /**
- * Write env content to exactly one archon-owned file, selected by scope.
+ * Write env content to exactly one smelter-owned file, selected by scope.
  * Merge-only by default (existing non-empty values win, user-added keys
  * survive). Backs up the existing file (if any) before every rewrite, even
  * when `--force` is set.
@@ -1422,7 +1424,7 @@ export function writeScopedEnv(
   const exists = existsSync(targetPath);
   let backupPath: string | null = null;
   if (exists) {
-    backupPath = `${targetPath}.archon-backup-${backupTimestamp()}`;
+    backupPath = `${targetPath}.smelter-backup-${backupTimestamp()}`;
     copyFileSync(targetPath, backupPath);
     // Backups carry tokens/secrets — match the 0o600 we set on the live file.
     chmodSync(backupPath, 0o600);
@@ -1435,7 +1437,7 @@ export function writeScopedEnv(
     finalContent = content;
     if (options.force && backupPath) {
       process.stderr.write(
-        `[archon] --force: overwriting ${targetPath} (backup at ${backupPath})\n`
+        `[smelter] --force: overwriting ${targetPath} (backup at ${backupPath})\n`
       );
     }
   } else {
@@ -1502,7 +1504,7 @@ function trySpawn(
 function spawnWindowsTerminal(repoPath: string): SpawnResult {
   // Try Windows Terminal first (modern Windows 10/11)
   if (
-    trySpawn('wt.exe', ['-d', repoPath, 'cmd', '/k', 'archon setup'], {
+    trySpawn('wt.exe', ['-d', repoPath, 'cmd', '/k', 'smelter setup'], {
       detached: true,
       stdio: 'ignore',
     })
@@ -1512,7 +1514,7 @@ function spawnWindowsTerminal(repoPath: string): SpawnResult {
 
   // Fallback to cmd.exe with start command (works on all Windows)
   if (
-    trySpawn('cmd.exe', ['/c', 'start', '""', '/D', repoPath, 'cmd', '/k', 'archon setup'], {
+    trySpawn('cmd.exe', ['/c', 'start', '""', '/D', repoPath, 'cmd', '/k', 'smelter setup'], {
       detached: true,
       stdio: 'ignore',
     })
@@ -1520,7 +1522,7 @@ function spawnWindowsTerminal(repoPath: string): SpawnResult {
     return { success: true };
   }
 
-  return { success: false, error: 'Could not open terminal. Please run `archon setup` manually.' };
+  return { success: false, error: 'Could not open terminal. Please run `smelter setup` manually.' };
 }
 
 /**
@@ -1530,13 +1532,13 @@ function spawnWindowsTerminal(repoPath: string): SpawnResult {
 function spawnMacTerminal(repoPath: string): SpawnResult {
   // Escape single quotes in path for AppleScript
   const escapedPath = repoPath.replace(/'/g, "'\"'\"'");
-  const script = `tell application "Terminal" to do script "cd '${escapedPath}' && archon setup"`;
+  const script = `tell application "Terminal" to do script "cd '${escapedPath}' && smelter setup"`;
 
   if (trySpawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' })) {
     return { success: true };
   }
 
-  return { success: false, error: 'Could not open Terminal. Please run `archon setup` manually.' };
+  return { success: false, error: 'Could not open Terminal. Please run `smelter setup` manually.' };
 }
 
 /**
@@ -1544,7 +1546,7 @@ function spawnMacTerminal(repoPath: string): SpawnResult {
  * Tries: x-terminal-emulator -> gnome-terminal -> konsole -> xterm
  */
 function spawnLinuxTerminal(repoPath: string): SpawnResult {
-  const setupCmd = 'archon setup; exec bash';
+  const setupCmd = 'smelter setup; exec bash';
 
   // Try x-terminal-emulator first (Debian/Ubuntu default)
   if (
@@ -1592,12 +1594,12 @@ function spawnLinuxTerminal(repoPath: string): SpawnResult {
 
   return {
     success: false,
-    error: 'Could not find a terminal emulator. Please run `archon setup` manually.',
+    error: 'Could not find a terminal emulator. Please run `smelter setup` manually.',
   };
 }
 
 /**
- * Spawn a new terminal window with archon setup
+ * Spawn a new terminal window with smelter setup
  */
 export function spawnTerminalWithSetup(repoPath: string): SpawnResult {
   const platform = process.platform;
@@ -1630,7 +1632,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
       console.log('');
       console.log('Next step: run the setup wizard in a separate terminal.');
       console.log('');
-      console.log(`    cd ${options.repoPath} && archon setup`);
+      console.log(`    cd ${options.repoPath} && smelter setup`);
       console.log('');
       console.log(
         'Come back here and let me know when you finish so I can verify your configuration.'
@@ -1649,20 +1651,20 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
   const targetEnvPath = resolveScopedEnvPath(scope, options.repoPath);
 
   // If a pre-existing <repo>/.env is present, tell the operator once that
-  // archon does NOT manage it — avoids confusion for users upgrading from
+  // smelter does NOT manage it — avoids confusion for users upgrading from
   // versions that used to write there.
   const legacyRepoEnv = join(options.repoPath, '.env');
   if (existsSync(legacyRepoEnv)) {
     log.info(
-      `Note: ${legacyRepoEnv} exists but is not managed by archon.\n` +
-        '      Values there are stripped from the archon process at runtime (safety guard).\n' +
-        '      Put archon env vars in ~/.archon/.env (home scope) or ' +
-        `${join(options.repoPath, '.archon', '.env')} (project scope).`
+      `Note: ${legacyRepoEnv} exists but is not managed by smelter.\n` +
+        '      Values there are stripped from the smelter process at runtime (safety guard).\n' +
+        '      Put smelter env vars in ~/.smelter/.env (home scope) or ' +
+        `${join(options.repoPath, '.smelter', '.env')} (project scope).`
     );
   }
 
   // Check for existing configuration at the selected scope (not unconditionally
-  // ~/.archon/.env) so the Add/Update/Fresh decision reflects the actual target.
+  // ~/.smelter/.env) so the Add/Update/Fresh decision reflects the actual target.
   const existing = checkExistingConfig(targetEnvPath);
 
   type SetupMode = 'fresh' | 'add' | 'update';
@@ -1836,14 +1838,14 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
     const skillTarget = skillTargetRaw;
     s.start('Installing bundled workflow skill...');
     try {
-      await copyArchonSkill(skillTarget);
+      await copySmelterSkill(skillTarget);
     } catch (err) {
       s.stop('Bundled workflow skill installation failed');
       cancel(`Could not install skill: ${(err as NodeJS.ErrnoException).message}`);
       process.exit(1);
     }
     s.stop('Bundled workflow skill installed');
-    skillInstalledPath = join(skillTarget, '.claude', 'skills', 'archon');
+    skillInstalledPath = join(skillTarget, '.claude', 'skills', 'smelter');
 
     const bootstrapResult = bootstrapProjectConfig(skillTarget);
     if (bootstrapResult.state === 'created') {
@@ -1870,9 +1872,9 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
 
     if (!isCancel(docsPath) && typeof docsPath === 'string' && docsPath.trim()) {
       try {
-        const archonDir = join(options.repoPath, '.archon');
-        mkdirSync(archonDir, { recursive: true });
-        const configPath = join(archonDir, 'config.yaml');
+        const smelterDir = join(options.repoPath, '.smelter');
+        mkdirSync(smelterDir, { recursive: true });
+        const configPath = join(smelterDir, 'config.yaml');
         const existing = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : '';
         if (!existing.includes('docs:')) {
           const escaped = docsPath.trim().replace(/"/g, '\\"');
@@ -1941,7 +1943,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
 
   // Additional options note
   note(
-    'Other settings you can customize in ~/.archon/.env:\n' +
+    'Other settings you can customize in ~/.smelter/.env:\n' +
       '  - PORT (default: 3090)\n' +
       '  - MAX_CONCURRENT_CONVERSATIONS (default: 10)\n' +
       '  - *_STREAMING_MODE (stream | batch per platform)\n\n' +
@@ -1958,7 +1960,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
   );
 
   const runDoctor = await confirm({
-    message: 'Run `archon doctor` now to verify your setup?',
+    message: 'Run `smelter doctor` now to verify your setup?',
     initialValue: true,
   });
   if (!isCancel(runDoctor) && runDoctor) {

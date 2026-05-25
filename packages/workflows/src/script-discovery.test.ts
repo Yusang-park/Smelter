@@ -19,7 +19,7 @@ const mockLogger = {
   trace: mock(() => undefined),
 };
 let mockHomeScriptsPath = '/home/scripts';
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
   getHomeScriptsPath: mock(() => mockHomeScriptsPath),
 }));
@@ -221,11 +221,11 @@ describe('discoverScriptsForCwd — merge repo + home with repo winning', () => 
     mockHomeScriptsPath = '/home/scripts';
   });
 
-  test('merges scripts from ~/.archon/scripts and <cwd>/.archon/scripts', async () => {
+  test('merges scripts from ~/.smelter/scripts and <cwd>/.smelter/scripts', async () => {
     mockReaddir.mockImplementation(async (path: string) => {
       const p = norm(path);
       if (p === '/home/scripts') return ['home-only.ts'];
-      if (p === '/repo/.archon/scripts') return ['repo-only.py'];
+      if (p === '/repo/.smelter/scripts') return ['repo-only.py'];
       return [];
     });
     mockStat.mockResolvedValue({ isDirectory: () => false });
@@ -240,7 +240,7 @@ describe('discoverScriptsForCwd — merge repo + home with repo winning', () => 
     mockReaddir.mockImplementation(async (path: string) => {
       const p = norm(path);
       if (p === '/home/scripts') return ['shared.ts'];
-      if (p === '/repo/.archon/scripts') return ['shared.ts'];
+      if (p === '/repo/.smelter/scripts') return ['shared.ts'];
       return [];
     });
     mockStat.mockResolvedValue({ isDirectory: () => false });
@@ -249,7 +249,7 @@ describe('discoverScriptsForCwd — merge repo + home with repo winning', () => 
     expect(result.size).toBe(1);
     // Stored paths are normalized to forward slashes via normalizeSep() in
     // script-discovery.ts, so this assertion is OS-independent.
-    expect(result.get('shared')!.path).toBe('/repo/.archon/scripts/shared.ts');
+    expect(result.get('shared')!.path).toBe('/repo/.smelter/scripts/shared.ts');
   });
 
   test('tolerates missing home dir (new user, no personal scripts yet)', async () => {
@@ -258,7 +258,7 @@ describe('discoverScriptsForCwd — merge repo + home with repo winning', () => 
       if (p === '/home/scripts') {
         throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       }
-      if (p === '/repo/.archon/scripts') return ['only-repo.ts'];
+      if (p === '/repo/.smelter/scripts') return ['only-repo.ts'];
       return [];
     });
     mockStat.mockResolvedValue({ isDirectory: () => false });

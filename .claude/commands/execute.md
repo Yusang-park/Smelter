@@ -1,15 +1,15 @@
 ---
-description: Execute an Archon implementation plan file
+description: Execute an Smelter implementation plan file
 argument-hint: <path-to-plan.md>
 ---
 
-# Execute: Implement an Archon Plan
+# Execute: Implement an Smelter Plan
 
 ## Objective
 
 Read and execute every task in the plan file: **$ARGUMENTS**
 
-Implement all tasks faithfully, following Archon monorepo conventions, and report results.
+Implement all tasks faithfully, following Smelter monorepo conventions, and report results.
 
 ---
 
@@ -59,16 +59,16 @@ Work through each task in the plan sequentially (respecting `Depends on:` orderi
    ```
    Fix type errors immediately — do not accumulate them.
 
-### Archon conventions to follow:
+### Smelter conventions to follow:
 
 **Imports:**
 ```typescript
 // Type-only imports
-import type { IPlatformAdapter, Conversation } from '@archon/core';
+import type { IPlatformAdapter, Conversation } from '@smelter/core';
 // Value imports — named, not namespace
-import { handleMessage, pool } from '@archon/core';
+import { handleMessage, pool } from '@smelter/core';
 // Submodule namespace imports (acceptable)
-import * as git from '@archon/git';
+import * as git from '@smelter/git';
 ```
 
 **Functions:**
@@ -80,7 +80,7 @@ async function createSession(id: string): Promise<Session> { ... }
 
 **Logging:**
 ```typescript
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 // Lazy logger pattern (test mocks work correctly)
 let cachedLog: ReturnType<typeof createLogger> | undefined;
 function getLog(): ReturnType<typeof createLogger> {
@@ -109,9 +109,9 @@ try {
 - Use branded types: `toRepoPath()`, `toBranchName()`, `toWorktreePath()`
 
 **Package boundaries:**
-- `@archon/workflows` must NOT import from `@archon/core`
-- `@archon/git` must NOT import from `@archon/core` or `@archon/workflows`
-- `@archon/paths` has zero `@archon/*` dependencies
+- `@smelter/workflows` must NOT import from `@smelter/core`
+- `@smelter/git` must NOT import from `@smelter/core` or `@smelter/workflows`
+- `@smelter/paths` has zero `@smelter/*` dependencies
 
 **Testing (if adding tests):**
 - Check which test batch the new file belongs to in the package's `package.json`

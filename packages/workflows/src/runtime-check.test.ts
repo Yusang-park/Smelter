@@ -1,6 +1,6 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
 
-// Mock @archon/git before importing the module under test
+// Mock @smelter/git before importing the module under test
 const mockExecFileAsync = mock(
   async (_cmd: string, _args: string[]): Promise<{ stdout: string; stderr: string }> => ({
     stdout: '/usr/bin/bun\n',
@@ -8,12 +8,12 @@ const mockExecFileAsync = mock(
   })
 );
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   execFileAsync: mockExecFileAsync,
 }));
 
-// Mock @archon/paths logger
-mock.module('@archon/paths', () => ({
+// Mock @smelter/paths logger
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => ({
     fatal: mock(() => undefined),
     error: mock(() => undefined),
@@ -22,7 +22,7 @@ mock.module('@archon/paths', () => ({
     debug: mock(() => undefined),
     trace: mock(() => undefined),
   })),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands']),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands']),
   getDefaultCommandsPath: mock(() => '/defaults/commands'),
   findMarkdownFilesRecursive: mock(async () => []),
 }));

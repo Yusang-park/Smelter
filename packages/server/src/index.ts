@@ -6,14 +6,14 @@
 // Strip CWD .env keys FIRST — before any application imports read process.env.
 // Bun auto-loads .env/.env.local/.env.development/.env.production from CWD;
 // when `bun run dev:server` is run from inside a target repo those keys leak
-// into the server process. stripCwdEnv() removes them before ~/.archon/.env loads.
-import '@archon/paths/strip-cwd-env-boot';
+// into the server process. stripCwdEnv() removes them before ~/.smelter/.env loads.
+import '@smelter/paths/strip-cwd-env-boot';
 
 // Load environment variables — after CWD stripping, before application imports.
 import { config } from 'dotenv';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
-import { BUNDLED_IS_BINARY, getArchonEnvPath } from '@archon/paths';
+import { BUNDLED_IS_BINARY, getSmelterEnvPath } from '@smelter/paths';
 
 // In dev/source mode, load the repo root .env (platform tokens, API keys, etc.)
 // import.meta.dir is frozen at build time, so skip in compiled binaries.
@@ -28,12 +28,12 @@ if (envPath) {
   }
 }
 
-// Load archon-owned env from ~/.archon/.env (user scope) and <cwd>/.archon/.env
+// Load smelter-owned env from ~/.smelter/.env (user scope) and <cwd>/.smelter/.env
 // (repo scope, wins over user) with override: true. Keeps the server in sync
 // with the CLI — see packages/paths/src/env-loader.ts and the three-path model
 // (#1302 / #1303).
-import { loadArchonEnv } from '@archon/paths/env-loader';
-loadArchonEnv(process.cwd());
+import { loadSmelterEnv } from '@smelter/paths/env-loader';
+loadSmelterEnv(process.cwd());
 
 // CLAUDECODE=1 warning is emitted inside stripCwdEnv() (boot import above)
 // BEFORE the marker is deleted from process.env. No duplicate warning here.
@@ -47,7 +47,7 @@ if (
   process.env.CLAUDE_USE_GLOBAL_AUTH = 'true';
 }
 
-import { registerBuiltinProviders, registerCommunityProviders } from '@archon/providers';
+import { registerBuiltinProviders, registerCommunityProviders } from '@smelter/providers';
 
 // Bootstrap provider registry before any provider lookups
 registerBuiltinProviders();
@@ -55,9 +55,9 @@ registerCommunityProviders();
 
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { validationErrorHook } from './routes/openapi-defaults';
-import { TelegramAdapter, GitHubAdapter, DiscordAdapter, SlackAdapter } from '@archon/adapters';
-import { GiteaAdapter } from '@archon/adapters/community/forge/gitea';
-import { GitLabAdapter } from '@archon/adapters/community/forge/gitlab';
+import { TelegramAdapter, GitHubAdapter, DiscordAdapter, SlackAdapter } from '@smelter/adapters';
+import { GiteaAdapter } from '@smelter/adapters/community/forge/gitea';
+import { GitLabAdapter } from '@smelter/adapters/community/forge/gitlab';
 import { WebAdapter } from './adapters/web';
 import { MessagePersistence } from './adapters/web/persistence';
 import { SSETransport } from './adapters/web/transport';
@@ -73,14 +73,14 @@ import {
   loadConfig,
   logConfig,
   getPort,
-} from '@archon/core';
-import type { IPlatformAdapter } from '@archon/core';
+} from '@smelter/core';
+import type { IPlatformAdapter } from '@smelter/core';
 import {
   createLogger,
-  logArchonPaths,
+  logSmelterPaths,
   validateAppDefaultsPaths,
   shutdownTelemetry,
-} from '@archon/paths';
+} from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -173,7 +173,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
           'Or set CODEX_ID_TOKEN + CODEX_ACCESS_TOKEN in .env',
           'See .env.example for all options',
         ],
-        envFile: BUNDLED_IS_BINARY ? getArchonEnvPath() : envPath,
+        envFile: BUNDLED_IS_BINARY ? getSmelterEnvPath() : envPath,
       },
       'no_ai_credentials'
     );
@@ -215,13 +215,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
   // Per CLAUDE.md "No Autonomous Lifecycle Mutation Across Process Boundaries":
   // surface ambiguous state to users and provide a one-click action instead.
   // Users transition a stuck `running` row via the per-row Cancel/Abandon
-  // buttons in the Web UI dashboard, or `archon workflow abandon <run-id>`.
-  // (`archon workflow cleanup` is a separate command that deletes OLD terminal
+  // buttons in the Web UI dashboard, or `smelter workflow abandon <run-id>`.
+  // (`smelter workflow cleanup` is a separate command that deletes OLD terminal
   // rows for disk hygiene — it does not handle stuck `running` rows.)
   // See #1216.
 
-  // Log Archon paths configuration
-  logArchonPaths();
+  // Log Smelter paths configuration
+  logSmelterPaths();
 
   // Validate app defaults paths (non-blocking, just logs warnings)
   await validateAppDefaultsPaths();
@@ -387,7 +387,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
 
       // Don't let a Discord login failure (bad token, missing privileged
       // intents, etc.) bring down the whole server — users running
-      // `archon serve` for the web UI shouldn't lose it because of an
+      // `smelter serve` for the web UI shouldn't lose it because of an
       // unrelated bot misconfiguration. See #1365.
       try {
         await discord.start();
@@ -708,7 +708,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
  * Helps diagnose expired tokens or missing auth before workflows fail.
  */
 async function checkGhAuth(): Promise<void> {
-  const { execFileAsync } = await import('@archon/git');
+  const { execFileAsync } = await import('@smelter/git');
   try {
     await execFileAsync('gh', ['auth', 'status'], { timeout: 10_000 });
     getLog().info('gh_auth.status_ok');

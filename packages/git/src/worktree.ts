@@ -1,6 +1,6 @@
 import { readFile, access } from 'fs/promises';
 import { join, resolve } from 'path';
-import { createLogger, getArchonWorkspacesPath, getProjectWorktreesPath } from '@archon/paths';
+import { createLogger, getSmelterWorkspacesPath, getProjectWorktreesPath } from '@smelter/paths';
 import { execFileAsync } from './exec';
 import type { RepoPath, BranchName, WorktreePath, WorktreeInfo } from './types';
 import { toRepoPath, toBranchName, toWorktreePath } from './types';
@@ -16,10 +16,10 @@ function getLog(): ReturnType<typeof createLogger> {
  * Layout of a worktree base relative to the repository.
  *
  * Two layouts only — worktrees live either co-located with the repo (opt-in)
- * or inside the user's archon workspace area (default for every repo):
+ * or inside the user's smelter workspace area (default for every repo):
  *
  * - `repo-local`       — `<repoRoot>/<override.repoLocal>/`  (opt-in per repo config)
- * - `workspace-scoped` — `~/.archon/workspaces/<owner>/<repo>/worktrees/`  (default)
+ * - `workspace-scoped` — `~/.smelter/workspaces/<owner>/<repo>/worktrees/`  (default)
  *
  * In both layouts the base already includes all repo context, so callers append
  * only the branch name to compose the final worktree path — there is no layout
@@ -40,11 +40,11 @@ export interface WorktreeBaseOverride {
 }
 
 /**
- * Resolve the `{ owner, repo }` identity used to scope archon-managed worktrees.
+ * Resolve the `{ owner, repo }` identity used to scope smelter-managed worktrees.
  *
  * Precedence:
  *   1. Explicit `codebaseName` in `owner/repo` format (from the database / web UI)
- *   2. Path segments when `repoPath` is already under `~/.archon/workspaces/owner/repo/`
+ *   2. Path segments when `repoPath` is already under `~/.smelter/workspaces/owner/repo/`
  *   3. Last two path segments of `repoPath` (works for any local checkout)
  *
  * The third fallback is what lets non-cloned / locally-registered repos still
@@ -62,7 +62,7 @@ function resolveOwnerRepo(
     }
     getLog().warn({ codebaseName }, 'worktree.invalid_codebase_name_format');
   }
-  const workspacesPath = getArchonWorkspacesPath();
+  const workspacesPath = getSmelterWorkspacesPath();
   if (repoPath.startsWith(workspacesPath)) {
     const relative = repoPath.substring(workspacesPath.length + 1);
     const parts = relative.split(/[/\\]/).filter(p => p.length > 0);
@@ -81,12 +81,12 @@ function resolveOwnerRepo(
  *
  * Resolution (highest to lowest priority):
  *   1. `override.repoLocal` → `<repoRoot>/<repoLocal>/` (layout: `repo-local`)
- *   2. Otherwise             → `~/.archon/workspaces/<owner>/<repo>/worktrees/`
+ *   2. Otherwise             → `~/.smelter/workspaces/<owner>/<repo>/worktrees/`
  *                              (layout: `workspace-scoped`)
  *
  * The `<owner>/<repo>` identity is resolved via `resolveOwnerRepo()` — see its
  * docstring for the precedence. Every repo ends up with a stable workspace-scoped
- * base; there is no `~/.archon/worktrees/owner/repo/` fallback layout.
+ * base; there is no `~/.smelter/worktrees/owner/repo/` fallback layout.
  */
 export function getWorktreeBase(
   repoPath: RepoPath,
@@ -317,7 +317,7 @@ export async function getCanonicalRepoPath(path: string): Promise<RepoPath> {
  * should register codebases with consistent path forms.
  *
  * Error classification (surfaced via `classifyIsolationError` in
- * `@archon/isolation/errors.ts`):
+ * `@smelter/isolation/errors.ts`):
  *   - "path contains a full git checkout" → EISDIR
  *   - "Cannot verify worktree ownership" → ENOENT / EACCES / EIO
  *   - "not a git-worktree reference" → submodule pointer or malformed

@@ -30,6 +30,15 @@ describe('buildRoutingRulesWithProject', () => {
 
     expect(rules).toContain('NO knowledge of the conversation history');
   });
+
+  test('rules do not require workflow keyword for routing', () => {
+    const rules = buildRoutingRulesWithProject();
+
+    expect(rules).toContain('Do NOT require the user to say "workflow", "run", or a slash command');
+    expect(rules).toContain('Infer from natural language intent');
+    expect(rules).toContain('even when they do not mention workflows');
+    expect(rules).toContain('unclear whether they want action now');
+  });
 });
 
 describe('formatWorkflowContextSection', () => {

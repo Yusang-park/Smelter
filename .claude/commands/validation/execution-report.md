@@ -63,7 +63,7 @@ List anything from the plan that was not implemented:
 - [what was skipped]
 - Reason: [why it was skipped]
 
-### Archon-Specific Observations
+### Smelter-Specific Observations
 
 - Package boundaries respected: [yes/no — any cross-package concerns?]
 - Mock isolation: [any new mock.module() calls? Do they need separate test batches?]

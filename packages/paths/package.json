@@ -1,5 +1,5 @@
 {
-  "name": "@archon/paths",
+  "name": "@smelter/paths",
   "version": "0.3.10",
   "type": "module",
   "main": "./src/index.ts",

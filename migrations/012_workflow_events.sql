@@ -1,6 +1,6 @@
 -- Workflow events - lean UI-relevant events for observability
 -- Stores step transitions, parallel agent status, artifacts, errors.
--- Verbose assistant/tool content stays in JSONL logs at {cwd}/.archon/logs/{runId}.jsonl
+-- Verbose assistant/tool content stays in JSONL logs at {cwd}/.smelter/logs/{runId}.jsonl
 
 CREATE TABLE IF NOT EXISTS remote_agent_workflow_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

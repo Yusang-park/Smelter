@@ -16,12 +16,12 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      ARCHON_DOCKER: "true"
+      SMELTER_DOCKER: "true"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
-      - ${ARCHON_DATA:-smelter_data}:/.archon
-      - ${ARCHON_USER_HOME:-smelter_user_home}:/home/appuser
+      - ${SMELTER_DATA:-smelter_data}:/.smelter
+      - ${SMELTER_USER_HOME:-smelter_user_home}:/home/appuser
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/api/health"]
       interval: 30s

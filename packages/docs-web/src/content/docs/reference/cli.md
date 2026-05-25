@@ -1,6 +1,6 @@
 ---
 title: CLI Reference
-description: Complete reference for the Archon command-line interface and all available commands.
+description: Complete reference for the Smelter command-line interface and all available commands.
 category: reference
 area: cli
 audience: [user]
@@ -15,8 +15,8 @@ Run AI-powered workflows from your terminal.
 
 1. Clone the repository and install dependencies:
    ```bash
-   git clone https://github.com/coleam00/Archon
-   cd Archon
+   git clone https://github.com/coleam00/Smelter
+   cd Smelter
    bun install
    ```
 
@@ -25,29 +25,29 @@ Run AI-powered workflows from your terminal.
    cd packages/cli
    bun link
    ```
-   This creates an `archon` command available from anywhere.
+   This creates an `smelter` command available from anywhere.
 
 3. Authenticate with Claude:
    ```bash
    claude /login
    ```
 
-**Note:** Examples below use `archon` (after `bun link`). If you skip step 2, use `bun run cli` from the repo directory instead.
+**Note:** Examples below use `smelter` (after `bun link`). If you skip step 2, use `bun run cli` from the repo directory instead.
 
 ## Quick Start
 
 ```bash
 # List available workflows (requires git repository)
-archon workflow list --cwd /path/to/repo
+smelter workflow list --cwd /path/to/repo
 
 # Run a workflow (auto-creates isolated worktree by default)
-archon workflow run assist --cwd /path/to/repo "Explain the authentication flow"
+smelter workflow run assist --cwd /path/to/repo "Explain the authentication flow"
 
 # Explicit branch name for the worktree
-archon workflow run plan --cwd /path/to/repo --branch feature-auth "Add OAuth support"
+smelter workflow run plan --cwd /path/to/repo --branch feature-auth "Add OAuth support"
 
 # Opt out of isolation (run in live checkout)
-archon workflow run assist --cwd /path/to/repo --no-worktree "Quick question"
+smelter workflow run assist --cwd /path/to/repo --no-worktree "Quick question"
 ```
 
 **Note:** Workflow and isolation commands require running from within a git repository. Running from subdirectories automatically resolves to the repo root. The `version`, `help`, `chat`, `setup`, `serve`, and `doctor` commands work anywhere.
@@ -59,7 +59,7 @@ archon workflow run assist --cwd /path/to/repo --no-worktree "Quick question"
 Send a message to the orchestrator for a one-off AI interaction.
 
 ```bash
-archon chat "What does the orchestrator do?"
+smelter chat "What does the orchestrator do?"
 ```
 
 ### `setup`
@@ -67,47 +67,47 @@ archon chat "What does the orchestrator do?"
 Interactive setup wizard for credentials and configuration.
 
 ```bash
-archon setup                      # writes ~/.archon/.env (home scope, default)
-archon setup --scope project      # writes <cwd>/.archon/.env instead
-archon setup --force              # overwrite instead of merging (backup still written)
-archon setup --spawn              # open in a new terminal window
+smelter setup                      # writes ~/.smelter/.env (home scope, default)
+smelter setup --scope project      # writes <cwd>/.smelter/.env instead
+smelter setup --force              # overwrite instead of merging (backup still written)
+smelter setup --spawn              # open in a new terminal window
 ```
 
 **Flags:**
 
 | Flag | Effect |
 |------|--------|
-| `--scope home` | Write to `~/.archon/.env` (default). Applies to every project. |
-| `--scope project` | Write to `<cwd>/.archon/.env`. Overrides user scope for this repo only. |
+| `--scope home` | Write to `~/.smelter/.env` (default). Applies to every project. |
+| `--scope project` | Write to `<cwd>/.smelter/.env`. Overrides user scope for this repo only. |
 | `--force` | Overwrite the target file wholesale instead of merging. A timestamped backup is still written. |
 | `--spawn` | Open setup wizard in a new terminal window. |
 
-**Write safety**: `archon setup` never writes to `<cwd>/.env` — that file belongs to you. The wizard always targets one archon-owned file chosen by `--scope`, merges into existing content (so user-added keys survive), and writes a timestamped backup before every rewrite (e.g. `~/.archon/.env.archon-backup-2026-04-20T09-28-11-000Z`).
+**Write safety**: `smelter setup` never writes to `<cwd>/.env` — that file belongs to you. The wizard always targets one smelter-owned file chosen by `--scope`, merges into existing content (so user-added keys survive), and writes a timestamped backup before every rewrite (e.g. `~/.smelter/.env.smelter-backup-2026-04-20T09-28-11-000Z`).
 
 ### `doctor`
 
-Verify your Archon setup. Runs a checklist of common failure points: Claude binary spawn, gh CLI auth, database reachability, workspace writability, bundled defaults, and adapter token pings (Slack/Telegram, best-effort).
+Verify your Smelter setup. Runs a checklist of common failure points: Claude binary spawn, gh CLI auth, database reachability, workspace writability, bundled defaults, and adapter token pings (Slack/Telegram, best-effort).
 
 ```bash
-archon doctor
+smelter doctor
 ```
 
 Exit code 0 if all checks pass or are skipped; 1 if any critical check fails. Adapter pings degrade to `skip` on network errors — a flaky connection does not flip the result red.
 
-Also runs automatically at the end of `archon setup` (optional).
+Also runs automatically at the end of `smelter setup` (optional).
 
 ### `workflow list`
 
 List workflows available in target directory.
 
 ```bash
-archon workflow list --cwd /path/to/repo
+smelter workflow list --cwd /path/to/repo
 
 # Machine-readable output for scripting
-archon workflow list --cwd /path/to/repo --json
+smelter workflow list --cwd /path/to/repo --json
 ```
 
-Discovers workflows from `.archon/workflows/` (recursive), `~/.archon/workflows/` (global, home-scoped), and bundled defaults. See [Global Workflows](/guides/global-workflows/).
+Discovers workflows from `.smelter/workflows/` (recursive), `~/.smelter/workflows/` (global, home-scoped), and bundled defaults. See [Global Workflows](/guides/global-workflows/).
 
 **Flags:**
 
@@ -124,10 +124,10 @@ Run a workflow with an optional user message.
 
 ```bash
 # Basic usage
-archon workflow run assist --cwd /path/to/repo "What does this function do?"
+smelter workflow run assist --cwd /path/to/repo "What does this function do?"
 
 # With isolation
-archon workflow run plan --cwd /path/to/repo --branch feature-x "Add caching"
+smelter workflow run plan --cwd /path/to/repo --branch feature-x "Add caching"
 ```
 
 Progress events (node start/complete/fail/skip, approval gates) are written to stderr during execution.
@@ -145,11 +145,11 @@ Progress events (node start/complete/fail/skip, approval gates) are written to s
 | `--verbose`, `-v` | Also show tool-level events (tool name and duration) |
 
 **Default (no flags):**
-- Creates worktree with auto-generated branch (`archon/task-<workflow>-<timestamp>`)
+- Creates worktree with auto-generated branch (`smelter/task-<workflow>-<timestamp>`)
 - Auto-registers codebase if in a git repo
 
 **With `--branch`:**
-- Creates/reuses worktree at `~/.archon/workspaces/<owner>/<repo>/worktrees/<branch>/`
+- Creates/reuses worktree at `~/.smelter/workspaces/<owner>/<repo>/worktrees/<branch>/`
 - Reuses existing worktree if healthy
 
 **With `--no-worktree`:**
@@ -159,15 +159,15 @@ Progress events (node start/complete/fail/skip, approval gates) are written to s
 **Name Matching:**
 
 Workflow names are resolved using a 4-tier fallback hierarchy. This applies consistently across the CLI and all chat platforms (Slack, Telegram, Web, GitHub, Discord):
-1. **Exact match** - `archon-assist` matches `archon-assist`
-2. **Case-insensitive** - `Archon-Assist` matches `archon-assist`
-3. **Suffix match** - `assist` matches `archon-assist` (looks for `-assist` suffix)
-4. **Substring match** - `smart` matches `archon-smart-pr-review`
+1. **Exact match** - `smelter-assist` matches `smelter-assist`
+2. **Case-insensitive** - `Smelter-Assist` matches `smelter-assist`
+3. **Suffix match** - `assist` matches `smelter-assist` (looks for `-assist` suffix)
+4. **Substring match** - `smart` matches `smelter-smart-pr-review`
 
 If multiple workflows match at the same tier, an error lists the candidates:
 ```
 Ambiguous workflow 'review'. Did you mean:
-  - archon-review
+  - smelter-review
   - custom-review
 ```
 
@@ -176,8 +176,8 @@ Ambiguous workflow 'review'. Did you mean:
 Show all running workflow runs across all worktrees.
 
 ```bash
-archon workflow status
-archon workflow status --json
+smelter workflow status
+smelter workflow status --json
 ```
 
 ### `workflow resume`
@@ -185,7 +185,7 @@ archon workflow status --json
 Resume a failed workflow run. Re-executes the workflow, automatically skipping nodes that completed in the prior run.
 
 ```bash
-archon workflow resume <run-id>
+smelter workflow resume <run-id>
 ```
 
 ### `workflow abandon`
@@ -193,7 +193,7 @@ archon workflow resume <run-id>
 Discard a workflow run (marks it as `cancelled`). Use this to unblock a worktree when you don't want to resume — the path lock is released immediately so a new workflow can start.
 
 ```bash
-archon workflow abandon <run-id>
+smelter workflow abandon <run-id>
 ```
 
 ### `workflow approve`
@@ -201,9 +201,9 @@ archon workflow abandon <run-id>
 Approve a paused workflow run at an interactive approval gate. Optionally provide a comment that is available to the workflow via `$LOOP_USER_INPUT`.
 
 ```bash
-archon workflow approve <run-id>
-archon workflow approve <run-id> "Looks good, proceed"
-archon workflow approve <run-id> --comment "Looks good, proceed"
+smelter workflow approve <run-id>
+smelter workflow approve <run-id> "Looks good, proceed"
+smelter workflow approve <run-id> --comment "Looks good, proceed"
 ```
 
 ### `workflow reject`
@@ -211,8 +211,8 @@ archon workflow approve <run-id> --comment "Looks good, proceed"
 Reject a paused workflow run at an approval gate. Optionally provide a reason that is available to the workflow via `$REJECTION_REASON`.
 
 ```bash
-archon workflow reject <run-id>
-archon workflow reject <run-id> --reason "Needs more tests"
+smelter workflow reject <run-id>
+smelter workflow reject <run-id> --reason "Needs more tests"
 ```
 
 ### `workflow cleanup`
@@ -220,8 +220,8 @@ archon workflow reject <run-id> --reason "Needs more tests"
 Delete old terminal workflow run records from the database.
 
 ```bash
-archon workflow cleanup        # Default: 7 days
-archon workflow cleanup 30     # Custom threshold
+smelter workflow cleanup        # Default: 7 days
+smelter workflow cleanup 30     # Custom threshold
 ```
 
 ### `workflow event emit`
@@ -229,7 +229,7 @@ archon workflow cleanup 30     # Custom threshold
 Emit a workflow event directly to the database. Primarily used inside workflow loop prompts to record story-level lifecycle events.
 
 ```bash
-archon workflow event emit --run-id <uuid> --type <event-type> [--data <json>]
+smelter workflow event emit --run-id <uuid> --type <event-type> [--data <json>]
 ```
 
 **Flags:**
@@ -247,7 +247,7 @@ Exit code: 0 on success, 1 when `--run-id`, `--type` is missing, or `--type` is 
 Show all active worktree environments.
 
 ```bash
-archon isolation list
+smelter isolation list
 ```
 
 Groups by codebase, shows branch, workflow type, platform, and days since activity.
@@ -258,16 +258,16 @@ Remove stale environments.
 
 ```bash
 # Default: 7 days
-archon isolation cleanup
+smelter isolation cleanup
 
 # Custom threshold
-archon isolation cleanup 14
+smelter isolation cleanup 14
 
 # Remove environments with branches merged into main (also deletes remote branches)
-archon isolation cleanup --merged
+smelter isolation cleanup --merged
 
 # Also remove environments whose PRs were closed without merging
-archon isolation cleanup --merged --include-closed
+smelter isolation cleanup --merged --include-closed
 ```
 
 Merge detection uses three signals in order: git branch ancestry (fast-forward / merge commit),
@@ -282,9 +282,9 @@ those up as well. Branches with an **OPEN** PR are always skipped.
 Validate workflow YAML definitions and their referenced resources (command files, MCP configs, skill directories).
 
 ```bash
-archon validate workflows                 # Validate all workflows
-archon validate workflows my-workflow     # Validate a single workflow
-archon validate workflows my-workflow --json  # Machine-readable JSON output
+smelter validate workflows                 # Validate all workflows
+smelter validate workflows my-workflow     # Validate a single workflow
+smelter validate workflows my-workflow --json  # Machine-readable JSON output
 ```
 
 Checks: YAML syntax, DAG structure (cycles, dependency refs), command file existence, MCP config files, skill directories, provider compatibility. Returns actionable error messages with "did you mean?" suggestions for typos.
@@ -293,11 +293,11 @@ Exit code: 0 = all valid, 1 = errors found.
 
 ### `validate commands [name]`
 
-Validate command files (.md) in `.archon/commands/`.
+Validate command files (.md) in `.smelter/commands/`.
 
 ```bash
-archon validate commands                  # Validate all commands
-archon validate commands my-command       # Validate a single command
+smelter validate commands                  # Validate all commands
+smelter validate commands my-command       # Validate a single command
 ```
 
 Checks: file exists, non-empty, valid name.
@@ -309,8 +309,8 @@ Exit code: 0 = all valid, 1 = errors found.
 Remove a branch's worktree, local branch, and remote branch, and mark its isolation environment as destroyed.
 
 ```bash
-archon complete feature-auth
-archon complete feature-auth --force  # bypass uncommitted-changes check
+smelter complete feature-auth
+smelter complete feature-auth --force  # bypass uncommitted-changes check
 ```
 
 **Flags:**
@@ -329,13 +329,13 @@ Start the web UI server. On first run, downloads a pre-built web UI tarball from
 
 ```bash
 # Start web UI server (downloads on first run)
-archon serve
+smelter serve
 
 # Override the default port
-archon serve --port 4000
+smelter serve --port 4000
 
 # Download the web UI without starting the server
-archon serve --download-only
+smelter serve --download-only
 ```
 
 **Flags:**
@@ -345,28 +345,28 @@ archon serve --download-only
 | `--port <port>` | Override server port (default: 3090, range: 1–65535) |
 | `--download-only` | Download and cache the web UI, then exit without starting the server |
 
-The cached web UI is stored at `~/.archon/web-dist/<version>/`. Each version is cached independently, so upgrading the binary automatically downloads the matching web UI.
+The cached web UI is stored at `~/.smelter/web-dist/<version>/`. Each version is cached independently, so upgrading the binary automatically downloads the matching web UI.
 
 ### `skill install [path]`
 
-Install the bundled Archon skill files into a project's `.claude/skills/archon/` directory. Always overwrites existing files to ensure the latest version shipped with the current Archon binary is installed.
+Install the bundled Smelter skill files into a project's `.claude/skills/smelter/` directory. Always overwrites existing files to ensure the latest version shipped with the current Smelter binary is installed.
 
 ```bash
 # Install into the current directory
-archon skill install
+smelter skill install
 
 # Install into a specific project
-archon skill install /path/to/project
+smelter skill install /path/to/project
 ```
 
-The Archon skill teaches Claude Code how to work with Archon workflows, commands, and project conventions. It is also installed automatically during `archon setup`.
+The Smelter skill teaches Claude Code how to work with Smelter workflows, commands, and project conventions. It is also installed automatically during `smelter setup`.
 
 ### `version`
 
 Show version, build type, and database info.
 
 ```bash
-archon version
+smelter version
 ```
 
 ## Global Options
@@ -390,23 +390,23 @@ Running from a subdirectory (e.g., `/repo/packages/cli`) automatically resolves 
 
 When using `--branch`, workflows run inside the worktree directory.
 
-> **Commands and workflows are loaded from the working directory at runtime.** The CLI reads directly from disk, so it picks up uncommitted changes immediately. This is different from the server (Telegram/Slack/GitHub), which reads from the workspace clone at `~/.archon/workspaces/` -- that clone only syncs from the remote before worktree creation, so changes must be pushed to take effect there.
+> **Commands and workflows are loaded from the working directory at runtime.** The CLI reads directly from disk, so it picks up uncommitted changes immediately. This is different from the server (Telegram/Slack/GitHub), which reads from the workspace clone at `~/.smelter/workspaces/` -- that clone only syncs from the remote before worktree creation, so changes must be pushed to take effect there.
 
 ## Environment
 
-At startup, the CLI strips all Bun-auto-loaded CWD `.env` keys and nested Claude Code session markers from `process.env`, then loads two archon-owned env files with `override: true`. Keys in archon-owned files pass through to AI subprocesses — no allowlist filtering.
+At startup, the CLI strips all Bun-auto-loaded CWD `.env` keys and nested Claude Code session markers from `process.env`, then loads two smelter-owned env files with `override: true`. Keys in smelter-owned files pass through to AI subprocesses — no allowlist filtering.
 
 On startup, the CLI:
-1. Strips `<cwd>/.env*` keys + `CLAUDECODE` markers from `process.env` (via `stripCwdEnv`). Emits `[archon] stripped N keys from <cwd> (...)` when N > 0.
-2. Loads `~/.archon/.env` (user scope). Emits `[archon] loaded N keys from ~/.archon/.env` when N > 0.
-3. Loads `<cwd>/.archon/.env` (project scope, overrides user scope). Emits `[archon] loaded N keys from <path> (repo scope, overrides user scope)` when N > 0.
+1. Strips `<cwd>/.env*` keys + `CLAUDECODE` markers from `process.env` (via `stripCwdEnv`). Emits `[smelter] stripped N keys from <cwd> (...)` when N > 0.
+2. Loads `~/.smelter/.env` (user scope). Emits `[smelter] loaded N keys from ~/.smelter/.env` when N > 0.
+3. Loads `<cwd>/.smelter/.env` (project scope, overrides user scope). Emits `[smelter] loaded N keys from <path> (repo scope, overrides user scope)` when N > 0.
 4. Auto-enables global Claude auth if no explicit tokens are set.
 
 `<cwd>/.env` is never loaded — it belongs to the target project. See [Configuration Reference: `.env` File Locations](/reference/configuration/#env-file-locations) for the full three-path model.
 
 ## Database
 
-- **Without `DATABASE_URL` (default):** Uses SQLite at `~/.archon/archon.db` -- zero setup, auto-initialized on first run
+- **Without `DATABASE_URL` (default):** Uses SQLite at `~/.smelter/smelter.db` -- zero setup, auto-initialized on first run
 - **With `DATABASE_URL`:** Uses PostgreSQL (optional, for cloud/advanced deployments)
 
 Both work transparently. Most users never need to configure a database.
@@ -415,33 +415,33 @@ Both work transparently. Most users never need to configure a database.
 
 ```bash
 # One-off AI chat
-archon chat "How does error handling work in this codebase?"
+smelter chat "How does error handling work in this codebase?"
 
 # Interactive setup wizard
-archon setup
+smelter setup
 
-# Quick question (auto-isolated in archon/task-assist-<timestamp>)
-archon workflow run assist --cwd ~/projects/my-app "How does error handling work here?"
+# Quick question (auto-isolated in smelter/task-assist-<timestamp>)
+smelter workflow run assist --cwd ~/projects/my-app "How does error handling work here?"
 
 # Quick question without isolation
-archon workflow run assist --cwd ~/projects/my-app --no-worktree "How does error handling work here?"
+smelter workflow run assist --cwd ~/projects/my-app --no-worktree "How does error handling work here?"
 
 # Plan a feature (auto-isolated)
-archon workflow run plan --cwd ~/projects/my-app "Add rate limiting to the API"
+smelter workflow run plan --cwd ~/projects/my-app "Add rate limiting to the API"
 
 # Implement with explicit branch name
-archon workflow run implement --cwd ~/projects/my-app --branch feature-rate-limit "Add rate limiting"
+smelter workflow run implement --cwd ~/projects/my-app --branch feature-rate-limit "Add rate limiting"
 
 # Branch from a specific source branch instead of auto-detected default
-archon workflow run implement --cwd ~/projects/my-app --branch test-adapters --from feature/extract-adapters "Test adapter changes"
+smelter workflow run implement --cwd ~/projects/my-app --branch test-adapters --from feature/extract-adapters "Test adapter changes"
 
 # Approve or reject a paused workflow
-archon workflow approve <run-id> "Ship it"
-archon workflow reject <run-id> --reason "Missing test coverage"
+smelter workflow approve <run-id> "Ship it"
+smelter workflow reject <run-id> --reason "Missing test coverage"
 
 # Check worktrees after work session
-archon isolation list
+smelter isolation list
 
 # Clean up old worktrees
-archon isolation cleanup
+smelter isolation cleanup
 ```

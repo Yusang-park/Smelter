@@ -17,7 +17,7 @@ GitHub, Linear, Postgres, etc. — without over-provisioning.
 
 ## Quick Start
 
-1. Create an MCP config file (e.g., `.archon/mcp/github.json`):
+1. Create an MCP config file (e.g., `.smelter/mcp/github.json`):
 
 ```json
 {
@@ -39,7 +39,7 @@ description: Triage GitHub issues using MCP
 nodes:
   - id: triage
     prompt: "List open issues and label them by priority"
-    mcp: .archon/mcp/github.json
+    mcp: .smelter/mcp/github.json
 ```
 
 That's it. The MCP server starts when the node runs, its tools become available
@@ -185,7 +185,7 @@ and have no access to built-in tools (Bash, Read, Write, etc.):
 nodes:
   - id: query-db
     prompt: "Find all users who signed up in the last 24 hours"
-    mcp: .archon/mcp/postgres.json
+    mcp: .smelter/mcp/postgres.json
     allowed_tools: []
 ```
 
@@ -228,7 +228,7 @@ nodes:
       - P1: Broken core functionality
       - P2: Important but not blocking
       - P3: Nice to have
-    mcp: .archon/mcp/github.json
+    mcp: .smelter/mcp/github.json
 ```
 
 ### Database-Informed Code Changes
@@ -239,7 +239,7 @@ description: Build features with live database context
 nodes:
   - id: inspect-schema
     prompt: "List all tables and their columns in the database"
-    mcp: .archon/mcp/postgres.json
+    mcp: .smelter/mcp/postgres.json
     allowed_tools: []
 
   - id: implement
@@ -255,7 +255,7 @@ description: Fix a bug using GitHub issues, database, and code
 nodes:
   - id: fetch-context
     prompt: "Get issue details and related database schema"
-    mcp: .archon/mcp/all-services.json
+    mcp: .smelter/mcp/all-services.json
     allowed_tools: []
 
   - id: fix
@@ -265,7 +265,7 @@ nodes:
   - id: verify
     prompt: "Run the relevant query to verify the fix"
     depends_on: [fix]
-    mcp: .archon/mcp/postgres.json
+    mcp: .smelter/mcp/postgres.json
     allowed_tools: []
 ```
 
@@ -278,7 +278,7 @@ services but cannot modify the codebase:
 nodes:
   - id: analyze
     prompt: "Analyze our GitHub PR review patterns"
-    mcp: .archon/mcp/github.json
+    mcp: .smelter/mcp/github.json
     hooks:
       PreToolUse:
         - matcher: "Write|Edit|Bash"
@@ -291,7 +291,7 @@ nodes:
 
 ## Push Notifications (ntfy)
 
-Some built-in workflows (like `archon-smart-pr-review`) include an optional
+Some built-in workflows (like `smelter-smart-pr-review`) include an optional
 notification node that sends a push notification to your phone when the workflow
 completes. It's gated behind a `when:` condition — if you haven't configured ntfy,
 the node is silently skipped.
@@ -299,9 +299,9 @@ the node is silently skipped.
 ### Setup (30 seconds)
 
 1. Install the [ntfy app](https://ntfy.sh/) on your phone (iOS / Android)
-2. Open the app, tap "+", subscribe to a topic name (e.g. `archon-yourname-a8f3x`).
+2. Open the app, tap "+", subscribe to a topic name (e.g. `smelter-yourname-a8f3x`).
    Treat the topic name like a password — anyone who knows it can send you notifications.
-3. Create `.archon/mcp/ntfy.json` in your repo:
+3. Create `.smelter/mcp/ntfy.json` in your repo:
 
 ```json
 {
@@ -309,13 +309,13 @@ the node is silently skipped.
     "command": "npx",
     "args": ["-y", "ntfy-me-mcp"],
     "env": {
-      "NTFY_TOPIC": "archon-yourname-a8f3x"
+      "NTFY_TOPIC": "smelter-yourname-a8f3x"
     }
   }
 }
 ```
 
-That's it. The file is gitignored (`.archon/mcp/` is in `.gitignore`), so your
+That's it. The file is gitignored (`.smelter/mcp/` is in `.gitignore`), so your
 topic stays local.
 
 ### How it works in workflows
@@ -324,20 +324,20 @@ Workflows use a bash node to check if the config file exists:
 
 ```yaml
   - id: check-ntfy
-    bash: "test -f .archon/mcp/ntfy.json && echo 'true' || echo 'false'"
+    bash: "test -f .smelter/mcp/ntfy.json && echo 'true' || echo 'false'"
     depends_on: [last-work-node]
 
   - id: notify
     depends_on: [check-ntfy, last-work-node]
     when: "$check-ntfy.output == 'true'"
-    mcp: .archon/mcp/ntfy.json
+    mcp: .smelter/mcp/ntfy.json
     allowed_tools: []
     prompt: |
       Send a push notification summarizing what was accomplished.
       Keep it under 2 sentences. Use priority 3.
 ```
 
-If `.archon/mcp/ntfy.json` doesn't exist, `check-ntfy` outputs `false`, the
+If `.smelter/mcp/ntfy.json` doesn't exist, `check-ntfy` outputs `false`, the
 `when:` condition skips the notify node, and the workflow runs exactly as before.
 
 ### Adding notifications to your own workflows
@@ -350,10 +350,10 @@ to generate a meaningful summary.
 
 ```bash
 # Verify your phone receives notifications
-curl -d "Hello from Archon" ntfy.sh/YOUR_TOPIC_NAME
+curl -d "Hello from Smelter" ntfy.sh/YOUR_TOPIC_NAME
 
 # Run a workflow with notifications
-bun run cli workflow run archon-smart-pr-review "Review PR #123"
+bun run cli workflow run smelter-smart-pr-review "Review PR #123"
 ```
 
 ## MCP vs allowed_tools/denied_tools vs hooks
@@ -382,7 +382,7 @@ bun run cli workflow run archon-smart-pr-review "Review PR #123"
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | `MCP config file not found` | Wrong path or file doesn't exist | Check the path relative to your repo root (cwd) |
-| `MCP config file is not valid JSON` | Syntax error in JSON | Validate with `cat .archon/mcp/config.json \| python3 -m json.tool` |
+| `MCP config file is not valid JSON` | Syntax error in JSON | Validate with `cat .smelter/mcp/config.json \| python3 -m json.tool` |
 | `MCP config must be a JSON object` | Top-level value is array or string | Wrap in `{ "server-name": { ... } }` |
 | `undefined env vars: VAR_NAME` | Environment variable not set | Export the variable or add it to your `.env` |
 | `MCP server connection failed` | Server process crashed or URL unreachable | Check command/URL, test the server standalone |

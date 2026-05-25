@@ -1,6 +1,6 @@
 /**
  * Shape of a parsed Pi model reference.
- * Pi's catalog is large and fast-moving, so Archon does syntactic validation
+ * Pi's catalog is large and fast-moving, so Smelter does syntactic validation
  * only at registration time and defers catalog lookup to `getModel()` at
  * query time.
  */

@@ -177,7 +177,7 @@ The prompt tells the agent it has no memory and must bootstrap from files.
 ```
 
 **When to use:** Multi-story implementation, long-running tasks where context
-window exhaustion is a risk. The agent reads `.archon/ralph/*/prd.json` or
+window exhaustion is a risk. The agent reads `.smelter/ralph/*/prd.json` or
 similar tracking files to know what's done and what's next.
 
 ### Retry-on-failure with `$LOOP_PREV_OUTPUT`

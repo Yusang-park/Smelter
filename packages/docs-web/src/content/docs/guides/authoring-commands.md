@@ -9,13 +9,13 @@ sidebar:
   order: 2
 ---
 
-This guide explains how to write effective commands for Archon's AI workflow system. Commands are the building blocks of workflows - each command is a prompt template that instructs the AI agent what to do.
+This guide explains how to write effective commands for Smelter's AI workflow system. Commands are the building blocks of workflows - each command is a prompt template that instructs the AI agent what to do.
 
 ## What is a Command?
 
-A command is a **markdown file** that serves as a detailed instruction set for an AI agent. When a workflow executes a step like `- command: investigate-issue`, Archon:
+A command is a **markdown file** that serves as a detailed instruction set for an AI agent. When a workflow executes a step like `- command: investigate-issue`, Smelter:
 
-1. Loads the command file from `.archon/commands/investigate-issue.md`
+1. Loads the command file from `.smelter/commands/investigate-issue.md`
 2. Substitutes variables like `$ARGUMENTS` with actual values
 3. Sends the entire document as a prompt to the AI
 4. The AI follows the instructions and produces output
@@ -26,9 +26,9 @@ A command is a **markdown file** that serves as a detailed instruction set for a
 
 ## File Format
 
-Commands live in `.archon/commands/` relative to the working directory and are loaded at runtime.
+Commands live in `.smelter/commands/` relative to the working directory and are loaded at runtime.
 
-> **CLI vs Server:** The CLI reads commands from wherever you run it (sees uncommitted changes). The server reads from `~/.archon/workspaces/owner/repo/`, which only syncs from the remote before worktree creation — so changes must be committed and pushed for the server to pick them up.
+> **CLI vs Server:** The CLI reads commands from wherever you run it (sees uncommitted changes). The server reads from `~/.smelter/workspaces/owner/repo/`, which only syncs from the remote before worktree creation — so changes must be committed and pushed for the server to pick them up.
 
 Commands use this structure:
 
@@ -221,7 +221,7 @@ End each phase with a checkpoint:
 
 ## Variable Substitution
 
-Archon replaces variables in command text before sending to the AI. The most commonly used variables in commands:
+Smelter replaces variables in command text before sending to the AI. The most commonly used variables in commands:
 
 | Variable | Value |
 |----------|-------|
@@ -258,10 +258,10 @@ This ensures the AI knows exactly what it's working with.
 
 ### Where Artifacts Live
 
-Artifacts are stored **outside the repository** in the Archon workspace directory. Use the `$ARTIFACTS_DIR` variable to reference the pre-created artifacts directory for each workflow run:
+Artifacts are stored **outside the repository** in the Smelter workspace directory. Use the `$ARTIFACTS_DIR` variable to reference the pre-created artifacts directory for each workflow run:
 
 ```
-~/.archon/workspaces/owner/repo/artifacts/runs/{workflow-id}/
+~/.smelter/workspaces/owner/repo/artifacts/runs/{workflow-id}/
 ```
 
 This keeps artifacts out of git and avoids polluting the working tree.

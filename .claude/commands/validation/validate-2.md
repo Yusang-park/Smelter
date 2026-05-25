@@ -3,10 +3,10 @@
 Run comprehensive end-to-end validation of the Remote Agentic Coding Platform including Docker, Test Adapter, Database, and **full GitHub workflow execution**.
 
 **The key test (Phase 8):** Creates a GitHub issue, then invokes the full workflow via issue comments:
-1. `@Archon /command-invoke prime` - Analyze codebase
-2. `@Archon /command-invoke plan-feature` - Create implementation plan
-3. `@Archon /command-invoke execute` - Implement changes and create PR
-4. (Phase 9) `@Archon /command-invoke review-pr` - Review the created PR
+1. `@Smelter /command-invoke prime` - Analyze codebase
+2. `@Smelter /command-invoke plan-feature` - Create implementation plan
+3. `@Smelter /command-invoke execute` - Implement changes and create PR
+4. (Phase 9) `@Smelter /command-invoke review-pr` - Review the created PR
 
 **Usage:**
 ```bash
@@ -26,7 +26,7 @@ Run comprehensive end-to-end validation of the Remote Agentic Coding Platform in
 
 **Updated for:**
 - Bun runtime (not npm)
-- Archon paths (`~/.archon/workspaces/owner/repo`)
+- Smelter paths (`~/.smelter/workspaces/owner/repo`)
 - 6 database tables (codebases, conversations, sessions, command_templates, isolation_environments, workflow_runs)
 - Worktree isolation with database tracking
 - Full GitHub workflow: Issue → Prime → Plan → Execute → PR → Review
@@ -85,10 +85,10 @@ PROJECT_ROOT="$(pwd)"
 export PROJECT_ROOT
 
 # Determine workspace path
-if [ -n "$ARCHON_HOME" ]; then
-  WORK_DIR="${ARCHON_HOME}/workspaces"
+if [ -n "$SMELTER_HOME" ]; then
+  WORK_DIR="${SMELTER_HOME}/workspaces"
 else
-  WORK_DIR="${HOME}/.archon/workspaces"
+  WORK_DIR="${HOME}/.smelter/workspaces"
 fi
 
 echo "Project root: ${PROJECT_ROOT}"
@@ -96,7 +96,7 @@ echo "Workspace directory: ${WORK_DIR}"
 
 # Remove previous test repositories
 rm -rf "${WORK_DIR}"/remote-coding-test-*
-rm -rf "${HOME}/.archon/worktrees"/remote-coding-test-*
+rm -rf "${HOME}/.smelter/worktrees"/remote-coding-test-*
 
 # Clean up test conversations from database
 if command -v psql &> /dev/null; then
@@ -190,13 +190,13 @@ node_modules
 .env*.local
 EOF
 
-# Create .archon/commands directory with test commands
-mkdir -p .archon/commands
+# Create .smelter/commands directory with test commands
+mkdir -p .smelter/commands
 
 # Copy commands from main project
-cp "${PROJECT_ROOT}/.archon/commands/prime.md" .archon/commands/ 2>/dev/null || \
-cp "${PROJECT_ROOT}/.claude/commands/core_piv_loop/prime.md" .archon/commands/prime.md 2>/dev/null || \
-cat > .archon/commands/prime.md << 'CMDEOF'
+cp "${PROJECT_ROOT}/.smelter/commands/prime.md" .smelter/commands/ 2>/dev/null || \
+cp "${PROJECT_ROOT}/.claude/commands/core_piv_loop/prime.md" .smelter/commands/prime.md 2>/dev/null || \
+cat > .smelter/commands/prime.md << 'CMDEOF'
 # Prime Command
 
 Analyze this codebase and provide a brief summary of:
@@ -207,9 +207,9 @@ Analyze this codebase and provide a brief summary of:
 Keep your response concise.
 CMDEOF
 
-cp "${PROJECT_ROOT}/.archon/commands/plan.md" .archon/commands/plan-feature.md 2>/dev/null || \
-cp "${PROJECT_ROOT}/.claude/commands/core_piv_loop/plan-feature.md" .archon/commands/plan-feature.md 2>/dev/null || \
-cat > .archon/commands/plan-feature.md << 'CMDEOF'
+cp "${PROJECT_ROOT}/.smelter/commands/plan.md" .smelter/commands/plan-feature.md 2>/dev/null || \
+cp "${PROJECT_ROOT}/.claude/commands/core_piv_loop/plan-feature.md" .smelter/commands/plan-feature.md 2>/dev/null || \
+cat > .smelter/commands/plan-feature.md << 'CMDEOF'
 # Plan Feature Command
 
 Create a simple implementation plan for:
@@ -222,8 +222,8 @@ Include:
 3. Validation approach
 CMDEOF
 
-cp "${PROJECT_ROOT}/.archon/commands/execute.md" .archon/commands/ 2>/dev/null || \
-cat > .archon/commands/execute.md << 'CMDEOF'
+cp "${PROJECT_ROOT}/.smelter/commands/execute.md" .smelter/commands/ 2>/dev/null || \
+cat > .smelter/commands/execute.md << 'CMDEOF'
 # Execute Command
 
 Implement the changes based on the previous plan.
@@ -232,7 +232,7 @@ CMDEOF
 
 # Commit
 git add .
-git commit -m "Initial test repository setup with archon commands"
+git commit -m "Initial test repository setup with smelter commands"
 
 echo "Repository structure created"
 ```
@@ -305,7 +305,7 @@ docker compose logs app-with-db 2>&1 | tail -30
 ```
 
 **Check for:**
-- `[Archon] Paths configured:`
+- `[Smelter] Paths configured:`
 - `[App] Adapters initialized`
 - `[App] Server listening on port 3090`
 - `[ConversationLock] Initialized`
@@ -405,7 +405,7 @@ curl -X POST http://localhost:3000/test/message \
 sleep 2
 
 CWD_MSG=$(curl -s http://localhost:3000/test/messages/test-clone | jq -r '.messages[-1].message')
-echo "$CWD_MSG" | grep -q "archon\|workspaces" && echo "✅ /getcwd works" || echo "❌ /getcwd failed"
+echo "$CWD_MSG" | grep -q "smelter\|workspaces" && echo "✅ /getcwd works" || echo "❌ /getcwd failed"
 ```
 
 ### 5.5 Test /repos Command
@@ -447,12 +447,12 @@ echo "$STATUS_MSG" | grep -q "Platform:\|Codebase:\|Working Directory" && echo "
 ### 5.8 Test /setcwd Command
 ```bash
 # Get current cwd first
-ORIGINAL_CWD=$(curl -s http://localhost:3000/test/messages/test-clone | jq -r '.messages[-1].message' | grep -o '/[^ ]*archon[^ ]*' | head -1)
+ORIGINAL_CWD=$(curl -s http://localhost:3000/test/messages/test-clone | jq -r '.messages[-1].message' | grep -o '/[^ ]*smelter[^ ]*' | head -1)
 
 # Test setcwd with valid path
 curl -X POST http://localhost:3000/test/message \
   -H "Content-Type: application/json" \
-  -d "{\"conversationId\":\"test-clone\",\"message\":\"/setcwd /.archon/workspaces/${GITHUB_USERNAME}/${TEST_REPO_NAME}\"}"
+  -d "{\"conversationId\":\"test-clone\",\"message\":\"/setcwd /.smelter/workspaces/${GITHUB_USERNAME}/${TEST_REPO_NAME}\"}"
 
 sleep 2
 
@@ -619,7 +619,7 @@ echo "$STATUS" | grep -q "Active Session" && echo "✅ Session active" || echo "
 ```bash
 cd "${WORK_DIR}/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
 
-# Create issue WITHOUT @Archon mention - workflow starts with comments
+# Create issue WITHOUT @Smelter mention - workflow starts with comments
 ISSUE_URL=$(gh issue create \
   --title "Add Validation Section to README" \
   --body "## Feature Request
@@ -651,8 +651,8 @@ cd "${PROJECT_ROOT}"
 ```bash
 cd "${WORK_DIR}/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
 
-# This is the first @Archon mention - triggers worktree creation
-gh issue comment ${ISSUE_NUMBER} --body "@Archon /command-invoke prime"
+# This is the first @Smelter mention - triggers worktree creation
+gh issue comment ${ISSUE_NUMBER} --body "@Smelter /command-invoke prime"
 
 echo "Waiting for prime to complete (90 seconds)..."
 sleep 90
@@ -671,7 +671,7 @@ cd "${PROJECT_ROOT}"
 ```bash
 cd "${WORK_DIR}/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
 
-gh issue comment ${ISSUE_NUMBER} --body "@Archon /command-invoke plan-feature \"Add a Validation section to README.md after the Purpose section, explaining how to run tests and validate the platform\""
+gh issue comment ${ISSUE_NUMBER} --body "@Smelter /command-invoke plan-feature \"Add a Validation section to README.md after the Purpose section, explaining how to run tests and validate the platform\""
 
 echo "Waiting for plan to complete (120 seconds)..."
 sleep 120
@@ -691,7 +691,7 @@ cd "${PROJECT_ROOT}"
 ```bash
 cd "${WORK_DIR}/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
 
-gh issue comment ${ISSUE_NUMBER} --body "@Archon /command-invoke execute"
+gh issue comment ${ISSUE_NUMBER} --body "@Smelter /command-invoke execute"
 
 echo "Waiting for execute to complete (180 seconds)..."
 sleep 180
@@ -809,7 +809,7 @@ cd "${PROJECT_ROOT}"
 ```bash
 cd "${WORK_DIR}/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
 
-gh pr comment ${PR_NUMBER} --body "@Archon /command-invoke review-pr"
+gh pr comment ${PR_NUMBER} --body "@Smelter /command-invoke review-pr"
 
 echo "Waiting for PR review to complete (120 seconds)..."
 sleep 120
@@ -1109,7 +1109,7 @@ gh repo delete ${GITHUB_USERNAME}/${TEST_REPO_NAME} --yes
 
 # Remove local files
 rm -rf "${WORK_DIR}/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
-rm -rf "${HOME}/.archon/worktrees/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
+rm -rf "${HOME}/.smelter/worktrees/${GITHUB_USERNAME}/${TEST_REPO_NAME}"
 
 # Clean database
 docker compose exec postgres psql -U postgres -d remote_coding_agent \

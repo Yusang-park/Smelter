@@ -1,6 +1,6 @@
 ---
 title: Gitea
-description: Connect Archon to a Gitea instance for issue and PR automation.
+description: Connect Smelter to a Gitea instance for issue and PR automation.
 category: adapters
 area: adapters
 audience: [operator]
@@ -12,11 +12,11 @@ sidebar:
 Gitea is a **community adapter** — contributed and maintained by the community.
 :::
 
-Connect Archon to a self-hosted Gitea instance so you can interact with your AI coding assistant from Gitea issues and pull requests.
+Connect Smelter to a self-hosted Gitea instance so you can interact with your AI coding assistant from Gitea issues and pull requests.
 
 ## Prerequisites
 
-- Archon server running (see [Getting Started](/getting-started/))
+- Smelter server running (see [Getting Started](/getting-started/))
 - A Gitea instance with API access enabled
 - A Gitea personal access token (or dedicated bot account token)
 - Public endpoint for webhooks (or a tunnel for local development)
@@ -58,8 +58,8 @@ All three variables are required. The adapter starts automatically when all thre
 # Restrict who can trigger the bot (comma-separated usernames, case-insensitive)
 GITEA_ALLOWED_USERS=alice,bob
 
-# Custom @mention name (defaults to BOT_DISPLAY_NAME, then "Archon")
-GITEA_BOT_MENTION=archon
+# Custom @mention name (defaults to BOT_DISPLAY_NAME, then "Smelter")
+GITEA_BOT_MENTION=smelter
 ```
 
 ## Step 4: Configure Gitea Webhook
@@ -84,14 +84,14 @@ Click **Add Webhook** and use the **Test Delivery** button to verify connectivit
 Interact by @mentioning the bot in issue or PR **comments**:
 
 ```
-@archon can you analyze this bug?
-@archon review this implementation
-@archon /workflow run assist "explain the auth flow"
+@smelter can you analyze this bug?
+@smelter review this implementation
+@smelter /workflow run assist "explain the auth flow"
 ```
 
 **First mention behavior:**
-- Automatically clones the repository to `~/.archon/workspaces/`
-- Detects and loads commands from `.archon/commands/` if present
+- Automatically clones the repository to `~/.smelter/workspaces/`
+- Detects and loads commands from `.smelter/commands/` if present
 - Injects full issue/PR context (title, description, labels) for the AI assistant
 
 **Subsequent mentions:**
@@ -110,7 +110,7 @@ The Gitea adapter is a webhook-based forge adapter, similar to the GitHub adapte
 - **Signature verification**: HMAC SHA-256 using the `X-Gitea-Signature` header
 - **Streaming mode**: Always batch (single coherent comment per response, no comment spam)
 - **Conversation ID format**: `owner/repo#number` for issues, `owner/repo!number` for PRs
-- **Self-loop prevention**: Bot comments include a hidden HTML marker (`<!-- archon-bot-response -->`) to avoid re-triggering on its own messages
+- **Self-loop prevention**: Bot comments include a hidden HTML marker (`<!-- smelter-bot-response -->`) to avoid re-triggering on its own messages
 - **Retry logic**: Transient network errors (timeouts, connection resets) are retried up to 3 times with exponential backoff
 
 ### Close/Merge Cleanup
@@ -119,7 +119,7 @@ When an issue is closed or a PR is merged/closed, the adapter automatically clea
 
 ## Adding More Repositories
 
-Add a webhook with the same secret to each repository you want the bot to monitor. The webhook secret must be identical across all repos pointing to the same Archon instance.
+Add a webhook with the same secret to each repository you want the bot to monitor. The webhook secret must be identical across all repos pointing to the same Smelter instance.
 
 ## Further Reading
 

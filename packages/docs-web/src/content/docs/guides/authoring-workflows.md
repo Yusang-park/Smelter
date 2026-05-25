@@ -35,20 +35,20 @@ nodes:
     context: fresh
 ```
 
-> **Using defaults as templates:** Archon ships default workflows in `.archon/workflows/defaults/` (12 bundled into the binary, plus additional ones available on disk in source builds). Browse them for real-world examples, then copy and modify:
+> **Using defaults as templates:** Smelter ships default workflows in `.smelter/workflows/defaults/` (12 bundled into the binary, plus additional ones available on disk in source builds). Browse them for real-world examples, then copy and modify:
 > ```bash
-> cp .archon/workflows/defaults/archon-fix-github-issue.yaml .archon/workflows/my-fix-issue.yaml
+> cp .smelter/workflows/defaults/smelter-fix-github-issue.yaml .smelter/workflows/my-fix-issue.yaml
 > ```
-> Same-named files in `.archon/workflows/` override the bundled defaults.
+> Same-named files in `.smelter/workflows/` override the bundled defaults.
 
 ---
 
 ## File Location
 
-Workflows live in `.archon/workflows/` relative to the working directory:
+Workflows live in `.smelter/workflows/` relative to the working directory:
 
 ```
-.archon/
+.smelter/
 ├── workflows/
 │   ├── my-workflow.yaml
 │   └── review/
@@ -57,11 +57,11 @@ Workflows live in `.archon/workflows/` relative to the working directory:
     └── [commands used by workflows]
 ```
 
-Archon discovers workflows recursively - subdirectories are fine. If a workflow file fails to load (syntax error, validation failure), it's skipped and the error is reported via `/workflow list`.
+Smelter discovers workflows recursively - subdirectories are fine. If a workflow file fails to load (syntax error, validation failure), it's skipped and the error is reported via `/workflow list`.
 
-> **Global workflows:** For workflows that apply to every project, place them in `~/.archon/workflows/`. Global workflows are overridden by same-named repo workflows. See [Global Workflows](/guides/global-workflows/).
+> **Global workflows:** For workflows that apply to every project, place them in `~/.smelter/workflows/`. Global workflows are overridden by same-named repo workflows. See [Global Workflows](/guides/global-workflows/).
 
-> **CLI vs Server:** The CLI reads workflow files from wherever you run it (sees uncommitted changes). The server reads from the workspace clone at `~/.archon/workspaces/owner/repo/`, which only syncs from the remote before worktree creation. If you edit a workflow locally but don't push, the server won't see it.
+> **CLI vs Server:** The CLI reads workflow files from wherever you run it (sees uncommitted changes). The server reads from the workspace clone at `~/.smelter/workspaces/owner/repo/`, which only syncs from the remote before worktree creation. If you edit a workflow locally but don't push, the server won't see it.
 
 ---
 
@@ -134,7 +134,7 @@ tags: [GitLab, Review]           # Optional: explicit Web UI filter tags. Overri
 # Required for DAG-based
 nodes:
   - id: classify                 # Unique node ID (used for dependency refs and $id.output)
-    command: classify-issue      # Loads from .archon/commands/classify-issue.md
+    command: classify-issue      # Loads from .smelter/commands/classify-issue.md
     output_format:               # Optional: structured JSON output. SDK-enforced on Claude/Codex; best-effort (prompt + JSON extraction) on Pi.
       type: object
       properties:
@@ -165,7 +165,7 @@ nodes:
     provider: claude             # Per-node provider override
     model: haiku                 # Per-node model override
     # hooks:                     # Optional: per-node SDK hook callbacks (Claude only) — see hooks guide
-    # mcp: .archon/mcp/servers.json  # Optional: per-node MCP servers (Claude only)
+    # mcp: .smelter/mcp/servers.json  # Optional: per-node MCP servers (Claude only)
     # skills: [remotion-best-practices]  # Optional: per-node skills (Claude only) — see skills guide
 ```
 
@@ -175,10 +175,10 @@ nodes:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `command` | string | Command name to load from `.archon/commands/` |
+| `command` | string | Command name to load from `.smelter/commands/` |
 | `prompt` | string | Inline prompt string |
 | `bash` | string | Shell script (no AI). Stdout captured as `$nodeId.output`. Optional `timeout` (ms, default 120000) |
-| `script` | string | TypeScript/JavaScript (via `bun`) or Python (via `uv`) — inline code or named reference to `.archon/scripts/`. Stdout captured as `$nodeId.output`. Requires `runtime: bun` or `runtime: uv`. Optional `deps` (uv only) and `timeout` (ms, default 120000). See [Script Nodes](/guides/script-nodes/) |
+| `script` | string | TypeScript/JavaScript (via `bun`) or Python (via `uv`) — inline code or named reference to `.smelter/scripts/`. Stdout captured as `$nodeId.output`. Requires `runtime: bun` or `runtime: uv`. Optional `deps` (uv only) and `timeout` (ms, default 120000). See [Script Nodes](/guides/script-nodes/) |
 | `loop` | object | Iterative AI prompt until completion signal. See [Loop Nodes](/guides/loop-nodes/) |
 | `approval` | object | Pauses workflow for human review. See [Approval Nodes](/guides/approval-nodes/) |
 | `cancel` | string | Terminates the workflow run with a reason string. Uses existing cancellation plumbing — in-flight parallel nodes are stopped |
@@ -487,7 +487,7 @@ nodes:
 
 ### Error Classification
 
-Archon classifies errors into three buckets before deciding whether to retry:
+Smelter classifies errors into three buckets before deciding whether to retry:
 
 | Class | Examples | Retried by default? |
 |-------|----------|---------------------|
@@ -505,7 +505,7 @@ Node `node-id` failed with transient error (attempt 1/3). Retrying in 3s...
 
 ### Two-Layer Retry Stack
 
-Archon uses two independent retry layers:
+Smelter uses two independent retry layers:
 
 ```
 SDK subprocess retry (claude.ts)  — 3 total attempts, 2 s base backoff
@@ -527,23 +527,23 @@ When a `nodes:` (DAG) workflow fails, the next invocation automatically resumes 
 
 **How it works:**
 
-1. On each invocation, Archon checks for a prior failed run of the same workflow at the same working path.
+1. On each invocation, Smelter checks for a prior failed run of the same workflow at the same working path.
 2. If found, it loads the `node_completed` events from that run to determine which nodes finished successfully.
 3. Completed nodes are skipped; only failed and not-yet-run nodes are executed.
 4. You receive a platform message like: `Resuming workflow — skipping 3 already-completed node(s).`
 
-**Crashed servers / orphaned runs**: Archon does **not** auto-fail `running` rows on server startup — that would kill workflows actively executing in another process (CLI, adapter). If a server crash leaves a row stuck as `running`, it remains visible in the dashboard (the Dashboard nav tab shows a count of running workflows). Transition it to a terminal status explicitly:
+**Crashed servers / orphaned runs**: Smelter does **not** auto-fail `running` rows on server startup — that would kill workflows actively executing in another process (CLI, adapter). If a server crash leaves a row stuck as `running`, it remains visible in the dashboard (the Dashboard nav tab shows a count of running workflows). Transition it to a terminal status explicitly:
 
 - **Web UI**: click the Abandon or Cancel button on the workflow card. Abandon marks the run `cancelled` and keeps completed-node history. Cancel also terminates any in-flight subprocess.
-- **CLI**: `archon workflow abandon <run-id>` (equivalent to the dashboard Abandon button). Run IDs are listed by `archon workflow status`.
+- **CLI**: `smelter workflow abandon <run-id>` (equivalent to the dashboard Abandon button). Run IDs are listed by `smelter workflow status`.
 
 Once the row reaches a terminal status, the next invocation of the same workflow at the same path auto-resumes from completed nodes via the mechanism above.
 
-> Not to be confused with `archon workflow cleanup [days]`, which **deletes** old terminal runs (`completed`/`failed`/`cancelled`) from the database for disk hygiene. It does not transition `running` rows.
+> Not to be confused with `smelter workflow cleanup [days]`, which **deletes** old terminal runs (`completed`/`failed`/`cancelled`) from the database for disk hygiene. It does not transition `running` rows.
 
 **Known limitation**: AI session context from prior nodes is not restored. If a downstream node relies on in-context knowledge from a prior run's session (rather than artifacts), it may need to re-read those artifacts explicitly.
 
-**Fresh start**: If zero nodes completed in the prior run, Archon starts fresh (no nodes to skip).
+**Fresh start**: If zero nodes completed in the prior run, Smelter starts fresh (no nodes to skip).
 
 ---
 
@@ -591,7 +591,7 @@ Workflows can configure AI models and provider-specific options at the workflow 
 Model and options are resolved in this order:
 
 1. **Workflow-level** - Explicit settings in the workflow YAML
-2. **Config defaults** - `assistants.*` in `.archon/config.yaml`
+2. **Config defaults** - `assistants.*` in `.smelter/config.yaml`
 3. **SDK defaults** - Built-in defaults from Claude/Codex SDKs
 
 ### Provider and Model
@@ -602,7 +602,7 @@ provider: claude     # Any registered provider (default: from config)
 model: sonnet        # Model override (default: from config assistants.claude.model)
 ```
 
-**Model strings:** Whatever you write in `model:` is forwarded verbatim to the resolved provider's SDK. Archon doesn't keep an internal allow-list, because vendor SDKs ship new models faster than this doc can. The provider's API decides whether the string is valid at request time.
+**Model strings:** Whatever you write in `model:` is forwarded verbatim to the resolved provider's SDK. Smelter doesn't keep an internal allow-list, because vendor SDKs ship new models faster than this doc can. The provider's API decides whether the string is valid at request time.
 
 Common shapes you'll see in practice:
 
@@ -610,7 +610,7 @@ Common shapes you'll see in practice:
 - **Codex (OpenAI):** any OpenAI model ID — `gpt-5.3-codex`, `gpt-5.2`, `o5-pro`, etc.
 - **Pi (community):** `<backend>/<model-id>` refs — e.g. `google/gemini-2.5-pro`, `openrouter/qwen/qwen3-coder`.
 
-If the SDK rejects the string at request time, the node fails loudly with the SDK's error message — Archon never silently re-routes a model from one provider to another based on the string.
+If the SDK rejects the string at request time, the node fails loudly with the SDK's error message — Smelter never silently re-routes a model from one provider to another based on the string.
 
 **Provider selection is independent of the model string** — a `model: opus[1m]` node with no `provider:` field will route to your `defaultAssistant` regardless of the model name. Always pair a provider-specific model string with an explicit `provider:` on the node.
 
@@ -695,14 +695,14 @@ Model strings are not validated at load time — they're forwarded to the SDK as
 To validate that all referenced command files, MCP config files, and skill directories exist on disk, run:
 
 ```bash
-archon validate workflows <name>
+smelter validate workflows <name>
 ```
 
 This checks resource resolution beyond what load-time validation covers. Use `--json` for machine-readable output. See the [CLI Reference](/reference/cli/) for details.
 
 ### Example: Config Defaults + Workflow Override
 
-**`.archon/config.yaml`:**
+**`.smelter/config.yaml`:**
 ```yaml
 assistants:
   claude:
@@ -881,8 +881,8 @@ nodes:
   - id: implement-loop
     loop:
       prompt: |
-        Read PRD from `.archon/prd.md`.
-        Read progress from `.archon/progress.json`.
+        Read PRD from `.smelter/prd.md`.
+        Read progress from `.smelter/progress.json`.
         Implement the next incomplete story with tests.
         Run validation: `bun run validate`.
         Update progress file.
@@ -1125,13 +1125,13 @@ Watch the streaming output to see each step.
 
 ### Check Artifacts
 
-After a workflow runs, check the artifacts in the `$ARTIFACTS_DIR` for that run (located at `~/.archon/workspaces/owner/repo/artifacts/runs/{workflow-id}/`).
+After a workflow runs, check the artifacts in the `$ARTIFACTS_DIR` for that run (located at `~/.smelter/workspaces/owner/repo/artifacts/runs/{workflow-id}/`).
 
 ### Check Logs
 
 Workflow execution logs to:
 ```
-~/.archon/workspaces/owner/repo/logs/{workflow-id}.jsonl
+~/.smelter/workspaces/owner/repo/logs/{workflow-id}.jsonl
 ```
 
 Each line is a JSON event (step start, AI response, tool call, etc.).
@@ -1183,5 +1183,5 @@ Before deploying a workflow:
 16. **`systemPrompt`** — override the default system prompt per node (Claude only)
 17. **`sandbox`** — OS-level filesystem/network restrictions per node or workflow (Claude only)
 18. **Loop nodes** — use `loop:` within a DAG node for iterative execution until completion signal
-19. **Defaults as templates** — browse `.archon/workflows/defaults/` for real examples to copy and modify
+19. **Defaults as templates** — browse `.smelter/workflows/defaults/` for real examples to copy and modify
 20. **Test thoroughly** — each command, the artifact flow, and edge cases

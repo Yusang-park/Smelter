@@ -1,0 +1,85 @@
+name: smelter-fix
+description: |
+  Use when: Fix a bug, regression, broken behavior, or logic issue using Smelter's systematic debugging flow.
+  Input: Bug report, error, failing behavior, or narrow correction request.
+  Output: Root-cause evidence, RED regression test, fix, reviews, E2E evidence, and human check.
+
+nodes:
+  - id: investigate
+    prompt: |
+      Use workflow-investigate for this bug fix.
+
+      Task:
+      $ARGUMENTS
+
+      Reproduce or characterize the failure, check recent changes, compare working examples, and record root-cause evidence.
+      Read .smelter/smelter/document/workflow.md and .smelter/smelter/modes/workflow.yaml when you need the canonical Smelter contract.
+    skills: [workflow-investigate]
+    context: fresh
+
+  - id: investigate-review
+    depends_on: [investigate]
+    prompt: |
+      Use workflow-investigate-review to verify the bug investigation evidence.
+      Reject guesses, missing reproduction notes, and untested hypotheses.
+    skills: [workflow-investigate-review]
+    context: fresh
+
+  - id: tasker
+    depends_on: [investigate-review]
+    prompt: |
+      Use workflow-tasker to create compact tasks.md for the fix scope.
+      Include works, omissions, verification plan, and runtime assumptions.
+    skills: [workflow-tasker]
+    context: fresh
+
+  - id: tasker-review
+    depends_on: [tasker]
+    prompt: |
+      Use workflow-tasker-review to validate tasks.md before test design.
+    skills: [workflow-tasker-review]
+    context: fresh
+
+  - id: write-test
+    depends_on: [tasker-review]
+    prompt: |
+      Use workflow-write-test to create a failing regression test or executable specification for the bug.
+      Capture the failing command and output before source edits.
+    skills: [workflow-write-test]
+    context: fresh
+
+  - id: coding
+    depends_on: [write-test]
+    prompt: |
+      Use workflow-coding to fix the root cause with the smallest source change.
+      Turn RED tests GREEN and run scoped validation.
+    skills: [workflow-coding]
+    context: fresh
+
+  - id: agent-review
+    depends_on: [coding]
+    prompt: |
+      Use workflow-agent-review for focused code/security review.
+    skills: [workflow-agent-review]
+    context: fresh
+
+  - id: e2e
+    depends_on: [agent-review]
+    prompt: |
+      Use workflow-e2e to prove the original symptom is fixed when the bug affects UI, CLI, API, hooks, or scripts.
+    skills: [workflow-e2e]
+    context: fresh
+
+  - id: e2e-review
+    depends_on: [e2e]
+    prompt: |
+      Use workflow-e2e-review to verify evidence quality.
+    skills: [workflow-e2e-review]
+    context: fresh
+
+  - id: human-check
+    depends_on: [e2e-review]
+    prompt: |
+      Use workflow-human-check. Present evidence and completion choices only after unresolved findings are handled.
+    skills: [workflow-human-check]
+    context: fresh

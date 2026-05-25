@@ -1,6 +1,6 @@
 -- Per-codebase environment variables for workflow node injection
 -- Version: 20.0
--- Description: Stores per-project env vars managed via Web UI or .archon/config.yaml.
+-- Description: Stores per-project env vars managed via Web UI or .smelter/config.yaml.
 --   Merged into Options.env on Claude SDK calls. No encryption — same security as codebases table.
 
 CREATE TABLE IF NOT EXISTS remote_agent_codebase_env_vars (

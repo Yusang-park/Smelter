@@ -1,11 +1,11 @@
 /**
- * @archon/core - Shared business logic for Archon
+ * @smelter/core - Shared business logic for Smelter
  *
  * This package contains:
  * - AI client adapters (Claude, Codex)
  * - Database operations (SQLite/PostgreSQL)
  * - Orchestration logic
- * - Workflow store adapter (bridges core DB to @archon/workflows IWorkflowStore)
+ * - Workflow store adapter (bridges core DB to @smelter/workflows IWorkflowStore)
  * - Utility functions
  */
 
@@ -54,7 +54,7 @@ export { SessionNotFoundError } from './db/sessions';
 // Workflows
 // =============================================================================
 
-// Store adapter (bridges core DB to @archon/workflows IWorkflowStore)
+// Store adapter (bridges core DB to @smelter/workflows IWorkflowStore)
 export { createWorkflowStore } from './workflows/store-adapter';
 
 // Workflow Events DB
@@ -146,4 +146,4 @@ export { isPathWithinWorkspace, validateAndResolvePath } from './utils/path-vali
 export { getPort } from './utils/port-allocation';
 
 // Worktree sync
-export { syncArchonToWorktree } from './utils/worktree-sync';
+export { syncSmelterToWorktree } from './utils/worktree-sync';

@@ -5,7 +5,7 @@ export interface CommandCategory {
   commands: CommandEntry[];
 }
 
-/** Prefix-to-category mapping. Checked after stripping the `archon-` prefix. */
+/** Prefix-to-category mapping. Checked after stripping the `smelter-` prefix. */
 const CATEGORY_PREFIXES: readonly { category: string; prefixes: string[] }[] = [
   {
     category: 'Investigation',
@@ -44,12 +44,12 @@ const CATEGORY_PREFIXES: readonly { category: string; prefixes: string[] }[] = [
   },
 ];
 
-function stripArchonPrefix(name: string): string {
-  return name.startsWith('archon-') ? name.slice('archon-'.length) : name;
+function stripSmelterPrefix(name: string): string {
+  return name.startsWith('smelter-') ? name.slice('smelter-'.length) : name;
 }
 
 function findCategory(name: string): string {
-  const stripped = stripArchonPrefix(name);
+  const stripped = stripSmelterPrefix(name);
   for (const { category, prefixes } of CATEGORY_PREFIXES) {
     for (const prefix of prefixes) {
       if (stripped === prefix || stripped.startsWith(prefix + '-')) {

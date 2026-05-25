@@ -1,6 +1,6 @@
 ---
 title: New Developer Guide
-description: Codebase orientation for new Archon developers — architecture overview, workflows, platforms, and first steps.
+description: Codebase orientation for new Smelter developers — architecture overview, workflows, platforms, and first steps.
 category: contributing
 audience: [developer]
 status: current
@@ -8,7 +8,7 @@ sidebar:
   order: 1
 ---
 
-> **TL;DR**: Archon lets you control AI coding assistants (Claude Code, Codex) from your phone via Telegram, Slack, Discord, or GitHub. Think of it as a remote control for AI pair programming.
+> **TL;DR**: Smelter lets you control AI coding assistants (Claude Code, Codex) from your phone via Telegram, Slack, Discord, or GitHub. Think of it as a remote control for AI pair programming.
 
 ---
 
@@ -16,7 +16,7 @@ sidebar:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        WITHOUT ARCHON                               │
+│                        WITHOUT SMELTER                               │
 │                                                                     │
 │   You're on the train, phone in hand...                            │
 │                                                                     │
@@ -29,10 +29,10 @@ sidebar:
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         WITH ARCHON                                 │
+│                         WITH SMELTER                                 │
 │                                                                     │
 │   ┌──────────┐                       ┌──────────────────┐          │
-│   │  Phone   │ ─────Telegram────────▶│  Archon Server   │          │
+│   │  Phone   │ ─────Telegram────────▶│  Smelter Server   │          │
 │   │          │     "fix issue #42"   │                  │          │
 │   └──────────┘                       │  ┌────────────┐  │          │
 │        │                             │  │Claude Code │  │          │
@@ -56,7 +56,7 @@ sidebar:
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                                                                          │
-│   USER                    ARCHON                         CODEBASE        │
+│   USER                    SMELTER                         CODEBASE        │
 │                                                                          │
 │   ┌─────────┐            ┌─────────────────┐            ┌──────────┐    │
 │   │Telegram │            │                 │            │          │    │
@@ -73,7 +73,7 @@ sidebar:
 
 ---
 
-## The Four Ways to Use Archon
+## The Four Ways to Use Smelter
 
 ### 1. Command Line (Local Execution)
 
@@ -86,12 +86,12 @@ Run workflows directly from your terminal without needing the server:
 │                                                                 │
 │ $ bun run cli workflow list                                     │
 │                                                                 │
-│ Available workflows in .archon/workflows/:                     │
-│   - archon-assist                General help and questions     │
-│   - archon-fix-github-issue      Investigate and fix issues     │
-│   - archon-comprehensive-pr-review  Full PR review with agents  │
+│ Available workflows in .smelter/workflows/:                     │
+│   - smelter-assist                General help and questions     │
+│   - smelter-fix-github-issue      Investigate and fix issues     │
+│   - smelter-comprehensive-pr-review  Full PR review with agents  │
 │                                                                 │
-│ $ bun run cli workflow run archon-assist "What does the         │
+│ $ bun run cli workflow run smelter-assist "What does the         │
 │   orchestrator do?"                                             │
 │                                                                 │
 │ 🔧 READ                                                         │
@@ -118,7 +118,7 @@ Just talk to the AI like you would in Claude Code terminal:
 │                                                                 │
 │ You: What does the handleMessage function do?                   │
 │                                                                 │
-│ Archon: Looking at packages/core/src/orchestrator/orchestrator.ts...          │
+│ Smelter: Looking at packages/core/src/orchestrator/orchestrator.ts...          │
 │                                                                 │
 │         The handleMessage function is the main entry point      │
 │         that routes incoming messages. It:                      │
@@ -153,7 +153,7 @@ Deterministic commands that don't involve AI:
 
 ### 4. Workflows (Multi-Step Automation)
 
-This is where Archon shines - automated multi-step AI workflows:
+This is where Smelter shines - automated multi-step AI workflows:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -165,11 +165,11 @@ This is where Archon shines - automated multi-step AI workflows:
 │ ─────────────────────────────────────────────────────────────── │
 │                                                                 │
 │ @user commented:                                                │
-│   @archon fix this issue                                        │
+│   @smelter fix this issue                                        │
 │                                                                 │
 │ ─────────────────────────────────────────────────────────────── │
 │                                                                 │
-│ @archon commented:                                              │
+│ @smelter commented:                                              │
 │   🔍 Investigation Complete                                     │
 │                                                                 │
 │   Root Cause: Touch event handler missing on mobile             │
@@ -180,7 +180,7 @@ This is where Archon shines - automated multi-step AI workflows:
 │                                                                 │
 │ ─────────────────────────────────────────────────────────────── │
 │                                                                 │
-│ @archon commented:                                              │
+│ @smelter commented:                                              │
 │   ✅ Fix implemented: PR #127                                   │
 │   - Added touch event handling                                  │
 │   - Added mobile viewport tests                                 │
@@ -198,7 +198,7 @@ A workflow is a YAML file that chains AI prompts together:
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│   .archon/workflows/fix-github-issue.yaml                              │
+│   .smelter/workflows/fix-github-issue.yaml                              │
 │                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
 │   │ name: fix-github-issue                                          │  │
@@ -237,7 +237,7 @@ A workflow is a YAML file that chains AI prompts together:
 
 ---
 
-## The Router: How Archon Picks Workflows
+## The Router: How Smelter Picks Workflows
 
 When you send a message, an AI "router" decides what to do:
 
@@ -246,10 +246,10 @@ When you send a message, an AI "router" decides what to do:
 │                                                                         │
 │   USER MESSAGE                           ROUTER DECISION                │
 │                                                                         │
-│   "fix this issue"          ───────▶     archon-fix-github-issue       │
-│   "review this PR"          ───────▶     archon-comprehensive-pr-review│
-│   "what does X do?"         ───────▶     archon-assist (catch-all)     │
-│   "resolve the conflicts"   ───────▶     archon-resolve-conflicts      │
+│   "fix this issue"          ───────▶     smelter-fix-github-issue       │
+│   "review this PR"          ───────▶     smelter-comprehensive-pr-review│
+│   "what does X do?"         ───────▶     smelter-assist (catch-all)     │
+│   "resolve the conflicts"   ───────▶     smelter-resolve-conflicts      │
 │                                                                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
@@ -272,7 +272,7 @@ When you send a message, an AI "router" decides what to do:
 
 ## Available Workflows
 
-The table below lists the key bundled workflows. All bundled workflows are prefixed with `archon-`. Run `bun run cli workflow list` to see the full current list.
+The table below lists the key bundled workflows. All bundled workflows are prefixed with `smelter-`. Run `bun run cli workflow list` to see the full current list.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -280,28 +280,28 @@ The table below lists the key bundled workflows. All bundled workflows are prefi
 │   WORKFLOW                              TRIGGER PHRASES    WHAT IT DOES │
 │                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ archon-fix-github-issue    "fix this issue"        Investigate   │  │
+│   │ smelter-fix-github-issue    "fix this issue"        Investigate   │  │
 │   │                            "implement #42"         + Fix + PR    │  │
 │   └─────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ archon-comprehensive-     "review this PR"        5 parallel     │  │
+│   │ smelter-comprehensive-     "review this PR"        5 parallel     │  │
 │   │   pr-review               "code review"           review agents  │  │
 │   │                                                   + auto-fix     │  │
 │   └─────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ archon-resolve-conflicts  "resolve conflicts"     Auto-resolve   │  │
+│   │ smelter-resolve-conflicts  "resolve conflicts"     Auto-resolve   │  │
 │   │                           "fix merge conflicts"   git conflicts  │  │
 │   └─────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ archon-ralph-dag          "run ralph"             PRD loop       │  │
+│   │ smelter-ralph-dag          "run ralph"             PRD loop       │  │
 │   │                           "ralph dag"             (autonomous)   │  │
 │   └─────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ archon-assist             (anything else)         General help    │  │
+│   │ smelter-assist             (anything else)         General help    │  │
 │   │                           "what does X do?"       questions,     │  │
 │   │                           "help me debug"         debugging      │  │
 │   └─────────────────────────────────────────────────────────────────┘  │
@@ -313,7 +313,7 @@ The table below lists the key bundled workflows. All bundled workflows are prefi
 
 ## Parallel Agents: The PR Review Example
 
-The `archon-comprehensive-pr-review` workflow runs 5 AI agents simultaneously:
+The `smelter-comprehensive-pr-review` workflow runs 5 AI agents simultaneously:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -370,12 +370,12 @@ The `archon-comprehensive-pr-review` workflow runs 5 AI agents simultaneously:
 
 ## The Ralph Loop: Autonomous PRD Implementation
 
-For larger features, Ralph executes user stories one-by-one until complete. The workflow is `archon-ralph-dag`:
+For larger features, Ralph executes user stories one-by-one until complete. The workflow is `smelter-ralph-dag`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│   PRD FILE: .archon/ralph/my-feature/prd.json                          │
+│   PRD FILE: .smelter/ralph/my-feature/prd.json                          │
 │                                                                         │
 │   {                                                                     │
 │     "stories": [                                                        │
@@ -441,7 +441,7 @@ For larger features, Ralph executes user stories one-by-one until complete. The 
 │   TELEGRAM                          HOW IT WORKS                        │
 │   ─────────────────────────────────────────────────────────────────    │
 │   ┌──────────────────┐              - Bot polls for messages           │
-│   │  @archon_bot     │              - Real-time streaming (default)    │
+│   │  @smelter_bot     │              - Real-time streaming (default)    │
 │   │                  │              - DM the bot directly              │
 │   │  "fix issue #42" │              - Good for mobile use              │
 │   └──────────────────┘                                                  │
@@ -453,7 +453,7 @@ For larger features, Ralph executes user stories one-by-one until complete. The 
 │   ┌──────────────────┐              - Socket Mode (no webhooks)        │
 │   │  #dev-channel    │              - @mention in threads              │
 │   │                  │              - DM the bot                       │
-│   │  @archon review  │              - Good for team visibility         │
+│   │  @smelter review  │              - Good for team visibility         │
 │   │  this PR         │                                                  │
 │   └──────────────────┘                                                  │
 │                                                                         │
@@ -464,7 +464,7 @@ For larger features, Ralph executes user stories one-by-one until complete. The 
 │   ┌──────────────────┐              - WebSocket connection             │
 │   │  #coding-help    │              - @mention to activate             │
 │   │                  │              - Thread support                   │
-│   │  @Archon what    │              - Good for communities             │
+│   │  @Smelter what    │              - Good for communities             │
 │   │  does this do?   │                                                  │
 │   └──────────────────┘                                                  │
 │                                                                         │
@@ -473,9 +473,9 @@ For larger features, Ralph executes user stories one-by-one until complete. The 
 │   GITHUB                            HOW IT WORKS                        │
 │   ─────────────────────────────────────────────────────────────────    │
 │   ┌──────────────────┐              - Webhook on issues/PRs            │
-│   │  Issue #42       │              - @archon in comments              │
+│   │  Issue #42       │              - @smelter in comments              │
 │   │                  │              - Batch mode (single comment)      │
-│   │  @archon fix     │              - Auto-creates PRs                 │
+│   │  @smelter fix     │              - Auto-creates PRs                 │
 │   │  this issue      │              - Good for automation              │
 │   └──────────────────┘                                                  │
 │                                                                         │
@@ -491,7 +491,7 @@ Each conversation gets its own isolated copy of the repo:
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│   ~/.archon/workspaces/owner/repo/worktrees/                           │
+│   ~/.smelter/workspaces/owner/repo/worktrees/                           │
 │   │                                                                     │
 │   ├── issue-42/              ◀── Conversation about issue #42         │
 │   │   └── (full repo)            Working on fix for mobile bug         │
@@ -529,14 +529,14 @@ Each conversation gets its own isolated copy of the repo:
 │                              │                                          │
 │                              ▼                                          │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ 2. GLOBAL CONFIG (~/.archon/config.yaml)                        │  │
+│   │ 2. GLOBAL CONFIG (~/.smelter/config.yaml)                        │  │
 │   │    botName: MyBot                                               │  │
 │   │    defaultAssistant: claude                                     │  │
 │   └─────────────────────────────────────────────────────────────────┘  │
 │                              │                                          │
 │                              ▼                                          │
 │   ┌─────────────────────────────────────────────────────────────────┐  │
-│   │ 3. REPO CONFIG (.archon/config.yaml)                            │  │
+│   │ 3. REPO CONFIG (.smelter/config.yaml)                            │  │
 │   │    assistant: codex          # This repo prefers Codex          │  │
 │   │    commands:                                                    │  │
 │   │      folder: .claude/commands/custom                            │  │
@@ -559,10 +559,10 @@ Each conversation gets its own isolated copy of the repo:
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│   YOUR REPO                         ARCHON SERVER                       │
+│   YOUR REPO                         SMELTER SERVER                       │
 │                                                                         │
-│   my-app/                           ~/.archon/                          │
-│   ├── .archon/                      ├── config.yaml      (global cfg)  │
+│   my-app/                           ~/.smelter/                          │
+│   ├── .smelter/                      ├── config.yaml      (global cfg)  │
 │   │   ├── config.yaml               ├── workspaces/      (cloned repos)│
 │   │   ├── commands/                 │   └── user/repo/                 │
 │   │   │   ├── investigate-issue.md  │       ├── source/    (clone)      │
@@ -591,10 +591,10 @@ Each conversation gets its own isolated copy of the repo:
 │                                                                         │
 │   Run workflow locally              bun run cli workflow run <name>     │
 │   List CLI workflows                bun run cli workflow list           │
-│   Fix a GitHub issue                "@archon fix this issue"            │
-│   Review a PR                       "@archon review this PR"            │
+│   Fix a GitHub issue                "@smelter fix this issue"            │
+│   Review a PR                       "@smelter review this PR"            │
 │   Ask a question                    "What does handleMessage do?"       │
-│   Resolve conflicts                 "@archon resolve the conflicts"     │
+│   Resolve conflicts                 "@smelter resolve the conflicts"     │
 │   See current state                 "/status"                           │
 │   Clone a repo                      "/clone https://github.com/u/r"     │
 │   Switch repos                      "/repos" then pick one              │
@@ -616,11 +616,11 @@ Each conversation gets its own isolated copy of the repo:
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│   ARCHON = Remote Control for AI Coding Assistants                     │
+│   SMELTER = Remote Control for AI Coding Assistants                     │
 │                                                                         │
 │   ┌────────────────────────────────────────────────────────────────┐   │
 │   │                                                                │   │
-│   │   Phone/Slack/GitHub ──▶ Archon Server ──▶ AI (Claude/Codex)  │   │
+│   │   Phone/Slack/GitHub ──▶ Smelter Server ──▶ AI (Claude/Codex)  │   │
 │   │                              │                    │            │   │
 │   │                              ▼                    ▼            │   │
 │   │                         Workflows           Git Worktrees      │   │
@@ -653,8 +653,8 @@ Each conversation gets its own isolated copy of the repo:
 ## Next Steps
 
 1. **Read**: [Getting Started](/getting-started/) - Set up your first instance
-2. **Explore**: `.archon/workflows/` - See example workflows
-3. **Customize**: `.archon/commands/` - Create your own prompts
-4. **Configure**: `.archon/config.yaml` - Tweak settings
+2. **Explore**: `.smelter/workflows/` - See example workflows
+3. **Customize**: `.smelter/commands/` - Create your own prompts
+4. **Configure**: `.smelter/config.yaml` - Tweak settings
 
 Welcome to remote agentic coding!

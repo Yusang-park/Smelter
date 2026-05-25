@@ -5,15 +5,15 @@ import { mkdir } from 'fs/promises';
 import { join } from 'path';
 import type { IWorkflowPlatform, WorkflowMessageMetadata } from './deps';
 import type { WorkflowDeps, WorkflowConfig } from './deps';
-import * as archonPaths from '@archon/paths';
-import { createLogger, captureWorkflowInvoked, BUNDLED_VERSION } from '@archon/paths';
-import { getDefaultBranch, toRepoPath } from '@archon/git';
+import * as smelterPaths from '@smelter/paths';
+import { createLogger, captureWorkflowInvoked, BUNDLED_VERSION } from '@smelter/paths';
+import { getDefaultBranch, toRepoPath } from '@smelter/git';
 import type { WorkflowDefinition, WorkflowRun, WorkflowExecutionResult } from './schemas';
 import { executeDagWorkflow } from './dag-executor';
 import { logWorkflowStart, logWorkflowError } from './logger';
 import { formatDuration, parseDbTimestamp } from './utils/duration';
 import { getWorkflowEventEmitter } from './event-emitter';
-import { isRegisteredProvider, getRegisteredProviders } from '@archon/providers';
+import { isRegisteredProvider, getRegisteredProviders } from '@smelter/providers';
 import { classifyError } from './executor-shared';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
@@ -186,17 +186,21 @@ async function resolveProjectPaths(
     try {
       const codebase = await deps.store.getCodebase(codebaseId);
       if (codebase) {
-        const parsed = archonPaths.parseOwnerRepo(codebase.name);
+        const parsed = smelterPaths.parseOwnerRepo(codebase.name);
         if (parsed) {
           return {
-            artifactsDir: archonPaths.getRunArtifactsPath(parsed.owner, parsed.repo, workflowRunId),
-            logDir: archonPaths.getProjectLogsPath(parsed.owner, parsed.repo),
+            artifactsDir: smelterPaths.getRunArtifactsPath(
+              parsed.owner,
+              parsed.repo,
+              workflowRunId
+            ),
+            logDir: smelterPaths.getProjectLogsPath(parsed.owner, parsed.repo),
           };
         }
         getLog().warn({ codebaseName: codebase.name }, 'codebase_name_not_owner_repo_format');
       }
     } catch (error) {
-      const fallbackArtifactsDir = join(cwd, '.archon', 'artifacts', 'runs', workflowRunId);
+      const fallbackArtifactsDir = join(cwd, '.smelter', 'artifacts', 'runs', workflowRunId);
       getLog().error(
         { err: error as Error, codebaseId, fallbackArtifactsDir },
         'project_paths_resolve_failed_using_fallback'
@@ -205,8 +209,8 @@ async function resolveProjectPaths(
   }
   // Fallback for unregistered repos
   return {
-    artifactsDir: join(cwd, '.archon', 'artifacts', 'runs', workflowRunId),
-    logDir: join(cwd, '.archon', 'logs'),
+    artifactsDir: join(cwd, '.smelter', 'artifacts', 'runs', workflowRunId),
+    logDir: join(cwd, '.smelter', 'logs'),
   };
 }
 
@@ -621,12 +625,12 @@ export async function executeWorkflow(
 
     // Fire-and-forget anonymous usage telemetry. No PII: only workflow name +
     // description (authored by the user in their YAML) + platform + version.
-    // Opt out via ARCHON_TELEMETRY_DISABLED=1 or DO_NOT_TRACK=1.
+    // Opt out via SMELTER_TELEMETRY_DISABLED=1 or DO_NOT_TRACK=1.
     captureWorkflowInvoked({
       workflowName: workflow.name,
       workflowDescription: workflow.description,
       platform: platform.getPlatformType(),
-      archonVersion: BUNDLED_VERSION,
+      smelterVersion: BUNDLED_VERSION,
     });
     deps.store
       .createWorkflowEvent({

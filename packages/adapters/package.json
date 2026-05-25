@@ -1,5 +1,5 @@
 {
-  "name": "@archon/adapters",
+  "name": "@smelter/adapters",
   "version": "0.3.10",
   "type": "module",
   "main": "./src/index.ts",
@@ -15,10 +15,10 @@
     "type-check": "bun x tsc --noEmit"
   },
   "dependencies": {
-    "@archon/core": "workspace:*",
-    "@archon/git": "workspace:*",
-    "@archon/isolation": "workspace:*",
-    "@archon/paths": "workspace:*",
+    "@smelter/core": "workspace:*",
+    "@smelter/git": "workspace:*",
+    "@smelter/isolation": "workspace:*",
+    "@smelter/paths": "workspace:*",
     "@octokit/rest": "^22.0.0",
     "@slack/bolt": "^4.6.0",
     "discord.js": "^14.16.0",

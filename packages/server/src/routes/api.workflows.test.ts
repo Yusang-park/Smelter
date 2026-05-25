@@ -1,12 +1,12 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import type { ConversationLockManager } from '@archon/core';
+import type { ConversationLockManager } from '@smelter/core';
 import type { WebAdapter } from '../adapters/web';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { validationErrorHook } from './openapi-defaults';
-import { makeTestWorkflow, makeTestWorkflowWithSource } from '@archon/workflows/test-utils';
+import { makeTestWorkflow, makeTestWorkflowWithSource } from '@smelter/workflows/test-utils';
 
 /** Test app factory: includes defaultHook to format validation errors as { error: string }. */
 function createTestApp(): OpenAPIHono {
@@ -16,7 +16,7 @@ function createTestApp(): OpenAPIHono {
 const mockDiscoverWorkflows = mock(async (_cwd: string) => ({
   workflows: [makeTestWorkflowWithSource({ name: 'deploy', description: 'Deploy app' }, 'bundled')],
   errors: [
-    { filename: '/tmp/.archon/workflows/bad.md', error: 'invalid', errorType: 'parse_error' },
+    { filename: '/tmp/.smelter/workflows/bad.md', error: 'invalid', errorType: 'parse_error' },
   ],
 }));
 
@@ -26,19 +26,19 @@ const mockParseWorkflow = mock((_content: string, _filename: string) => ({
   error: null,
 }));
 
-mock.module('@archon/core', () => ({
+mock.module('@smelter/core', () => ({
   handleMessage: mock(async () => {}),
   getDatabaseType: () => 'sqlite',
   loadConfig: mock(async () => ({})),
-  getWorkflowFolderSearchPaths: mock(() => ['.archon/workflows']),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands', '.archon/commands/defaults']),
-  getDefaultCommandsPath: mock(() => '/tmp/.archon-test-nonexistent/commands/defaults'),
-  getDefaultWorkflowsPath: mock(() => '/tmp/.archon-test-nonexistent/workflows/defaults'),
+  getWorkflowFolderSearchPaths: mock(() => ['.smelter/workflows']),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands', '.smelter/commands/defaults']),
+  getDefaultCommandsPath: mock(() => '/tmp/.smelter-test-nonexistent/commands/defaults'),
+  getDefaultWorkflowsPath: mock(() => '/tmp/.smelter-test-nonexistent/workflows/defaults'),
   cloneRepository: mock(async () => {}),
   registerRepository: mock(async () => ({ success: true })),
   removeWorktree: mock(async () => ({ success: true })),
   ConversationNotFoundError: class extends Error {},
-  getArchonWorkspacesPath: () => '/tmp/.archon/workspaces',
+  getSmelterWorkspacesPath: () => '/tmp/.smelter/workspaces',
   createLogger: () => ({
     fatal: mock(() => undefined),
     error: mock(() => undefined),
@@ -55,13 +55,13 @@ mock.module('@archon/core', () => ({
   }),
 }));
 
-mock.module('@archon/workflows/workflow-discovery', () => ({
+mock.module('@smelter/workflows/workflow-discovery', () => ({
   discoverWorkflowsWithConfig: mockDiscoverWorkflows,
 }));
-mock.module('@archon/workflows/loader', () => ({
+mock.module('@smelter/workflows/loader', () => ({
   parseWorkflow: mockParseWorkflow,
 }));
-mock.module('@archon/workflows/command-validation', () => ({
+mock.module('@smelter/workflows/command-validation', () => ({
   isValidCommandName: mock(
     (name: string) =>
       !name.includes('/') &&
@@ -71,29 +71,29 @@ mock.module('@archon/workflows/command-validation', () => ({
       !name.startsWith('.')
   ),
 }));
-mock.module('@archon/workflows/defaults', () => ({
+mock.module('@smelter/workflows/defaults', () => ({
   BUNDLED_WORKFLOWS: {
-    'archon-assist': 'name: archon-assist\ndescription: Archon Assist\nnodes: []',
+    'smelter-assist': 'name: smelter-assist\ndescription: Smelter Assist\nnodes: []',
   },
   BUNDLED_COMMANDS: {
-    'archon-assist': '# archon-assist command',
+    'smelter-assist': '# smelter-assist command',
   },
   isBinaryBuild: mock(() => false),
 }));
 
-// Note: @archon/core/defaults/bundled-defaults and @archon/core/utils/commands are NOT mocked.
+// Note: @smelter/core/defaults/bundled-defaults and @smelter/core/utils/commands are NOT mocked.
 // The real implementations are used. isBinaryBuild() returns false in Bun test environment, and
 // the filesystem paths used by the routes point to non-existent directories, so access/readFile/unlink
 // calls naturally fail with ENOENT without needing to mock fs/promises (which would leak globally).
 
-mock.module('@archon/core/db/conversations', () => ({}));
-mock.module('@archon/core/db/isolation-environments', () => ({}));
-mock.module('@archon/core/db/workflows', () => ({}));
-mock.module('@archon/core/db/workflow-events', () => ({}));
-mock.module('@archon/core/db/messages', () => ({}));
+mock.module('@smelter/core/db/conversations', () => ({}));
+mock.module('@smelter/core/db/isolation-environments', () => ({}));
+mock.module('@smelter/core/db/workflows', () => ({}));
+mock.module('@smelter/core/db/workflow-events', () => ({}));
+mock.module('@smelter/core/db/messages', () => ({}));
 
 const mockListCodebases = mock(async () => [{ default_cwd: '/tmp/project' }]);
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   listCodebases: mockListCodebases,
 }));
 
@@ -213,20 +213,20 @@ describe('GET /api/workflows/:name', () => {
     const app = createTestApp();
     registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager);
 
-    // No cwd → no readFile attempt → checks BUNDLED_WORKFLOWS → archon-assist found
+    // No cwd → no readFile attempt → checks BUNDLED_WORKFLOWS → smelter-assist found
     mockListCodebases.mockImplementationOnce(async () => []);
 
-    const response = await app.request('/api/workflows/archon-assist');
+    const response = await app.request('/api/workflows/smelter-assist');
     expect(response.status).toBe(200);
     const body = (await response.json()) as { source: string; filename: string; workflow: unknown };
     expect(body.source).toBe('bundled');
-    expect(body.filename).toBe('archon-assist.yaml');
+    expect(body.filename).toBe('smelter-assist.yaml');
     expect(body.workflow).toBeDefined();
   });
 
   test('returns project workflow with source:project when file exists on disk', async () => {
     const testDir = join(tmpdir(), `wf-get-test-${Date.now()}`);
-    const workflowDir = join(testDir, '.archon', 'workflows');
+    const workflowDir = join(testDir, '.smelter', 'workflows');
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
       join(workflowDir, 'custom.yaml'),
@@ -259,7 +259,7 @@ describe('GET /api/workflows/:name', () => {
 
     mockListCodebases.mockImplementationOnce(async () => []);
 
-    const response = await app.request('/api/workflows/archon-assist');
+    const response = await app.request('/api/workflows/smelter-assist');
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       workflow: Record<string, unknown>;
@@ -278,7 +278,7 @@ describe('GET /api/workflows/:name - cwd validation', () => {
     registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager);
 
     // default mock returns /tmp/project; /etc/secrets is not registered
-    const response = await app.request('/api/workflows/archon-assist?cwd=/etc/secrets');
+    const response = await app.request('/api/workflows/smelter-assist?cwd=/etc/secrets');
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
     expect(body.error).toContain('Invalid cwd');
@@ -314,9 +314,9 @@ describe('PUT /api/workflows/:name', () => {
     expect(body.error).toContain('definition');
   });
 
-  test('falls back to getArchonHome() when no cwd and no codebases registered', async () => {
-    const testArchonHome = join(tmpdir(), `archon-home-test-${Date.now()}`);
-    process.env.ARCHON_HOME = testArchonHome;
+  test('falls back to getSmelterHome() when no cwd and no codebases registered', async () => {
+    const testSmelterHome = join(tmpdir(), `smelter-home-test-${Date.now()}`);
+    process.env.SMELTER_HOME = testSmelterHome;
 
     try {
       const app = createTestApp();
@@ -343,8 +343,8 @@ describe('PUT /api/workflows/:name', () => {
       const body = (await response.json()) as { workflow: object; source: string };
       expect(body.source).toBe('project');
     } finally {
-      delete process.env.ARCHON_HOME;
-      await rm(testArchonHome, { recursive: true, force: true });
+      delete process.env.SMELTER_HOME;
+      await rm(testSmelterHome, { recursive: true, force: true });
     }
   });
 
@@ -412,11 +412,11 @@ describe('DELETE /api/workflows/:name', () => {
     const app = createTestApp();
     registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager);
 
-    // archon-assist is in the real BUNDLED_WORKFLOWS
-    const response = await app.request('/api/workflows/archon-assist', { method: 'DELETE' });
+    // smelter-assist is in the real BUNDLED_WORKFLOWS
+    const response = await app.request('/api/workflows/smelter-assist', { method: 'DELETE' });
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
-    expect(body.error).toContain('archon-assist');
+    expect(body.error).toContain('smelter-assist');
   });
 
   test('returns 404 when workflow file not found', async () => {
@@ -432,7 +432,7 @@ describe('DELETE /api/workflows/:name', () => {
     expect(body.error).toContain('test-nonexistent-workflow-xyz');
   });
 
-  test('falls back to getArchonHome() when no cwd and no codebases, returns 404 for missing file', async () => {
+  test('falls back to getSmelterHome() when no cwd and no codebases, returns 404 for missing file', async () => {
     const app = createTestApp();
     registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager);
 
@@ -448,7 +448,7 @@ describe('DELETE /api/workflows/:name', () => {
 
   test('removes existing workflow file and returns deleted:true', async () => {
     const testDir = join(tmpdir(), `wf-del-test-${Date.now()}`);
-    const workflowDir = join(testDir, '.archon', 'workflows');
+    const workflowDir = join(testDir, '.smelter', 'workflows');
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
       join(workflowDir, 'to-delete.yaml'),
@@ -555,9 +555,9 @@ describe('GET /api/commands', () => {
     const response = await app.request('/api/commands');
     expect(response.status).toBe(200);
     const body = (await response.json()) as { commands: Array<{ name: string; source: string }> };
-    // archon-assist is in the real BUNDLED_COMMANDS
-    const archonAssist = body.commands.find(c => c.name === 'archon-assist');
-    expect(archonAssist).toBeDefined();
-    expect(archonAssist?.source).toBe('bundled');
+    // smelter-assist is in the real BUNDLED_COMMANDS
+    const smelterAssist = body.commands.find(c => c.name === 'smelter-assist');
+    expect(smelterAssist).toBeDefined();
+    expect(smelterAssist?.source).toBe('bundled');
   });
 });

@@ -1,4 +1,4 @@
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import { execFileAsync } from './exec';
 import { getDefaultBranch } from './branch';
 import type { RepoPath, BranchName, GitResult, WorkspaceSyncResult } from './types';
@@ -72,7 +72,7 @@ export async function getRemoteUrl(repoPath: RepoPath): Promise<string | null> {
  * to match `origin/<baseBranch>`.
  *
  * When `resetAfterFetch` is true (default), the working tree is hard-reset to match
- * the remote. This is safe for Archon-managed clones in `~/.archon/workspaces/` but
+ * the remote. This is safe for Smelter-managed clones in `~/.smelter/workspaces/` but
  * **destructive for user's local working directories** — callers must check the path
  * before enabling reset.
  *
@@ -115,7 +115,7 @@ export async function syncWorkspace(
     ) {
       throw new Error(
         `Configured base branch '${baseBranch}' not found on remote. ` +
-          'Either create the branch, update worktree.baseBranch in .archon/config.yaml, ' +
+          'Either create the branch, update worktree.baseBranch in .smelter/config.yaml, ' +
           'or remove the setting to use the auto-detected default branch.'
       );
     }
@@ -140,7 +140,7 @@ export async function syncWorkspace(
     // Non-fatal — fresh clone or detached HEAD edge case
   }
 
-  // Hard-reset local working tree to match origin — only safe for Archon-managed
+  // Hard-reset local working tree to match origin — only safe for Smelter-managed
   // clones, never for a user's local working directory.
   try {
     await execFileAsync('git', ['-C', workspacePath, 'reset', '--hard', `origin/${branchToSync}`], {

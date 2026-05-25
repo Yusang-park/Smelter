@@ -1,5 +1,5 @@
 {
-  "name": "@archon/cli",
+  "name": "@smelter/cli",
   "version": "0.3.10",
   "type": "module",
   "main": "./src/cli.ts",
@@ -12,14 +12,14 @@
     "type-check": "bun x tsc --noEmit"
   },
   "dependencies": {
-    "@archon/adapters": "workspace:*",
-    "@archon/core": "workspace:*",
-    "@archon/git": "workspace:*",
-    "@archon/isolation": "workspace:*",
-    "@archon/paths": "workspace:*",
-    "@archon/providers": "workspace:*",
-    "@archon/server": "workspace:*",
-    "@archon/workflows": "workspace:*",
+    "@smelter/adapters": "workspace:*",
+    "@smelter/core": "workspace:*",
+    "@smelter/git": "workspace:*",
+    "@smelter/isolation": "workspace:*",
+    "@smelter/paths": "workspace:*",
+    "@smelter/providers": "workspace:*",
+    "@smelter/server": "workspace:*",
+    "@smelter/workflows": "workspace:*",
     "@clack/prompts": "^1.0.0",
     "dotenv": "^17.2.3"
   },

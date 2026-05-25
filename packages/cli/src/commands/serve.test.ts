@@ -1,6 +1,6 @@
 import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 
-// Mock @archon/paths BEFORE importing the module under test.
+// Mock @smelter/paths BEFORE importing the module under test.
 // This sets BUNDLED_IS_BINARY = false (dev mode) so serveCommand rejects.
 const mockLogger = {
   fatal: mock(() => undefined),
@@ -10,9 +10,9 @@ const mockLogger = {
   debug: mock(() => undefined),
   trace: mock(() => undefined),
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getWebDistDir: mock((version: string) => `/tmp/test-archon/web-dist/${version}`),
+  getWebDistDir: mock((version: string) => `/tmp/test-smelter/web-dist/${version}`),
   BUNDLED_IS_BINARY: false,
   BUNDLED_VERSION: 'dev',
 }));

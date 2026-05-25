@@ -75,7 +75,7 @@ const ERROR_PATTERNS: { pattern: string; message: string; known: boolean }[] = [
   {
     pattern: 'no base branch configured',
     message:
-      '**Error:** No base branch configured. Set `worktree.baseBranch` in `.archon/config.yaml` ' +
+      '**Error:** No base branch configured. Set `worktree.baseBranch` in `.smelter/config.yaml` ' +
       'or use the `--from` flag to select a branch (e.g., `--from dev`).',
     known: true,
   },
@@ -104,7 +104,7 @@ const ERROR_PATTERNS: { pattern: string; message: string; known: boolean }[] = [
     pattern: 'submodule initialization failed',
     message:
       '**Error:** Submodule initialization failed. Check credentials and network access to ' +
-      'submodule remotes, or set `worktree.initSubmodules: false` in `.archon/config.yaml` ' +
+      'submodule remotes, or set `worktree.initSubmodules: false` in `.smelter/config.yaml` ' +
       'to opt out if submodules are not needed for your workflows.',
     known: true,
   },

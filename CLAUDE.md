@@ -26,7 +26,7 @@
 - Route schemas live in `packages/server/src/routes/schemas/` — one file per domain
 - Engine schemas live in `packages/workflows/src/schemas/` — one file per concern (dag-node, workflow, workflow-run, retry, loop, hooks); `index.ts` re-exports all
 - Engine schema naming: camelCase (e.g., `dagNodeSchema`, `workflowBaseSchema`, `nodeOutputSchema`)
-- `TRIGGER_RULES` and `WORKFLOW_HOOK_EVENTS` are derived from schema `.options` — never duplicate as a plain array (exception: `@archon/web` must define a local constant since `api.generated.d.ts` is type-only and cannot export runtime values)
+- `TRIGGER_RULES` and `WORKFLOW_HOOK_EVENTS` are derived from schema `.options` — never duplicate as a plain array (exception: `@smelter/web` must define a local constant since `api.generated.d.ts` is type-only and cannot export runtime values)
 - `loader.ts` uses `dagNodeSchema.safeParse()` for node validation; graph-level checks (cycles, deps, `$nodeId.output` refs) remain as imperative code in `validateDagStructure()`
 
 **Git Workflow and Releases**
@@ -44,7 +44,7 @@
 - Surface git errors to users for actionable issues (conflicts, uncommitted changes)
 - Handle expected failure cases gracefully (missing directories during cleanup)
 - Trust git's natural guardrails (e.g., refuse to remove worktree with uncommitted changes)
-- Use `@archon/git` functions for git operations; use `execFileAsync` (not `exec`) when calling git directly
+- Use `@smelter/git` functions for git operations; use `execFileAsync` (not `exec`) when calling git directly
 - Worktrees enable parallel development per conversation without branch conflicts
 - Workspaces automatically sync with origin before worktree creation (ensures latest code)
 - **NEVER run `git clean -fd`** - it permanently deletes untracked files (use `git checkout .` instead)
@@ -112,7 +112,7 @@ Regenerating frontend API types (requires server to be running at port 3090):
 
 ```bash
 bun run dev:server  # must be running first
-bun --filter @archon/web generate:types
+bun --filter @smelter/web generate:types
 ```
 
 Optional: Use PostgreSQL instead of SQLite by setting `DATABASE_URL` in `.env`:
@@ -130,7 +130,7 @@ bun test --watch            # Watch mode (single package)
 bun test packages/core/src/handlers/command-handler.test.ts  # Single file
 ```
 
-**Test isolation (mock.module pollution):** Bun's `mock.module()` permanently replaces modules in the process-wide cache — `mock.restore()` does NOT undo it ([oven-sh/bun#7823](https://github.com/oven-sh/bun/issues/7823)). To prevent cross-file pollution, packages that have conflicting `mock.module()` calls split their tests into separate `bun test` invocations: `@archon/core` (7 batches), `@archon/workflows` (5), `@archon/adapters` (3), `@archon/isolation` (3). See each package's `package.json` for the exact splits.
+**Test isolation (mock.module pollution):** Bun's `mock.module()` permanently replaces modules in the process-wide cache — `mock.restore()` does NOT undo it ([oven-sh/bun#7823](https://github.com/oven-sh/bun/issues/7823)). To prevent cross-file pollution, packages that have conflicting `mock.module()` calls split their tests into separate `bun test` invocations: `@smelter/core` (7 batches), `@smelter/workflows` (5), `@smelter/adapters` (3), `@smelter/isolation` (3). See each package's `package.json` for the exact splits.
 
 **Do NOT run `bun test` from the repo root** — it discovers all test files across all packages and runs them in one process, causing ~135 mock pollution failures. Always use `bun run test` (which uses `bun --filter '*' test` for per-package isolation).
 
@@ -172,7 +172,7 @@ This runs `check:bundled`, `check:bundled-skill`, type-check, lint, format check
 ### Database
 
 **Auto-Detection (SQLite is the default — zero setup):**
-- **Without `DATABASE_URL`**: Uses SQLite at `~/.archon/archon.db` (auto-initialized, recommended for most users)
+- **Without `DATABASE_URL`**: Uses SQLite at `~/.smelter/smelter.db` (auto-initialized, recommended for most users)
 - **With `DATABASE_URL` set**: Uses PostgreSQL (optional, for cloud/advanced deployments)
 
 ```bash
@@ -253,11 +253,11 @@ bun run cli serve
 bun run cli serve --port 4000
 bun run cli serve --download-only  # Download without starting
 
-# Install the bundled Archon skill into a project
+# Install the bundled Smelter skill into a project
 bun run cli skill install
 bun run cli skill install /path/to/project
 
-# Verify your Archon setup (Claude binary, gh auth, DB, adapters)
+# Verify your Smelter setup (Claude binary, gh auth, DB, adapters)
 bun run cli doctor
 
 # Show version
@@ -272,12 +272,12 @@ bun run cli version
 
 ```
 packages/
-├── cli/                      # @archon/cli - Command-line interface
+├── cli/                      # @smelter/cli - Command-line interface
 │   └── src/
 │       ├── adapters/         # CLI adapter (stdout output)
 │       ├── commands/         # CLI command implementations
 │       └── cli.ts            # CLI entry point
-├── providers/                # @archon/providers - AI agent providers (SDK deps live here)
+├── providers/                # @smelter/providers - AI agent providers (SDK deps live here)
 │   └── src/
 │       ├── types.ts          # Contract layer (IAgentProvider, SendQueryOptions, MessageChunk — ZERO SDK deps)
 │       ├── registry.ts       # Typed provider registry (ProviderRegistration records)
@@ -286,7 +286,7 @@ packages/
 │       ├── codex/            # CodexProvider + parseCodexConfig + binary-resolver
 │       ├── community/pi/     # PiProvider (builtIn: false) — @mariozechner/pi-coding-agent, ~20 LLM backends
 │       └── index.ts          # Package exports
-├── core/                     # @archon/core - Shared business logic
+├── core/                     # @smelter/core - Shared business logic
 │   └── src/
 │       ├── config/           # YAML config loading
 │       ├── db/               # Database connection, queries
@@ -298,7 +298,7 @@ packages/
 │       ├── utils/            # Shared utilities
 │       ├── workflows/        # Store adapter (createWorkflowStore) bridging core DB → IWorkflowStore
 │       └── index.ts          # Package exports
-├── workflows/                # @archon/workflows - Workflow engine (depends on @archon/git + @archon/paths)
+├── workflows/                # @smelter/workflows - Workflow engine (depends on @smelter/git + @smelter/paths)
 │   └── src/
 │       ├── schemas/          # Zod schemas for engine types
 │       ├── loader.ts         # YAML parsing + validation (parseWorkflow)
@@ -308,13 +308,13 @@ packages/
 │       ├── executor.ts       # Workflow execution orchestrator (executeWorkflow)
 │       ├── dag-executor.ts   # DAG-specific execution logic
 │       ├── store.ts          # IWorkflowStore interface (database abstraction)
-│       ├── deps.ts           # WorkflowDeps injection types (IWorkflowPlatform, imports from @archon/providers/types)
+│       ├── deps.ts           # WorkflowDeps injection types (IWorkflowPlatform, imports from @smelter/providers/types)
 │       ├── event-emitter.ts  # Workflow observability events
 │       ├── logger.ts         # JSONL file logger
 │       ├── validator.ts      # Resource validation (command files, MCP configs, skill dirs)
 │       ├── defaults/         # Bundled default commands and workflows
 │       └── utils/            # Variable substitution, tool formatting, execution utilities
-├── git/                      # @archon/git - Git operations (no @archon/core dep)
+├── git/                      # @smelter/git - Git operations (no @smelter/core dep)
 │   └── src/
 │       ├── branch.ts         # Branch operations (checkout, merge detection, etc.)
 │       ├── exec.ts           # execFileAsync and mkdirAsync wrappers
@@ -322,7 +322,7 @@ packages/
 │       ├── types.ts          # Branded types (RepoPath, BranchName, etc.)
 │       ├── worktree.ts       # Worktree operations (create, remove, list)
 │       └── index.ts          # Package exports
-├── isolation/                # @archon/isolation - Worktree isolation (depends on @archon/git + @archon/paths)
+├── isolation/                # @smelter/isolation - Worktree isolation (depends on @smelter/git + @smelter/paths)
 │   └── src/
 │       ├── types.ts          # Isolation types and interfaces
 │       ├── errors.ts         # Error classifiers (classifyIsolationError, IsolationBlockedError)
@@ -333,24 +333,24 @@ packages/
 │       ├── providers/
 │       │   └── worktree.ts   # WorktreeProvider implementation
 │       └── index.ts          # Package exports
-├── paths/                    # @archon/paths - Path resolution and logger (zero @archon/* deps)
+├── paths/                    # @smelter/paths - Path resolution and logger (zero @smelter/* deps)
 │   └── src/
-│       ├── archon-paths.ts   # Archon directory path utilities
+│       ├── smelter-paths.ts   # Smelter directory path utilities
 │       ├── logger.ts         # Pino logger factory
 │       └── index.ts          # Package exports
-├── adapters/                 # @archon/adapters - Platform adapters (Slack, Telegram, GitHub, Discord)
+├── adapters/                 # @smelter/adapters - Platform adapters (Slack, Telegram, GitHub, Discord)
 │   └── src/
 │       ├── chat/             # Chat platform adapters (Slack, Telegram)
 │       ├── forge/            # Forge adapters (GitHub)
 │       ├── community/        # Community adapters (Discord)
 │       ├── utils/            # Shared adapter utilities (message splitting)
 │       └── index.ts          # Package exports
-├── server/                   # @archon/server - HTTP server + Web adapter
+├── server/                   # @smelter/server - HTTP server + Web adapter
 │   └── src/
 │       ├── adapters/         # Web platform adapter (SSE streaming)
 │       ├── routes/           # API routes (REST + SSE)
 │       └── index.ts          # Hono server entry point
-└── web/                      # @archon/web - React frontend (Web UI)
+└── web/                      # @smelter/web - React frontend (Web UI)
     └── src/
         ├── components/       # React components (chat, layout, projects, ui, workflows)
         ├── hooks/            # Custom hooks (useSSE, etc.)
@@ -366,28 +366,28 @@ packages/
 
 ```typescript
 // ✅ CORRECT: Use `import type` for type-only imports
-import type { IPlatformAdapter, Conversation, MergedConfig } from '@archon/core';
+import type { IPlatformAdapter, Conversation, MergedConfig } from '@smelter/core';
 
 // ✅ CORRECT: Use specific named imports for values
-import { handleMessage, ConversationLockManager, pool } from '@archon/core';
+import { handleMessage, ConversationLockManager, pool } from '@smelter/core';
 
 // ✅ CORRECT: Namespace imports for submodules with many exports
-import * as conversationDb from '@archon/core/db/conversations';
-import * as git from '@archon/git';
+import * as conversationDb from '@smelter/core/db/conversations';
+import * as git from '@smelter/git';
 
 // ✅ CORRECT: Import workflow engine types/functions from direct subpaths
-import type { WorkflowDeps } from '@archon/workflows/deps';
-import type { IWorkflowStore } from '@archon/workflows/store';
-import type { WorkflowDefinition } from '@archon/workflows/schemas/workflow';
-import { executeWorkflow } from '@archon/workflows/executor';
-import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
-import { findWorkflow } from '@archon/workflows/router';
+import type { WorkflowDeps } from '@smelter/workflows/deps';
+import type { IWorkflowStore } from '@smelter/workflows/store';
+import type { WorkflowDefinition } from '@smelter/workflows/schemas/workflow';
+import { executeWorkflow } from '@smelter/workflows/executor';
+import { discoverWorkflowsWithConfig } from '@smelter/workflows/workflow-discovery';
+import { findWorkflow } from '@smelter/workflows/router';
 
 // ❌ WRONG: Never use generic import for main package
-import * as core from '@archon/core';  // Don't do this
+import * as core from '@smelter/core';  // Don't do this
 
-// ❌ WRONG: In @archon/web, never import from @archon/workflows (it's a server package)
-import type { DagNode } from '@archon/workflows/schemas/dag-node';  // Don't do this from @archon/web
+// ❌ WRONG: In @smelter/web, never import from @smelter/workflows (it's a server package)
+import type { DagNode } from '@smelter/workflows/schemas/dag-node';  // Don't do this from @smelter/web
 // ✅ CORRECT: Use re-exports from api.ts (derived from generated OpenAPI spec)
 import type { DagNode, WorkflowDefinition } from '@/lib/api';
 ```
@@ -418,16 +418,16 @@ import type { DagNode, WorkflowDefinition } from '@/lib/api';
 ### Architecture Layers
 
 **Package Split:**
-- **@archon/paths**: Path resolution utilities, Pino logger factory, web dist cache path (`getWebDistDir`), CWD env stripper (`stripCwdEnv`, `strip-cwd-env-boot`) (no @archon/* deps; `pino` and `dotenv` are allowed external deps)
-- **@archon/git**: Git operations - worktrees, branches, repos, exec wrappers (depends only on @archon/paths)
-- **@archon/providers**: AI agent providers (Claude, Codex, Pi community) — owns SDK deps, `IAgentProvider` interface, `sendQuery()` contract, and provider-specific option translation. `@archon/providers/types` is the contract subpath (zero SDK deps, zero runtime side effects) that `@archon/workflows` imports from. Providers receive raw `nodeConfig` + `assistantConfig` and translate to SDK-specific options internally. Core providers live under `claude/` and `codex/`; community providers live under `community/` (currently `community/pi/`, registered with `builtIn: false`).
-- **@archon/isolation**: Worktree isolation types, providers, resolver, error classifiers (depends only on @archon/git + @archon/paths)
-- **@archon/workflows**: Workflow engine - loader, router, executor, DAG, logger, bundled defaults (depends only on @archon/git + @archon/paths + @archon/providers/types + @hono/zod-openapi + zod; DB/AI/config injected via `WorkflowDeps`)
-- **@archon/cli**: Command-line interface for running workflows and starting the web UI server (depends on @archon/server + @archon/adapters for the serve command)
-- **@archon/core**: Business logic, database, orchestration (depends on @archon/providers for AI; provides `createWorkflowStore()` adapter bridging core DB → `IWorkflowStore`)
-- **@archon/adapters**: Platform adapters for Slack, Telegram, GitHub, Discord (depends on @archon/core)
-- **@archon/server**: OpenAPIHono HTTP server (Zod + OpenAPI spec generation via `@hono/zod-openapi`), Web adapter (SSE), API routes, Web UI static serving (depends on @archon/adapters)
-- **@archon/web**: React frontend (Vite + Tailwind v4 + shadcn/ui + Zustand), SSE streaming to server. `WorkflowRunStatus`, `WorkflowDefinition`, and `DagNode` are all derived from `src/lib/api.generated.d.ts` (generated from the OpenAPI spec via `bun generate:types`; never import from `@archon/workflows`)
+- **@smelter/paths**: Path resolution utilities, Pino logger factory, web dist cache path (`getWebDistDir`), CWD env stripper (`stripCwdEnv`, `strip-cwd-env-boot`) (no @smelter/* deps; `pino` and `dotenv` are allowed external deps)
+- **@smelter/git**: Git operations - worktrees, branches, repos, exec wrappers (depends only on @smelter/paths)
+- **@smelter/providers**: AI agent providers (Claude, Codex, Pi community) — owns SDK deps, `IAgentProvider` interface, `sendQuery()` contract, and provider-specific option translation. `@smelter/providers/types` is the contract subpath (zero SDK deps, zero runtime side effects) that `@smelter/workflows` imports from. Providers receive raw `nodeConfig` + `assistantConfig` and translate to SDK-specific options internally. Core providers live under `claude/` and `codex/`; community providers live under `community/` (currently `community/pi/`, registered with `builtIn: false`).
+- **@smelter/isolation**: Worktree isolation types, providers, resolver, error classifiers (depends only on @smelter/git + @smelter/paths)
+- **@smelter/workflows**: Workflow engine - loader, router, executor, DAG, logger, bundled defaults (depends only on @smelter/git + @smelter/paths + @smelter/providers/types + @hono/zod-openapi + zod; DB/AI/config injected via `WorkflowDeps`)
+- **@smelter/cli**: Command-line interface for running workflows and starting the web UI server (depends on @smelter/server + @smelter/adapters for the serve command)
+- **@smelter/core**: Business logic, database, orchestration (depends on @smelter/providers for AI; provides `createWorkflowStore()` adapter bridging core DB → `IWorkflowStore`)
+- **@smelter/adapters**: Platform adapters for Slack, Telegram, GitHub, Discord (depends on @smelter/core)
+- **@smelter/server**: OpenAPIHono HTTP server (Zod + OpenAPI spec generation via `@hono/zod-openapi`), Web adapter (SSE), API routes, Web UI static serving (depends on @smelter/adapters)
+- **@smelter/web**: React frontend (Vite + Tailwind v4 + shadcn/ui + Zustand), SSE streaming to server. `WorkflowRunStatus`, `WorkflowDefinition`, and `DagNode` are all derived from `src/lib/api.generated.d.ts` (generated from the OpenAPI spec via `bun generate:types`; never import from `@smelter/workflows`)
 
 **1. Platform Adapters**
 - Implement `IPlatformAdapter` interface
@@ -472,11 +472,11 @@ import type { DagNode, WorkflowDefinition } from '@/lib/api';
 **Environment Variables:**
 
 see .env.example
-see .archon/config.yaml setup as needed
+see .smelter/config.yaml setup as needed
 
 **Assistant Defaults:**
 
-The system supports configuring default models and options per assistant in `.archon/config.yaml`:
+The system supports configuring default models and options per assistant in `.smelter/config.yaml`:
 
 ```yaml
 assistants:
@@ -504,12 +504,12 @@ assistants:
 
 **Configuration Priority:**
 1. Workflow-level options (in YAML `model`, `modelReasoningEffort`, etc.)
-2. Config file defaults (`.archon/config.yaml` `assistants.*`)
+2. Config file defaults (`.smelter/config.yaml` `assistants.*`)
 3. SDK defaults
 
 **Model Validation:**
 - Workflows are validated at load time for provider _identity_ only — `provider:` (workflow-level and per-node) must be a registered provider id, otherwise the YAML is rejected with `Unknown provider '<id>'. Registered: claude, codex, pi`.
-- Model strings are NOT validated by Archon. Whatever the user writes in `model:` is forwarded verbatim to the resolved SDK. Vendor SDKs ship new models faster than Archon can update; the SDK and the upstream API are the source of truth for what names exist.
+- Model strings are NOT validated by Smelter. Whatever the user writes in `model:` is forwarded verbatim to the resolved SDK. Vendor SDKs ship new models faster than Smelter can update; the SDK and the upstream API are the source of truth for what names exist.
 - Provider is resolved via an explicit chain: `node.provider ?? workflow.provider ?? config.assistant`. Model never influences provider selection.
 
 ### Running the App in Worktrees
@@ -550,11 +550,11 @@ curl http://localhost:3637/api/conversations/<conversationId>/messages
 - Database is shared (same conversations/codebases available)
 - Kill the server when done: `pkill -f "bun.*dev"` or use the specific port
 
-### Archon Directory Structure
+### Smelter Directory Structure
 
-**User-level (`~/.archon/`):**
+**User-level (`~/.smelter/`):**
 ```
-~/.archon/
+~/.smelter/
 ├── workspaces/owner/repo/        # Project-centric layout
 │   ├── source/                   # Cloned repo or symlink → local path
 │   ├── worktrees/                # Git worktrees for this project
@@ -563,15 +563,15 @@ curl http://localhost:3637/api/conversations/<conversationId>/messages
 │   │   └── uploads/{convId}/     # Web UI file uploads (ephemeral)
 │   └── logs/                     # Workflow execution logs
 ├── vendor/codex/                  # Codex native binary (binary builds, user-placed)
-├── web-dist/<version>/            # Cached web UI dist (archon serve, binary only)
+├── web-dist/<version>/            # Cached web UI dist (smelter serve, binary only)
 ├── update-check.json              # Update check cache (binary builds, 24h TTL)
-├── archon.db                     # SQLite database (when DATABASE_URL not set)
+├── smelter.db                     # SQLite database (when DATABASE_URL not set)
 └── config.yaml                   # Global configuration (non-secrets)
 ```
 
-**Repo-level (`.archon/` in any repository):**
+**Repo-level (`.smelter/` in any repository):**
 ```
-.archon/
+.smelter/
 ├── commands/       # Custom commands
 ├── workflows/      # Workflow definitions (YAML files)
 ├── scripts/        # Named scripts for script: nodes (.ts/.js for bun, .py for uv)
@@ -579,8 +579,8 @@ curl http://localhost:3637/api/conversations/<conversationId>/messages
 └── config.yaml     # Repo-specific configuration
 ```
 
-- `ARCHON_HOME` - Override the base directory (default: `~/.archon`)
-- Docker: Paths automatically set to `/.archon/`
+- `SMELTER_HOME` - Override the base directory (default: `~/.smelter`)
+- Docker: Paths automatically set to `/.smelter/`
 
 ## Development Guidelines
 
@@ -642,12 +642,20 @@ This ensures type compatibility with SDK updates and eliminates `as any` casts.
 
 **Manual Validation:** Use the web API (`curl`) or CLI commands directly for end-to-end testing of new features.
 
+**UI Verification Strategy:** For visual/UI bugs, verify the behavior under the same conditions the user reported before declaring it fixed.
+- Use the real affected route and real backend data. Do not rely on synthetic debug pages, mock images, or fabricated sample data unless the task is explicitly about a synthetic harness.
+- Use the project's actual E2E path when available (for example, the package's documented E2E script and `.env.e2e` setup). Do not substitute a quick ad-hoc page when a real E2E route exists.
+- Match the user's rendering conditions for visual artifacts: viewport, browser, theme, zoom, and device pixel ratio (`deviceScaleFactor` / DPR). A 2x Retina screenshot is not evidence for a 1x display issue.
+- Validate measurement scripts before trusting them. Run them against known positive and negative cases that would expose the target artifact; if the detector mathematically removes the artifact being measured, it is invalid.
+- For screenshot-based evidence, inspect the captured image itself and describe the observed target state. File existence or test-runner success is not visual confirmation.
+- Do not claim "fixed", "resolved", or "confirmed" for subjective visual quality until the user confirms in their environment. Before that, say what was changed and what local evidence was collected.
+
 ### Logging
 
 **Structured logging with Pino** (`packages/paths/src/logger.ts`):
 
 ```typescript
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 const log = createLogger('orchestrator');
 
@@ -680,8 +688,8 @@ async function createSession(conversationId: string, codebaseId: string) {
 **Log Levels:** `fatal` > `error` > `warn` > `info` (default) > `debug` > `trace`
 
 **Verbosity:**
-- CLI: `archon --quiet` (errors only) — suppresses Pino logs and workflow progress output
-- CLI: `archon --verbose` (debug) — enables debug Pino logs and tool-level workflow progress events
+- CLI: `smelter --quiet` (errors only) — suppresses Pino logs and workflow progress output
+- CLI: `smelter --verbose` (debug) — enables debug Pino logs and tool-level workflow progress events
 - Server: `LOG_LEVEL=debug bun run start`
 
 **Never log:** API keys or tokens (mask: `token.slice(0, 8) + '...'`), user message content, PII.
@@ -694,7 +702,7 @@ async function createSession(conversationId: string, codebaseId: string) {
 - `$ARTIFACTS_DIR` - External artifacts directory for the current workflow run (pre-created by executor)
 - `$WORKFLOW_ID` - The workflow run ID
 - `$BASE_BRANCH` - Base branch; auto-detected from git when `worktree.baseBranch` is not set; fails only if referenced in a prompt and auto-detection also fails
-- `$DOCS_DIR` - Documentation directory path; configured via `docs.path` in `.archon/config.yaml`. Defaults to `docs/`. Never throws.
+- `$DOCS_DIR` - Documentation directory path; configured via `docs.path` in `.smelter/config.yaml`. Defaults to `docs/`. Never throws.
 - `$LOOP_USER_INPUT` - User feedback provided via `/workflow approve <id> <text>` at an interactive loop gate. Only populated on the first iteration of a resumed interactive loop; empty string on all other iterations.
 - `$REJECTION_REASON` - Reviewer feedback provided via `/workflow reject <id> <reason>` at an approval gate. Only populated in `on_reject` prompts; empty string elsewhere.
 - `$LOOP_PREV_OUTPUT` - Cleaned output of the previous loop iteration (loop nodes only). Empty string on the first iteration (no prior output exists). Useful for `fresh_context: true` loops that need to reference what the previous pass produced or why it failed without carrying full session history.
@@ -702,41 +710,41 @@ async function createSession(conversationId: string, codebaseId: string) {
 **Command Types:**
 
 1. **Codebase Commands** (per-repo):
-   - Stored in `.archon/commands/` (plain text/markdown)
-   - Discovered from the repository `.archon/commands/` directory
+   - Stored in `.smelter/commands/` (plain text/markdown)
+   - Discovered from the repository `.smelter/commands/` directory
    - Surfaced via `GET /api/commands` for the workflow builder and invoked by workflow `command:` nodes
 
 2. **Workflows** (YAML-based):
-   - Stored in `.archon/workflows/` (searched recursively)
+   - Stored in `.smelter/workflows/` (searched recursively)
    - Multi-step AI execution chains, discovered at runtime
-   - **`nodes:` (DAG format)**: Nodes with explicit `depends_on` edges; independent nodes in the same topological layer run concurrently. Node types: `command:` (named command file), `prompt:` (inline prompt), `bash:` (shell script, stdout captured as `$nodeId.output`, no AI, receives managed per-project env vars in its subprocess environment when configured), `loop:` (iterative AI prompt until completion signal), `approval:` (human gate; pauses until user approves or rejects; `capture_response: true` stores the user's comment as `$<node-id>.output` for downstream nodes, default false), `script:` (inline TypeScript/Python or named script from `.archon/scripts/`, runs via `bun` or `uv`, stdout captured as `$nodeId.output`, no AI, receives managed per-project env vars in its subprocess environment when configured, supports `deps:` for dependency installation and `timeout:` in ms, requires `runtime: bun` or `runtime: uv`) . Supports `when:` conditions, `trigger_rule` join semantics, `$nodeId.output` substitution, `output_format` for structured JSON output (Claude and Codex via SDK enforcement; Pi best-effort via prompt augmentation + JSON extraction), `allowed_tools`/`denied_tools` for per-node tool restrictions (Claude only), `hooks` for per-node SDK hook callbacks (Claude only), `mcp` for per-node MCP server config files (Claude only, env vars expanded at execution time), and `skills` for per-node skill preloading via AgentDefinition wrapping (Claude only), `agents` for inline sub-agent definitions invokable via the Task tool (Claude only), and `effort`/`thinking`/`maxBudgetUsd`/`systemPrompt`/`fallbackModel`/`betas`/`sandbox` for Claude SDK advanced options (Claude only, also settable at workflow level)
-   - Provider inherited from `.archon/config.yaml` unless explicitly set; per-node `provider` and `model` overrides supported
+   - **`nodes:` (DAG format)**: Nodes with explicit `depends_on` edges; independent nodes in the same topological layer run concurrently. Node types: `command:` (named command file), `prompt:` (inline prompt), `bash:` (shell script, stdout captured as `$nodeId.output`, no AI, receives managed per-project env vars in its subprocess environment when configured), `loop:` (iterative AI prompt until completion signal), `approval:` (human gate; pauses until user approves or rejects; `capture_response: true` stores the user's comment as `$<node-id>.output` for downstream nodes, default false), `script:` (inline TypeScript/Python or named script from `.smelter/scripts/`, runs via `bun` or `uv`, stdout captured as `$nodeId.output`, no AI, receives managed per-project env vars in its subprocess environment when configured, supports `deps:` for dependency installation and `timeout:` in ms, requires `runtime: bun` or `runtime: uv`) . Supports `when:` conditions, `trigger_rule` join semantics, `$nodeId.output` substitution, `output_format` for structured JSON output (Claude and Codex via SDK enforcement; Pi best-effort via prompt augmentation + JSON extraction), `allowed_tools`/`denied_tools` for per-node tool restrictions (Claude only), `hooks` for per-node SDK hook callbacks (Claude only), `mcp` for per-node MCP server config files (Claude only, env vars expanded at execution time), and `skills` for per-node skill preloading via AgentDefinition wrapping (Claude only), `agents` for inline sub-agent definitions invokable via the Task tool (Claude only), and `effort`/`thinking`/`maxBudgetUsd`/`systemPrompt`/`fallbackModel`/`betas`/`sandbox` for Claude SDK advanced options (Claude only, also settable at workflow level)
+   - Provider inherited from `.smelter/config.yaml` unless explicitly set; per-node `provider` and `model` overrides supported
    - Model and options can be set per workflow or inherited from config defaults
    - `interactive: true` at the workflow level forces foreground execution on web (required for approval-gate workflows in the web UI)
    - Model validation ensures provider/model compatibility at load time
    - Commands: `/workflow list`, `/workflow reload`, `/workflow status`, `/workflow cancel`, `/workflow resume <id>` (re-runs failed workflow, skipping completed nodes), `/workflow abandon <id>`, `/workflow cleanup [days]` (CLI only — deletes old run records)
    - Resilient loading: One broken YAML doesn't abort discovery; errors shown in `/workflow list`
    - `resolveWorkflowName()` (in `router.ts`) resolves workflow names via a 4-tier fallback — exact, case-insensitive, suffix (`-name`), substring — with ambiguity detection; used by both the CLI and all chat platforms
-   - Router fallback: if no `/invoke-workflow` is produced, falls back to `archon-assist` (with "Routing unclear" notice); raw AI response returned only when `archon-assist` is unavailable
+   - Router fallback: if no `/invoke-workflow` is produced, falls back to `smelter-assist` (with "Routing unclear" notice); raw AI response returned only when `smelter-assist` is unavailable
    - Claude routing calls use `tools: []` to prevent tool use at the API level; Codex tool bypass is detected and triggers the same fallback
 
 **Defaults:**
-- Bundled in `.archon/commands/defaults/` and `.archon/workflows/defaults/`
+- Bundled in `.smelter/commands/defaults/` and `.smelter/workflows/defaults/`
 - Binary builds: Embedded at compile time (no filesystem access needed) via `packages/workflows/src/defaults/bundled-defaults.generated.ts`
 - Source builds: Loaded from filesystem at runtime
 - Merged with repo-specific commands/workflows (repo overrides defaults by name)
-- Opt-out: Set `defaults.loadDefaultCommands: false` or `defaults.loadDefaultWorkflows: false` in `.archon/config.yaml`
+- Opt-out: Set `defaults.loadDefaultCommands: false` or `defaults.loadDefaultWorkflows: false` in `.smelter/config.yaml`
 - **After adding, removing, or editing a default file, run `bun run generate:bundled`** to refresh the embedded bundle. `bun run validate` (and CI) run `check:bundled` and `check:bundled-skill` and will fail loudly if either generated file is stale.
 
 **Home-scoped ("global") workflows, commands, and scripts** (user-level, applies to every project):
-- Workflows: `~/.archon/workflows/` (or `$ARCHON_HOME/workflows/`)
-- Commands: `~/.archon/commands/` (or `$ARCHON_HOME/commands/`)
-- Scripts: `~/.archon/scripts/` (or `$ARCHON_HOME/scripts/`)
+- Workflows: `~/.smelter/workflows/` (or `$SMELTER_HOME/workflows/`)
+- Commands: `~/.smelter/commands/` (or `$SMELTER_HOME/commands/`)
+- Scripts: `~/.smelter/scripts/` (or `$SMELTER_HOME/scripts/`)
 - Source label: `source: 'global'` on workflows and commands (scripts don't have a source label)
 - Load priority: bundled < global < project (repo overrides global by filename or script name)
-- Subfolders: supported 1 level deep (e.g. `~/.archon/workflows/triage/foo.yaml`). Deeper nesting is ignored silently.
+- Subfolders: supported 1 level deep (e.g. `~/.smelter/workflows/triage/foo.yaml`). Deeper nesting is ignored silently.
 - Discovery is automatic — `discoverWorkflowsWithConfig(cwd, loadConfig)` and `discoverScriptsForCwd(cwd)` both read home-scoped paths unconditionally; no caller option needed
-- **Migration from pre-0.x `~/.archon/.archon/workflows/`**: if Archon detects files at the old location it emits a one-time WARN with the exact `mv` command and does NOT load from there. Move with: `mv ~/.archon/.archon/workflows ~/.archon/workflows && rmdir ~/.archon/.archon`
+- **Migration from pre-0.x `~/.smelter/.smelter/workflows/`**: if Smelter detects files at the old location it emits a one-time WARN with the exact `mv` command and does NOT load from there. Move with: `mv ~/.smelter/.smelter/workflows ~/.smelter/workflows && rmdir ~/.smelter/.smelter`
 - See the docs site at `packages/docs-web/` for details
 
 ### Error Handling
@@ -774,7 +782,7 @@ try {
 }
 ```
 
-Pattern: Use `classifyIsolationError()` (from `@archon/isolation`) to map git errors (permission denied, timeout, no space, not a git repo) to user-friendly messages. Always log the raw error for debugging and send a classified message to the user.
+Pattern: Use `classifyIsolationError()` (from `@smelter/isolation`) to map git errors (permission denied, timeout, no space, not a git repo) to user-friendly messages. Always log the raw error for debugging and send a classified message to the user.
 
 ### API Endpoints
 
@@ -827,6 +835,6 @@ Pattern: Use `classifyIsolationError()` (from `@archon/isolation`) to map git er
 - Never log or expose tokens in responses
 
 **@Mention Detection:**
-- Parse `@archon` in issue/PR **comments only** (not descriptions)
+- Parse `@smelter` in issue/PR **comments only** (not descriptions)
 - Events: `issue_comment` only
 - Note: Descriptions often contain example commands or documentation - these are NOT command invocations (see #96)

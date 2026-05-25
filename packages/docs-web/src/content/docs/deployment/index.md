@@ -1,6 +1,6 @@
 ---
 title: Deployment Overview
-description: Overview of deployment options for running Archon locally, with Docker, or on a cloud VPS.
+description: Overview of deployment options for running Smelter locally, with Docker, or on a cloud VPS.
 category: deployment
 area: infra
 audience: [operator]
@@ -9,7 +9,7 @@ sidebar:
   order: 0
 ---
 
-Archon can run locally for development or be deployed to a server for always-on operation.
+Smelter can run locally for development or be deployed to a server for always-on operation.
 
 ## Deployment Options
 
@@ -28,7 +28,7 @@ Archon can run locally for development or be deployed to a server for always-on 
 | **Remote PostgreSQL** | Set `DATABASE_URL` to hosted DB | Cloud deployments, shared access |
 | **Local PostgreSQL** | Docker `--profile with-db` | Self-hosted, Docker-based setups |
 
-SQLite stores data at `~/.archon/archon.db` (or `/.archon/archon.db` in Docker). It is auto-initialized on first run.
+SQLite stores data at `~/.smelter/smelter.db` (or `/.smelter/smelter.db` in Docker). It is auto-initialized on first run.
 
 ## Testing
 

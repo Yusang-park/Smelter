@@ -7,8 +7,8 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { readdir, access } from 'fs/promises';
 import { join } from 'path';
-import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
-import type { IsolationHints } from '@archon/isolation';
+import type { IPlatformAdapter, MessageMetadata } from '@smelter/core';
+import type { IsolationHints } from '@smelter/isolation';
 import {
   ConversationNotFoundError,
   handleMessage,
@@ -16,8 +16,12 @@ import {
   toError,
   onConversationClosed,
   ConversationLockManager,
-} from '@archon/core';
-import { getArchonWorkspacesPath, getCommandFolderSearchPaths, createLogger } from '@archon/paths';
+} from '@smelter/core';
+import {
+  getSmelterWorkspacesPath,
+  getCommandFolderSearchPaths,
+  createLogger,
+} from '@smelter/paths';
 import {
   cloneRepository,
   syncRepository,
@@ -25,9 +29,9 @@ import {
   toRepoPath,
   toBranchName,
   isWorktreePath,
-} from '@archon/git';
-import * as db from '@archon/core/db/conversations';
-import * as codebaseDb from '@archon/core/db/codebases';
+} from '@smelter/git';
+import * as db from '@smelter/core/db/conversations';
+import * as codebaseDb from '@smelter/core/db/codebases';
 import { parseAllowedUsers, isGiteaUserAuthorized } from './auth';
 import { splitIntoParagraphChunks } from '../../../utils/message-splitting';
 import type { WebhookEvent } from './types';
@@ -42,7 +46,7 @@ function getLog(): ReturnType<typeof createLogger> {
 const MAX_LENGTH = 65000; // Gitea comment limit (similar to GitHub)
 
 /** Hidden marker added to bot comments to prevent self-triggering loops */
-const BOT_RESPONSE_MARKER = '<!-- archon-bot-response -->';
+const BOT_RESPONSE_MARKER = '<!-- smelter-bot-response -->';
 
 export class GiteaAdapter implements IPlatformAdapter {
   private baseUrl: string;
@@ -66,7 +70,7 @@ export class GiteaAdapter implements IPlatformAdapter {
     this.token = token;
     this.webhookSecret = webhookSecret;
     this.lockManager = lockManager;
-    this.botMention = botMention ?? 'Archon';
+    this.botMention = botMention ?? 'Smelter';
 
     // Parse Gitea user whitelist (optional - empty = open access)
     this.allowedUsers = parseAllowedUsers(process.env.GITEA_ALLOWED_USERS);
@@ -470,7 +474,7 @@ export class GiteaAdapter implements IPlatformAdapter {
 
   /**
    * Ensure repository is cloned and ready.
-   * Uses @archon/git functions for safe, testable git operations.
+   * Uses @smelter/git functions for safe, testable git operations.
    *
    * For new codebases: clone (directory won't exist)
    * For existing codebases: sync if shouldSync=true, skip if shouldSync=false
@@ -549,7 +553,7 @@ export class GiteaAdapter implements IPlatformAdapter {
   }
 
   /**
-   * Auto-detect and load commands from .archon/commands/ (or configured folder)
+   * Auto-detect and load commands from .smelter/commands/ (or configured folder)
    */
   private async autoDetectAndLoadCommands(repoPath: string, codebaseId: string): Promise<void> {
     const commandFolders = getCommandFolderSearchPaths();
@@ -608,7 +612,7 @@ export class GiteaAdapter implements IPlatformAdapter {
     existing ??= await codebaseDb.findCodebaseByRepoUrl(repoUrlWithGit);
 
     // Canonical path includes owner to prevent collisions between repos with same name
-    const canonicalPath = join(getArchonWorkspacesPath(), owner, repo);
+    const canonicalPath = join(getSmelterWorkspacesPath(), owner, repo);
 
     if (existing) {
       // Check if existing codebase points to a worktree path - fix it if so

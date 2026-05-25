@@ -3,10 +3,10 @@
  *
  * Pi's `@mariozechner/pi-coding-agent/dist/config.js` runs
  * `readFileSync(getPackageJsonPath(), 'utf-8')` at module top-level. Inside
- * a compiled Archon binary `getPackageJsonPath()` resolves to
+ * a compiled Smelter binary `getPackageJsonPath()` resolves to
  * `dirname(process.execPath) + '/package.json'`, which doesn't exist — so
- * any static import chain from `@archon/providers` into the Pi SDK crashes
- * archon at startup with ENOENT before any command runs (v0.3.7 symptom).
+ * any static import chain from `@smelter/providers` into the Pi SDK crashes
+ * smelter at startup with ENOENT before any command runs (v0.3.7 symptom).
  *
  * Detection strategy: replace both Pi SDK packages with `mock.module`
  * factories that flip a boolean the first time something resolves them.

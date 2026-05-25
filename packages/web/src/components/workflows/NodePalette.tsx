@@ -93,7 +93,7 @@ export function NodePalette(): React.ReactElement {
       {global.length > 0 && (
         <>
           <h4 className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide mt-2 mb-1">
-            Global (~/.archon/commands/)
+            Global (~/.smelter/commands/)
           </h4>
           {global.map((cmd: CommandEntry) => (
             <div

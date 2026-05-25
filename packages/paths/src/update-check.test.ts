@@ -43,11 +43,11 @@ describe('parseLatestRelease', () => {
   test('parses valid response with v prefix', () => {
     const result = parseLatestRelease({
       tag_name: 'v0.4.0',
-      html_url: 'https://github.com/coleam00/Archon/releases/tag/v0.4.0',
+      html_url: 'https://github.com/coleam00/Smelter/releases/tag/v0.4.0',
     });
     expect(result).toEqual({
       version: '0.4.0',
-      url: 'https://github.com/coleam00/Archon/releases/tag/v0.4.0',
+      url: 'https://github.com/coleam00/Smelter/releases/tag/v0.4.0',
     });
   });
 
@@ -72,20 +72,20 @@ describe('parseLatestRelease', () => {
 // ─── checkForUpdate (with mocked fetch) ──────────────────────────────
 
 describe('checkForUpdate', () => {
-  const testDir = join(tmpdir(), `archon-update-check-test-${Date.now()}`);
-  let originalArchonHome: string | undefined;
+  const testDir = join(tmpdir(), `smelter-update-check-test-${Date.now()}`);
+  let originalSmelterHome: string | undefined;
 
   beforeEach(() => {
-    originalArchonHome = process.env.ARCHON_HOME;
-    process.env.ARCHON_HOME = testDir;
+    originalSmelterHome = process.env.SMELTER_HOME;
+    process.env.SMELTER_HOME = testDir;
     mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
-    if (originalArchonHome !== undefined) {
-      process.env.ARCHON_HOME = originalArchonHome;
+    if (originalSmelterHome !== undefined) {
+      process.env.SMELTER_HOME = originalSmelterHome;
     } else {
-      delete process.env.ARCHON_HOME;
+      delete process.env.SMELTER_HOME;
     }
     try {
       rmSync(testDir, { recursive: true, force: true });
@@ -97,7 +97,7 @@ describe('checkForUpdate', () => {
   test('returns result from fresh cache without fetching', async () => {
     const cache = {
       latestVersion: '0.5.0',
-      releaseUrl: 'https://github.com/coleam00/Archon/releases/tag/v0.5.0',
+      releaseUrl: 'https://github.com/coleam00/Smelter/releases/tag/v0.5.0',
       checkedAt: Date.now(),
     };
     writeFileSync(join(testDir, 'update-check.json'), JSON.stringify(cache));
@@ -109,7 +109,7 @@ describe('checkForUpdate', () => {
       updateAvailable: true,
       currentVersion: '0.4.0',
       latestVersion: '0.5.0',
-      releaseUrl: 'https://github.com/coleam00/Archon/releases/tag/v0.5.0',
+      releaseUrl: 'https://github.com/coleam00/Smelter/releases/tag/v0.5.0',
     });
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
@@ -120,7 +120,7 @@ describe('checkForUpdate', () => {
       new Response(
         JSON.stringify({
           tag_name: 'v0.5.0',
-          html_url: 'https://github.com/coleam00/Archon/releases/tag/v0.5.0',
+          html_url: 'https://github.com/coleam00/Smelter/releases/tag/v0.5.0',
         }),
         { status: 200 }
       )
@@ -132,14 +132,14 @@ describe('checkForUpdate', () => {
       updateAvailable: true,
       currentVersion: '0.4.0',
       latestVersion: '0.5.0',
-      releaseUrl: 'https://github.com/coleam00/Archon/releases/tag/v0.5.0',
+      releaseUrl: 'https://github.com/coleam00/Smelter/releases/tag/v0.5.0',
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     // Verify cache was written with correct content
     const cacheRaw = JSON.parse(readFileSync(join(testDir, 'update-check.json'), 'utf-8'));
     expect(cacheRaw.latestVersion).toBe('0.5.0');
-    expect(cacheRaw.releaseUrl).toBe('https://github.com/coleam00/Archon/releases/tag/v0.5.0');
+    expect(cacheRaw.releaseUrl).toBe('https://github.com/coleam00/Smelter/releases/tag/v0.5.0');
     expect(typeof cacheRaw.checkedAt).toBe('number');
     fetchSpy.mockRestore();
   });
@@ -168,7 +168,7 @@ describe('checkForUpdate', () => {
   test('returns updateAvailable: false when current matches latest', async () => {
     const cache = {
       latestVersion: '0.4.0',
-      releaseUrl: 'https://github.com/coleam00/Archon/releases/tag/v0.4.0',
+      releaseUrl: 'https://github.com/coleam00/Smelter/releases/tag/v0.4.0',
       checkedAt: Date.now(),
     };
     writeFileSync(join(testDir, 'update-check.json'), JSON.stringify(cache));
@@ -190,7 +190,7 @@ describe('checkForUpdate', () => {
       new Response(
         JSON.stringify({
           tag_name: 'v0.5.0',
-          html_url: 'https://github.com/coleam00/Archon/releases/tag/v0.5.0',
+          html_url: 'https://github.com/coleam00/Smelter/releases/tag/v0.5.0',
         }),
         { status: 200 }
       )
@@ -207,20 +207,20 @@ describe('checkForUpdate', () => {
 // ─── getCachedUpdateCheck ────────────────────────────────────────────
 
 describe('getCachedUpdateCheck', () => {
-  const testDir = join(tmpdir(), `archon-cached-check-test-${Date.now()}`);
-  let originalArchonHome: string | undefined;
+  const testDir = join(tmpdir(), `smelter-cached-check-test-${Date.now()}`);
+  let originalSmelterHome: string | undefined;
 
   beforeEach(() => {
-    originalArchonHome = process.env.ARCHON_HOME;
-    process.env.ARCHON_HOME = testDir;
+    originalSmelterHome = process.env.SMELTER_HOME;
+    process.env.SMELTER_HOME = testDir;
     mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
-    if (originalArchonHome !== undefined) {
-      process.env.ARCHON_HOME = originalArchonHome;
+    if (originalSmelterHome !== undefined) {
+      process.env.SMELTER_HOME = originalSmelterHome;
     } else {
-      delete process.env.ARCHON_HOME;
+      delete process.env.SMELTER_HOME;
     }
     try {
       rmSync(testDir, { recursive: true, force: true });

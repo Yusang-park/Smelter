@@ -15,15 +15,15 @@
 #   - Or point DATABASE_URL to an external database (Supabase, Neon, etc.)
 #
 # Data:
-#   Set ARCHON_DATA in .env to control where Smelter stores data on the host:
-#     ARCHON_DATA=/opt/smelter-data    # Any absolute path on the host
+#   Set SMELTER_DATA in .env to control where Smelter stores data on the host:
+#     SMELTER_DATA=/opt/smelter-data    # Any absolute path on the host
 #   Default: Docker-managed volume (smelter_data)
 #
 # User home (Claude/Codex/Pi config, gitconfig, shell history):
 #   /home/appuser is persisted by default to the smelter_user_home named volume so
 #   user-installed Claude Code skills/commands/agents/hooks, Codex/Pi auth state,
 #   and ~/.gitconfig survive container rebuilds. To use a host path instead:
-#     ARCHON_USER_HOME=/opt/smelter-user-home    # Any absolute path on the host
+#     SMELTER_USER_HOME=/opt/smelter-user-home    # Any absolute path on the host
 #   Default: Docker-managed volume (smelter_user_home)
 #
 # Cloud (HTTPS):
@@ -41,12 +41,12 @@ services:
     image: smelter
     env_file: .env
     environment:
-      ARCHON_DOCKER: "true"
+      SMELTER_DOCKER: "true"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
-      - ${ARCHON_DATA:-smelter_data}:/.archon
-      - ${ARCHON_USER_HOME:-smelter_user_home}:/home/appuser
+      - ${SMELTER_DATA:-smelter_data}:/.smelter
+      - ${SMELTER_USER_HOME:-smelter_user_home}:/home/appuser
     networks:
       - smelter-network
     restart: unless-stopped

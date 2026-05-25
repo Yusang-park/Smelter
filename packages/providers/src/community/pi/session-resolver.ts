@@ -1,7 +1,7 @@
 import { SessionManager } from '@mariozechner/pi-coding-agent';
 
 /**
- * Result of resolving an Archon `resumeSessionId` against Pi's session store.
+ * Result of resolving an Smelter `resumeSessionId` against Pi's session store.
  */
 export interface ResolvedSession {
   /** SessionManager to hand to createAgentSession. */
@@ -26,7 +26,7 @@ export interface ResolvedSession {
  * Pi stores sessions as JSONL files under `~/.pi/agent/sessions/<encoded-cwd>/`
  * (or `$PI_CODING_AGENT_DIR/sessions/...`). This mirrors Claude's
  * `~/.claude/projects/` and Codex's thread store — the provider owns
- * session persistence; Archon just holds the opaque UUID.
+ * session persistence; Smelter just holds the opaque UUID.
  *
  * Lookup uses `SessionManager.list(cwd)` which scans only this cwd's
  * sessions. Cross-cwd resume (e.g. worktree switch) is deliberately not

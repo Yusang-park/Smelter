@@ -24,7 +24,7 @@ Use this skill when the user wants deep planning, requirement discovery, or assu
 - Expose hidden assumptions, boundaries, non-goals, and success criteria
 - Continue autonomously when the likely structure is already clear
 - Do not block on approval-seeking unless ambiguity is genuinely blocking
-- Write planning outputs into `$ARTIFACTS_DIR` or the active Archon workflow artifact path, not only into memory
+- Write planning outputs into `$ARTIFACTS_DIR` or the active Smelter workflow artifact path, not only into memory
 
 ## Interview dimensions
 Score clarity mentally after each answer across:
@@ -45,5 +45,5 @@ By the end of the interview, produce or refine:
 
 ## Handoff
 - If deep planning is complete, route back into the active Smelter workflow and continue toward execution.
-- If the user wants planning only, stop after the Archon workflow artifacts are updated.
+- If the user wants planning only, stop after the Smelter workflow artifacts are updated.
 - If the user wants execution, route to `/brainstorm`, `/implement`, or `/fix` based on the clarified scope.

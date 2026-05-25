@@ -9,12 +9,12 @@ sidebar:
   order: 5
 ---
 
-Archon supports two database backends: **SQLite** (default, zero setup) and **PostgreSQL** (optional, for cloud/advanced deployments). The database backend is selected automatically based on whether the `DATABASE_URL` environment variable is set.
+Smelter supports two database backends: **SQLite** (default, zero setup) and **PostgreSQL** (optional, for cloud/advanced deployments). The database backend is selected automatically based on whether the `DATABASE_URL` environment variable is set.
 
 ## SQLite (Default - No Setup Required)
 
 Simply **omit the `DATABASE_URL` variable** from your `.env` file. The app will automatically:
-- Create a SQLite database at `~/.archon/archon.db`
+- Create a SQLite database at `~/.smelter/smelter.db`
 - Initialize the schema on first run
 - Use this database for all operations
 
@@ -158,7 +158,7 @@ The database has 8 tables, all prefixed with `remote_agent_`:
 8. **`remote_agent_codebase_env_vars`** - Per-project env vars for workflow execution
    - Key-value pairs scoped to a codebase
    - Injected into Claude SDK subprocess environment at execution time
-   - Managed via Web UI Settings panel; `env:` in `.archon/config.yaml` for CLI users
+   - Managed via Web UI Settings panel; `env:` in `.smelter/config.yaml` for CLI users
 
 ## Migration List
 

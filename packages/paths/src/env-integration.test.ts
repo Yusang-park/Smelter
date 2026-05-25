@@ -1,9 +1,9 @@
 /**
  * Integration tests for the env isolation flow:
- *   Bun auto-load (simulated) → stripCwdEnv() → ~/.archon/.env load → subprocess env
+ *   Bun auto-load (simulated) → stripCwdEnv() → ~/.smelter/.env load → subprocess env
  *
  * Tests the full user scenario: what keys reach the Claude subprocess when the
- * user has various combinations of CWD .env, ~/.archon/.env, and shell env?
+ * user has various combinations of CWD .env, ~/.smelter/.env, and shell env?
  *
  * Note: We can't actually test Bun's auto-load (it runs before any code), so we
  * simulate it by setting process.env keys before calling stripCwdEnv(). This is
@@ -26,7 +26,7 @@ const TEST_KEYS = [
   'DATABASE_URL',
   'LOG_LEVEL',
   'CWD_ONLY_KEY',
-  'ARCHON_ONLY_KEY',
+  'SMELTER_ONLY_KEY',
   'SHARED_KEY',
   'MY_SECRET_TOKEN',
   'CLAUDECODE',
@@ -42,7 +42,7 @@ const TEST_KEYS = [
 
 describe('env isolation integration', () => {
   const cwdDir = join(import.meta.dir, '__env-integration-cwd__');
-  const archonDir = join(import.meta.dir, '__env-integration-archon__');
+  const smelterDir = join(import.meta.dir, '__env-integration-smelter__');
   let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
@@ -52,7 +52,7 @@ describe('env isolation integration', () => {
       savedEnv[key] = process.env[key];
     }
     mkdirSync(cwdDir, { recursive: true });
-    mkdirSync(archonDir, { recursive: true });
+    mkdirSync(smelterDir, { recursive: true });
   });
 
   afterEach(() => {
@@ -65,17 +65,17 @@ describe('env isolation integration', () => {
       }
     }
     rmSync(cwdDir, { recursive: true, force: true });
-    rmSync(archonDir, { recursive: true, force: true });
+    rmSync(smelterDir, { recursive: true, force: true });
   });
 
   /**
    * Simulate the full entry-point flow:
    * 1. "Bun auto-load" (set CWD .env keys in process.env)
    * 2. stripCwdEnv() (remove CWD keys + markers)
-   * 3. Load ~/.archon/.env (dotenv.config)
+   * 3. Load ~/.smelter/.env (dotenv.config)
    * 4. Return process.env snapshot (what buildSubprocessEnv would return)
    */
-  function simulateEntryPointFlow(cwdEnv: string, archonEnv: string): NodeJS.ProcessEnv {
+  function simulateEntryPointFlow(cwdEnv: string, smelterEnv: string): NodeJS.ProcessEnv {
     // Write the CWD .env file
     writeFileSync(join(cwdDir, '.env'), cwdEnv);
 
@@ -90,10 +90,10 @@ describe('env isolation integration', () => {
     // Step 2: stripCwdEnv (same as entry point)
     stripCwdEnv(cwdDir);
 
-    // Step 3: Load ~/.archon/.env with override — user's Archon config wins
+    // Step 3: Load ~/.smelter/.env with override — user's Smelter config wins
     // over any shell-inherited vars (same as real entry point).
-    writeFileSync(join(archonDir, '.env'), archonEnv);
-    config({ path: join(archonDir, '.env'), override: true });
+    writeFileSync(join(smelterDir, '.env'), smelterEnv);
+    config({ path: join(smelterDir, '.env'), override: true });
 
     // Step 4: Return subprocess env snapshot
     return { ...process.env };
@@ -112,7 +112,7 @@ describe('env isolation integration', () => {
     expect(subprocessEnv.CLAUDE_USE_GLOBAL_AUTH).toBe('true');
   });
 
-  it('scenario 2: user has OAuth token in archon env + random key in CWD .env — CWD stripped, archon kept', () => {
+  it('scenario 2: user has OAuth token in smelter env + random key in CWD .env — CWD stripped, smelter kept', () => {
     const subprocessEnv = simulateEntryPointFlow(
       'CWD_ONLY_KEY=from-target-repo\nLOG_LEVEL=debug\n',
       'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-my-token\nCLAUDE_USE_GLOBAL_AUTH=false\n'
@@ -121,7 +121,7 @@ describe('env isolation integration', () => {
     // CWD keys must be gone
     expect(subprocessEnv.CWD_ONLY_KEY).toBeUndefined();
     expect(subprocessEnv.LOG_LEVEL).toBeUndefined();
-    // Archon keys must be present
+    // Smelter keys must be present
     expect(subprocessEnv.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-my-token');
     expect(subprocessEnv.CLAUDE_USE_GLOBAL_AUTH).toBe('false');
   });
@@ -129,7 +129,7 @@ describe('env isolation integration', () => {
   it('scenario 3: nothing from CWD .env leaks to subprocess', () => {
     const subprocessEnv = simulateEntryPointFlow(
       'MY_SECRET_TOKEN=leaked\nDATABASE_URL=postgres://wrong/db\nLOG_LEVEL=trace\nANTHROPIC_API_KEY=sk-wrong-key\n',
-      'ARCHON_ONLY_KEY=trusted\n'
+      'SMELTER_ONLY_KEY=trusted\n'
     );
 
     // ALL CWD keys must be gone
@@ -137,8 +137,8 @@ describe('env isolation integration', () => {
     expect(subprocessEnv.DATABASE_URL).toBeUndefined();
     expect(subprocessEnv.LOG_LEVEL).toBeUndefined();
     expect(subprocessEnv.ANTHROPIC_API_KEY).toBeUndefined();
-    // Archon key present
-    expect(subprocessEnv.ARCHON_ONLY_KEY).toBe('trusted');
+    // Smelter key present
+    expect(subprocessEnv.SMELTER_ONLY_KEY).toBe('trusted');
     // Shell-inherited keys present (Windows uses "Path" casing and USERPROFILE instead of HOME)
     const hasPath = subprocessEnv.PATH ?? subprocessEnv.Path;
     expect(hasPath).toBeDefined();
@@ -146,17 +146,17 @@ describe('env isolation integration', () => {
     expect(hasHome).toBeDefined();
   });
 
-  it('scenario 4: same key in both CWD and archon env — archon value wins', () => {
+  it('scenario 4: same key in both CWD and smelter env — smelter value wins', () => {
     // User has ANTHROPIC_API_KEY in both places. CWD one is the target repo's,
-    // archon one is the user's intentional config. Archon must win.
+    // smelter one is the user's intentional config. Smelter must win.
     const subprocessEnv = simulateEntryPointFlow(
       'ANTHROPIC_API_KEY=sk-target-repo-WRONG\nSHARED_KEY=cwd-value\n',
-      'ANTHROPIC_API_KEY=sk-my-real-key\nSHARED_KEY=archon-value\n'
+      'ANTHROPIC_API_KEY=sk-my-real-key\nSHARED_KEY=smelter-value\n'
     );
 
-    // Archon value wins (CWD was stripped, then archon loaded)
+    // Smelter value wins (CWD was stripped, then smelter loaded)
     expect(subprocessEnv.ANTHROPIC_API_KEY).toBe('sk-my-real-key');
-    expect(subprocessEnv.SHARED_KEY).toBe('archon-value');
+    expect(subprocessEnv.SHARED_KEY).toBe('smelter-value');
   });
 
   it('CLAUDECODE markers stripped even if not from CWD .env', () => {
@@ -173,23 +173,23 @@ describe('env isolation integration', () => {
     expect(subprocessEnv.NODE_OPTIONS).toBeUndefined();
   });
 
-  it('scenario 5: DATABASE_URL in CWD .env does not reach Archon — archon uses its own DB', () => {
-    // Target repo has DATABASE_URL for its own PostgreSQL. Archon must NOT
+  it('scenario 5: DATABASE_URL in CWD .env does not reach Smelter — smelter uses its own DB', () => {
+    // Target repo has DATABASE_URL for its own PostgreSQL. Smelter must NOT
     // connect to the target app's database — it should use its own DB
-    // (from ~/.archon/.env or default SQLite).
+    // (from ~/.smelter/.env or default SQLite).
     const subprocessEnv = simulateEntryPointFlow(
       'DATABASE_URL=postgresql://target-app:5432/wrong_db\nREDIS_URL=redis://target:6379\n',
-      'DATABASE_URL=sqlite:///Users/me/.archon/archon.db\n'
+      'DATABASE_URL=sqlite:///Users/me/.smelter/smelter.db\n'
     );
 
-    // CWD DATABASE_URL is stripped, archon's wins
-    expect(subprocessEnv.DATABASE_URL).toBe('sqlite:///Users/me/.archon/archon.db');
+    // CWD DATABASE_URL is stripped, smelter's wins
+    expect(subprocessEnv.DATABASE_URL).toBe('sqlite:///Users/me/.smelter/smelter.db');
     // Other CWD keys also stripped
     expect(subprocessEnv.REDIS_URL).toBeUndefined();
   });
 
-  it('scenario 6: DATABASE_URL in CWD .env only (no archon env) — stripped entirely', () => {
-    // User relies on default SQLite (no DATABASE_URL in ~/.archon/.env).
+  it('scenario 6: DATABASE_URL in CWD .env only (no smelter env) — stripped entirely', () => {
+    // User relies on default SQLite (no DATABASE_URL in ~/.smelter/.env).
     // Target repo's DATABASE_URL must not leak.
     const subprocessEnv = simulateEntryPointFlow(
       'DATABASE_URL=postgresql://target-app:5432/production\n',
@@ -199,7 +199,7 @@ describe('env isolation integration', () => {
     expect(subprocessEnv.DATABASE_URL).toBeUndefined();
   });
 
-  it('CLAUDE_CODE_OAUTH_TOKEN from archon env survives marker strip', () => {
+  it('CLAUDE_CODE_OAUTH_TOKEN from smelter env survives marker strip', () => {
     // CLAUDE_CODE_* markers are stripped, but CLAUDE_CODE_OAUTH_TOKEN is
     // an auth var and must be preserved.
     process.env.CLAUDECODE = '1';
@@ -319,7 +319,7 @@ describe('env isolation integration', () => {
     // CWD keys still stripped
     expect(finalEnv.ANTHROPIC_API_KEY).toBeUndefined();
     expect(finalEnv.DATABASE_URL).toBeUndefined();
-    // Archon auth present
+    // Smelter auth present
     expect(finalEnv.CLAUDE_USE_GLOBAL_AUTH).toBe('true');
     // Managed env present
     expect(finalEnv.MANAGED_SECRET).toBe('from-db');

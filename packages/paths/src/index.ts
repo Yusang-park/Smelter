@@ -1,24 +1,24 @@
-// Archon path resolution utilities
+// Smelter path resolution utilities
 export {
   expandTilde,
   isDocker,
-  getArchonHome,
-  getArchonWorkspacesPath,
-  ensureArchonWorkspacesPath,
-  getArchonWorktreesPath,
-  getArchonConfigPath,
-  getArchonEnvPath,
-  getRepoArchonEnvPath,
+  getSmelterHome,
+  getSmelterWorkspacesPath,
+  ensureSmelterWorkspacesPath,
+  getSmelterWorktreesPath,
+  getSmelterConfigPath,
+  getSmelterEnvPath,
+  getRepoSmelterEnvPath,
   getHomeWorkflowsPath,
   getHomeCommandsPath,
   getHomeScriptsPath,
   getLegacyHomeWorkflowsPath,
   getCommandFolderSearchPaths,
   getWorkflowFolderSearchPaths,
-  getAppArchonBasePath,
+  getAppSmelterBasePath,
   getDefaultCommandsPath,
   getDefaultWorkflowsPath,
-  logArchonPaths,
+  logSmelterPaths,
   validateAppDefaultsPaths,
   parseOwnerRepo,
   getProjectRoot,
@@ -33,7 +33,7 @@ export {
   createProjectSourceSymlink,
   findMarkdownFilesRecursive,
   getWebDistDir,
-} from './archon-paths';
+} from './smelter-paths';
 
 // Logger
 export { createLogger, setLogLevel, getLogLevel, rootLogger } from './logger';

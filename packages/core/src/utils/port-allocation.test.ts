@@ -4,7 +4,7 @@ import { calculatePortOffset, getPort } from './port-allocation';
 // Test the exported hash calculation function directly
 describe('calculatePortOffset', () => {
   it('should calculate consistent hash-based offset for worktree paths', () => {
-    const testPath = '/Users/test/.archon/worktrees/owner/repo/issue-123';
+    const testPath = '/Users/test/.smelter/worktrees/owner/repo/issue-123';
     const offset = calculatePortOffset(testPath);
 
     expect(offset).toBeGreaterThanOrEqual(100);
@@ -16,8 +16,8 @@ describe('calculatePortOffset', () => {
   });
 
   it('should produce different offsets for different worktree paths', () => {
-    const path1 = '/Users/test/.archon/worktrees/owner/repo/issue-123';
-    const path2 = '/Users/test/.archon/worktrees/owner/repo/issue-456';
+    const path1 = '/Users/test/.smelter/worktrees/owner/repo/issue-123';
+    const path2 = '/Users/test/.smelter/worktrees/owner/repo/issue-456';
 
     const offset1 = calculatePortOffset(path1);
     const offset2 = calculatePortOffset(path2);
@@ -29,9 +29,9 @@ describe('calculatePortOffset', () => {
 
   it('should keep offset in 100-999 range for various paths', () => {
     const testPaths = [
-      '/.archon/worktrees/repo/branch',
-      '/home/user/.archon/worktrees/owner/repo/issue-1',
-      '/very/long/path/to/archon/worktrees/organization/repository/feature-branch-with-long-name',
+      '/.smelter/worktrees/repo/branch',
+      '/home/user/.smelter/worktrees/owner/repo/issue-1',
+      '/very/long/path/to/smelter/worktrees/organization/repository/feature-branch-with-long-name',
       '', // Edge case: empty path
       '/a', // Edge case: short path
     ];

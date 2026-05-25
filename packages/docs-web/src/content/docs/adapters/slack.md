@@ -1,6 +1,6 @@
 ---
 title: Slack
-description: Connect Archon to Slack using Socket Mode -- works behind firewalls with no public URL needed.
+description: Connect Smelter to Slack using Socket Mode -- works behind firewalls with no public URL needed.
 category: adapters
 area: adapters
 audience: [user, operator]
@@ -9,16 +9,16 @@ sidebar:
   order: 2
 ---
 
-Connect Archon to Slack so you can interact with your AI coding assistant from any Slack workspace.
+Connect Smelter to Slack so you can interact with your AI coding assistant from any Slack workspace.
 
 ## Prerequisites
 
-- Archon server running (see [Getting Started](/getting-started/))
+- Smelter server running (see [Getting Started](/getting-started/))
 - A Slack workspace where you have permission to install apps
 
 ## Overview
 
-Archon uses **Socket Mode** for Slack integration, which means:
+Smelter uses **Socket Mode** for Slack integration, which means:
 
 - No public HTTP endpoints needed
 - Works behind firewalls

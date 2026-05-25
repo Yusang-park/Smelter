@@ -26,7 +26,7 @@ gate:
 
 ## Overview
 
-Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is the Archon run artifact `$ARTIFACTS_DIR/investigation.md`, consumed by the active workflow's next node: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-infra-plan` for `/infra`, `workflow-write-test` for `/fix`, or mode transition guidance for `/explore`.
+Investigates existing code, data, and external documents. Default is **Pattern C parallel** (split by area). Output is the Smelter run artifact `$ARTIFACTS_DIR/investigation.md`, consumed by the active workflow's next node: `workflow-tasker` for `/brainstorm`, `workflow-implementation-plan` for `/implement`, `workflow-infra-plan` for `/infra`, `workflow-write-test` for `/fix`, or mode transition guidance for `/explore`.
 
 **Core principle:** Evidence from the current codebase, not memory or assumption, is the source of truth for the plan. Every finding must cite a file path or external reference.
 
@@ -74,7 +74,7 @@ Write exactly one canonical artifact:
 
 `$ARTIFACTS_DIR/investigation.md`
 
-Use `$ARTIFACTS_DIR` from the Archon workflow run. Do not write `investigation.md` in the repository root or current working directory.
+Use `$ARTIFACTS_DIR` from the Smelter workflow run. Do not write `investigation.md` in the repository root or current working directory.
 
 `investigation.md` must contain:
 

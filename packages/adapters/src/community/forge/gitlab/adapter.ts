@@ -6,8 +6,8 @@
  */
 import { readdir, access } from 'fs/promises';
 import { join } from 'path';
-import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
-import type { IsolationHints } from '@archon/isolation';
+import type { IPlatformAdapter, MessageMetadata } from '@smelter/core';
+import type { IsolationHints } from '@smelter/isolation';
 import {
   ConversationNotFoundError,
   handleMessage,
@@ -15,8 +15,12 @@ import {
   toError,
   onConversationClosed,
   ConversationLockManager,
-} from '@archon/core';
-import { getArchonWorkspacesPath, getCommandFolderSearchPaths, createLogger } from '@archon/paths';
+} from '@smelter/core';
+import {
+  getSmelterWorkspacesPath,
+  getCommandFolderSearchPaths,
+  createLogger,
+} from '@smelter/paths';
 import {
   syncRepository,
   addSafeDirectory,
@@ -24,9 +28,9 @@ import {
   toBranchName,
   isWorktreePath,
   execFileAsync,
-} from '@archon/git';
-import * as db from '@archon/core/db/conversations';
-import * as codebaseDb from '@archon/core/db/codebases';
+} from '@smelter/git';
+import * as db from '@smelter/core/db/conversations';
+import * as codebaseDb from '@smelter/core/db/codebases';
 import { parseAllowedUsers, isGitLabUserAuthorized, verifyWebhookToken } from './auth';
 import { splitIntoParagraphChunks } from '../../../utils/message-splitting';
 import type { GitLabWebhookEvent, GitLabIssue, GitLabMergeRequest } from './types';
@@ -41,7 +45,7 @@ function getLog(): ReturnType<typeof createLogger> {
 const MAX_LENGTH = 65000; // Practical limit for GitLab notes
 
 /** Hidden marker added to bot comments to prevent self-triggering loops */
-const BOT_RESPONSE_MARKER = '<!-- archon-bot-response -->';
+const BOT_RESPONSE_MARKER = '<!-- smelter-bot-response -->';
 
 export class GitLabAdapter implements IPlatformAdapter {
   private readonly gitlabUrl: string;
@@ -69,7 +73,7 @@ export class GitLabAdapter implements IPlatformAdapter {
     this.token = token;
     this.webhookSecret = webhookSecret;
     this.lockManager = lockManager;
-    this.botMention = botMention ?? 'Archon';
+    this.botMention = botMention ?? 'Smelter';
 
     this.allowedUsers = parseAllowedUsers(process.env.GITLAB_ALLOWED_USERS);
     if (this.allowedUsers.length > 0) {
@@ -270,7 +274,7 @@ export class GitLabAdapter implements IPlatformAdapter {
   }
 
   private stripMention(text: string): string {
-    // `+` consumes all trailing separators (e.g. "@archon, " not just "@archon")
+    // `+` consumes all trailing separators (e.g. "@smelter, " not just "@smelter")
     const pattern = new RegExp(`@${this.botMention}(?:[\\s,:;]+|$)`, 'gi');
     return text.replace(pattern, '').trim();
   }
@@ -546,7 +550,7 @@ Use 'glab mr view ${String(mr.iid)}' for full details and 'glab mr diff ${String
     let existing = await codebaseDb.findCodebaseByRepoUrl(repoUrlNoGit);
     existing ??= await codebaseDb.findCodebaseByRepoUrl(repoUrlWithGit);
 
-    const canonicalPath = join(getArchonWorkspacesPath(), ...projectPath.split('/'));
+    const canonicalPath = join(getSmelterWorkspacesPath(), ...projectPath.split('/'));
 
     if (existing) {
       const looksLikeWorktreePath = existing.default_cwd.includes('/worktrees/');

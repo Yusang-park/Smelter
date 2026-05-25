@@ -14,9 +14,9 @@
 
 import { mock, describe, test, expect, beforeEach } from 'bun:test';
 import { createMockLogger } from '../test/mocks/logger';
-import { makeTestWorkflow, makeTestWorkflowWithSource } from '@archon/workflows/test-utils';
+import { makeTestWorkflow, makeTestWorkflowWithSource } from '@smelter/workflows/test-utils';
 import type { Codebase, Conversation, IPlatformAdapter } from '../types';
-import type { WorkflowDefinition } from '@archon/workflows/schemas/workflow';
+import type { WorkflowDefinition } from '@smelter/workflows/schemas/workflow';
 
 // ─── Mock setup (ALL mocks must come before the module under test import) ────
 
@@ -51,12 +51,14 @@ const mockLoadConfig = mock(() =>
 
 const mockLogger = createMockLogger();
 
-const mockEnsureArchonWorkspacesPath = mock(() => Promise.resolve('/home/test/.archon/workspaces'));
-mock.module('@archon/paths', () => ({
+const mockEnsureSmelterWorkspacesPath = mock(() =>
+  Promise.resolve('/home/test/.smelter/workspaces')
+);
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
-  ensureArchonWorkspacesPath: mockEnsureArchonWorkspacesPath,
-  getArchonHome: mock(() => '/home/test/.archon'),
+  getSmelterWorkspacesPath: mock(() => '/home/test/.smelter/workspaces'),
+  ensureSmelterWorkspacesPath: mockEnsureSmelterWorkspacesPath,
+  getSmelterHome: mock(() => '/home/test/.smelter'),
 }));
 
 const mockUpdateConversation = mock(() => Promise.resolve());
@@ -92,25 +94,25 @@ mock.module('../handlers/command-handler', () => ({
   handleCommand: mockHandleCommand,
 }));
 
-mock.module('@archon/workflows/utils/tool-formatter', () => ({
+mock.module('@smelter/workflows/utils/tool-formatter', () => ({
   formatToolCall: mock((toolName: string) => `🔧 ${toolName}`),
 }));
 const mockDiscoverWorkflowsWithConfig = mock(() =>
   Promise.resolve({ workflows: [] as Array<{ workflow: WorkflowDefinition }>, errors: [] })
 );
-mock.module('@archon/workflows/workflow-discovery', () => ({
+mock.module('@smelter/workflows/workflow-discovery', () => ({
   discoverWorkflowsWithConfig: mockDiscoverWorkflowsWithConfig,
 }));
-mock.module('@archon/workflows/router', () => ({
+mock.module('@smelter/workflows/router', () => ({
   findWorkflow: mock((name: string, workflows: WorkflowDefinition[]) =>
     workflows.find(w => w.name === name)
   ),
 }));
-mock.module('@archon/workflows/executor', () => ({
+mock.module('@smelter/workflows/executor', () => ({
   executeWorkflow: mockExecuteWorkflow,
 }));
 
-mock.module('@archon/providers', () => ({
+mock.module('@smelter/providers', () => ({
   getAgentProvider: mock(() => ({
     sendQuery: mockSendQuery,
     getType: mock(() => 'claude'),
@@ -177,7 +179,7 @@ mock.module('../db/messages', () => ({
   getRecentWorkflowResultMessages: mockGetRecentWorkflowResultMessages,
 }));
 
-mock.module('@archon/isolation', () => ({
+mock.module('@smelter/isolation', () => ({
   IsolationBlockedError: class IsolationBlockedError extends Error {
     public reason: string;
     constructor(reason: string) {
@@ -189,10 +191,10 @@ mock.module('@archon/isolation', () => ({
 }));
 
 mock.module('../utils/worktree-sync', () => ({
-  syncArchonToWorktree: mock(() => Promise.resolve()),
+  syncSmelterToWorktree: mock(() => Promise.resolve()),
 }));
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   syncWorkspace: mockSyncWorkspace,
   toRepoPath: mockToRepoPath,
 }));
@@ -228,7 +230,7 @@ describe('parseOrchestratorCommands', () => {
   const planWorkflow = makeTestWorkflow({ name: 'plan' });
 
   const myProject = makeCodebase('my-project');
-  const orgProject = makeCodebase('coleam00/Archon');
+  const orgProject = makeCodebase('coleam00/Smelter');
 
   const workflows = [assistWorkflow, implementWorkflow, planWorkflow];
   const codebases = [myProject, orgProject];
@@ -423,19 +425,19 @@ describe('parseOrchestratorCommands', () => {
     });
 
     test('matches project by last path segment (partial match)', () => {
-      // "coleam00/Archon" matched by "Archon"
-      const response = '/invoke-workflow assist --project Archon';
+      // "coleam00/Smelter" matched by "Smelter"
+      const response = '/invoke-workflow assist --project Smelter';
       const result = parseOrchestratorCommands(response, codebases, workflows);
 
       expect(result.workflowInvocation).not.toBeNull();
-      expect(result.workflowInvocation?.projectName).toBe('coleam00/Archon');
+      expect(result.workflowInvocation?.projectName).toBe('coleam00/Smelter');
     });
 
     test('partial match is case-insensitive', () => {
-      const response = '/invoke-workflow assist --project archon';
+      const response = '/invoke-workflow assist --project smelter';
       const result = parseOrchestratorCommands(response, codebases, workflows);
 
-      expect(result.workflowInvocation?.projectName).toBe('coleam00/Archon');
+      expect(result.workflowInvocation?.projectName).toBe('coleam00/Smelter');
     });
 
     test('returns null workflowInvocation when project does not exist', () => {
@@ -453,11 +455,11 @@ describe('parseOrchestratorCommands', () => {
     });
 
     test('uses matched codebase name (not the input name) in result', () => {
-      // Input "Archon" should resolve to full name "coleam00/Archon"
-      const response = '/invoke-workflow assist --project Archon';
+      // Input "Smelter" should resolve to full name "coleam00/Smelter"
+      const response = '/invoke-workflow assist --project Smelter';
       const result = parseOrchestratorCommands(response, codebases, workflows);
 
-      expect(result.workflowInvocation?.projectName).toBe('coleam00/Archon');
+      expect(result.workflowInvocation?.projectName).toBe('coleam00/Smelter');
     });
   });
 
@@ -908,7 +910,7 @@ describe('discoverAllWorkflows — remote sync', () => {
     mockSendQuery.mockClear();
     mockGetCodebaseEnvVars.mockReset();
     mockLoadConfig.mockReset();
-    mockEnsureArchonWorkspacesPath.mockClear();
+    mockEnsureSmelterWorkspacesPath.mockClear();
     // Reset mocks between tests in this suite and restore safe defaults
     mockGetOrCreateConversation.mockImplementation(() => Promise.resolve(null));
     mockGetCodebase.mockImplementation(() => Promise.resolve(null));
@@ -930,20 +932,20 @@ describe('discoverAllWorkflows — remote sync', () => {
     const platform = makePlatform();
     await handleMessage(platform, 'conv-1', 'What is the latest commit?');
 
-    // /repos/test-repo is NOT under ~/.archon/workspaces/ so resetAfterFetch=false
+    // /repos/test-repo is NOT under ~/.smelter/workspaces/ so resetAfterFetch=false
     expect(mockSyncWorkspace).toHaveBeenCalledWith('/repos/test-repo', undefined, {
       resetAfterFetch: false,
     });
     // Regression guard: orchestrator must resolve cwd through the ensure variant
     // so the workspaces dir is created before the AI provider spawn (issue #1528).
-    expect(mockEnsureArchonWorkspacesPath).toHaveBeenCalled();
+    expect(mockEnsureSmelterWorkspacesPath).toHaveBeenCalled();
   });
 
   test('passes resetAfterFetch=true for managed clones', async () => {
     const conversation = makeConversation({ codebase_id: 'codebase-1' });
     const codebase = {
       ...makeCodebaseForSync(),
-      default_cwd: '/home/test/.archon/workspaces/owner/repo/source',
+      default_cwd: '/home/test/.smelter/workspaces/owner/repo/source',
     };
     mockGetOrCreateConversation.mockReturnValueOnce(Promise.resolve(conversation));
     mockGetCodebase.mockReturnValueOnce(Promise.resolve(codebase));
@@ -952,7 +954,7 @@ describe('discoverAllWorkflows — remote sync', () => {
     await handleMessage(platform, 'conv-1', 'What is the latest commit?');
 
     expect(mockSyncWorkspace).toHaveBeenCalledWith(
-      '/home/test/.archon/workspaces/owner/repo/source',
+      '/home/test/.smelter/workspaces/owner/repo/source',
       undefined,
       { resetAfterFetch: true }
     );

@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: REST API endpoints for programmatic access to Archon.
+description: REST API endpoints for programmatic access to Smelter.
 category: reference
 area: server
 audience: [developer]
@@ -8,7 +8,7 @@ sidebar:
   order: 6
 ---
 
-Archon exposes a REST API via a [Hono](https://hono.dev/) server with OpenAPI spec generation. All endpoints are prefixed with `/api/`.
+Smelter exposes a REST API via a [Hono](https://hono.dev/) server with OpenAPI spec generation. All endpoints are prefixed with `/api/`.
 
 ## Base URL
 
@@ -18,7 +18,7 @@ By default, the API server runs at:
 http://localhost:3090/api/
 ```
 
-Override the port with the `PORT` environment variable or let Archon auto-allocate when running inside a worktree (range 3190-4089).
+Override the port with the `PORT` environment variable or let Smelter auto-allocate when running inside a worktree (range 3190-4089).
 
 ## OpenAPI Specification
 
@@ -32,7 +32,7 @@ You can feed this into tools like Swagger UI or use it to generate typed API cli
 
 ## Authentication
 
-None. Archon is a single-developer tool -- there is no authentication on the API by default. If you expose Archon on a network, use a reverse proxy or firewall to restrict access.
+None. Smelter is a single-developer tool -- there is no authentication on the API by default. If you expose Smelter on a network, use a reverse proxy or firewall to restrict access.
 
 ---
 
@@ -209,7 +209,7 @@ Returns `{ workflows: [...], errors?: [...] }`. The `errors` array contains any 
 #### Get a Workflow
 
 ```bash
-curl http://localhost:3090/api/workflows/archon-assist
+curl http://localhost:3090/api/workflows/smelter-assist
 ```
 
 Query parameters:
@@ -236,7 +236,7 @@ curl -X PUT http://localhost:3090/api/workflows/my-workflow \
 ```
 
 Query parameters:
-- `cwd` (optional) -- Target directory (must have `.archon/workflows/`)
+- `cwd` (optional) -- Target directory (must have `.smelter/workflows/`)
 
 Validates the definition before saving. Returns the saved workflow.
 
@@ -266,7 +266,7 @@ Only user-defined workflows can be deleted. Bundled defaults cannot be removed.
 #### Run a Workflow
 
 ```bash
-curl -X POST http://localhost:3090/api/workflows/archon-assist/run \
+curl -X POST http://localhost:3090/api/workflows/smelter-assist/run \
   -H "Content-Type: application/json" \
   -d '{"message": "Explain the auth module", "conversationId": "conv-123"}'
 ```
@@ -397,7 +397,7 @@ CONV_ID=$(curl -s -X POST http://localhost:3090/api/conversations \
   -d '{"codebase_id": "your-codebase-id"}' | jq -r '.platform_conversation_id')
 
 # 2. Start the workflow
-curl -X POST http://localhost:3090/api/workflows/archon-assist/run \
+curl -X POST http://localhost:3090/api/workflows/smelter-assist/run \
   -H "Content-Type: application/json" \
   -d "{\"message\": \"How does auth work?\", \"conversationId\": \"$CONV_ID\"}"
 

@@ -1,4 +1,4 @@
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import type { AgentSession, AgentSessionEvent } from '@mariozechner/pi-coding-agent';
 import type { AssistantMessage, Usage } from '@mariozechner/pi-ai';
 
@@ -99,7 +99,7 @@ export function serializeToolResult(result: unknown): string {
 }
 
 /**
- * Extract Archon TokenUsage from Pi's Usage struct.
+ * Extract Smelter TokenUsage from Pi's Usage struct.
  * Pi reports input/output/cacheRead/cacheWrite + cost breakdown.
  */
 export function usageToTokens(usage: Usage): TokenUsage {
@@ -212,7 +212,7 @@ export function tryParseStructuredOutput(text: string): unknown {
 }
 
 /**
- * Pure mapper from Pi's `AgentSessionEvent` → zero-or-more Archon `MessageChunk`s.
+ * Pure mapper from Pi's `AgentSessionEvent` → zero-or-more Smelter `MessageChunk`s.
  *
  * Most Pi events map 1:1 or are skipped. Tool execution is split across
  * `tool_execution_start` / `tool_execution_end`; the start yields `tool` with
@@ -221,7 +221,7 @@ export function tryParseStructuredOutput(text: string): unknown {
  * Events deliberately skipped in v1:
  *  - turn_start / turn_end, message_start / message_end (redundant with deltas)
  *  - text_start / text_end / thinking_start / thinking_end (boundaries only)
- *  - compaction_start / compaction_end (auto-compaction opaque to Archon)
+ *  - compaction_start / compaction_end (auto-compaction opaque to Smelter)
  *  - queue_update (single-prompt sessions only)
  *  - auto_retry_end (retry_start communicates the retry sufficiently)
  */
@@ -295,7 +295,7 @@ export interface BridgeNotifier {
 }
 
 /**
- * Bridge a Pi `AgentSession` into Archon's `AsyncGenerator<MessageChunk>` contract.
+ * Bridge a Pi `AgentSession` into Smelter's `AsyncGenerator<MessageChunk>` contract.
  *
  * Behavior:
  *  - subscribe before calling prompt, unsubscribe in finally
@@ -364,7 +364,7 @@ export async function* bridgeSession(
     for await (const item of queue) {
       if (item.kind === 'done') return;
       if (item.kind === 'error') throw item.error;
-      // Annotate the terminal result chunk with Pi's session UUID so Archon's
+      // Annotate the terminal result chunk with Pi's session UUID so Smelter's
       // orchestrator can pass it back as `resumeSessionId` on the next call.
       // Pi's session.sessionId is always a UUID (even for in-memory); we emit
       // it unconditionally and let the caller decide whether resume is

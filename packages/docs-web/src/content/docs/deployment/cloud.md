@@ -1,6 +1,6 @@
 ---
 title: Cloud Deployment
-description: Deploy Archon to a cloud VPS with automatic HTTPS via Caddy and persistent uptime.
+description: Deploy Smelter to a cloud VPS with automatic HTTPS via Caddy and persistent uptime.
 category: deployment
 area: infra
 audience: [operator]
@@ -11,7 +11,7 @@ sidebar:
 
 > **See also:** [Docker Guide](/deployment/docker/) for the complete Docker reference (profiles, building, configuration, troubleshooting).
 
-Deploy Archon to a cloud VPS for 24/7 operation with automatic HTTPS and persistent uptime.
+Deploy Smelter to a cloud VPS for 24/7 operation with automatic HTTPS and persistent uptime.
 
 **Navigation:** [Prerequisites](#prerequisites) | [Server Setup](#1-server-provisioning--initial-setup) | [DNS Configuration](#2-dns-configuration) | [Repository Setup](#3-clone-repository) | [Environment Config](#4-environment-configuration) | [Database Migration](#5-database-migration) | [Caddy Setup](#6-caddy-configuration) | [Start Services](#7-start-services) | [Verify](#8-verify-deployment)
 
@@ -22,7 +22,7 @@ Deploy Archon to a cloud VPS for 24/7 operation with automatic HTTPS and persist
 **Required:**
 
 - Cloud VPS account (DigitalOcean, Linode, AWS EC2, Vultr, etc.)
-- Domain name or subdomain (e.g., `archon.yourdomain.com`)
+- Domain name or subdomain (e.g., `smelter.yourdomain.com`)
 - SSH client installed on your local machine
 - Basic command-line familiarity
 
@@ -39,7 +39,7 @@ Deploy Archon to a cloud VPS for 24/7 operation with automatic HTTPS and persist
 
 ```bash
 # Generate SSH key (ed25519 recommended)
-ssh-keygen -t ed25519 -C "archon"
+ssh-keygen -t ed25519 -C "smelter"
 
 # When prompted:
 # - File location: Press Enter (uses default ~/.ssh/id_ed25519)
@@ -213,7 +213,7 @@ Point your domain to your server's IP address.
 
 1. Go to your domain registrar or DNS provider (Cloudflare, Namecheap, etc.)
 2. Create an **A Record**:
-   - **Name:** `archon` (for `archon.yourdomain.com`) or `@` (for `yourdomain.com`)
+   - **Name:** `smelter` (for `smelter.yourdomain.com`) or `@` (for `yourdomain.com`)
    - **Value:** Your server's public IP address
    - **TTL:** 300 (5 minutes) or default
 
@@ -221,7 +221,7 @@ Point your domain to your server's IP address.
 
 ```
 Type: A
-Name: archon
+Name: smelter
 Content: 123.45.67.89
 Proxy: Off (DNS Only)
 TTL: Auto
@@ -235,12 +235,12 @@ TTL: Auto
 
 ```bash
 # Create application directory
-sudo mkdir -p /opt/archon
-sudo chown deploy:deploy /opt/archon
+sudo mkdir -p /opt/smelter
+sudo chown deploy:deploy /opt/smelter
 
 # Clone repository into the directory
-cd /opt/archon
-git clone https://github.com/coleam00/Archon .
+cd /opt/smelter
+git clone https://github.com/coleam00/Smelter .
 ```
 
 ---
@@ -271,7 +271,7 @@ GITHUB_TOKEN=ghp_your_token_here
 
 # Server settings
 PORT=3090
-ARCHON_HOME=/tmp/archon  # Override base directory (optional)
+SMELTER_HOME=/tmp/smelter  # Override base directory (optional)
 ```
 
 **GitHub Token Setup:**
@@ -504,7 +504,7 @@ cp Caddyfile.example Caddyfile
 The Caddyfile reads `{$DOMAIN}` and `{$PORT}` from your `.env` automatically. Make sure `DOMAIN` is set:
 
 ```ini
-DOMAIN=archon.yourdomain.com
+DOMAIN=smelter.yourdomain.com
 ```
 
 ### How Caddy Works
@@ -558,9 +558,9 @@ docker compose --profile with-db --profile cloud logs -f postgres
 docker compose --profile cloud logs -f app
 
 # Look for:
-# [App] Starting Archon
+# [App] Starting Smelter
 # [Database] Connected successfully
-# [App] Archon is ready!
+# [App] Smelter is ready!
 ```
 
 **Press `Ctrl+C` to exit logs (services keep running).**
@@ -575,21 +575,21 @@ docker compose --profile cloud logs -f app
 
 ```bash
 # Basic health check
-curl https://archon.yourdomain.com/api/health
+curl https://smelter.yourdomain.com/api/health
 # Expected: {"status":"ok"}
 
 # Database connectivity
-curl https://archon.yourdomain.com/api/health/db
+curl https://smelter.yourdomain.com/api/health/db
 # Expected: {"status":"ok","database":"connected"}
 
 # Concurrency status
-curl https://archon.yourdomain.com/api/health/concurrency
+curl https://smelter.yourdomain.com/api/health/concurrency
 # Expected: {"status":"ok","active":0,"queued":0,"maxConcurrent":10}
 ```
 
 ### Check SSL Certificate
 
-Visit `https://archon.yourdomain.com/api/health` in your browser:
+Visit `https://smelter.yourdomain.com/api/health` in your browser:
 
 - Should show green padlock
 - Certificate issued by "Let's Encrypt"
@@ -629,7 +629,7 @@ openssl rand -hex 32
 
 | Field                | Value                                                                        |
 | -------------------- | ---------------------------------------------------------------------------- |
-| **Payload URL**      | `https://archon.yourdomain.com/webhooks/github`                              |
+| **Payload URL**      | `https://smelter.yourdomain.com/webhooks/github`                              |
 | **Content type**     | `application/json`                                                           |
 | **Secret**           | Your `WEBHOOK_SECRET` from `.env`                                            |
 | **SSL verification** | Enable SSL verification                                                      |
@@ -670,7 +670,7 @@ docker compose --profile cloud logs --tail=100 app
 
 ```bash
 # Pull latest changes
-cd /opt/archon
+cd /opt/smelter
 git pull
 
 # Rebuild and restart
@@ -710,7 +710,7 @@ docker compose --profile cloud down -v
 **Check DNS:**
 
 ```bash
-dig archon.yourdomain.com
+dig smelter.yourdomain.com
 # Should return your server IP
 ```
 
@@ -796,7 +796,7 @@ cat .env | grep WEBHOOK_SECRET
 **Test webhook endpoint:**
 
 ```bash
-curl https://archon.yourdomain.com/webhooks/github
+curl https://smelter.yourdomain.com/webhooks/github
 # Should return 400 (missing signature) - means endpoint is reachable
 ```
 

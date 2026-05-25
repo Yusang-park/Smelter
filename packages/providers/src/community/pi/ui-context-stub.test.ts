@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import type { MessageChunk } from '../../types';
 
-import { createArchonUIBridge, createArchonUIContext } from './ui-context-stub';
+import { createSmelterUIBridge, createSmelterUIContext } from './ui-context-stub';
 
-describe('createArchonUIBridge', () => {
+describe('createSmelterUIBridge', () => {
   test('drops notifications when no emitter is set', () => {
-    const bridge = createArchonUIBridge();
+    const bridge = createSmelterUIBridge();
     expect(() => bridge.emit({ type: 'system', content: 'x' })).not.toThrow();
   });
 
   test('forwards notifications to the configured emitter', () => {
-    const bridge = createArchonUIBridge();
+    const bridge = createSmelterUIBridge();
     const chunks: MessageChunk[] = [];
     bridge.setEmitter(c => chunks.push(c));
     bridge.emit({ type: 'system', content: 'hello' });
@@ -19,7 +19,7 @@ describe('createArchonUIBridge', () => {
   });
 
   test('detaches emitter when cleared (bridgeSession cleanup path)', () => {
-    const bridge = createArchonUIBridge();
+    const bridge = createSmelterUIBridge();
     const chunks: MessageChunk[] = [];
     bridge.setEmitter(c => chunks.push(c));
     bridge.setEmitter(undefined);
@@ -28,12 +28,12 @@ describe('createArchonUIBridge', () => {
   });
 });
 
-describe('createArchonUIContext', () => {
+describe('createSmelterUIContext', () => {
   function mk() {
-    const bridge = createArchonUIBridge();
+    const bridge = createSmelterUIBridge();
     const chunks: MessageChunk[] = [];
     bridge.setEmitter(c => chunks.push(c));
-    const ui = createArchonUIContext(bridge);
+    const ui = createSmelterUIContext(bridge);
     return { ui, chunks };
   }
 
@@ -110,7 +110,7 @@ describe('createArchonUIContext', () => {
   test('theme getter returns a proxy that throws on property access', () => {
     const { ui } = mk();
     const themeRef = ui.theme;
-    expect(() => themeRef.fg('accent', 'text')).toThrow(/Archon's remote UI stub/);
+    expect(() => themeRef.fg('accent', 'text')).toThrow(/Smelter's remote UI stub/);
   });
 
   test('onTerminalInput returns a disposer that is safe to call', () => {

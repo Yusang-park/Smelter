@@ -1,0 +1,56 @@
+name: smelter-brainstorm
+description: |
+  Use when: Shape a new feature, refactor, rewrite, or product direction before implementation.
+  Input: Product idea, vague request, greenfield direction, or architecture question.
+  Output: Approved design/task artifacts without source-code changes.
+
+nodes:
+  - id: investigate
+    prompt: |
+      Use workflow-investigate for planning-only discovery.
+
+      Topic:
+      $ARGUMENTS
+
+      Gather current repo/product context before proposing designs.
+      Read .smelter/smelter/document/workflow.md and .smelter/smelter/modes/workflow.yaml when needed.
+    skills: [workflow-investigate]
+    context: fresh
+
+  - id: investigate-review
+    depends_on: [investigate]
+    prompt: |
+      Use workflow-investigate-review to verify discovery evidence before brainstorming.
+    skills: [workflow-investigate-review]
+    context: fresh
+
+  - id: brainstorm
+    depends_on: [investigate-review]
+    prompt: |
+      Use workflow-brainstorm. Ask one focused question at a time when decisions are required,
+      compare 2-3 approaches, and persist the approved design.
+    skills: [workflow-brainstorm]
+    context: fresh
+
+  - id: brainstorm-review
+    depends_on: [brainstorm]
+    prompt: |
+      Use workflow-brainstorm-review to review design completeness, risks, and user decisions.
+    skills: [workflow-brainstorm-review]
+    context: fresh
+
+  - id: tasker
+    depends_on: [brainstorm-review]
+    prompt: |
+      Use workflow-tasker to convert the approved design into compact executable task artifacts.
+      Do not edit source code in this workflow.
+    skills: [workflow-tasker]
+    context: fresh
+
+  - id: tasker-review
+    depends_on: [tasker]
+    prompt: |
+      Use workflow-tasker-review to verify task artifacts.
+      End with next-step guidance for smelter-implement if implementation is approved.
+    skills: [workflow-tasker-review]
+    context: fresh

@@ -86,7 +86,7 @@ Screenshots must be saved to a WSL-native path first, then copied to the Windows
 # Save to WSL home, then copy to project
 wsl -d Ubuntu -- bash -c '
   agent-browser screenshot /home/user/screenshot.png 2>&1 &&
-  cp /home/user/screenshot.png /path/to/archon/e2e-screenshots/my-test.png
+  cp /home/user/screenshot.png /path/to/smelter/e2e-screenshots/my-test.png
 '
 ```
 

@@ -28,7 +28,7 @@ bun run validate
 ```
 
 **Bundled defaults**: If you added, removed, or edited a file under
-`.archon/commands/defaults/` or `.archon/workflows/defaults/`, run
+`.smelter/commands/defaults/` or `.smelter/workflows/defaults/`, run
 `bun run generate:bundled` to refresh the embedded bundle before committing.
 
 **Important:** Use `bun run test` (not `bun test` from the repo root) to avoid mock pollution across packages.

@@ -1,5 +1,5 @@
 {
-  "name": "archon",
+  "name": "smelter",
   "version": "0.3.10",
   "private": true,
   "workspaces": [
@@ -9,8 +9,8 @@
   "scripts": {
     "cli": "bun --cwd packages/cli src/cli.ts",
     "dev": "bun --filter '*' dev",
-    "dev:server": "bun --filter @archon/server dev",
-    "start": "bun --filter @archon/server start",
+    "dev:server": "bun --filter @smelter/server dev",
+    "start": "bun --filter @smelter/server start",
     "build": "bun --filter '*' build",
     "build:binaries": "bash scripts/build-binaries.sh",
     "build:checksums": "bash scripts/checksums.sh",
@@ -18,19 +18,19 @@
     "check:bundled": "bun run scripts/generate-bundled-defaults.ts --check",
     "check:bundled-skill": "bun run scripts/check-bundled-skill.ts --check",
     "test": "bun --filter '*' --parallel test",
-    "test:watch": "bun --filter @archon/server test:watch",
+    "test:watch": "bun --filter @smelter/server test:watch",
     "type-check": "bun --filter '*' type-check && bun x tsc --noEmit -p scripts/tsconfig.json",
     "lint": "bun x eslint . --cache",
     "lint:fix": "bun x eslint . --cache --fix",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
-    "dev:web": "bun --filter @archon/web dev",
-    "build:web": "bun --filter @archon/web build",
-    "dev:docs": "bun --filter @archon/docs-web dev",
-    "build:docs": "bun --filter @archon/docs-web build",
+    "dev:web": "bun --filter @smelter/web dev",
+    "build:web": "bun --filter @smelter/web build",
+    "dev:docs": "bun --filter @smelter/docs-web dev",
+    "build:docs": "bun --filter @smelter/docs-web build",
     "validate": "bun run check:bundled && bun run check:bundled-skill && bun run type-check && bun run lint --max-warnings 0 && bun run format:check && bun run test",
     "prepare": "husky",
-    "setup-auth": "bun --filter @archon/server setup-auth"
+    "setup-auth": "bun --filter @smelter/server setup-auth"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

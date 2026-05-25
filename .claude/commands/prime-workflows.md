@@ -1,5 +1,5 @@
 ---
-description: Prime agent with Archon workflow engine context
+description: Prime agent with Smelter workflow engine context
 ---
 
 # Prime Workflows: Workflow Engine Orientation
@@ -40,7 +40,7 @@ bundled defaults merging with repo-specific workflows.
 ### 5. Understand the Router
 
 Read `packages/workflows/src/router.ts` first 60 lines — how incoming messages are matched
-to workflows, case-insensitive matching, `archon-assist` fallback, Codex tool bypass detection.
+to workflows, case-insensitive matching, `smelter-assist` fallback, Codex tool bypass detection.
 
 ### 6. Understand Observability
 
@@ -60,7 +60,7 @@ List bundled default workflows:
 !`ls packages/workflows/src/defaults/`
 
 List repo workflows (if any):
-!`ls .archon/workflows/ 2>/dev/null || echo "(none in repo root)"`
+!`ls .smelter/workflows/ 2>/dev/null || echo "(none in repo root)"`
 
 ### 9. Check Recent Workflow Engine Activity
 
@@ -76,7 +76,7 @@ Summarize (under 250 words):
 - `nodes:` (DAG) — explicit `depends_on` edges, concurrent independent nodes per layer
 
 ### DAG Node Types
-- `command:` — named command file from `.archon/commands/`
+- `command:` — named command file from `.smelter/commands/`
 - `prompt:` — inline prompt text
 - `bash:` — shell script, stdout captured as `$nodeId.output`, no AI involved
 

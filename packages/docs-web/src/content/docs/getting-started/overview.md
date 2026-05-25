@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Everything you need to go from zero to a working Archon setup.
+description: Everything you need to go from zero to a working Smelter setup.
 category: getting-started
 audience: [user]
 status: current
@@ -8,7 +8,7 @@ sidebar:
   order: 0
 ---
 
-Everything you need to go from zero to a working Archon setup — whether you prefer the Web UI or the CLI.
+Everything you need to go from zero to a working Smelter setup — whether you prefer the Web UI or the CLI.
 
 ---
 
@@ -20,28 +20,28 @@ Before you start, make sure you have:
 | -------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | **Git**                          | `git --version`    | [git-scm.com](https://git-scm.com/)                                                                                 |
 | **Bun** (replaces Node.js + npm) | `bun --version`    | Linux/macOS: `curl -fsSL https://bun.sh/install \| bash` — Windows: `powershell -c "irm bun.sh/install.ps1 \| iex"` |
-| **Claude Code CLI**              | `claude --version` | [docs.claude.com/claude-code/installation](https://docs.claude.com/en/docs/claude-code/installation) — in compiled Archon binaries, also set `CLAUDE_BIN_PATH` ([details](/getting-started/ai-assistants/#binary-path-configuration-compiled-binaries-only)) |
+| **Claude Code CLI**              | `claude --version` | [docs.claude.com/claude-code/installation](https://docs.claude.com/en/docs/claude-code/installation) — in compiled Smelter binaries, also set `CLAUDE_BIN_PATH` ([details](/getting-started/ai-assistants/#binary-path-configuration-compiled-binaries-only)) |
 | **GitHub account**               | —                  | [github.com](https://github.com/)                                                                                   |
 
-> **Do not run as root.** Archon (and the Claude Code CLI it depends on) does not work when run as the `root` user. If you're on a VPS or server that only has root, create a regular user first:
+> **Do not run as root.** Smelter (and the Claude Code CLI it depends on) does not work when run as the `root` user. If you're on a VPS or server that only has root, create a regular user first:
 >
 > ```bash
-> adduser archon          # create user (Debian/Ubuntu)
-> usermod -aG sudo archon # give sudo access
-> su - archon             # switch to the new user
+> adduser smelter          # create user (Debian/Ubuntu)
+> usermod -aG sudo smelter # give sudo access
+> su - smelter             # switch to the new user
 > ```
 >
 > Then follow this guide from within that user's session.
 
-> **Windows users:** Archon runs natively on Windows — no WSL2 required. Install [Git for Windows](https://git-scm.com/) (which includes Git Bash) and [Bun for Windows](https://bun.sh/docs/installation#windows). One caveat: DAG workflow `bash:` nodes need a bash executable — Git Bash provides this automatically.
+> **Windows users:** Smelter runs natively on Windows — no WSL2 required. Install [Git for Windows](https://git-scm.com/) (which includes Git Bash) and [Bun for Windows](https://bun.sh/docs/installation#windows). One caveat: DAG workflow `bash:` nodes need a bash executable — Git Bash provides this automatically.
 
-> **Bun replaces Node.js** — you do not need Node.js or npm installed. Bun is the runtime, package manager, and test runner for this project. If you already have Node.js, that's fine, but Archon won't use it.
+> **Bun replaces Node.js** — you do not need Node.js or npm installed. Bun is the runtime, package manager, and test runner for this project. If you already have Node.js, that's fine, but Smelter won't use it.
 
 ---
 
 ## Step 1: Clone and Install
 
-First, pick where to put the Archon server code:
+First, pick where to put the Smelter server code:
 
 **Option A: Home directory** (personal use, single user)
 
@@ -49,25 +49,25 @@ Linux/macOS:
 
 ```bash
 cd ~  # or your preferred directory
-git clone https://github.com/coleam00/Archon
-cd Archon
+git clone https://github.com/coleam00/Smelter
+cd Smelter
 ```
 
 Windows (PowerShell):
 
 ```powershell
 cd $HOME  # or your preferred directory
-git clone https://github.com/coleam00/Archon
-cd Archon
+git clone https://github.com/coleam00/Smelter
+cd Smelter
 ```
 
 **Option B: /opt** (Linux/macOS server installs — keeps things tidy)
 
 ```bash
-sudo mkdir -p /opt/archon
-sudo chown $USER:$USER /opt/archon
-git clone https://github.com/coleam00/Archon /opt/archon
-cd /opt/archon
+sudo mkdir -p /opt/smelter
+sudo chown $USER:$USER /opt/smelter
+git clone https://github.com/coleam00/Smelter /opt/smelter
+cd /opt/smelter
 ```
 
 Then install dependencies:
@@ -130,11 +130,11 @@ CLAUDE_USE_GLOBAL_AUTH=true
 
 That's it. Everything else has sensible defaults:
 
-- **Database:** SQLite at `~/.archon/archon.db` (auto-created, zero setup)
+- **Database:** SQLite at `~/.smelter/smelter.db` (auto-created, zero setup)
 - **Port:** 3090 for the API server, 5173 for the Web UI dev server
 - **AI assistant:** Claude (default)
 
-> **Why two GitHub token variables?** `GH_TOKEN` is used by the GitHub CLI (`gh`), and `GITHUB_TOKEN` is used by Archon's GitHub adapter. Set them to the same value.
+> **Why two GitHub token variables?** `GH_TOKEN` is used by the GitHub CLI (`gh`), and `GITHUB_TOKEN` is used by Smelter's GitHub adapter. Set them to the same value.
 
 ---
 
@@ -171,7 +171,7 @@ You should see output like:
 
 **Step 5: Verify It Works**
 
-Open **http://localhost:5173** in your browser. You should see the Archon Web UI.
+Open **http://localhost:5173** in your browser. You should see the Smelter Web UI.
 
 **Quick verification checklist:**
 
@@ -235,11 +235,11 @@ The AI router automatically picks the right workflow based on your message.
 cd packages/cli && bun link && cd ../..
 ```
 
-This registers the `archon` command globally so you can run it from any repository.
+This registers the `smelter` command globally so you can run it from any repository.
 
-You'll see output like `Success! Registered "@archon/cli"` followed by a message about `bun link @archon/cli` — **ignore that second part**, it's for adding Archon as a dependency in another project.
+You'll see output like `Success! Registered "@smelter/cli"` followed by a message about `bun link @smelter/cli` — **ignore that second part**, it's for adding Smelter as a dependency in another project.
 
-Bun installs linked binaries to `~/.bun/bin/`. If the `archon` command isn't found, that directory is not in your `PATH` yet. Fix it:
+Bun installs linked binaries to `~/.bun/bin/`. If the `smelter` command isn't found, that directory is not in your `PATH` yet. Fix it:
 
 ```bash
 # Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
@@ -250,7 +250,7 @@ source ~/.bashrc
 Verify it works:
 
 ```bash
-archon version
+smelter version
 ```
 
 **Step 5: Run workflows from your repository**
@@ -259,21 +259,21 @@ archon version
 cd /path/to/your/repository
 
 # See available workflows
-archon workflow list
+smelter workflow list
 
 # Ask a question about the codebase
-archon workflow run archon-assist "How does the auth module work?"
+smelter workflow run smelter-assist "How does the auth module work?"
 
 # Plan a feature on an isolated branch
-archon workflow run archon-feature-development --branch feat/dark-mode "Add dark mode"
+smelter workflow run smelter-feature-development --branch feat/dark-mode "Add dark mode"
 
 # Fix a GitHub issue
-archon workflow run archon-fix-github-issue --branch fix/issue-42 "Fix issue #42"
+smelter workflow run smelter-fix-github-issue --branch fix/issue-42 "Fix issue #42"
 ```
 
-That's it. The CLI auto-detects the git repo, uses SQLite for state tracking (`~/.archon/archon.db`), and streams output to stdout.
+That's it. The CLI auto-detects the git repo, uses SQLite for state tracking (`~/.smelter/smelter.db`), and streams output to stdout.
 
-> **The target directory must be a git repository.** Archon uses git worktrees for isolation, so it needs a `.git` folder. If your project isn't a git repo yet, run `git init && git add . && git commit -m "initial commit"` first.
+> **The target directory must be a git repository.** Smelter uses git worktrees for isolation, so it needs a `.git` folder. If your project isn't a git repo yet, run `git init && git add . && git commit -m "initial commit"` first.
 
 ---
 
@@ -283,117 +283,117 @@ That's it. The CLI auto-detects the git repo, uses SQLite for state tracking (`~
 
 ```bash
 # List all available workflows
-archon workflow list
+smelter workflow list
 
 # Run a workflow
-archon workflow run <name> "<message>"
+smelter workflow run <name> "<message>"
 
 # Run with worktree isolation (recommended for code changes)
-archon workflow run <name> --branch <branch-name> "<message>"
+smelter workflow run <name> --branch <branch-name> "<message>"
 
 # Run directly in the live checkout without worktree isolation
-archon workflow run <name> --no-worktree "<message>"
+smelter workflow run <name> --no-worktree "<message>"
 
 # Run against a different directory
-archon workflow run <name> --cwd /path/to/repo "<message>"
+smelter workflow run <name> --cwd /path/to/repo "<message>"
 ```
 
 ### CLI Commands
 
 | Command | What It Does |
 |---------|-------------|
-| `archon chat <message>` | Send a message to the orchestrator |
-| `archon setup` | Interactive setup wizard for credentials and config |
-| `archon doctor` | Verify your setup (Claude binary, gh auth, DB, adapters) |
-| `archon workflow list` | List available workflows |
-| `archon workflow run <name> [msg]` | Run a workflow |
-| `archon workflow status` | Show running workflows |
-| `archon workflow resume <id>` | Resume a failed workflow |
-| `archon workflow abandon <id>` | Abandon a non-terminal run |
-| `archon workflow approve <id> [comment]` | Approve an interactive loop gate |
-| `archon workflow reject <id> [--reason "..."]` | Reject an approval gate |
-| `archon workflow cleanup [days]` | Delete old run records (default: 7 days) |
-| `archon workflow event emit` | Emit a workflow event |
-| `archon isolation list` | List active worktrees |
-| `archon isolation cleanup [days]` | Remove stale environments |
-| `archon isolation cleanup --merged` | Remove merged branches |
-| `archon isolation cleanup --merged --include-closed` | Also remove closed (abandoned) PR branches |
-| `archon complete <branch>` | Complete branch lifecycle |
-| `archon validate workflows [name]` | Validate workflow definitions |
-| `archon validate commands [name]` | Validate command files |
-| `archon version` | Show version info |
+| `smelter chat <message>` | Send a message to the orchestrator |
+| `smelter setup` | Interactive setup wizard for credentials and config |
+| `smelter doctor` | Verify your setup (Claude binary, gh auth, DB, adapters) |
+| `smelter workflow list` | List available workflows |
+| `smelter workflow run <name> [msg]` | Run a workflow |
+| `smelter workflow status` | Show running workflows |
+| `smelter workflow resume <id>` | Resume a failed workflow |
+| `smelter workflow abandon <id>` | Abandon a non-terminal run |
+| `smelter workflow approve <id> [comment]` | Approve an interactive loop gate |
+| `smelter workflow reject <id> [--reason "..."]` | Reject an approval gate |
+| `smelter workflow cleanup [days]` | Delete old run records (default: 7 days) |
+| `smelter workflow event emit` | Emit a workflow event |
+| `smelter isolation list` | List active worktrees |
+| `smelter isolation cleanup [days]` | Remove stale environments |
+| `smelter isolation cleanup --merged` | Remove merged branches |
+| `smelter isolation cleanup --merged --include-closed` | Also remove closed (abandoned) PR branches |
+| `smelter complete <branch>` | Complete branch lifecycle |
+| `smelter validate workflows [name]` | Validate workflow definitions |
+| `smelter validate commands [name]` | Validate command files |
+| `smelter version` | Show version info |
 
 ### Worktree Management
 
 ```bash
-archon isolation list              # show active worktrees
-archon isolation cleanup           # remove stale (>7 days)
-archon isolation cleanup 14        # custom staleness threshold
-archon isolation cleanup --merged            # remove merged branches (deletes remote too)
-archon isolation cleanup --merged --include-closed  # also remove closed/abandoned PR branches
-archon complete <branch>           # complete branch lifecycle (worktree + branches)
-archon complete <branch> --force   # skip uncommitted-changes check
+smelter isolation list              # show active worktrees
+smelter isolation cleanup           # remove stale (>7 days)
+smelter isolation cleanup 14        # custom staleness threshold
+smelter isolation cleanup --merged            # remove merged branches (deletes remote too)
+smelter isolation cleanup --merged --include-closed  # also remove closed/abandoned PR branches
+smelter complete <branch>           # complete branch lifecycle (worktree + branches)
+smelter complete <branch> --force   # skip uncommitted-changes check
 ```
 
 ### Available Workflows
 
 | Workflow | What It Does |
 |----------|-------------|
-| `archon-assist` | General Q&A, debugging, exploration, CI failures — catch-all |
-| `archon-fix-github-issue` | Investigate, root cause analysis, implement fix, validate, PR |
-| `archon-idea-to-pr` | Feature idea, plan, implement, validate, PR, parallel reviews, self-fix |
-| `archon-plan-to-pr` | Execute existing plan, implement, validate, PR, review |
-| `archon-feature-development` | Implement feature from plan, validate, create PR |
-| `archon-comprehensive-pr-review` | Multi-agent PR review (5 parallel reviewers) with automatic fixes |
-| `archon-smart-pr-review` | Complexity-adaptive PR review — routes to relevant agents only |
-| `archon-create-issue` | Classify problem, gather context, investigate, create GitHub issue |
-| `archon-validate-pr` | Thorough PR validation testing both main and feature branches |
-| `archon-resolve-conflicts` | Detect, analyze, and resolve merge conflicts in PRs |
-| `archon-refactor-safely` | Safe refactoring with type-check hooks and behavior verification |
-| `archon-architect` | Architectural sweep, complexity reduction, codebase health |
-| `archon-ralph-dag` | PRD implementation loop (iterate through stories until done) |
-| `archon-issue-review-full` | Comprehensive fix + full multi-agent review for GitHub issues |
-| `archon-test-loop-dag` | Iterative test-fix cycle until all tests pass |
-| `archon-remotion-generate` | Generate or modify Remotion video compositions with AI |
-| `archon-interactive-prd` | Create a PRD through guided conversation |
-| `archon-piv-loop` | Guided Plan-Implement-Validate development with human-in-the-loop |
-| `archon-adversarial-dev` | Build a complete application from scratch using adversarial development |
+| `smelter-assist` | General Q&A, debugging, exploration, CI failures — catch-all |
+| `smelter-fix-github-issue` | Investigate, root cause analysis, implement fix, validate, PR |
+| `smelter-idea-to-pr` | Feature idea, plan, implement, validate, PR, parallel reviews, self-fix |
+| `smelter-plan-to-pr` | Execute existing plan, implement, validate, PR, review |
+| `smelter-feature-development` | Implement feature from plan, validate, create PR |
+| `smelter-comprehensive-pr-review` | Multi-agent PR review (5 parallel reviewers) with automatic fixes |
+| `smelter-smart-pr-review` | Complexity-adaptive PR review — routes to relevant agents only |
+| `smelter-create-issue` | Classify problem, gather context, investigate, create GitHub issue |
+| `smelter-validate-pr` | Thorough PR validation testing both main and feature branches |
+| `smelter-resolve-conflicts` | Detect, analyze, and resolve merge conflicts in PRs |
+| `smelter-refactor-safely` | Safe refactoring with type-check hooks and behavior verification |
+| `smelter-architect` | Architectural sweep, complexity reduction, codebase health |
+| `smelter-ralph-dag` | PRD implementation loop (iterate through stories until done) |
+| `smelter-issue-review-full` | Comprehensive fix + full multi-agent review for GitHub issues |
+| `smelter-test-loop-dag` | Iterative test-fix cycle until all tests pass |
+| `smelter-remotion-generate` | Generate or modify Remotion video compositions with AI |
+| `smelter-interactive-prd` | Create a PRD through guided conversation |
+| `smelter-piv-loop` | Guided Plan-Implement-Validate development with human-in-the-loop |
+| `smelter-adversarial-dev` | Build a complete application from scratch using adversarial development |
 
-These bundled workflows work for most projects. To customize, copy one from `.archon/workflows/defaults/` into `.archon/workflows/` and modify it — same-named files override the defaults.
+These bundled workflows work for most projects. To customize, copy one from `.smelter/workflows/defaults/` into `.smelter/workflows/` and modify it — same-named files override the defaults.
 
-> **Auto-selection:** You don't need to remember workflow names. Just describe what you want — the router reads all workflow descriptions and picks the best match. For example, "fix issue #42" routes to `archon-fix-github-issue`, while "review this PR" routes to `archon-smart-pr-review`. If nothing matches clearly, it falls back to `archon-assist`.
+> **Auto-selection:** You don't need to remember workflow names. Just describe what you want — the router reads all workflow descriptions and picks the best match. For example, "fix issue #42" routes to `smelter-fix-github-issue`, while "review this PR" routes to `smelter-smart-pr-review`. If nothing matches clearly, it falls back to `smelter-assist`.
 
 ---
 
 ## Customize Your Target Repo
 
-Add an `.archon/` directory to your target repo for repo-specific behavior:
+Add an `.smelter/` directory to your target repo for repo-specific behavior:
 
 ```
 your-repo/
-└── .archon/
+└── .smelter/
     ├── config.yaml         # AI assistant, worktree copy rules
     ├── commands/            # Custom commands (.md files)
     └── workflows/           # Custom multi-step workflows (.yaml files)
 ```
 
-**Example `.archon/config.yaml`:**
+**Example `.smelter/config.yaml`:**
 
 ```yaml
 assistant: claude
 commands:
-  folder: .claude/commands/archon    # additional command search path
+  folder: .claude/commands/smelter    # additional command search path
 worktree:
   copyFiles:                         # gitignored files/dirs to copy into worktrees
-    - .env                           # (`.archon/` is copied automatically — no need to list it)
+    - .env                           # (`.smelter/` is copied automatically — no need to list it)
     - plans/
 ```
 
-Without any `.archon/` config, the platform uses sensible defaults (bundled commands and workflows).
+Without any `.smelter/` config, the platform uses sensible defaults (bundled commands and workflows).
 
 ### Custom Commands
 
-Place `.md` files in your repo's `.archon/commands/`:
+Place `.md` files in your repo's `.smelter/commands/`:
 
 ```markdown
 ---
@@ -410,7 +410,7 @@ Variables available: `$1`, `$2`, `$3` (positional), `$ARGUMENTS` (all args), `$A
 
 ### Custom Workflows
 
-Place `.yaml` files in your repo's `.archon/workflows/`:
+Place `.yaml` files in your repo's `.smelter/workflows/`:
 
 ```yaml
 name: my-workflow
@@ -433,8 +433,8 @@ Workflows chain multiple commands as DAG nodes, support parallel execution, cond
 >
 > Commands and workflows are loaded at runtime from the current working directory — not from a fixed global location.
 >
-> - **CLI:** Reads from wherever you run the `archon` command. If you run from your local repo, it picks up uncommitted changes immediately.
-> - **Server (Telegram/Slack/GitHub):** Reads from the workspace clone at `~/.archon/workspaces/owner/repo/`. This clone only syncs from the remote before worktree creation, so you need to **commit and push** changes for the server to see them.
+> - **CLI:** Reads from wherever you run the `smelter` command. If you run from your local repo, it picks up uncommitted changes immediately.
+> - **Server (Telegram/Slack/GitHub):** Reads from the workspace clone at `~/.smelter/workspaces/owner/repo/`. This clone only syncs from the remote before worktree creation, so you need to **commit and push** changes for the server to see them.
 >
 > In short: the CLI sees your local files, the server sees what's been pushed.
 
@@ -445,8 +445,8 @@ Workflows chain multiple commands as DAG nodes, support parallel execution, cond
 When you use the `--branch` flag, the CLI creates a git worktree so your work happens in an isolated directory. This prevents parallel tasks from conflicting with each other or your main branch.
 
 ```
-~/.archon/
-├── archon.db              # SQLite database (auto-created)
+~/.smelter/
+├── smelter.db              # SQLite database (auto-created)
 └── workspaces/            # Project-centric layout
     └── owner/repo/
         ├── source/        # Clone or symlink to local path
@@ -461,23 +461,23 @@ When you use the `--branch` flag, the CLI creates a git worktree so your work ha
 
 ## Using With Claude Code (Skill)
 
-If you want Claude Code to be able to invoke Archon workflows on your behalf, install the
-Archon skill into your project. The setup wizard handles this automatically — just run
-`archon setup` and accept the skill installation prompt.
+If you want Claude Code to be able to invoke Smelter workflows on your behalf, install the
+Smelter skill into your project. The setup wizard handles this automatically — just run
+`smelter setup` and accept the skill installation prompt.
 
 To install manually instead:
 
 ```bash
-cp -r Archon/.claude/skills/archon /path/to/your/repo/.claude/skills/
+cp -r Smelter/.claude/skills/smelter /path/to/your/repo/.claude/skills/
 ```
 
-Then in Claude Code, say things like "use archon to fix issue #42" and it will invoke the appropriate workflow.
+Then in Claude Code, say things like "use smelter to fix issue #42" and it will invoke the appropriate workflow.
 
 ---
 
 ## Running the Full Platform (Server + Chat Adapters)
 
-The CLI is standalone, but if you also want to interact via Telegram, Slack, Discord, or GitHub webhooks, see the [README Server Setup](https://github.com/coleam00/Archon#quickstart) or run the setup wizard by opening Claude Code in the Archon repo and saying "set up archon".
+The CLI is standalone, but if you also want to interact via Telegram, Slack, Discord, or GitHub webhooks, see the [README Server Setup](https://github.com/coleam00/Smelter#quickstart) or run the setup wizard by opening Claude Code in the Smelter repo and saying "set up smelter".
 
 ---
 
@@ -485,17 +485,17 @@ The CLI is standalone, but if you also want to interact via Telegram, Slack, Dis
 
 ### "Cannot create worktree: repository registration failed" (stale workspace symlink)
 
-This happens when `~/.archon/workspaces/<owner>/<repo>/source` is a symlink pointing at a previous checkout (common after moving or renaming the repo). The error message includes the exact cleanup path to follow:
+This happens when `~/.smelter/workspaces/<owner>/<repo>/source` is a symlink pointing at a previous checkout (common after moving or renaming the repo). The error message includes the exact cleanup path to follow:
 
 ```
 Cannot create worktree: repository registration failed.
-Error: Source symlink at ~/.archon/workspaces/<owner>/<repo>/source already points to <old-path>, expected <new-path>
-Hint: Remove the stale workspace entry at ~/.archon/workspaces/<owner>/<repo> and retry, or use --no-worktree to skip isolation.
+Error: Source symlink at ~/.smelter/workspaces/<owner>/<repo>/source already points to <old-path>, expected <new-path>
+Hint: Remove the stale workspace entry at ~/.smelter/workspaces/<owner>/<repo> and retry, or use --no-worktree to skip isolation.
 ```
 
 Follow the hint — delete the stale workspace folder and re-run, or pass `--no-worktree` to skip isolation for one run.
 
-> On Archon versions before this fix, the same root cause surfaced as the misleading "Cannot create worktree: not in a git repository" (even though the repo was valid). If you see that string, upgrade and you'll get the actionable message above.
+> On Smelter versions before this fix, the same root cause surfaced as the misleading "Cannot create worktree: not in a git repository" (even though the repo was valid). If you see that string, upgrade and you'll get the actionable message above.
 
 ---
 
@@ -573,7 +573,7 @@ bun install
 
 ### Add a chat platform (optional)
 
-Want to message Archon from your phone? Pick one:
+Want to message Smelter from your phone? Pick one:
 
 | Platform            | Difficulty      | Guide                                                                 |
 | ------------------- | --------------- | --------------------------------------------------------------------- |
@@ -584,11 +584,11 @@ Want to message Archon from your phone? Pick one:
 
 ### Create custom commands and workflows
 
-Add AI prompts to your repo that Archon can execute:
+Add AI prompts to your repo that Smelter can execute:
 
 ```
 your-repo/
-└── .archon/
+└── .smelter/
     ├── commands/        # Markdown files with AI instructions
     └── workflows/       # YAML files chaining commands together
 ```

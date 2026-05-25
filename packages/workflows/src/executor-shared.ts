@@ -8,9 +8,9 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import type { WorkflowDeps } from './deps';
-import * as archonPaths from '@archon/paths';
+import * as smelterPaths from '@smelter/paths';
 import { BUNDLED_COMMANDS, isBinaryBuild } from './defaults/bundled-defaults';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import { isValidCommandName } from './command-validation';
 import type { LoadCommandResult } from './schemas';
 
@@ -222,7 +222,7 @@ export async function loadCommandPrompt(
       {
         err,
         cwd,
-        note: 'Default commands will be loaded. Check your .archon/config.yaml if this is unexpected.',
+        note: 'Default commands will be loaded. Check your .smelter/config.yaml if this is unexpected.',
       },
       'config_load_failed_using_defaults'
     );
@@ -232,15 +232,15 @@ export async function loadCommandPrompt(
   // Use command folder paths with optional configured folder.
   // Each scope is walked 1 subfolder deep so `triage/review.md` resolves as
   // `review` — matching the workflows/scripts convention. Resolution
-  // precedence: repo > home (~/.archon/commands/) > bundled/app defaults.
-  const searchPaths = archonPaths.getCommandFolderSearchPaths(configuredFolder);
+  // precedence: repo > home (~/.smelter/commands/) > bundled/app defaults.
+  const searchPaths = smelterPaths.getCommandFolderSearchPaths(configuredFolder);
   const resolvedSearchPaths: string[] = [
     ...searchPaths.map(folder => join(cwd, folder)),
-    archonPaths.getHomeCommandsPath(),
+    smelterPaths.getHomeCommandsPath(),
   ];
 
   for (const dir of resolvedSearchPaths) {
-    const entries = await archonPaths.findMarkdownFilesRecursive(dir, '', { maxDepth: 1 });
+    const entries = await smelterPaths.findMarkdownFilesRecursive(dir, '', { maxDepth: 1 });
     const match = entries.find(e => e.commandName === commandName);
     if (!match) continue;
 
@@ -291,9 +291,9 @@ export async function loadCommandPrompt(
       }
       getLog().debug({ commandName }, 'command_bundled_not_found');
     } else {
-      // Bun: load from filesystem (walk 1 level deep so `defaults/archon-*.md` resolves)
-      const appDefaultsPath = archonPaths.getDefaultCommandsPath();
-      const entries = await archonPaths.findMarkdownFilesRecursive(appDefaultsPath, '', {
+      // Bun: load from filesystem (walk 1 level deep so `defaults/smelter-*.md` resolves)
+      const appDefaultsPath = smelterPaths.getDefaultCommandsPath();
+      const entries = await smelterPaths.findMarkdownFilesRecursive(appDefaultsPath, '', {
         maxDepth: 1,
       });
       const match = entries.find(e => e.commandName === commandName);
@@ -377,7 +377,7 @@ export function substituteWorkflowVariables(
   // Fail fast if the prompt references $BASE_BRANCH but no base branch could be resolved
   if (!baseBranch && prompt.includes('$BASE_BRANCH')) {
     throw new Error(
-      'No base branch could be resolved. Auto-detection failed and `worktree.baseBranch` is not set in .archon/config.yaml. ' +
+      'No base branch could be resolved. Auto-detection failed and `worktree.baseBranch` is not set in .smelter/config.yaml. ' +
         'Set the config value or use the --from flag to select a branch (e.g., --from dev).'
     );
   }

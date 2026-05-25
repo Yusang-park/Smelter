@@ -3,8 +3,8 @@
  * Handles message sending with markdown block formatting for AI responses
  */
 import { App, LogLevel } from '@slack/bolt';
-import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
-import { createLogger } from '@archon/paths';
+import type { IPlatformAdapter, MessageMetadata } from '@smelter/core';
+import { createLogger } from '@smelter/paths';
 import { isSlackUserAuthorized } from './auth';
 import { parseAllowedUserIds } from './auth';
 import { splitIntoParagraphChunks } from '../../utils/message-splitting';

@@ -37,7 +37,7 @@ describe('resolvePiThinkingLevel', () => {
     expect(resolvePiThinkingLevel({ effort: 'off' })).toEqual({ level: undefined });
   });
 
-  test("'max' (Archon EffortLevel enum) translates to Pi 'xhigh'", () => {
+  test("'max' (Smelter EffortLevel enum) translates to Pi 'xhigh'", () => {
     expect(resolvePiThinkingLevel({ effort: 'max' })).toEqual({ level: 'xhigh' });
     expect(resolvePiThinkingLevel({ thinking: 'max' })).toEqual({ level: 'xhigh' });
   });
@@ -163,7 +163,7 @@ describe('resolvePiSkills', () => {
   let originalHome: string | undefined;
 
   beforeAll(() => {
-    tmpRoot = mkdtempSync(join(tmpdir(), 'archon-pi-skills-'));
+    tmpRoot = mkdtempSync(join(tmpdir(), 'smelter-pi-skills-'));
     cwd = join(tmpRoot, 'project');
     const home = join(tmpRoot, 'home');
 

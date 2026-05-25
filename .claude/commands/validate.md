@@ -1,12 +1,12 @@
 ---
-description: Run Archon's full validation suite with per-level reporting
+description: Run Smelter's full validation suite with per-level reporting
 ---
 
-# Validate: Comprehensive Archon Validation
+# Validate: Comprehensive Smelter Validation
 
 ## Objective
 
-Run all four validation levels for the Archon monorepo and report pass/fail with actionable
+Run all four validation levels for the Smelter monorepo and report pass/fail with actionable
 diagnostics. All four must pass before a PR can be created.
 
 ---
@@ -23,7 +23,7 @@ Runs `tsc --noEmit` across all 8 packages via `bun --filter '*' type-check`.
 - Missing return types (explicit return types required on all functions)
 - Incorrect interface implementations (`IPlatformAdapter`, `IAgentProvider`, etc.)
 - Import type errors (use `import type` for type-only imports)
-- Package boundary violations (e.g., `@archon/workflows` importing from `@archon/core`)
+- Package boundary violations (e.g., `@smelter/workflows` importing from `@smelter/core`)
 
 ---
 
@@ -77,10 +77,10 @@ This runs `bun --filter '*' test` for per-package isolation. **Never run `bun te
 repo root** — it causes ~135 mock pollution failures due to Bun's global `mock.module()` cache.
 
 **Package test isolation notes:**
-- `@archon/core` — 7 separate `bun test` batches (mock.module pollution prevention)
-- `@archon/workflows` — 5 batches
-- `@archon/adapters` — 3 batches
-- `@archon/isolation` — 3 batches
+- `@smelter/core` — 7 separate `bun test` batches (mock.module pollution prevention)
+- `@smelter/workflows` — 5 batches
+- `@smelter/adapters` — 3 batches
+- `@smelter/isolation` — 3 batches
 
 **What to look for:**
 - Failing unit tests (fix root cause, not the test assertion)
@@ -94,7 +94,7 @@ bun test packages/core/src/handlers/command-handler.test.ts
 
 To run tests for a single package:
 ```bash
-bun --filter @archon/workflows test
+bun --filter @smelter/workflows test
 ```
 
 ---

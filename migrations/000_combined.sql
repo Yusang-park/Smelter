@@ -256,7 +256,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
 -- Cleanup: Drop legacy objects from older schemas
 -- ============================================================================
 
--- Drop command_templates table (replaced by file-based commands in .archon/commands)
+-- Drop command_templates table (replaced by file-based commands in .smelter/commands)
 DROP TABLE IF EXISTS remote_agent_command_templates;
 DROP INDEX IF EXISTS idx_remote_agent_command_templates_name;
 

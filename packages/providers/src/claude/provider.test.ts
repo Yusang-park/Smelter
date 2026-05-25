@@ -2,7 +2,7 @@ import { describe, test, expect, mock, beforeEach, spyOn } from 'bun:test';
 import { createMockLogger } from '../test/mocks/logger';
 
 const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
@@ -749,7 +749,7 @@ describe('ClaudeProvider', () => {
 
     test("honors explicit settingSources: ['project'] to opt out of user scope", async () => {
       // Locks in the contract: setting settingSources: ['project'] in
-      // .archon/config.yaml must NOT be silently widened to the new default.
+      // .smelter/config.yaml must NOT be silently widened to the new default.
       // A future refactor that drops the `?? ['project', 'user']` guard would
       // expand skill/command/agent scope for every project-only deployment.
       mockQuery.mockImplementation(async function* () {
@@ -1082,15 +1082,15 @@ describe('sendQuery decomposition behaviors', () => {
 
     const consumeGenerator = async (): Promise<void> => {
       // Use env var to set a short timeout for the test
-      const original = process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
-      process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS = '50';
+      const original = process.env.SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
+      process.env.SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS = '50';
       try {
         for await (const _ of client.sendQuery('test', '/workspace')) {
           // consume
         }
       } finally {
-        if (original !== undefined) process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS = original;
-        else delete process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
+        if (original !== undefined) process.env.SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS = original;
+        else delete process.env.SMELTER_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
       }
     };
 

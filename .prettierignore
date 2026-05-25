@@ -28,7 +28,7 @@ package-lock.json
 # Agent commands and documentation (user-managed)
 .agents/
 .claude/
-.archon/
+.smelter/
 
 # Website (Astro/Starlight - uses own formatting)
 packages/docs-web/

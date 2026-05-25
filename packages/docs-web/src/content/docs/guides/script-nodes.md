@@ -45,17 +45,17 @@ nodes:
     runtime: uv
 ```
 
-### Named script from `.archon/scripts/`
+### Named script from `.smelter/scripts/`
 
 ```yaml
 nodes:
   - id: fetch-pages
-    script: fetch-github-pages   # resolves .archon/scripts/fetch-github-pages.ts
+    script: fetch-github-pages   # resolves .smelter/scripts/fetch-github-pages.ts
     runtime: bun
     timeout: 60000
 ```
 
-The file `.archon/scripts/fetch-github-pages.ts` is loaded and executed with
+The file `.smelter/scripts/fetch-github-pages.ts` is loaded and executed with
 `bun --no-env-file run <path>`.
 
 ## How It Works
@@ -99,7 +99,7 @@ The file `.archon/scripts/fetch-github-pages.ts` is loaded and executed with
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `script` | string | Yes | Inline code, or the basename (no extension) of a file in `.archon/scripts/` or `~/.archon/scripts/` |
+| `script` | string | Yes | Inline code, or the basename (no extension) of a file in `.smelter/scripts/` or `~/.smelter/scripts/` |
 | `runtime` | `'bun'` \| `'uv'` | Yes | Which runtime executes the script. Must match the file extension for named scripts |
 | `deps` | string[] | No | Python dependencies to install for this run. **uv only** — ignored with a warning for `bun` |
 | `timeout` | number (ms) | No | Hard kill after this many milliseconds. Default: `120000` (2 min) |
@@ -132,10 +132,10 @@ identifier, add a trailing comment or newline to force inline mode.
 
 Named scripts are discovered from, in precedence order:
 
-1. `<repoRoot>/.archon/scripts/` — repo-local
-2. `~/.archon/scripts/` — home-scoped (shared across every repo)
+1. `<repoRoot>/.smelter/scripts/` — repo-local
+2. `~/.smelter/scripts/` — home-scoped (shared across every repo)
 
-Each directory is walked one subfolder deep (e.g. `.archon/scripts/triage/foo.ts`
+Each directory is walked one subfolder deep (e.g. `.smelter/scripts/triage/foo.ts`
 resolves as `foo`). Deeper nesting is ignored. On a same-name collision the
 repo-local entry wins silently — see [Global Workflows](/guides/global-workflows/)
 for the shared precedence rules.
@@ -231,22 +231,22 @@ literally embedded into the code string at execution time.
 
 Script subprocesses receive `process.env` merged with any codebase-scoped env
 vars you've configured via the Web UI (Settings → Projects → Env Vars) or the
-`env:` block in `.archon/config.yaml`. This is the same injection surface used
+`env:` block in `.smelter/config.yaml`. This is the same injection surface used
 by Claude, Codex, and bash nodes.
 
 **Target repo `.env` isolation:** the Bun subprocess is invoked with
 `--no-env-file`, so variables in the target repo's `.env` do **not** leak into
-the script. Archon-managed env (from `~/.archon/.env` and `<repo>/.archon/.env`)
+the script. Smelter-managed env (from `~/.smelter/.env` and `<repo>/.smelter/.env`)
 passes through normally. `uv`-launched Python subprocesses do not auto-load
 `.env` at all. See [Security Model](/reference/security/#target-repo-env-isolation)
 for the full story.
 
 ## Validation
 
-`archon validate workflows <name>` checks script nodes for:
+`smelter validate workflows <name>` checks script nodes for:
 
 - **Script file exists** — for named scripts, the basename must exist in
-  `.archon/scripts/` or `~/.archon/scripts/` with a matching extension for
+  `.smelter/scripts/` or `~/.smelter/scripts/` with a matching extension for
   the declared runtime. Missing files fail validation with a hint showing
   the expected path.
 - **Runtime available on PATH** — `bun` or `uv` must be installed. Missing
@@ -294,13 +294,13 @@ parses the upstream classifier's JSON, filters, and forwards a clean payload:
 `$classify.output` into the script body. The example above illustrates the
 shape.)*
 
-### Reusable helper in `~/.archon/scripts/`
+### Reusable helper in `~/.smelter/scripts/`
 
 A helper you want available in every repo — say, a triage summary formatter —
-lives at `~/.archon/scripts/triage-fmt.ts`:
+lives at `~/.smelter/scripts/triage-fmt.ts`:
 
 ```typescript
-// ~/.archon/scripts/triage-fmt.ts
+// ~/.smelter/scripts/triage-fmt.ts
 const raw = process.argv.slice(2).join(' ') || '{}';
 const data = JSON.parse(raw);
 const lines = data.issues?.map((i: { id: string; title: string }) =>
@@ -350,6 +350,6 @@ Then reference it by name from any repo's workflow:
 ## See Also
 
 - [Authoring Workflows](/guides/authoring-workflows/) — full workflow reference
-- [Global Workflows, Commands, and Scripts](/guides/global-workflows/) — home-scoped `~/.archon/scripts/`
+- [Global Workflows, Commands, and Scripts](/guides/global-workflows/) — home-scoped `~/.smelter/scripts/`
 - [Security Model](/reference/security/#target-repo-env-isolation) — env isolation details
 - [Variables Reference](/reference/variables/) — substitution rules

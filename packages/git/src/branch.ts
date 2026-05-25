@@ -1,4 +1,4 @@
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 import { execFileAsync } from './exec';
 import type { RepoPath, BranchName, WorktreePath } from './types';
 import { toBranchName } from './types';
@@ -16,7 +16,7 @@ function getLog(): ReturnType<typeof createLogger> {
  *
  * Fallback chain: symbolic-ref -> origin/main -> throw
  * Note: Throws if neither origin/HEAD nor origin/main can be resolved.
- * Callers can set worktree.baseBranch in .archon/config.yaml as a manual override.
+ * Callers can set worktree.baseBranch in .smelter/config.yaml as a manual override.
  *
  * Only falls back for expected git errors (ref not found, branch not found).
  * Throws for unexpected errors (permission denied, git corruption, etc.)
@@ -67,7 +67,7 @@ export async function getDefaultBranch(repoPath: RepoPath): Promise<BranchName> 
       getLog().warn({ repoPath }, 'default_branch_detection_failed');
       throw new Error(
         `Cannot detect default branch for ${repoPath}: neither origin/HEAD nor origin/main exist. ` +
-          'Set worktree.baseBranch in .archon/config.yaml to specify the branch explicitly.'
+          'Set worktree.baseBranch in .smelter/config.yaml to specify the branch explicitly.'
       );
     }
 

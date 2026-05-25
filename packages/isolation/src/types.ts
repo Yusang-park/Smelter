@@ -6,7 +6,7 @@
  * enables future strategies (containers, VMs).
  */
 
-import type { RepoPath, BranchName } from '@archon/git';
+import type { RepoPath, BranchName } from '@smelter/git';
 
 // --- Provider Types ---
 
@@ -33,7 +33,7 @@ interface IsolationRequestBase {
    * Absolute, resolved filesystem path to the main repository checkout.
    *
    * "Canonical" means the real path with symlinks resolved and `~` expanded
-   * (e.g., `/home/user/.archon/workspaces/owner/repo/source`). This must
+   * (e.g., `/home/user/.smelter/workspaces/owner/repo/source`). This must
    * point to the primary git checkout, not a worktree, because git worktree
    * operations (add, remove, list) must be executed from the main repo.
    *
@@ -257,7 +257,7 @@ export interface WorktreeCreateConfig {
    * Validation is enforced in `WorktreeProvider.getWorktreePath()` (fails fast with a
    * clear error rather than silently falling back).
    *
-   * Sourced from `.archon/config.yaml > worktree.path` in the repo.
+   * Sourced from `.smelter/config.yaml > worktree.path` in the repo.
    * @example '.worktrees'
    */
   path?: string;

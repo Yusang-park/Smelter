@@ -49,7 +49,7 @@ Following the "Proposed Fix" section of the RCA:
 #### b. Make the fix
 - Implement the change as described
 - Follow the fix strategy exactly
-- Maintain Archon coding conventions (see CLAUDE.md)
+- Maintain Smelter coding conventions (see CLAUDE.md)
 - Respect package boundaries
 - Use proper import patterns (`import type` for type-only)
 
@@ -62,7 +62,7 @@ Following the "Proposed Fix" section of the RCA:
 
 Following the "Testing Requirements" from RCA:
 
-**Important Archon test patterns:**
+**Important Smelter test patterns:**
 - Use `spyOn()` for internal module mocking (not `mock.module()` unless absolutely necessary)
 - If adding `mock.module()`, check if the test file needs its own batch in package.json
 - Place tests alongside source files or in existing test directories
@@ -150,4 +150,4 @@ gh issue comment $ARGUMENTS --body "Fix implemented. Ready for review."
 - If the RCA document is missing, request it with `/rca $ARGUMENTS`
 - If you discover the RCA analysis was incorrect, document findings and update the RCA
 - If additional issues are found during implementation, note them for separate issues
-- Follow Archon coding standards exactly (CLAUDE.md + relevant .claude/rules/)
+- Follow Smelter coding standards exactly (CLAUDE.md + relevant .claude/rules/)

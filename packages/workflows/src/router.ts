@@ -2,7 +2,7 @@
  * Workflow Router - builds prompts and detects workflow invocation
  */
 import type { WorkflowDefinition } from './schemas';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -116,14 +116,16 @@ ${workflowList}
 1. The USER REQUEST is the PRIMARY signal — it determines which workflow to use
 2. The CONTEXT section is supplementary — it tells you WHERE the user is, not WHAT they want
 3. Read each workflow's description - especially the "NOT for" and "Use when" sections
-4. CRITICAL: Being on a GitHub issue does NOT mean the user wants to fix it. Only route to "fix-github-issue" if the user EXPLICITLY asks to fix, resolve, or implement something.
-5. IMPORTANT distinctions:
+4. Do NOT require the user to say "workflow", "run", or a slash command. Route by semantic fit with the request and workflow descriptions.
+5. Trigger phrases in descriptions are helpful examples, not exhaustive requirements.
+6. CRITICAL: Being on a GitHub issue does NOT mean the user wants to fix it. Only route to "fix-github-issue" if the user EXPLICITLY asks to fix, resolve, or implement something.
+7. IMPORTANT distinctions:
    - CI failures, test failures, build errors, linting issues → use "assist" (debugging help)
    - "Fix this issue" / "implement this" / "resolve this bug" (explicit action request) → use "fix-github-issue"
    - Questions, exploration, explanations, general messages → use "assist"
    - PR reviews, code reviews → check for a PR review workflow in the list above
-6. If unsure, prefer "assist" (the catch-all)
-7. You MUST pick a workflow - never respond with just text
+8. If unsure, prefer "assist" (the catch-all)
+9. You MUST pick a workflow - never respond with just text
 
 ## Response Format
 
@@ -214,8 +216,8 @@ export function findWorkflow(
  * Resolve a workflow by name using a 4-tier fallback hierarchy:
  * 1. Exact match
  * 2. Case-insensitive match
- * 3. Suffix match (e.g. "assist" → "archon-assist")
- * 4. Substring match (e.g. "smart" → "archon-smart-pr-review")
+ * 3. Suffix match (e.g. "assist" → "smelter-assist")
+ * 4. Substring match (e.g. "smart" → "smelter-smart-pr-review")
  *
  * Returns the matched workflow, or undefined if no match found.
  * Throws an Error if multiple workflows match at the same tier (ambiguous).
@@ -252,12 +254,12 @@ export function resolveWorkflowName(
       workflows.filter(w => w.name.toLowerCase() === lowerName),
       'workflow.resolve_case_insensitive_match'
     ) ??
-    // Tier 3: Suffix match (e.g. "assist" matches "archon-assist")
+    // Tier 3: Suffix match (e.g. "assist" matches "smelter-assist")
     checkTier(
       workflows.filter(w => w.name.toLowerCase().endsWith(`-${lowerName}`)),
       'workflow.resolve_suffix_match'
     ) ??
-    // Tier 4: Substring match (e.g. "smart" matches "archon-smart-pr-review")
+    // Tier 4: Substring match (e.g. "smart" matches "smelter-smart-pr-review")
     checkTier(
       workflows.filter(w => w.name.toLowerCase().includes(lowerName)),
       'workflow.resolve_substring_match'

@@ -1,6 +1,6 @@
 ---
 title: GitLab
-description: Connect Archon to GitLab for AI coding assistance in issues and merge requests.
+description: Connect Smelter to GitLab for AI coding assistance in issues and merge requests.
 category: adapters
 area: adapters
 audience: [operator]
@@ -12,11 +12,11 @@ sidebar:
 GitLab is a **community adapter** — contributed and maintained by the community.
 :::
 
-Connect Archon to a GitLab instance (gitlab.com or self-hosted) so you can interact with your AI coding assistant from issues and merge requests.
+Connect Smelter to a GitLab instance (gitlab.com or self-hosted) so you can interact with your AI coding assistant from issues and merge requests.
 
 ## Prerequisites
 
-- Archon server running (see [Getting Started](/getting-started/overview/))
+- Smelter server running (see [Getting Started](/getting-started/overview/))
 - GitLab project with issues and merge requests enabled
 - GitLab Personal Access Token or Project Access Token with `api` scope
 - Public endpoint for webhooks (see ngrok setup below for local development)
@@ -27,7 +27,7 @@ Connect Archon to a GitLab instance (gitlab.com or self-hosted) so you can inter
 
 1. Go to **GitLab → User Settings → Access Tokens**
 2. Create a token with:
-   - **Name**: `archon`
+   - **Name**: `smelter`
    - **Scopes**: `api`
    - **Expiration**: Set as needed
 3. Copy the token (starts with `glpat-`)
@@ -92,7 +92,7 @@ Optional:
 
 ```ini
 GITLAB_ALLOWED_USERS=alice,bob
-GITLAB_BOT_MENTION=archon
+GITLAB_BOT_MENTION=smelter
 ```
 
 See the [full environment variable reference](/reference/configuration/) for details.
@@ -102,12 +102,12 @@ See the [full environment variable reference](/reference/configuration/) for det
 Mention your bot in issue or MR comments:
 
 ```
-@archon can you analyze this bug?
-@archon /status
-@archon review this implementation
+@smelter can you analyze this bug?
+@smelter /status
+@smelter review this implementation
 ```
 
-**First mention** automatically clones the repository to `~/.archon/workspaces/<group>/<project>`, detects `.archon/commands/` if present, and injects full issue/MR context.
+**First mention** automatically clones the repository to `~/.smelter/workspaces/<group>/<project>`, detects `.smelter/commands/` if present, and injects full issue/MR context.
 
 **Subsequent mentions** resume the existing conversation with full context.
 

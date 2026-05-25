@@ -6,23 +6,23 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { BUNDLED_SKILL_FILES } from '../bundled-skill';
-import { copyArchonSkill, skillInstallCommand } from './skill';
+import { copySmelterSkill, skillInstallCommand } from './skill';
 
-describe('copyArchonSkill', () => {
+describe('copySmelterSkill', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'archon-skill-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'smelter-skill-test-'));
   });
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('writes every bundled skill file under .claude/skills/archon/', async () => {
-    await copyArchonSkill(tempDir);
+  it('writes every bundled skill file under .claude/skills/smelter/', async () => {
+    await copySmelterSkill(tempDir);
 
-    const skillRoot = join(tempDir, '.claude', 'skills', 'archon');
+    const skillRoot = join(tempDir, '.claude', 'skills', 'smelter');
     for (const [relativePath, content] of Object.entries(BUNDLED_SKILL_FILES)) {
       const dest = join(skillRoot, relativePath);
       expect(existsSync(dest)).toBe(true);
@@ -31,15 +31,15 @@ describe('copyArchonSkill', () => {
   });
 
   it('overwrites pre-existing skill files with bundled content', async () => {
-    const skillRoot = join(tempDir, '.claude', 'skills', 'archon');
+    const skillRoot = join(tempDir, '.claude', 'skills', 'smelter');
     const skillMdPath = join(skillRoot, 'SKILL.md');
 
-    // Pre-seed with stale content; copyArchonSkill must overwrite it.
-    await copyArchonSkill(tempDir);
+    // Pre-seed with stale content; copySmelterSkill must overwrite it.
+    await copySmelterSkill(tempDir);
     writeFileSync(skillMdPath, 'STALE');
     expect(readFileSync(skillMdPath, 'utf-8')).toBe('STALE');
 
-    await copyArchonSkill(tempDir);
+    await copySmelterSkill(tempDir);
     expect(readFileSync(skillMdPath, 'utf-8')).toBe(BUNDLED_SKILL_FILES['SKILL.md']);
   });
 });
@@ -50,7 +50,7 @@ describe('skillInstallCommand', () => {
   let errSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'archon-skill-cmd-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'smelter-skill-cmd-test-'));
     logSpy = spyOn(console, 'log').mockImplementation(() => {});
     errSpy = spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -65,7 +65,7 @@ describe('skillInstallCommand', () => {
     const exitCode = await skillInstallCommand(tempDir);
 
     expect(exitCode).toBe(0);
-    expect(existsSync(join(tempDir, '.claude', 'skills', 'archon', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'smelter', 'SKILL.md'))).toBe(true);
     // Final log line should mention restarting Claude Code
     const lastLog = logSpy.mock.calls.at(-1)?.[0] as string | undefined;
     expect(lastLog).toContain('Restart Claude Code');

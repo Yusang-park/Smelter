@@ -1,5 +1,5 @@
 {
-  "name": "@archon/docs-web",
+  "name": "@smelter/docs-web",
   "version": "0.3.10",
   "private": true,
   "scripts": {

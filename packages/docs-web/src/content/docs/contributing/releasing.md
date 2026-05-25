@@ -1,6 +1,6 @@
 ---
 title: Releasing
-description: How to create a new release of the Archon CLI — version management, release process, and troubleshooting.
+description: How to create a new release of the Smelter CLI — version management, release process, and troubleshooting.
 category: contributing
 area: infra
 audience: [developer]
@@ -9,7 +9,7 @@ sidebar:
   order: 3
 ---
 
-This guide covers how to create a new release of the Archon CLI.
+This guide covers how to create a new release of the Smelter CLI.
 
 ## Version Management
 
@@ -69,22 +69,22 @@ After the release workflow completes:
 ./scripts/update-homebrew.sh vX.Y.Z
 
 # Review and commit
-git diff homebrew/archon.rb
-git add homebrew/archon.rb
+git diff homebrew/smelter.rb
+git add homebrew/smelter.rb
 git commit -m "chore: update Homebrew formula for vX.Y.Z"
 git push origin main
 ```
 
-If you maintain a Homebrew tap (`homebrew-archon`), copy the updated formula there.
+If you maintain a Homebrew tap (`homebrew-smelter`), copy the updated formula there.
 
 ### 4. Verify the Release
 
 ```bash
 # Test the install script (only works if repo is public)
-curl -fsSL https://raw.githubusercontent.com/coleam00/Archon/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/coleam00/Smelter/main/scripts/install.sh | bash
 
 # Verify version
-archon version
+smelter version
 ```
 
 > **Note: Private Repository Installation**
@@ -94,16 +94,16 @@ archon version
 >
 > ```bash
 > # Download and install using gh (requires GitHub authentication)
-> gh release download v0.2.0 --repo coleam00/Archon \
->   --pattern "archon-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')" \
->   --dir /tmp/archon-install
+> gh release download v0.2.0 --repo coleam00/Smelter \
+>   --pattern "smelter-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')" \
+>   --dir /tmp/smelter-install
 >
 > # Install the binary
-> chmod +x /tmp/archon-install/archon-*
-> sudo mv /tmp/archon-install/archon-* /usr/local/bin/archon
+> chmod +x /tmp/smelter-install/smelter-*
+> sudo mv /tmp/smelter-install/smelter-* /usr/local/bin/smelter
 >
 > # Verify
-> archon version
+> smelter version
 > ```
 
 ## Manual Release (When GitHub Actions Unavailable)
@@ -116,7 +116,7 @@ If GitHub Actions can't run (billing issues, private repo limits), create the re
 
 # 2. Create the release with binaries
 gh release create vX.Y.Z dist/binaries/* \
-  --title "Archon CLI vX.Y.Z" \
+  --title "Smelter CLI vX.Y.Z" \
   --generate-notes
 
 # 3. Verify the release

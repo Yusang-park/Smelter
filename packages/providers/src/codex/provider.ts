@@ -18,7 +18,7 @@ import type {
 import { parseCodexConfig } from './config';
 import { CODEX_CAPABILITIES } from './capabilities';
 import { resolveCodexBinaryPath } from './binary-resolver';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -105,8 +105,8 @@ function buildModelAccessMessage(model?: string): string {
   const suggested = normalizedModel ? CODEX_MODEL_FALLBACKS[normalizedModel] : undefined;
 
   const fixLine = suggested
-    ? `To fix: update your model in ~/.archon/config.yaml:\n  assistants:\n    codex:\n      model: ${suggested}`
-    : 'To fix: update your model in ~/.archon/config.yaml to one your account can access.';
+    ? `To fix: update your model in ~/.smelter/config.yaml:\n  assistants:\n    codex:\n      model: ${suggested}`
+    : 'To fix: update your model in ~/.smelter/config.yaml to one your account can access.';
 
   const workflowLine = suggested
     ? `Or set it per-workflow with \`model: ${suggested}\` in workflow YAML.`
@@ -184,7 +184,7 @@ interface CodexStreamState {
 }
 
 /**
- * Normalize raw Codex SDK events into Archon MessageChunks.
+ * Normalize raw Codex SDK events into Smelter MessageChunks.
  * Handles structured output normalization (Codex returns JSON inline in text).
  */
 async function* streamCodexEvents(

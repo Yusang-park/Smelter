@@ -6,7 +6,7 @@
  */
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 
-// Mock @archon/paths to suppress noisy logger output during tests
+// Mock @smelter/paths to suppress noisy logger output during tests
 const mockLogger = {
   fatal: mock(() => undefined),
   error: mock(() => undefined),
@@ -21,16 +21,16 @@ const mockLogger = {
   isLevelEnabled: mock(() => true),
   level: 'info',
 };
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => mockLogger),
-  getArchonWorkspacesPath: mock(() => '/tmp/test-workspaces'),
-  getCommandFolderSearchPaths: mock(() => ['.archon/commands', '.claude/commands']),
-  logArchonPaths: mock(() => undefined),
+  getSmelterWorkspacesPath: mock(() => '/tmp/test-workspaces'),
+  getCommandFolderSearchPaths: mock(() => ['.smelter/commands', '.claude/commands']),
+  logSmelterPaths: mock(() => undefined),
   validateAppDefaultsPaths: mock(async () => undefined),
 }));
 
-// Mock @archon/core/db modules to throw immediately (avoid DB connection hangs in tests)
-mock.module('@archon/core/db/conversations', () => ({
+// Mock @smelter/core/db modules to throw immediately (avoid DB connection hangs in tests)
+mock.module('@smelter/core/db/conversations', () => ({
   getOrCreateConversation: mock(async () => {
     throw new Error('DB not mocked in tests');
   }),
@@ -39,7 +39,7 @@ mock.module('@archon/core/db/conversations', () => ({
   }),
   getConversation: mock(async () => null),
 }));
-mock.module('@archon/core/db/codebases', () => ({
+mock.module('@smelter/core/db/codebases', () => ({
   findCodebaseByRepoUrl: mock(async () => null),
   createCodebase: mock(async () => {
     throw new Error('DB not mocked in tests');
@@ -49,13 +49,13 @@ mock.module('@archon/core/db/codebases', () => ({
   updateCodebase: mock(async () => undefined),
 }));
 
-// Mock @archon/git to avoid real git operations in tests
+// Mock @smelter/git to avoid real git operations in tests
 const mockCloneRepository = mock(async () => ({ ok: true, value: undefined }));
 const mockSyncRepository = mock(async () => ({ ok: true, value: undefined }));
 const mockAddSafeDirectory = mock(async () => undefined);
 const mockIsWorktreePath = mock(async () => false);
 
-mock.module('@archon/git', () => ({
+mock.module('@smelter/git', () => ({
   cloneRepository: mockCloneRepository,
   syncRepository: mockSyncRepository,
   addSafeDirectory: mockAddSafeDirectory,
@@ -65,7 +65,7 @@ mock.module('@archon/git', () => ({
 }));
 
 import { GiteaAdapter } from './adapter';
-import { ConversationLockManager } from '@archon/core';
+import { ConversationLockManager } from '@smelter/core';
 
 // Create a mock lock manager that immediately executes handlers
 const mockLockManager = {
@@ -154,15 +154,15 @@ describe('GiteaAdapter', () => {
         'token',
         'secret',
         mockLockManager,
-        'Archon'
+        'Smelter'
       );
       const hasMention = (
         adapterWithMention as unknown as { hasMention: (text: string) => boolean }
       ).hasMention;
 
-      expect(hasMention.call(adapterWithMention, '@Archon')).toBe(true);
-      expect(hasMention.call(adapterWithMention, '@ARCHON')).toBe(true);
-      expect(hasMention.call(adapterWithMention, '@archon')).toBe(true);
+      expect(hasMention.call(adapterWithMention, '@Smelter')).toBe(true);
+      expect(hasMention.call(adapterWithMention, '@SMELTER')).toBe(true);
+      expect(hasMention.call(adapterWithMention, '@smelter')).toBe(true);
     });
 
     test('should strip mention case-insensitively', () => {
@@ -186,7 +186,7 @@ describe('GiteaAdapter', () => {
   describe('self-filtering', () => {
     let originalAllowedUsers: string | undefined;
 
-    function createSelfFilterAdapter(botMention = 'archon'): GiteaAdapter {
+    function createSelfFilterAdapter(botMention = 'smelter'): GiteaAdapter {
       const adapter = new GiteaAdapter(
         'https://gitea.example.com',
         'fake-token-for-testing',
@@ -240,7 +240,7 @@ describe('GiteaAdapter', () => {
 
     test('should ignore comments from the bot itself', async () => {
       const adapter = createSelfFilterAdapter();
-      const payload = createCommentPayload('@archon fix this', 'archon');
+      const payload = createCommentPayload('@smelter fix this', 'smelter');
 
       await adapter.handleWebhook(payload, 'mock-signature');
 
@@ -249,8 +249,8 @@ describe('GiteaAdapter', () => {
     });
 
     test('should handle case-insensitive username matching', async () => {
-      const adapter = createSelfFilterAdapter('Archon'); // Mixed case config
-      const payload = createCommentPayload('@archon test', 'archon'); // Lowercase author
+      const adapter = createSelfFilterAdapter('Smelter'); // Mixed case config
+      const payload = createCommentPayload('@smelter test', 'smelter'); // Lowercase author
 
       await adapter.handleWebhook(payload, 'mock-signature');
 
@@ -260,7 +260,7 @@ describe('GiteaAdapter', () => {
 
     test('should NOT filter comments from real users', async () => {
       const adapter = createSelfFilterAdapter();
-      const payload = createCommentPayload('@archon please help', 'user123');
+      const payload = createCommentPayload('@smelter please help', 'user123');
 
       // handleWebhook will error on DB operations, but self-filtering runs first
       try {
@@ -276,7 +276,7 @@ describe('GiteaAdapter', () => {
       const adapter = createSelfFilterAdapter();
       // Comment has the marker but author is a real user (using PAT)
       const payload = createCommentPayload(
-        '@archon fix this\n\n<!-- archon-bot-response -->',
+        '@smelter fix this\n\n<!-- smelter-bot-response -->',
         'Wirasm'
       );
 
@@ -289,7 +289,7 @@ describe('GiteaAdapter', () => {
     test('should process comments without bot marker from same user', async () => {
       const adapter = createSelfFilterAdapter();
       // Comment from same user but WITHOUT marker - should be processed
-      const payload = createCommentPayload('@archon fix this', 'Wirasm');
+      const payload = createCommentPayload('@smelter fix this', 'Wirasm');
 
       // Will error on DB operations, but self-filtering runs first
       try {
@@ -303,7 +303,7 @@ describe('GiteaAdapter', () => {
 
     test('should handle missing comment.user gracefully', async () => {
       const adapter = createSelfFilterAdapter();
-      const payload = createCommentPayload('@archon help', undefined);
+      const payload = createCommentPayload('@smelter help', undefined);
 
       // Should not crash on undefined user
       try {
@@ -367,8 +367,8 @@ describe('GiteaAdapter', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body as string).body as string;
       expect(body).toContain('Hello world');
-      expect(body).toContain('<!-- archon-bot-response -->');
-      expect(body).toBe('Hello world\n\n<!-- archon-bot-response -->');
+      expect(body).toContain('<!-- smelter-bot-response -->');
+      expect(body).toBe('Hello world\n\n<!-- smelter-bot-response -->');
     });
 
     test('should reject invalid conversationId format', async () => {

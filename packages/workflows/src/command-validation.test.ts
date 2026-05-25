@@ -120,8 +120,8 @@ describe('isValidCommandName', () => {
       expect(isValidCommandName('.')).toBe(false);
     });
 
-    test('".archon" directory name', () => {
-      expect(isValidCommandName('.archon')).toBe(false);
+    test('".smelter" directory name', () => {
+      expect(isValidCommandName('.smelter')).toBe(false);
     });
 
     test('".gitignore" style name', () => {

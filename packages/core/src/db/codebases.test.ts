@@ -177,7 +177,7 @@ describe('codebases', () => {
 
     test('returns mutable object even when source is frozen (SQLite behavior)', async () => {
       const frozenCommands = Object.freeze({
-        plan: { path: '.archon/commands/plan.md', description: 'Plan feature' },
+        plan: { path: '.smelter/commands/plan.md', description: 'Plan feature' },
       });
       mockQuery.mockResolvedValueOnce(createQueryResult([{ commands: frozenCommands }]));
 

@@ -1,6 +1,6 @@
 ---
 title: Commands Reference
-description: All slash commands available in Archon adapters including Web UI, Telegram, Slack, Discord, and GitHub.
+description: All slash commands available in Smelter adapters including Web UI, Telegram, Slack, Discord, and GitHub.
 category: reference
 area: handlers
 audience: [user]
@@ -9,7 +9,7 @@ sidebar:
   order: 4
 ---
 
-All slash commands available in Archon. Type `/help` in any platform adapter (Web UI, Telegram, Slack, Discord, GitHub) to see this list.
+All slash commands available in Smelter. Type `/help` in any platform adapter (Web UI, Telegram, Slack, Discord, GitHub) to see this list.
 
 ---
 
@@ -40,7 +40,7 @@ These commands are handled deterministically by the orchestrator — they always
 | `/workflow run <name> [args]` | Run a workflow directly |
 | `/workflow cleanup [days]` | CLI only -- delete old run records (default: 7 days) |
 
-> **Note:** Workflows are YAML files in `.archon/workflows/`
+> **Note:** Workflows are YAML files in `.smelter/workflows/`
 
 ## Session Management
 
@@ -72,7 +72,7 @@ The following commands exist in the command handler but are **not** deterministi
 | `/worktree remove [--force]` | Remove current worktree |
 | `/worktree cleanup merged\|stale` | Clean up worktrees |
 | `/worktree orphans` | Show all worktrees from git |
-| `/init` | Create `.archon` structure in current repo |
+| `/init` | Create `.smelter` structure in current repo |
 | `/reset-context` | Reset AI context, keep worktree |
 
 > **Note:** In practice, you rarely need to type these commands directly. Describe what you want in natural language and the AI router will invoke the appropriate command or workflow.

@@ -7,36 +7,36 @@ import {
   loadRepoConfig,
   generateAndSetTitle,
   createWorkflowStore,
-} from '@archon/core';
-import { WORKFLOW_EVENT_TYPES, type WorkflowEventType } from '@archon/workflows/store';
-import { configureIsolation, getIsolationProvider } from '@archon/isolation';
-import { createLogger, getArchonHome } from '@archon/paths';
+} from '@smelter/core';
+import { WORKFLOW_EVENT_TYPES, type WorkflowEventType } from '@smelter/workflows/store';
+import { configureIsolation, getIsolationProvider } from '@smelter/isolation';
+import { createLogger, getSmelterHome } from '@smelter/paths';
 import { join } from 'node:path';
-import { createWorkflowDeps } from '@archon/core/workflows/store-adapter';
-import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
-import { resolveWorkflowName } from '@archon/workflows/router';
-import { executeWorkflow } from '@archon/workflows/executor';
+import { createWorkflowDeps } from '@smelter/core/workflows/store-adapter';
+import { discoverWorkflowsWithConfig } from '@smelter/workflows/workflow-discovery';
+import { resolveWorkflowName } from '@smelter/workflows/router';
+import { executeWorkflow } from '@smelter/workflows/executor';
 import {
   getWorkflowEventEmitter,
   type WorkflowEmitterEvent,
-} from '@archon/workflows/event-emitter';
-import type { WorkflowLoadResult } from '@archon/workflows/schemas/workflow';
-import type { WorkflowRun } from '@archon/workflows/schemas/workflow-run';
+} from '@smelter/workflows/event-emitter';
+import type { WorkflowLoadResult } from '@smelter/workflows/schemas/workflow';
+import type { WorkflowRun } from '@smelter/workflows/schemas/workflow-run';
 import {
   approveWorkflow,
   rejectWorkflow,
   resumeWorkflow as resumeWorkflowOp,
   abandonWorkflow,
   getWorkflowStatus,
-} from '@archon/core/operations/workflow-operations';
-import * as conversationDb from '@archon/core/db/conversations';
-import * as codebaseDb from '@archon/core/db/codebases';
-import * as isolationDb from '@archon/core/db/isolation-environments';
-import * as messageDb from '@archon/core/db/messages';
-import * as workflowDb from '@archon/core/db/workflows';
-import * as workflowEventsDb from '@archon/core/db/workflow-events';
-import type { WorkflowEventRow } from '@archon/core/db/workflow-events';
-import * as git from '@archon/git';
+} from '@smelter/core/operations/workflow-operations';
+import * as conversationDb from '@smelter/core/db/conversations';
+import * as codebaseDb from '@smelter/core/db/codebases';
+import * as isolationDb from '@smelter/core/db/isolation-environments';
+import * as messageDb from '@smelter/core/db/messages';
+import * as workflowDb from '@smelter/core/db/workflows';
+import * as workflowEventsDb from '@smelter/core/db/workflow-events';
+import type { WorkflowEventRow } from '@smelter/core/db/workflow-events';
+import * as git from '@smelter/git';
 import { CLIAdapter } from '../adapters/cli-adapter';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
@@ -80,7 +80,7 @@ function generateConversationId(): string {
 
 /**
  * Parses the "Source symlink at X already points to Y, expected Z" error
- * thrown by `createProjectSourceSymlink` in @archon/paths. Cross-package
+ * thrown by `createProjectSourceSymlink` in @smelter/paths. Cross-package
  * string contract — if that throw site changes wording, this parser silently
  * stops matching. Returns the workspace dir (parent of the `source` link) so
  * the caller can emit an exact cleanup path, or null if unrecognized.
@@ -111,16 +111,16 @@ function buildRegistrationFailureError(action: string, error: Error): Error {
   if (staleWorkspaceEntry) {
     hint = `Hint: Remove the stale workspace entry at ${staleWorkspaceEntry} and retry, or use --no-worktree to skip isolation.`;
   } else {
-    // Guard against a throwing getArchonHome() (misconfigured env vars, etc.):
+    // Guard against a throwing getSmelterHome() (misconfigured env vars, etc.):
     // the registration error we're wrapping is the load-bearing one — we'd
     // rather lose the exact path in the hint than replace it with a secondary
     // home-resolution error that masks the root cause.
     try {
-      const workspacesPath = join(getArchonHome(), 'workspaces');
-      hint = `Hint: Check your Archon workspace registration under ${workspacesPath} and retry, or use --no-worktree to skip isolation.`;
+      const workspacesPath = join(getSmelterHome(), 'workspaces');
+      hint = `Hint: Check your Smelter workspace registration under ${workspacesPath} and retry, or use --no-worktree to skip isolation.`;
     } catch {
       hint =
-        'Hint: Check your Archon workspace registration and retry, or use --no-worktree to skip isolation.';
+        'Hint: Check your Smelter workspace registration and retry, or use --no-worktree to skip isolation.';
     }
   }
 
@@ -171,13 +171,13 @@ function renderWorkflowEvent(event: WorkflowEmitterEvent, verbose: boolean): voi
  */
 async function loadWorkflows(cwd: string): Promise<WorkflowLoadResult> {
   try {
-    // Home-scoped workflows at ~/.archon/workflows/ are discovered automatically —
+    // Home-scoped workflows at ~/.smelter/workflows/ are discovered automatically —
     // no option needed since the discovery helper reads them unconditionally.
     return await discoverWorkflowsWithConfig(cwd, loadConfig);
   } catch (error) {
     const err = error as Error;
     throw new Error(
-      `Error loading workflows: ${err.message}\nHint: Check permissions on .archon/workflows/ directory.`
+      `Error loading workflows: ${err.message}\nHint: Check permissions on .smelter/workflows/ directory.`
     );
   }
 }
@@ -225,7 +225,7 @@ export async function workflowListCommand(cwd: string, json?: boolean): Promise<
 
   if (workflowEntries.length === 0 && errors.length === 0) {
     console.log('\nNo workflows found.');
-    console.log('Workflows should be in .archon/workflows/ directory.');
+    console.log('Workflows should be in .smelter/workflows/ directory.');
     return;
   }
 
@@ -263,7 +263,7 @@ export async function workflowRunCommand(
   const { workflows: workflowEntries, errors } = await loadWorkflows(cwd);
 
   if (workflowEntries.length === 0 && errors.length === 0) {
-    throw new Error('No workflows found in .archon/workflows/');
+    throw new Error('No workflows found in .smelter/workflows/');
   }
 
   const workflows = workflowEntries.map(ws => ws.workflow);

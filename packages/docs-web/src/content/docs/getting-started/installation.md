@@ -69,7 +69,7 @@ export CLAUDE_BIN_PATH="$HOME/.local/bin/claude"
 export CLAUDE_BIN_PATH="$(npm root -g)/@anthropic-ai/claude-code/cli.js"
 ```
 
-Or set it durably in `~/.archon/config.yaml`:
+Or set it durably in `~/.smelter/config.yaml`:
 
 ```yaml
 assistants:

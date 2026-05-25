@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "archon",
+      "name": "smelter",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.121",
         "js-yaml": "^4.1.1",
@@ -23,13 +23,13 @@
       },
     },
     "packages/adapters": {
-      "name": "@archon/adapters",
+      "name": "@smelter/adapters",
       "version": "0.3.10",
       "dependencies": {
-        "@archon/core": "workspace:*",
-        "@archon/git": "workspace:*",
-        "@archon/isolation": "workspace:*",
-        "@archon/paths": "workspace:*",
+        "@smelter/core": "workspace:*",
+        "@smelter/git": "workspace:*",
+        "@smelter/isolation": "workspace:*",
+        "@smelter/paths": "workspace:*",
         "@octokit/rest": "^22.0.0",
         "@slack/bolt": "^4.6.0",
         "discord.js": "^14.16.0",
@@ -41,20 +41,20 @@
       },
     },
     "packages/cli": {
-      "name": "@archon/cli",
+      "name": "@smelter/cli",
       "version": "0.3.10",
       "bin": {
-        "archon": "./src/cli.ts",
+        "smelter": "./src/cli.ts",
       },
       "dependencies": {
-        "@archon/adapters": "workspace:*",
-        "@archon/core": "workspace:*",
-        "@archon/git": "workspace:*",
-        "@archon/isolation": "workspace:*",
-        "@archon/paths": "workspace:*",
-        "@archon/providers": "workspace:*",
-        "@archon/server": "workspace:*",
-        "@archon/workflows": "workspace:*",
+        "@smelter/adapters": "workspace:*",
+        "@smelter/core": "workspace:*",
+        "@smelter/git": "workspace:*",
+        "@smelter/isolation": "workspace:*",
+        "@smelter/paths": "workspace:*",
+        "@smelter/providers": "workspace:*",
+        "@smelter/server": "workspace:*",
+        "@smelter/workflows": "workspace:*",
         "@clack/prompts": "^1.0.0",
         "dotenv": "^17.2.3",
       },
@@ -63,14 +63,14 @@
       },
     },
     "packages/core": {
-      "name": "@archon/core",
+      "name": "@smelter/core",
       "version": "0.3.10",
       "dependencies": {
-        "@archon/git": "workspace:*",
-        "@archon/isolation": "workspace:*",
-        "@archon/paths": "workspace:*",
-        "@archon/providers": "workspace:*",
-        "@archon/workflows": "workspace:*",
+        "@smelter/git": "workspace:*",
+        "@smelter/isolation": "workspace:*",
+        "@smelter/paths": "workspace:*",
+        "@smelter/providers": "workspace:*",
+        "@smelter/workflows": "workspace:*",
         "pg": "^8.11.0",
         "zod": "^3",
       },
@@ -83,7 +83,7 @@
       },
     },
     "packages/docs-web": {
-      "name": "@archon/docs-web",
+      "name": "@smelter/docs-web",
       "version": "0.3.10",
       "dependencies": {
         "@astrojs/starlight": "^0.38.0",
@@ -92,28 +92,28 @@
       },
     },
     "packages/git": {
-      "name": "@archon/git",
+      "name": "@smelter/git",
       "version": "0.3.10",
       "dependencies": {
-        "@archon/paths": "workspace:*",
+        "@smelter/paths": "workspace:*",
       },
       "peerDependencies": {
         "typescript": "^5.0.0",
       },
     },
     "packages/isolation": {
-      "name": "@archon/isolation",
+      "name": "@smelter/isolation",
       "version": "0.3.10",
       "dependencies": {
-        "@archon/git": "workspace:*",
-        "@archon/paths": "workspace:*",
+        "@smelter/git": "workspace:*",
+        "@smelter/paths": "workspace:*",
       },
       "peerDependencies": {
         "typescript": "^5.0.0",
       },
     },
     "packages/paths": {
-      "name": "@archon/paths",
+      "name": "@smelter/paths",
       "version": "0.3.10",
       "dependencies": {
         "dotenv": "^17",
@@ -126,11 +126,11 @@
       },
     },
     "packages/providers": {
-      "name": "@archon/providers",
+      "name": "@smelter/providers",
       "version": "0.3.10",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.121",
-        "@archon/paths": "workspace:*",
+        "@smelter/paths": "workspace:*",
         "@mariozechner/pi-ai": "^0.67.5",
         "@mariozechner/pi-coding-agent": "^0.67.5",
         "@openai/codex-sdk": "^0.125.0",
@@ -144,15 +144,15 @@
       },
     },
     "packages/server": {
-      "name": "@archon/server",
+      "name": "@smelter/server",
       "version": "0.3.10",
       "dependencies": {
-        "@archon/adapters": "workspace:*",
-        "@archon/core": "workspace:*",
-        "@archon/git": "workspace:*",
-        "@archon/paths": "workspace:*",
-        "@archon/providers": "workspace:*",
-        "@archon/workflows": "workspace:*",
+        "@smelter/adapters": "workspace:*",
+        "@smelter/core": "workspace:*",
+        "@smelter/git": "workspace:*",
+        "@smelter/paths": "workspace:*",
+        "@smelter/providers": "workspace:*",
+        "@smelter/workflows": "workspace:*",
         "@hono/zod-openapi": "^0.19.6",
         "dotenv": "^17.2.3",
         "hono": "^4.12.16",
@@ -163,7 +163,7 @@
       },
     },
     "packages/web": {
-      "name": "@archon/web",
+      "name": "@smelter/web",
       "version": "0.3.10",
       "dependencies": {
         "@dagrejs/dagre": "^2.0.4",
@@ -215,12 +215,12 @@
       },
     },
     "packages/workflows": {
-      "name": "@archon/workflows",
+      "name": "@smelter/workflows",
       "version": "0.3.10",
       "dependencies": {
-        "@archon/git": "workspace:*",
-        "@archon/paths": "workspace:*",
-        "@archon/providers": "workspace:*",
+        "@smelter/git": "workspace:*",
+        "@smelter/paths": "workspace:*",
+        "@smelter/providers": "workspace:*",
         "@hono/zod-openapi": "^0.19.6",
         "zod": "^3.25.28",
       },
@@ -261,27 +261,27 @@
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.81.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-D4K5PvEV6wPiRtVlVsJHIUhHAmOZ6IT/I9rKlTf84gR7GyyAurPJK7z9BOf/AZqC5d1DhYQGJNKRmV+q8dGhgw=="],
 
-    "@archon/adapters": ["@archon/adapters@workspace:packages/adapters"],
+    "@smelter/adapters": ["@smelter/adapters@workspace:packages/adapters"],
 
-    "@archon/cli": ["@archon/cli@workspace:packages/cli"],
+    "@smelter/cli": ["@smelter/cli@workspace:packages/cli"],
 
-    "@archon/core": ["@archon/core@workspace:packages/core"],
+    "@smelter/core": ["@smelter/core@workspace:packages/core"],
 
-    "@archon/docs-web": ["@archon/docs-web@workspace:packages/docs-web"],
+    "@smelter/docs-web": ["@smelter/docs-web@workspace:packages/docs-web"],
 
-    "@archon/git": ["@archon/git@workspace:packages/git"],
+    "@smelter/git": ["@smelter/git@workspace:packages/git"],
 
-    "@archon/isolation": ["@archon/isolation@workspace:packages/isolation"],
+    "@smelter/isolation": ["@smelter/isolation@workspace:packages/isolation"],
 
-    "@archon/paths": ["@archon/paths@workspace:packages/paths"],
+    "@smelter/paths": ["@smelter/paths@workspace:packages/paths"],
 
-    "@archon/providers": ["@archon/providers@workspace:packages/providers"],
+    "@smelter/providers": ["@smelter/providers@workspace:packages/providers"],
 
-    "@archon/server": ["@archon/server@workspace:packages/server"],
+    "@smelter/server": ["@smelter/server@workspace:packages/server"],
 
-    "@archon/web": ["@archon/web@workspace:packages/web"],
+    "@smelter/web": ["@smelter/web@workspace:packages/web"],
 
-    "@archon/workflows": ["@archon/workflows@workspace:packages/workflows"],
+    "@smelter/workflows": ["@smelter/workflows@workspace:packages/workflows"],
 
     "@asteasolutions/zod-to-openapi": ["@asteasolutions/zod-to-openapi@7.3.4", "", { "dependencies": { "openapi3-ts": "^4.1.2" }, "peerDependencies": { "zod": "^3.20.2" } }, "sha512-/2rThQ5zPi9OzVwes6U7lK1+Yvug0iXu25olp7S0XsYmOqnyMfxH7gdSQjn/+DSOHRg7wnotwGJSyL+fBKdnEA=="],
 

@@ -1,12 +1,12 @@
 /**
- * Script discovery - finds and loads script files from .archon/scripts/.
+ * Script discovery - finds and loads script files from .smelter/scripts/.
  *
  * Scripts are keyed by filename without extension. Runtime is auto-detected
  * from the file extension: .ts/.js -> bun, .py -> uv.
  */
 import { readdir, stat } from 'fs/promises';
 import { join, basename, extname } from 'path';
-import { createLogger, getHomeScriptsPath } from '@archon/paths';
+import { createLogger, getHomeScriptsPath } from '@smelter/paths';
 
 /** Normalize path separators to forward slashes for cross-platform consistency */
 function normalizeSep(p: string): string {
@@ -49,7 +49,7 @@ function getRuntimeForExtension(ext: string): ScriptRuntime | undefined {
  * Maximum subfolder depth we descend into when scanning scripts.
  *
  * `1` matches the workflows/commands convention: allow one level of
- * grouping (e.g. `.archon/scripts/triage/foo.ts`) but no nested folders.
+ * grouping (e.g. `.smelter/scripts/triage/foo.ts`) but no nested folders.
  * We stop at 1 deliberately — deeper nesting has never been part of the
  * documented convention and adds no organizational value, just routing
  * ambiguity when two basenames collide across folders.
@@ -91,7 +91,7 @@ async function scanScriptDir(
     }
 
     if (entryStat.isDirectory()) {
-      // 1-depth cap: allow one level of grouping (e.g. `.archon/scripts/triage/foo.ts`)
+      // 1-depth cap: allow one level of grouping (e.g. `.smelter/scripts/triage/foo.ts`)
       // but stop there. Matches the workflows/commands convention — no nested folders.
       if (depth >= MAX_SCRIPT_DISCOVERY_DEPTH) continue;
       await scanScriptDir(entryPath, scripts, depth + 1);
@@ -122,7 +122,7 @@ async function scanScriptDir(
 }
 
 /**
- * Discover scripts from a directory (expected to be .archon/scripts/ or equivalent).
+ * Discover scripts from a directory (expected to be .smelter/scripts/ or equivalent).
  * Returns a Map of script name -> ScriptDefinition.
  * Throws if duplicate script names are found across different extensions within the directory.
  * Returns an empty Map if the directory does not exist.
@@ -139,8 +139,8 @@ export async function discoverScripts(dir: string): Promise<Map<string, ScriptDe
  *
  * Resolution order (repo wins on same-name collision — matches the
  * workflows/commands precedence):
- *   1. `<cwd>/.archon/scripts/` — repo-scoped (`source: 'project'` equivalent)
- *   2. `~/.archon/scripts/`    — home-scoped (`source: 'global'` equivalent)
+ *   1. `<cwd>/.smelter/scripts/` — repo-scoped (`source: 'project'` equivalent)
+ *   2. `~/.smelter/scripts/`    — home-scoped (`source: 'global'` equivalent)
  *
  * Within a single scope, duplicate basenames across extensions still throw
  * (matches `discoverScripts` behavior). Across scopes, the repo-level entry
@@ -148,7 +148,7 @@ export async function discoverScripts(dir: string): Promise<Map<string, ScriptDe
  */
 export async function discoverScriptsForCwd(cwd: string): Promise<Map<string, ScriptDefinition>> {
   const homeScripts = await discoverScripts(getHomeScriptsPath());
-  const repoScripts = await discoverScripts(join(cwd, '.archon', 'scripts'));
+  const repoScripts = await discoverScripts(join(cwd, '.smelter', 'scripts'));
 
   // Start with home, overlay repo (repo wins)
   const merged = new Map<string, ScriptDefinition>(homeScripts);

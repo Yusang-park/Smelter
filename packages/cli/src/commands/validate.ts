@@ -1,10 +1,10 @@
 /**
- * CLI commands for `archon validate workflows` and `archon validate commands`.
+ * CLI commands for `smelter validate workflows` and `smelter validate commands`.
  *
- * Thin layer over @archon/workflows validator: discovers, validates, formats output.
+ * Thin layer over @smelter/workflows validator: discovers, validates, formats output.
  */
 
-import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
+import { discoverWorkflowsWithConfig } from '@smelter/workflows/workflow-discovery';
 import {
   validateWorkflowResources,
   validateCommand,
@@ -13,17 +13,17 @@ import {
   discoverAvailableScripts,
   findSimilar,
   makeWorkflowResult,
-} from '@archon/workflows/validator';
+} from '@smelter/workflows/validator';
 import type {
   ValidationIssue,
   WorkflowValidationResult,
   ValidationConfig,
   ScriptValidationResult,
-} from '@archon/workflows/validator';
-import { loadConfig, loadRepoConfig } from '@archon/core';
+} from '@smelter/workflows/validator';
+import { loadConfig, loadRepoConfig } from '@smelter/core';
 
 /**
- * Build ValidationConfig from the repo's .archon/config.yaml
+ * Build ValidationConfig from the repo's .smelter/config.yaml
  */
 async function buildValidationConfig(cwd: string): Promise<ValidationConfig> {
   try {
@@ -35,7 +35,7 @@ async function buildValidationConfig(cwd: string): Promise<ValidationConfig> {
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === 'ENOENT') return {};
-    console.error(`Warning: failed to load .archon/config.yaml: ${(e as Error).message}`);
+    console.error(`Warning: failed to load .smelter/config.yaml: ${(e as Error).message}`);
     console.error('Validation will proceed with defaults (your config settings will not apply)');
     return {};
   }
@@ -189,7 +189,7 @@ function formatScriptResult(result: ScriptValidationResult): string {
 
 /**
  * Validate all commands or a specific command.
- * Also validates scripts from .archon/scripts/ alongside commands.
+ * Also validates scripts from .smelter/scripts/ alongside commands.
  * Returns exit code: 0 = all valid, 1 = errors found.
  */
 export async function validateCommandsCommand(

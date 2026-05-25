@@ -1,7 +1,7 @@
 /**
- * Tests for `archon doctor` check functions.
+ * Tests for `smelter doctor` check functions.
  *
- * Uses spyOn for `@archon/git.execFileAsync` and `globalThis.fetch`.
+ * Uses spyOn for `@smelter/git.execFileAsync` and `globalThis.fetch`.
  * `BUNDLED_IS_BINARY` is a static const re-export and cannot be spied at
  * runtime — `checkClaudeBinary` accepts it as an injectable parameter for
  * testability. Avoids `mock.module()` because it is process-global and
@@ -11,7 +11,7 @@ import { describe, it, expect, spyOn, afterEach, beforeEach } from 'bun:test';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { mkdirSync, rmSync } from 'fs';
-import * as git from '@archon/git';
+import * as git from '@smelter/git';
 import {
   checkClaudeBinary,
   checkDatabase,
@@ -144,7 +144,7 @@ describe('checkDatabase', () => {
 
   it('returns fail with "failed to load" when module load throws', async () => {
     const result = await checkDatabase(async () => {
-      throw new Error('Cannot find module @archon/core');
+      throw new Error('Cannot find module @smelter/core');
     });
     expect(result.status).toBe('fail');
     expect(result.message).toContain('failed to load database module');
@@ -153,20 +153,20 @@ describe('checkDatabase', () => {
 });
 
 describe('checkWorkspaceWritable', () => {
-  const TMP = join(tmpdir(), 'archon-doctor-test-' + Date.now());
+  const TMP = join(tmpdir(), 'smelter-doctor-test-' + Date.now());
   let originalHome: string | undefined;
 
   beforeEach(() => {
     mkdirSync(TMP, { recursive: true });
-    originalHome = process.env.ARCHON_HOME;
-    process.env.ARCHON_HOME = TMP;
+    originalHome = process.env.SMELTER_HOME;
+    process.env.SMELTER_HOME = TMP;
   });
 
   afterEach(() => {
     if (originalHome === undefined) {
-      delete process.env.ARCHON_HOME;
+      delete process.env.SMELTER_HOME;
     } else {
-      process.env.ARCHON_HOME = originalHome;
+      process.env.SMELTER_HOME = originalHome;
     }
     try {
       rmSync(TMP, { recursive: true, force: true });

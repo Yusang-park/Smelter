@@ -2,7 +2,7 @@
  * Skill command - Install bundled workflow skill files into a project
  *
  * Writes the bundled SKILL.md, guides, references and examples into
- * <targetPath>/.claude/skills/archon/ so Claude Code picks up the skill
+ * <targetPath>/.claude/skills/smelter/ so Claude Code picks up the skill
  * the next time the project is opened.
  *
  * Always overwrites existing files to ensure the latest skill version
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 
 /**
- * Copy the bundled Archon skill files to <targetPath>/.claude/skills/archon/
+ * Copy the bundled Smelter skill files to <targetPath>/.claude/skills/smelter/
  *
  * Pure file-system helper used by both the standalone `skill install` CLI
  * command and the interactive setup wizard.
@@ -22,13 +22,13 @@ import { dirname, join, resolve } from 'path';
  * actually called. Compiled binaries (`bun build --compile`) still statically
  * analyze the literal-string `import()` and embed the chunk; linked-source
  * installs (`bun link`) don't touch the source skill files unless the user runs
- * `archon setup` or `archon skill install`. Without this indirection, every
- * `archon` invocation — including `archon --help` — fails at module load when
+ * `smelter setup` or `smelter skill install`. Without this indirection, every
+ * `smelter` invocation — including `smelter --help` — fails at module load when
  * the source skill files are missing from disk.
  */
-export async function copyArchonSkill(targetPath: string): Promise<void> {
+export async function copySmelterSkill(targetPath: string): Promise<void> {
   const { BUNDLED_SKILL_FILES } = await import('../bundled-skill');
-  const skillRoot = join(targetPath, '.claude', 'skills', 'archon');
+  const skillRoot = join(targetPath, '.claude', 'skills', 'smelter');
   for (const [relativePath, content] of Object.entries(BUNDLED_SKILL_FILES)) {
     const dest = join(skillRoot, relativePath);
     const destDir = dirname(dest);
@@ -52,13 +52,13 @@ export async function skillInstallCommand(targetPath: string): Promise<number> {
     return 1;
   }
 
-  const skillRoot = join(absoluteTarget, '.claude', 'skills', 'archon');
+  const skillRoot = join(absoluteTarget, '.claude', 'skills', 'smelter');
   try {
     const { BUNDLED_SKILL_FILES } = await import('../bundled-skill');
     const fileCount = Object.keys(BUNDLED_SKILL_FILES).length;
     console.log(`Installing bundled workflow skill (${fileCount} files) into ${skillRoot}`);
 
-    await copyArchonSkill(absoluteTarget);
+    await copySmelterSkill(absoluteTarget);
     console.log('Done. Restart Claude Code to load the skill.');
     return 0;
   } catch (error) {

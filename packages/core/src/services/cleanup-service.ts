@@ -7,8 +7,8 @@ import * as conversationDb from '../db/conversations';
 import * as sessionDb from '../db/sessions';
 import { SessionNotFoundError } from '../db/sessions';
 import * as codebaseDb from '../db/codebases';
-import { getIsolationProvider, getPrState } from '@archon/isolation';
-import type { WorktreeStatusBreakdown, PrState } from '@archon/isolation';
+import { getIsolationProvider, getPrState } from '@smelter/isolation';
+import type { WorktreeStatusBreakdown, PrState } from '@smelter/isolation';
 import {
   hasUncommittedChanges,
   worktreeExists,
@@ -19,10 +19,10 @@ import {
   toRepoPath,
   toWorktreePath,
   toBranchName,
-} from '@archon/git';
-import type { RepoPath, BranchName } from '@archon/git';
-import { createLogger } from '@archon/paths';
-import type { IsolationEnvironmentRow } from '@archon/isolation';
+} from '@smelter/git';
+import type { RepoPath, BranchName } from '@smelter/git';
+import { createLogger } from '@smelter/paths';
+import type { IsolationEnvironmentRow } from '@smelter/isolation';
 import { ConversationNotFoundError } from '../types';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */

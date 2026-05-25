@@ -10,8 +10,8 @@ import {
   Events,
   ThreadAutoArchiveDuration,
 } from 'discord.js';
-import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
-import { createLogger } from '@archon/paths';
+import type { IPlatformAdapter, MessageMetadata } from '@smelter/core';
+import { createLogger } from '@smelter/paths';
 import { isDiscordUserAuthorized } from './auth';
 import { parseAllowedUserIds } from './auth';
 import { splitIntoParagraphChunks } from '../../../utils/message-splitting';

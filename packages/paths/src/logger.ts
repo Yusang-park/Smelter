@@ -2,7 +2,7 @@
  * Structured logging utility built on Pino
  *
  * Usage:
- *   import { createLogger } from '@archon/paths';
+ *   import { createLogger } from '@smelter/paths';
  *   const log = createLogger('orchestrator');
  *   log.info({ conversationId }, 'session_started');
  *   log.error({ err, conversationId }, 'session_failed');

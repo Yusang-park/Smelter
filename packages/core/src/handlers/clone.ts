@@ -6,7 +6,7 @@ import { access, rm } from 'fs/promises';
 import { join, basename, resolve } from 'path';
 import * as codebaseDb from '../db/codebases';
 import { sanitizeError } from '../utils/credential-sanitizer';
-import { execFileAsync } from '@archon/git';
+import { execFileAsync } from '@smelter/git';
 import {
   expandTilde,
   getCommandFolderSearchPaths,
@@ -14,9 +14,9 @@ import {
   getProjectSourcePath,
   createProjectSourceSymlink,
   parseOwnerRepo,
-} from '@archon/paths';
+} from '@smelter/paths';
 import { findMarkdownFilesRecursive } from '../utils/commands';
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -45,7 +45,7 @@ async function registerRepoAtPath(
   // Auto-detect assistant type based on SDK folder conventions.
   // Built-in providers use well-known folders (.claude/, .codex/).
   // Falls back to first registered built-in provider if no folder detected.
-  const { getRegisteredProviders } = await import('@archon/providers');
+  const { getRegisteredProviders } = await import('@smelter/providers');
   const defaultProvider = getRegisteredProviders().find(p => p.builtIn)?.id ?? 'claude';
   let suggestedAssistant = defaultProvider;
   const codexFolder = join(targetPath, '.codex');
@@ -68,9 +68,9 @@ async function registerRepoAtPath(
   // Check if a codebase with this name already exists (dedup by project identity)
   const existing = await codebaseDb.findCodebaseByName(name);
   if (existing) {
-    // Determine if the new path is "better" (local > archon-managed clone)
-    const isNewPathLocal = !targetPath.includes('/.archon/workspaces/');
-    const isExistingPathManaged = existing.default_cwd.includes('/.archon/workspaces/');
+    // Determine if the new path is "better" (local > smelter-managed clone)
+    const isNewPathLocal = !targetPath.includes('/.smelter/workspaces/');
+    const isExistingPathManaged = existing.default_cwd.includes('/.smelter/workspaces/');
     const shouldUpdateCwd = isNewPathLocal && isExistingPathManaged;
 
     const updates: { default_cwd?: string; repository_url?: string | null } = {};

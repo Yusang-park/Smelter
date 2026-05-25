@@ -95,6 +95,16 @@ describe('Workflow Router', () => {
       expect(result).toContain('Do NOT use any tools');
     });
 
+    it('should not require workflow keyword for routing decisions', () => {
+      const result = buildRouterPrompt('Help me fix this bug', testWorkflows);
+
+      expect(result).toContain(
+        'Do NOT require the user to say "workflow", "run", or a slash command'
+      );
+      expect(result).toContain('Route by semantic fit');
+      expect(result).toContain('not exhaustive requirements');
+    });
+
     it('should format multi-line descriptions correctly', () => {
       const multiLineWorkflows: WorkflowDefinition[] = [
         {
@@ -290,18 +300,18 @@ function broken() {
 
     it('should return suffix match', () => {
       const workflows: WorkflowDefinition[] = [
-        { name: 'archon-assist', description: 'General assistant', nodes: [] },
+        { name: 'smelter-assist', description: 'General assistant', nodes: [] },
       ];
       const result = resolveWorkflowName('assist', workflows);
-      expect(result?.name).toBe('archon-assist');
+      expect(result?.name).toBe('smelter-assist');
     });
 
     it('should return substring match', () => {
       const workflows: WorkflowDefinition[] = [
-        { name: 'archon-smart-pr-review', description: 'Smart PR review', nodes: [] },
+        { name: 'smelter-smart-pr-review', description: 'Smart PR review', nodes: [] },
       ];
       const result = resolveWorkflowName('smart', workflows);
-      expect(result?.name).toBe('archon-smart-pr-review');
+      expect(result?.name).toBe('smelter-smart-pr-review');
     });
 
     it('should return undefined for no match', () => {
@@ -311,7 +321,7 @@ function broken() {
 
     it('should throw on ambiguous suffix match', () => {
       const workflows: WorkflowDefinition[] = [
-        { name: 'archon-review', description: 'Review', nodes: [] },
+        { name: 'smelter-review', description: 'Review', nodes: [] },
         { name: 'custom-review', description: 'Custom review', nodes: [] },
       ];
       expect(() => resolveWorkflowName('review', workflows)).toThrow('Ambiguous workflow');
@@ -329,7 +339,7 @@ function broken() {
     it('should prefer exact match over suffix match', () => {
       const workflows: WorkflowDefinition[] = [
         { name: 'assist', description: 'Short name', nodes: [] },
-        { name: 'archon-assist', description: 'Long name', nodes: [] },
+        { name: 'smelter-assist', description: 'Long name', nodes: [] },
       ];
       const result = resolveWorkflowName('assist', workflows);
       expect(result?.name).toBe('assist');
@@ -337,13 +347,13 @@ function broken() {
 
     it('should prefer suffix match over substring match', () => {
       const workflows: WorkflowDefinition[] = [
-        { name: 'archon-assist', description: 'Suffix match', nodes: [] },
+        { name: 'smelter-assist', description: 'Suffix match', nodes: [] },
         { name: 'assist-helper', description: 'Substring match', nodes: [] },
       ];
       const result = resolveWorkflowName('assist', workflows);
-      // "assist" is a suffix of "archon-assist" (ends with -assist)
+      // "assist" is a suffix of "smelter-assist" (ends with -assist)
       // and a substring of both, but suffix tier wins
-      expect(result?.name).toBe('archon-assist');
+      expect(result?.name).toBe('smelter-assist');
     });
   });
 
@@ -412,13 +422,13 @@ function broken() {
     it('should include thread history when provided', () => {
       const context: RouterContext = {
         platformType: 'slack',
-        threadHistory: '[Bot]: Archon is on the case...\n<@user>: check the CI',
+        threadHistory: '[Bot]: Smelter is on the case...\n<@user>: check the CI',
       };
       const result = buildRouterPrompt('what is happening?', testWorkflows, context);
 
       expect(result).toContain('## Context');
       expect(result).toContain('Thread History:');
-      expect(result).toContain('Archon is on the case');
+      expect(result).toContain('Smelter is on the case');
     });
 
     it('should work without context (backward compatible)', () => {

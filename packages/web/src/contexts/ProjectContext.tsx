@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listCodebases } from '@/lib/api';
 import type { CodebaseResponse } from '@/lib/api';
 
-const PROJECT_STORAGE_KEY = 'archon-selected-project';
+const PROJECT_STORAGE_KEY = 'smelter-selected-project';
 
 interface ProjectContextValue {
   selectedProjectId: string | null;

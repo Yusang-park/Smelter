@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createLogger } from '@archon/paths';
+import { createLogger } from '@smelter/paths';
 
 import type {
   IAgentProvider,
@@ -20,9 +20,9 @@ import { parsePiModelRef } from './model-ref';
 // values from Pi (options-translator, resource-loader, session-resolver,
 // ui-context-stub, event-bridge). Pi's `@mariozechner/pi-coding-agent/dist/config.js`
 // runs `readFileSync(getPackageJsonPath(), "utf-8")` at module load; inside a
-// compiled Archon binary `getPackageJsonPath()` resolves to
+// compiled Smelter binary `getPackageJsonPath()` resolves to
 // `dirname(process.execPath) + "/package.json"` — a path that doesn't exist —
-// and archon crashes at startup before any command runs (v0.3.7 symptom).
+// and smelter crashes at startup before any command runs (v0.3.7 symptom).
 //
 // All Pi SDK value bindings and Pi-dependent helper modules are dynamically
 // imported inside `sendQuery()` below, which runs only when a Pi workflow is
@@ -76,7 +76,7 @@ let piSemaphore: Semaphore | undefined;
 /**
  * Write a minimal package.json to a stable tmpdir and set `PI_PACKAGE_DIR`
  * so Pi's `config.js` short-circuits its `dirname(process.execPath)` walk
- * (which fails inside a compiled archon binary). Pi only reads three
+ * (which fails inside a compiled smelter binary). Pi only reads three
  * optional fields from that package.json — `piConfig.name`, `piConfig.configDir`,
  * and `version` — so the stub is genuinely minimal. Idempotent: the file is
  * only written once per host (existsSync check), and the env var is set on
@@ -87,7 +87,7 @@ let piSemaphore: Semaphore | undefined;
  * clobbered between registration and invocation.
  */
 function ensurePiPackageDirShim(): void {
-  const shimDir = join(tmpdir(), 'archon-pi-shim');
+  const shimDir = join(tmpdir(), 'smelter-pi-shim');
   const shimPkgJson = join(shimDir, 'package.json');
   if (!existsSync(shimPkgJson)) {
     mkdirSync(shimDir, { recursive: true });
@@ -96,7 +96,7 @@ function ensurePiPackageDirShim(): void {
     writeFileSync(
       shimPkgJson,
       JSON.stringify({
-        name: 'archon-pi-shim',
+        name: 'smelter-pi-shim',
         version: '0.0.0',
         piConfig: {},
       })
@@ -109,7 +109,7 @@ function ensurePiPackageDirShim(): void {
  * Map Pi provider id → env var name used by pi-ai's getEnvApiKey().
  * Kept small and explicit: v1 supports the most common API-key providers.
  * OAuth flows (Anthropic subscription, Google Gemini CLI, etc.) are out of
- * scope — Archon is a server-side platform and doesn't drive interactive
+ * scope — Smelter is a server-side platform and doesn't drive interactive
  * login. Extend only when a provider is actually exercised.
  *
  * Cross-reference (authoritative mapping maintained upstream in Pi):
@@ -178,7 +178,7 @@ export class PiProvider implements IAgentProvider {
 
     // Lazy-load Pi SDK and all Pi-dependent helper modules here. Must not move
     // these imports to module scope — see the header comment for the failure
-    // mode (archon compiled binary crashes at startup when Pi's config.js
+    // mode (smelter compiled binary crashes at startup when Pi's config.js
     // reads a package.json that doesn't exist next to the executable).
     //
     // Class constructors (AuthStorage, ModelRegistry, SettingsManager) are
@@ -190,7 +190,7 @@ export class PiProvider implements IAgentProvider {
       { resolvePiSkills, resolvePiThinkingLevel, resolvePiTools },
       { createNoopResourceLoader },
       { resolvePiSession },
-      { createArchonUIBridge, createArchonUIContext },
+      { createSmelterUIBridge, createSmelterUIContext },
     ] = await Promise.all([
       import('@mariozechner/pi-coding-agent'),
       import('./event-bridge'),
@@ -226,7 +226,7 @@ export class PiProvider implements IAgentProvider {
     const modelRef = requestOptions?.model ?? piConfig.model;
     if (!modelRef) {
       throw new Error(
-        'Pi provider requires a model. Set `model` on the workflow node or `assistants.pi.model` in .archon/config.yaml. ' +
+        'Pi provider requires a model. Set `model` on the workflow node or `assistants.pi.model` in .smelter/config.yaml. ' +
           "Format: '<pi-provider-id>/<model-id>' (e.g. 'google/gemini-2.5-pro')."
       );
     }
@@ -293,7 +293,7 @@ export class PiProvider implements IAgentProvider {
     //    Antigravity) or by hand-edited api_key entries are picked up
     //    transparently. Per-request env vars override via setRuntimeApiKey —
     //    mirrors Claude's process-env + request-env merge so codebase-scoped
-    //    env vars (.archon/config.yaml `env:`) win over the user's global
+    //    env vars (.smelter/config.yaml `env:`) win over the user's global
     //    Pi login.
     //
     //    Pi's internal resolution order:
@@ -316,7 +316,7 @@ export class PiProvider implements IAgentProvider {
     const resolvedKey = await authStorage.getApiKey(parsed.provider);
     if (!resolvedKey) {
       if (envVarName) {
-        const envHint = `Set ${envVarName} in the environment or codebase env vars (.archon/config.yaml env: section).`;
+        const envHint = `Set ${envVarName} in the environment or codebase env vars (.smelter/config.yaml env: section).`;
         const loginHint = `Or run \`pi\` and type \`/login\` locally to authenticate '${parsed.provider}' via OAuth; credentials land in ~/.pi/agent/auth.json and are picked up automatically.`;
         throw new Error(
           `Pi auth: no credentials for provider '${parsed.provider}'. ${envHint} ${loginHint}`
@@ -331,14 +331,14 @@ export class PiProvider implements IAgentProvider {
       getLog().info(
         {
           piProvider: parsed.provider,
-          envHint: `Provider '${parsed.provider}' is not in the Archon adapter's env-var table — file an issue if you want a shortcut env var for it.`,
+          envHint: `Provider '${parsed.provider}' is not in the Smelter adapter's env-var table — file an issue if you want a shortcut env var for it.`,
           loginHint: `Or run \`pi\` and type \`/login\` locally to authenticate '${parsed.provider}' via OAuth; credentials land in ~/.pi/agent/auth.json and are picked up automatically.`,
         },
         'pi.auth_missing'
       );
     }
 
-    // 4. Translate Archon nodeConfig to Pi SDK options. All three translations
+    // 4. Translate Smelter nodeConfig to Pi SDK options. All three translations
     //    below correspond to capability flags declared `true` in
     //    PI_CAPABILITIES; nodeConfig fields that don't map cleanly still
     //    trigger a dag-executor warning upstream.
@@ -353,7 +353,7 @@ export class PiProvider implements IAgentProvider {
     //    4b. tools: covers allowed_tools / denied_tools. `undefined` leaves Pi
     //        defaults; an explicit empty array means "no tools" (valid idiom
     //        matching e2e-claude-smoke's `allowed_tools: []`).
-    //        requestOptions.env (codebase-scoped env vars from .archon/config.yaml)
+    //        requestOptions.env (codebase-scoped env vars from .smelter/config.yaml)
     //        is injected into bash subprocesses via a BashSpawnHook, mirroring
     //        Claude's options.env and Codex's constructor env.
     const { tools: filteredTools, unknownTools } = resolvePiTools(
@@ -372,7 +372,7 @@ export class PiProvider implements IAgentProvider {
     //        node-level; either overrides Pi's default.
     const systemPrompt = requestOptions?.systemPrompt ?? nodeConfig?.systemPrompt;
 
-    //    4d. skills: Archon uses name references (e.g. `skills: [agent-browser]`).
+    //    4d. skills: Smelter uses name references (e.g. `skills: [agent-browser]`).
     //        Resolve each name against .agents/skills and .claude/skills (project
     //        + user-global). Resolved paths go through Pi's additionalSkillPaths;
     //        Pi's buildSystemPrompt appends their agentskills.io XML block to
@@ -455,7 +455,7 @@ export class PiProvider implements IAgentProvider {
     // Default ON: extensions (community packages like @plannotator/pi-extension
     // or your own local ones) are a core reason users run Pi. Opt out with
     // `assistants.pi.enableExtensions: false` (or `interactive: false`) in
-    // `.archon/config.yaml`. Previously default-off, which silently broke
+    // `.smelter/config.yaml`. Previously default-off, which silently broke
     // users who installed or built an extension and expected it to fire.
     const enableExtensions = piConfig.enableExtensions !== false;
     // Clamp to false without extensions: nothing consumes hasUI without a runner.
@@ -520,9 +520,9 @@ export class PiProvider implements IAgentProvider {
     // 4f. Bind UI context (so ctx.hasUI is true and ctx.ui.notify() forwards
     //     into the chunk stream) or fire session_start with no UI. Must run
     //     after flag pass-through above.
-    const uiBridge = interactive ? createArchonUIBridge() : undefined;
+    const uiBridge = interactive ? createSmelterUIBridge() : undefined;
     if (uiBridge) {
-      const uiContext = createArchonUIContext(uiBridge);
+      const uiContext = createSmelterUIContext(uiBridge);
       await session.bindExtensions({ uiContext });
     } else if (enableExtensions) {
       await session.bindExtensions({});

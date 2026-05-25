@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Regenerates packages/workflows/src/defaults/bundled-defaults.generated.ts from
- * the on-disk defaults in .archon/commands/defaults/ and .archon/workflows/defaults/.
+ * the on-disk defaults in .smelter/commands/defaults/ and .smelter/workflows/defaults/.
  *
  * Emits inline string literals (via JSON.stringify) rather than Bun's
  * `import X from '...' with { type: 'text' }` attributes so the module loads
@@ -26,8 +26,8 @@ import { access, readFile, readdir, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 
 const REPO_ROOT = resolve(import.meta.dir, '..');
-const COMMANDS_DIR = join(REPO_ROOT, '.archon/commands/defaults');
-const WORKFLOWS_DIR = join(REPO_ROOT, '.archon/workflows/defaults');
+const COMMANDS_DIR = join(REPO_ROOT, '.smelter/commands/defaults');
+const WORKFLOWS_DIR = join(REPO_ROOT, '.smelter/workflows/defaults');
 const OUTPUT_PATH = join(
   REPO_ROOT,
   'packages/workflows/src/defaults/bundled-defaults.generated.ts'
@@ -47,7 +47,7 @@ async function ensureDir(dir: string, label: string): Promise<void> {
     throw new Error(
       `${label} directory not found: ${dir}\n` +
         `Run this script from the repo root (cwd was ${process.cwd()}), ` +
-        'or verify the .archon/ tree exists.'
+        'or verify the .smelter/ tree exists.'
     );
   }
 }
@@ -112,8 +112,8 @@ function renderFile(commands: BundledFile[], workflows: BundledFile[]): string {
     ' * Verify up-to-date:  bun run check:bundled',
     ' *',
     ' * Source of truth:',
-    ' *   .archon/commands/defaults/*.md',
-    ' *   .archon/workflows/defaults/*.{yaml,yml}',
+    ' *   .smelter/commands/defaults/*.md',
+    ' *   .smelter/workflows/defaults/*.{yaml,yml}',
     ' *',
     ' * Contents are inlined as plain string literals (JSON-escaped) so this',
     ' * module loads in both Bun and Node. Previous versions used',

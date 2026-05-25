@@ -2,12 +2,12 @@
  * Continue command - run a workflow on an existing worktree with prior context auto-injected
  */
 import { workflowRunCommand } from './workflow';
-import * as isolationDb from '@archon/core/db/isolation-environments';
-import * as codebaseDb from '@archon/core/db/codebases';
-import * as workflowDb from '@archon/core/db/workflows';
-import { execFileAsync } from '@archon/git';
-import { createLogger, getRunArtifactsPath, parseOwnerRepo } from '@archon/paths';
-import type { WorkflowRun } from '@archon/workflows/schemas/workflow-run';
+import * as isolationDb from '@smelter/core/db/isolation-environments';
+import * as codebaseDb from '@smelter/core/db/codebases';
+import * as workflowDb from '@smelter/core/db/workflows';
+import { execFileAsync } from '@smelter/git';
+import { createLogger, getRunArtifactsPath, parseOwnerRepo } from '@smelter/paths';
+import type { WorkflowRun } from '@smelter/workflows/schemas/workflow-run';
 import { readdir, readFile, stat } from 'fs/promises';
 import { join } from 'path';
 
@@ -23,7 +23,7 @@ export interface ContinueOptions {
   noContext?: boolean;
 }
 
-const DEFAULT_WORKFLOW = 'archon-assist';
+const DEFAULT_WORKFLOW = 'smelter-assist';
 
 /**
  * Continue work on an existing worktree with prior run context injected.
@@ -44,7 +44,7 @@ export async function continueCommand(
   if (!env) {
     throw new Error(
       `No active worktree found for branch '${branch}'.\n` +
-        "Run 'archon isolation list' to see available worktrees."
+        "Run 'smelter isolation list' to see available worktrees."
     );
   }
 
@@ -226,7 +226,7 @@ async function resolveArtifactsDir(
   }
 
   // Fallback: cwd-based path
-  const fallback = join(workingPath, '.archon', 'artifacts', 'runs', runId);
+  const fallback = join(workingPath, '.smelter', 'artifacts', 'runs', runId);
   try {
     await stat(fallback);
     return fallback;

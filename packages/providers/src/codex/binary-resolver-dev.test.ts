@@ -5,10 +5,10 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { createMockLogger } from '../test/mocks/logger';
 
-mock.module('@archon/paths', () => ({
+mock.module('@smelter/paths', () => ({
   createLogger: mock(() => createMockLogger()),
   BUNDLED_IS_BINARY: false,
-  getArchonHome: mock(() => '/tmp/test-archon-home'),
+  getSmelterHome: mock(() => '/tmp/test-smelter-home'),
 }));
 
 import { resolveCodexBinaryPath } from './binary-resolver';

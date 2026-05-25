@@ -4,7 +4,7 @@ import { docsSchema } from '@astrojs/starlight/schema';
 import { z } from 'astro/zod';
 
 /**
- * Extended docs schema for Archon documentation.
+ * Extended docs schema for Smelter documentation.
  *
  * Custom fields mirror the GitHub label taxonomy used in the repo:
  * - `category` → sidebar section / directory (like label prefixes)
@@ -45,7 +45,7 @@ export const collections = {
           .optional(),
 
         /**
-         * Book of Archon part — groups chapters into narrative sections.
+         * Book of Smelter part — groups chapters into narrative sections.
          * Only used for pages in the `book/` directory.
          */
         part: z
@@ -77,9 +77,9 @@ export const collections = {
         /**
          * Target audience for this doc. A doc can target multiple audiences.
          *
-         * - user: End users running Archon workflows
-         * - developer: People building on or contributing to Archon
-         * - operator: People deploying and maintaining Archon
+         * - user: End users running Smelter workflows
+         * - developer: People building on or contributing to Smelter
+         * - operator: People deploying and maintaining Smelter
          */
         audience: z.array(z.enum(['user', 'developer', 'operator'])).optional(),
 

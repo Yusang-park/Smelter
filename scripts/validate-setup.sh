@@ -142,15 +142,15 @@ echo ""
 echo "Smelter Paths"
 echo "---------------"
 
-ARCHON_HOME="${ARCHON_HOME:-$HOME/.archon}"
-echo "  Home: $ARCHON_HOME"
-echo "  Workspaces: $ARCHON_HOME/workspaces"
-echo "  Worktrees: $ARCHON_HOME/worktrees"
+SMELTER_HOME="${SMELTER_HOME:-$HOME/.smelter}"
+echo "  Home: $SMELTER_HOME"
+echo "  Workspaces: $SMELTER_HOME/workspaces"
+echo "  Worktrees: $SMELTER_HOME/worktrees"
 
-if [ -d "$ARCHON_HOME" ]; then
+if [ -d "$SMELTER_HOME" ]; then
   check_pass "Smelter home directory exists"
-  if [ -f "$ARCHON_HOME/config.yaml" ]; then
-    check_pass "Global config exists ($ARCHON_HOME/config.yaml)"
+  if [ -f "$SMELTER_HOME/config.yaml" ]; then
+    check_pass "Global config exists ($SMELTER_HOME/config.yaml)"
   else
     check_warn "Global config will be created on first run"
   fi
