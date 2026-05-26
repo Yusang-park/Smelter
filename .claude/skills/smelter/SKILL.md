@@ -1,10 +1,14 @@
 ---
 name: smelter
 description: |
-  Use when: User wants to run workflows, CREATE workflows or commands,
-  set up workflow automation, or manage workflow configuration.
+  Use when: User wants to run a SUBSTANTIAL multi-step coding task as a workflow
+  (fix/implement a whole issue or feature, comprehensive review), CREATE workflows
+  or commands, set up workflow automation, or manage workflow configuration.
   Triggers (run): "use workflow to", "run workflow", "with workflow",
-            "workflow to", "workflow run", "use a workflow to", "run a workflow".
+            "workflow to", "workflow run", "use a workflow to", "run a workflow",
+            and generic task-completion intents that imply a full coding deliverable:
+            "실행해줘", "돌려줘", "구현해줘", "고쳐줘", "이슈 고쳐줘", "PR 만들어줘",
+            "implement this", "fix this issue", "build this feature", "ship this".
   Triggers (create): "create a workflow", "write a workflow", "make a command",
             "author a workflow", "new workflow", "new command", "workflow yaml".
   Triggers (setup): "set up workflows", "install workflow automation", "how to use workflows",
@@ -15,13 +19,24 @@ description: |
   Triggers (init): "initialize workflows", "set up .smelter", "workflow init", "add workflows to repo".
   Capability: Runs AI workflows in isolated git worktrees for parallel development.
   Also: Creates and manages workflow YAML files, command files, and configuration.
-  NOT for: Direct Claude Code work - only for delegating to Smelter CLI.
+  NOT for: trivial single-file edits, quick questions, explanations, read-only
+  exploration, or anything completable in a few in-session steps - do those directly,
+  do NOT delegate. Delegate to Smelter ONLY when isolated worktree execution of a
+  substantial deliverable clearly helps. When in doubt, do it in-session.
 argument-hint: "[workflow] [message or issue number]"
 ---
 
 # Smelter CLI Skill
 
 Smelter is a remote agentic coding platform that runs AI workflows in isolated git worktrees. This skill teaches you how to run workflows, create new workflows and commands, and manage Smelter configuration.
+
+## When to delegate to Smelter (rule, not regex)
+
+The generic triggers in the description (e.g. "실행해줘", "fix this issue") can match everyday requests. Before invoking a Smelter workflow, apply this rule so it does not over-fire:
+
+- **Delegate** only for a substantial, self-contained coding deliverable that benefits from an isolated git worktree: fixing/implementing a whole GitHub issue or feature, a comprehensive multi-file change, or a full PR review.
+- **Do NOT delegate** — do the work directly in the current session — for trivial or single-file edits, quick questions, explanations, read-only exploration, config tweaks, or anything you can finish in a few steps. A bare "실행해줘"/"run it" that refers to a small in-session task is NOT a Smelter trigger.
+- **When uncertain, ask** which the user wants, or default to doing it in-session.
 
 ## Available Workflows (live)
 
