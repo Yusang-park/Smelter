@@ -1,19 +1,11 @@
-<p align="center">
-  <img src="assets/logo.png" alt="Smelter" width="160" />
-</p>
-
-<h1 align="center">Smelter</h1>
+# Smelter
 
 <p align="center">
-  The first open-source harness builder for AI coding. Make AI coding deterministic and repeatable.
+  <img src="assets/smelter-3d.png" alt="3D smelter furnace" width="520" />
 </p>
 
 <p align="center">
-  Forked by Archon.
-</p>
-
-<p align="center">
-  <a href="https://github.com/Yusang-park/Smelter" target="_blank"><img src="https://img.shields.io/github/stars/Yusang-park/Smelter?style=social" alt="Yusang-park/Smelter" /></a>
+  A custom flow engine for running Claude- and Codex-based AI coding workflows as plugins.
 </p>
 
 <p align="center">
@@ -24,42 +16,49 @@
 
 ---
 
-Smelter is a workflow engine for AI coding agents. Define your development processes as YAML workflows - planning, implementation, validation, code review, PR creation - and run them reliably across all your projects.
+Smelter turns AI coding work into explicit custom flows. Planning,
+implementation, validation, review, and PR preparation can be defined as YAML
+workflows and reusable command plugins, then executed through Claude or Codex
+providers.
 
-Like what Dockerfiles did for infrastructure and GitHub Actions did for CI/CD - Smelter does for AI coding workflows. Think n8n, but for software development.
+The project is intentionally centered on executable developer workflows rather
+than external connector sprawl. Smelter combines workflows, commands,
+providers, isolated worktrees, and execution state so the same development
+process can run the same way across projects.
 
-## Why Smelter?
+## Core Direction
 
-When you ask an AI agent to "fix this bug", what happens depends on the model's mood. It might skip planning. It might forget to run tests. It might write a PR description that ignores your template. Every run is different.
+- **Custom flow first**: define development procedures in `.smelter/workflows/`.
+- **Plugin-shaped extension**: add or override workflows and commands per repo.
+- **Claude/Codex providers**: run agent work through Claude and Codex provider
+  implementations.
+- **Deterministic execution**: separate AI steps from deterministic shell,
+  validation, and git steps.
+- **Isolated worktrees**: run each workflow in its own git worktree.
+- **Human gates**: model approvals, reviews, and feedback loops as workflow
+  steps.
 
-Smelter fixes this. Encode your development process as a workflow. The workflow defines the phases, validation gates, and artifacts. The AI fills in the intelligence at each step, but the structure is deterministic and owned by you.
-
-- **Repeatable** - Same workflow, same sequence, every time. Plan, implement, validate, review, PR.
-- **Isolated** - Every workflow run gets its own git worktree. Run 5 fixes in parallel with no conflicts.
-- **Fire and forget** - Kick off a workflow, go do other work. Come back to a finished PR with review comments.
-- **Composable** - Mix deterministic nodes (bash scripts, tests, git ops) with AI nodes (planning, code generation, review). The AI only runs where it adds value.
-- **Portable** - Define workflows once in `.archon/workflows/`, commit them to your repo. They work the same from CLI, Web UI, Slack, Telegram, or GitHub.
-
-## What It Looks Like
-
-Here's an example of a Smelter workflow that plans, implements in a loop until tests pass, gets your approval, then creates the PR:
+## Custom Flow Example
 
 ```yaml
-# .archon/workflows/build-feature.yaml
+# .smelter/workflows/build-feature.yaml
+name: build-feature
+description: Plan, implement, validate, review, and prepare a PR
+
 nodes:
   - id: plan
     prompt: "Explore the codebase and create an implementation plan"
 
   - id: implement
     depends_on: [plan]
-    loop:                                      # AI loop - iterate until done
+    loop:
       prompt: "Read the plan. Implement the next task. Run validation."
       until: ALL_TASKS_COMPLETE
-      fresh_context: true                      # Fresh session each iteration
+      fresh_context: true
 
   - id: run-tests
     depends_on: [implement]
-    bash: "bun run validate"                   # Deterministic - no AI
+    bash: "bun run validate"
 
   - id: review
     depends_on: [run-tests]
@@ -67,270 +66,149 @@ nodes:
 
   - id: approve
     depends_on: [review]
-    loop:                                      # Human approval gate
+    loop:
       prompt: "Present the changes for review. Address any feedback."
       until: APPROVED
-      interactive: true                        # Pauses and waits for human input
+      interactive: true
 
   - id: create-pr
     depends_on: [approve]
     prompt: "Push changes and create a pull request"
 ```
 
-Tell your coding agent what you want, and Smelter handles the rest:
+This workflow behaves like a repo-local plugin. A project can add a workflow or
+command with the same name as a bundled default to override the default behavior
+without changing Smelter itself.
 
-```
-You: Use smelter to add dark mode to the settings page
+## Plugin Model
 
-Agent: I'll run the smelter-implement workflow for this.
-       → Creating isolated worktree on branch smelter/task-dark-mode...
-       → Planning...
-       → Implementing (task 1/4)...
-       → Implementing (task 2/4)...
-       → Tests failing - iterating...
-       → Tests passing after 2 iterations
-       → Code review complete - 0 issues
-       → PR ready: https://github.com/you/project/pull/47
-```
+Smelter treats two file types as plugin-like extension points:
 
-## Getting Started
+| Type | Path | Role |
+| --- | --- | --- |
+| Workflow | `.smelter/workflows/*.yaml` | Defines execution order, loops, gates, and validation. |
+| Command | `.smelter/commands/*.md` | Defines reusable prompt/action units for the agent. |
 
-> **Most users should start with the [Full Setup](#full-setup-5-minutes)** - it walks you through credentials, installs the Smelter skill into your projects, and gives you the web dashboard.
->
-> **Already have Claude Code and just want the CLI?** Jump to the [Quick Install](#quick-install-30-seconds).
+Bundled workflows and commands provide defaults. Repo-local files take
+precedence, which lets teams maintain custom implementation, review, migration,
+debugging, and validation flows as versioned project assets.
 
-### Full Setup (5 minutes)
+## Claude And Codex Execution
 
-Clone the repo and use the guided setup wizard. This configures credentials, platform integrations, and copies the Smelter skill into your target projects.
+Smelter runs coding assistants through a provider layer:
 
-<details>
-<summary><b>Prerequisites</b> - Bun, Claude Code, and the GitHub CLI</summary>
+- `packages/providers/src/claude`: Claude-based execution
+- `packages/providers/src/codex`: Codex-based execution
+- `packages/workflows`: workflow schema, parser, and bundled defaults
+- `packages/core`: orchestrator, command handling, and workflow execution state
+- `packages/git`: worktree isolation and branch operations
+- `packages/cli`: local command interface
+- `packages/web`: workflow browsing and execution UI
 
-**Bun** - [bun.sh](https://bun.sh)
+The normal way to customize behavior is to add workflow and command plugins, not
+to modify provider code.
 
-```bash
-# macOS/Linux
-curl -fsSL https://bun.sh/install | bash
+## Running Smelter
 
-# Windows (PowerShell)
-irm bun.sh/install.ps1 | iex
-```
-
-**GitHub CLI** - [cli.github.com](https://cli.github.com/)
-
-```bash
-# macOS
-brew install gh
-
-# Windows (via winget)
-winget install GitHub.cli
-
-# Linux (Debian/Ubuntu)
-sudo apt install gh
-```
-
-**Claude Code** - [claude.ai/code](https://claude.ai/code)
-
-```bash
-# macOS/Linux/WSL
-curl -fsSL https://claude.ai/install.sh | bash
-
-# Windows (PowerShell)
-irm https://claude.ai/install.ps1 | iex
-```
-
-</details>
+Install from source:
 
 ```bash
 git clone https://github.com/Yusang-park/Smelter
 cd Smelter
 bun install
-claude
 ```
 
-Then say: **"Set up Smelter"**
+Run the CLI during development:
 
-The setup wizard walks you through everything: CLI installation, authentication, platform selection, and copies the Smelter skill to your target repo.
-
-### Quick Install (30 seconds)
-
-Already have Claude Code set up? Install the standalone CLI binary and skip the wizard.
-
-**macOS / Linux**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Yusang-park/Smelter/main/scripts/install.sh | bash
+bun run smelter workflow list
+bun run smelter workflow run smelter-implement "Add dark mode to settings"
 ```
 
-**Windows (PowerShell)**
-```powershell
-irm https://raw.githubusercontent.com/Yusang-park/Smelter/main/scripts/install.ps1 | iex
-```
-
-**Homebrew**
-```bash
-brew install Yusang-park/smelter/smelter
-```
-
-> **Compiled binaries need a `CLAUDE_BIN_PATH`.** The quick-install binaries
-> don't bundle Claude Code. Install it separately, then point Smelter at it:
->
-> ```bash
-> # macOS / Linux / WSL
-> curl -fsSL https://claude.ai/install.sh | bash
-> export CLAUDE_BIN_PATH="$HOME/.local/bin/claude"
->
-> # Windows (PowerShell)
-> irm https://claude.ai/install.ps1 | iex
-> $env:CLAUDE_BIN_PATH = "$env:USERPROFILE\.local\bin\claude.exe"
-> ```
->
-> Or set `assistants.claude.claudeBinaryPath` in `~/.archon/config.yaml`.
-> The Docker image ships Claude Code pre-installed. See the docs site for binary path configuration details.
-
-### Start Using Smelter
-
-Once you've completed either setup path, go to your project and start working:
+Use Smelter from a target project:
 
 ```bash
 cd /path/to/your/project
-claude
+smelter workflow list
+smelter workflow run smelter-fix "Fix issue #42"
 ```
 
-```
-Use smelter to fix issue #42
-```
+Start the web UI in development:
 
-```
-What smelter workflows do I have? When would I use each one?
+```bash
+bun run dev
 ```
 
-The coding agent handles workflow selection, branch naming, and worktree isolation for you. Projects are registered automatically the first time they're used.
+## Default Workflows
 
-> **Important:** Always run Claude Code from your target repo, not from the Smelter repo. The setup wizard copies the Smelter skill into your project so it works from there.
+Smelter ships default workflows for common development tasks:
 
-## Web UI
-
-Smelter includes a web dashboard for chatting with your coding agent, running workflows, and monitoring activity. Binary installs: run `smelter serve` to download and start the web UI in one step. From source: ask your coding agent to run the frontend from the Smelter repo, or run `bun run dev` from the repo root yourself.
-
-Register a project by clicking **+** next to "Project" in the chat sidebar - enter a GitHub URL or local path. Then start a conversation, invoke workflows, and watch progress in real time.
-
-**Key pages:**
-- **Chat** - Conversation interface with real-time streaming and tool call visualization
-- **Dashboard** - Mission Control for monitoring running workflows, with filterable history by project, status, and date
-- **Workflow Builder** - Visual drag-and-drop editor for creating DAG workflows with loop nodes
-- **Workflow Execution** - Step-by-step progress view for any running or completed workflow
-
-**Monitoring hub:** The sidebar shows conversations from **all platforms** - not just the web. Workflows kicked off from the CLI, messages from Slack or Telegram, GitHub issue interactions - everything appears in one place.
-
-See the docs site for full Web UI documentation.
-
-## What Can You Automate?
-
-Smelter ships with workflows for common development tasks:
-
-| Workflow | What it does |
-|----------|-------------|
-| `smelter-explore` | Read-only repository exploration and architecture/question answering |
-| `smelter-brainstorm` | Product/design brainstorming without source-code changes |
-| `smelter-implement` | Feature implementation with investigation, plan, TDD, reviews, E2E, and human check |
-| `smelter-fix` | Systematic debugging, root-cause evidence, RED regression test, fix, and validation |
-| `smelter-verify` | Non-mutating verification with static checks, tests, E2E evidence, and human check |
-| `smelter-infra` | Infrastructure inventory, reviewed plan, approved execution, verification, and human check |
-| `smelter-queue` | Queue a follow-up intent for the active Smelter runtime |
-
-Smelter ships default workflows - run `smelter workflow list` or describe what you want and the router picks the right one.
-
-**Or define your own.** Default workflows are great starting points - copy one from `.archon/workflows/defaults/` and customize it. Workflows are YAML files in `.archon/workflows/`, commands are markdown files in `.archon/commands/`. Same-named files in your repo override the bundled defaults. Commit them - your whole team runs the same process.
-
-See the docs site for authoring workflows and commands.
-
-## Add a Platform
-
-The Web UI and CLI work out of the box. Optionally connect a chat platform for remote access:
-
-| Platform | Setup time | Guide |
-|----------|-----------|-------|
-| **Telegram** | 5 min | Docs site |
-| **Slack** | 15 min | Docs site |
-| **GitHub Webhooks** | 15 min | Docs site |
-| **Discord** | 5 min | Docs site |
+| Workflow | Purpose |
+| --- | --- |
+| `smelter-explore` | Explore repository structure and implementation without changing code. |
+| `smelter-brainstorm` | Brainstorm product or design options without source changes. |
+| `smelter-implement` | Run feature work through planning, implementation, validation, and review. |
+| `smelter-fix` | Reproduce a bug, add regression coverage, fix it, and validate the result. |
+| `smelter-verify` | Collect static check, test, and E2E evidence without mutating code. |
+| `smelter-infra` | Handle infrastructure changes through inventory, planning, approval, execution, and verification. |
+| `smelter-queue` | Queue a follow-up intent for the active Smelter runtime. |
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
-│  Platform Adapters (Web UI, CLI, Telegram, Slack,       │
-│                    Discord, GitHub)                     │
+│                 Custom Flow Entry Points                │
+│                    CLI • Web UI • API                   │
 └──────────────────────────┬──────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────┐
 │                     Orchestrator                        │
-│          (Message Routing & Context Management)         │
+│          Context Management • Execution State           │
 └─────────────┬───────────────────────────┬───────────────┘
               │                           │
-      ┌───────┴────────┐          ┌───────┴────────┐
-      │                │          │                │
-      ▼                ▼          ▼                ▼
-┌───────────┐  ┌────────────┐  ┌──────────────────────────┐
-│  Command  │  │  Workflow  │  │    AI Assistant Clients  │
-│  Handler  │  │  Executor  │  │   (Claude / Codex / Pi)  │
-│  (Slash)  │  │  (YAML)    │  │                          │
-└───────────┘  └────────────┘  └──────────────────────────┘
-      │              │                      │
-      └──────────────┴──────────────────────┘
-                           │
-                           ▼
+              ▼                           ▼
+┌──────────────────────────┐   ┌──────────────────────────┐
+│   Workflow / Command     │   │      Provider Layer      │
+│   Plugins                │   │      Claude • Codex      │
+│   YAML • Markdown        │   │                          │
+└─────────────┬────────────┘   └─────────────┬────────────┘
+              │                              │
+              └──────────────┬───────────────┘
+                             ▼
 ┌─────────────────────────────────────────────────────────┐
-│              SQLite / PostgreSQL (7 Tables)             │
-│   Codebases • Conversations • Sessions • Workflow Runs  │
-│    Isolation Environments • Messages • Workflow Events  │
+│              Isolation • Git • Persistence              │
+│      Worktrees • Branches • Messages • Workflow Runs    │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Documentation
+## Development
 
-Full documentation is available in `packages/docs-web/` and the published Smelter docs site.
+Common commands:
 
-| Topic | Description |
-|-------|-------------|
-| Getting Started | Setup guide (Web UI or CLI) |
-| The Book of Smelter | Narrative tutorial |
-| CLI Reference | Full CLI reference |
-| Authoring Workflows | Create custom YAML workflows |
-| Authoring Commands | Create reusable AI commands |
-| Configuration | All config options, env vars, YAML settings |
-| AI Assistants | Claude, Codex, and Pi setup details |
-| Deployment | Docker, VPS, production setup |
-| Architecture | System design and internals |
-| Troubleshooting | Common issues and fixes |
+```bash
+bun install
+bun run typecheck
+bun run lint
+bun test
+```
+
+The documentation site lives in `packages/docs-web/`. Workflow and command
+authoring code lives in `packages/workflows/`, orchestration lives in
+`packages/core/`, and assistant integration lives in `packages/providers/`.
 
 ## Telemetry
 
-Smelter sends a single anonymous event — `workflow_invoked` — each time a workflow starts, so maintainers can see which workflows get real usage and prioritize accordingly. **No PII, ever.**
+Smelter may record anonymous workflow start events to understand which workflows
+are used. It does not collect code, prompts, messages, git remotes, file paths,
+usernames, tokens, or AI output.
 
-**What's collected:** the workflow name, the workflow description (both authored by you in YAML), the platform that triggered it (`cli`, `web`, `slack`, etc.), the Smelter version, and a random install UUID stored at `~/.archon/telemetry-id`. Nothing else.
-
-**What's *not* collected:** your code, prompts, messages, git remotes, file paths, usernames, tokens, AI output, workflow node details — none of it.
-
-**Opt out:** set any of these in your environment:
+Disable telemetry with:
 
 ```bash
 ARCHON_TELEMETRY_DISABLED=1
-DO_NOT_TRACK=1        # de facto standard honored by Astro, Bun, Prisma, Nuxt, etc.
+DO_NOT_TRACK=1
 ```
-
-Self-host PostHog or use a different project by setting `POSTHOG_API_KEY` and `POSTHOG_HOST`.
-
-## Contributing
-
-Contributions welcome! See the open [issues](https://github.com/Yusang-park/Smelter/issues) for things to work on.
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/chart?repos=Yusang-park/Smelter&type=date&legend=top-left)](https://www.star-history.com/?repos=Yusang-park%2FSmelter&type=date&legend=top-left)
 
 ## License
 
